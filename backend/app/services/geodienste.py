@@ -75,19 +75,23 @@ class GeodiensteService:
         Returns:
             BuildingGeometry mit Polygon und berechneten Massen
         """
+        # Koordinaten in LV95 (EPSG:2056) konvertieren falls nötig
+        # swisstopo liefert LV95 (2600xxx), WFS erwartet auch LV95
+        if x < 2000000:
+            # LV03 -> LV95 (ungefähre Konversion)
+            x = x + 2000000
+            y = y + 1000000
+
         # Bounding Box berechnen
         bbox = f"{x-tolerance},{y-tolerance},{x+tolerance},{y+tolerance}"
-
-        # Koordinatensystem erkennen (LV95 vs LV03)
-        srs = "EPSG:2056" if x > 2000000 else "EPSG:21781"
 
         params = {
             "SERVICE": "WFS",
             "VERSION": "1.1.0",
             "REQUEST": "GetFeature",
             "TYPENAME": self.LAYER_BODENBEDECKUNG,
-            "BBOX": f"{bbox},{srs}",
-            "SRSNAME": srs,
+            "BBOX": f"{bbox},EPSG:2056",
+            "SRSNAME": "EPSG:2056",
         }
 
         try:
@@ -171,8 +175,14 @@ class GeodiensteService:
 
     def _extract_polygon(self, element: ET.Element, namespaces: Dict) -> Optional[List[Tuple[float, float]]]:
         """Polygon-Koordinaten aus GML extrahieren"""
+        # Nur das äussere Polygon (exterior) extrahieren
+        exterior = element.find('.//gml:exterior', namespaces)
+        if exterior is None:
+            # Fallback: Suche in gesamtem Element
+            exterior = element
+
         # LinearRing mit Koordinaten finden
-        for pos_list in element.findall('.//gml:posList', namespaces):
+        for pos_list in exterior.findall('.//gml:posList', namespaces):
             if pos_list.text:
                 coords = pos_list.text.strip().split()
                 polygon = []
@@ -187,7 +197,7 @@ class GeodiensteService:
                     return polygon
 
         # Alternative: coordinates Element
-        for coords_elem in element.findall('.//gml:coordinates', namespaces):
+        for coords_elem in exterior.findall('.//gml:coordinates', namespaces):
             if coords_elem.text:
                 polygon = []
                 for pair in coords_elem.text.strip().split():
