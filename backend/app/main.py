@@ -62,13 +62,19 @@ app = FastAPI(
 )
 
 # CORS für Frontend
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+# Railway Frontend URL hinzufügen
+if os.getenv("FRONTEND_URL"):
+    allowed_origins.append(os.getenv("FRONTEND_URL"))
+# Fallback: alle railway.app Subdomains erlauben
+allowed_origins.append("https://cooperative-commitment-production.up.railway.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        os.getenv("FRONTEND_URL", ""),
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
