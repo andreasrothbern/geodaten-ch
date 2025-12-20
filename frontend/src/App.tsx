@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { SearchForm } from './components/SearchForm'
 import { BuildingCard } from './components/BuildingCard'
 import { ApiStatus } from './components/ApiStatus'
-import type { BuildingInfo, LookupResult } from './types'
+import { ScaffoldingCard } from './components/ScaffoldingCard'
+import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -10,11 +11,35 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<LookupResult | null>(null)
+  const [scaffoldingData, setScaffoldingData] = useState<ScaffoldingData | null>(null)
+  const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
+  const [currentAddress, setCurrentAddress] = useState<string>('')
+
+  const fetchScaffoldingData = async (address: string, height?: number) => {
+    setScaffoldingLoading(true)
+    try {
+      let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
+      if (height) {
+        url += `&height=${height}`
+      }
+      const response = await fetch(url)
+      if (response.ok) {
+        const data = await response.json()
+        setScaffoldingData(data)
+      }
+    } catch (err) {
+      console.error('Scaffolding fetch error:', err)
+    } finally {
+      setScaffoldingLoading(false)
+    }
+  }
 
   const handleSearch = async (address: string) => {
     setLoading(true)
     setError(null)
     setResult(null)
+    setScaffoldingData(null)
+    setCurrentAddress(address)
 
     try {
       const response = await fetch(
@@ -28,10 +53,19 @@ function App() {
 
       const data = await response.json()
       setResult(data)
+
+      // Automatisch Gerüstbau-Daten laden
+      fetchScaffoldingData(address)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleHeightChange = (height: number) => {
+    if (currentAddress) {
+      fetchScaffoldingData(currentAddress, height)
     }
   }
 
@@ -91,7 +125,7 @@ function App() {
               <h3 className="text-lg font-semibold mb-4">
                 🏠 Gebäude ({result.buildings_count})
               </h3>
-              
+
               {result.buildings_count === 0 ? (
                 <p className="text-gray-500">
                   Keine Gebäude an dieser Adresse gefunden.
@@ -104,6 +138,20 @@ function App() {
                 </div>
               )}
             </div>
+
+            {/* Gerüstbau-Daten */}
+            {scaffoldingLoading && (
+              <div className="card text-center py-8">
+                <p className="text-gray-500">Lade Gerüstbau-Daten...</p>
+              </div>
+            )}
+
+            {scaffoldingData && !scaffoldingLoading && (
+              <ScaffoldingCard
+                data={scaffoldingData}
+                onHeightChange={handleHeightChange}
+              />
+            )}
           </div>
         )}
 

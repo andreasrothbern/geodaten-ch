@@ -343,7 +343,8 @@ def estimate_building_height(
     floors: Optional[int],
     building_category_code: Optional[int] = None,
     area_m2: Optional[int] = None,
-) -> Optional[float]:
+    manual_height: Optional[float] = None,
+) -> tuple[Optional[float], str]:
     """
     Gebäudehöhe schätzen basierend auf verfügbaren Daten
 
@@ -351,43 +352,58 @@ def estimate_building_height(
         floors: Anzahl Geschosse (aus GWR)
         building_category_code: Gebäudekategorie-Code (aus GWR)
         area_m2: Gebäudefläche (für Plausibilität)
+        manual_height: Manuell eingegebene Höhe
 
     Returns:
-        Geschätzte Höhe in Metern oder None
+        Tuple (Höhe in Metern, Quelle der Schätzung)
     """
-    if not floors:
-        return None
+    # Manuelle Eingabe hat Priorität
+    if manual_height and manual_height > 0:
+        return (manual_height, "manual")
 
-    # Geschosshöhe je nach Kategorie
-    floor_height = FLOOR_HEIGHTS_BY_CATEGORY.get(
-        building_category_code,
-        FLOOR_HEIGHT_M
-    )
+    # Falls Geschosse bekannt
+    if floors and floors > 0:
+        # Geschosshöhe je nach Kategorie
+        floor_height = FLOOR_HEIGHTS_BY_CATEGORY.get(
+            building_category_code,
+            FLOOR_HEIGHT_M
+        )
 
-    # Basishöhe = Geschosse × Geschosshöhe
-    base_height = floors * floor_height
+        # Basishöhe = Geschosse × Geschosshöhe
+        base_height = floors * floor_height
 
-    # Dachaufbau schätzen (je nach Kategorie)
-    if building_category_code in [1020, 1030, 1040]:  # Wohngebäude
-        # Typisches Satteldach: +2-4m
-        roof_height = 3.0
-    elif building_category_code == 1080:  # Gewerbe/Industrie
-        # Flachdach: +0.5m
-        roof_height = 0.5
-    else:
-        # Standard
-        roof_height = 2.0
+        # Dachaufbau schätzen (je nach Kategorie)
+        if building_category_code in [1020, 1030, 1040]:  # Wohngebäude
+            roof_height = 3.0
+        elif building_category_code == 1080:  # Gewerbe/Industrie
+            roof_height = 0.5
+        else:
+            roof_height = 2.0
 
-    total_height = base_height + roof_height
+        total_height = base_height + roof_height
+        return (round(total_height, 1), "calculated_from_floors")
 
-    return round(total_height, 1)
+    # Fallback: Standard-Höhe basierend auf Gebäudekategorie
+    DEFAULT_HEIGHTS = {
+        1020: 8.0,   # Einfamilienhaus: ~2.5 Geschosse
+        1030: 12.0,  # Mehrfamilienhaus: ~4 Geschosse
+        1040: 10.0,  # Wohngebäude mit Nebennutzung
+        1060: 15.0,  # Gebäude mit teilweiser Wohnnutzung (oft höher)
+        1080: 8.0,   # Gebäude ohne Wohnnutzung
+    }
+
+    if building_category_code and building_category_code in DEFAULT_HEIGHTS:
+        return (DEFAULT_HEIGHTS[building_category_code], "default_by_category")
+
+    # Letzter Fallback: Allgemeine Standard-Höhe
+    return (10.0, "default_standard")
 
 
 def calculate_scaffolding_data(
     geometry: BuildingGeometry,
     floors: Optional[int] = None,
     building_category_code: Optional[int] = None,
-    height_override: Optional[float] = None,
+    manual_height: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Gerüstbau-relevante Daten berechnen
@@ -396,18 +412,17 @@ def calculate_scaffolding_data(
         geometry: Gebäudegeometrie aus WFS
         floors: Anzahl Geschosse (aus GWR)
         building_category_code: Gebäudekategorie (aus GWR)
-        height_override: Manuelle Höhenangabe
+        manual_height: Manuell eingegebene Höhe
 
     Returns:
         Dictionary mit Gerüstbau-Daten
     """
-    # Höhe bestimmen
-    if height_override:
-        height = height_override
-        height_source = "manual"
-    else:
-        height = estimate_building_height(floors, building_category_code)
-        height_source = "estimated" if height else "unknown"
+    # Höhe bestimmen (mit Fallback-Kette)
+    height, height_source = estimate_building_height(
+        floors=floors,
+        building_category_code=building_category_code,
+        manual_height=manual_height,
+    )
 
     # Gerüstfläche berechnen (Umfang × Höhe)
     if height:

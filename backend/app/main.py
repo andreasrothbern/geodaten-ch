@@ -325,7 +325,8 @@ async def lookup_address(
          tags=["Gerüstbau"])
 async def get_scaffolding_data(
     address: str = Query(..., min_length=5, description="Adresse"),
-    egid: Optional[int] = Query(None, description="EGID (falls bekannt)")
+    egid: Optional[int] = Query(None, description="EGID (falls bekannt)"),
+    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern")
 ):
     """
     Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
@@ -383,6 +384,7 @@ async def get_scaffolding_data(
             geometry=geometry,
             floors=building.floors if building else None,
             building_category_code=building.building_category_code if building else None,
+            manual_height=height,
         )
 
         # 5. Adress- und GWR-Infos hinzufügen
@@ -418,6 +420,7 @@ async def get_scaffolding_data(
          tags=["Gerüstbau"])
 async def get_scaffolding_by_egid(
     egid: int,
+    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern")
 ):
     """
     Gebäudegeometrie per EGID abrufen.
@@ -457,6 +460,7 @@ async def get_scaffolding_by_egid(
             geometry=geometry,
             floors=building.floors,
             building_category_code=building.building_category_code,
+            manual_height=height,
         )
 
         result = {

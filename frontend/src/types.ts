@@ -53,3 +53,56 @@ export interface AddressSearchResult {
   coordinates: Coordinates
   feature_id?: string
 }
+
+// Gerüstbau-Daten Types
+export interface ScaffoldingSide {
+  index: number
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  length_m: number
+  direction: string
+  angle_deg: number
+}
+
+export interface ScaffoldingData {
+  address: {
+    input?: string
+    matched: string
+    coordinates: {
+      lv95_e: number
+      lv95_n: number
+    }
+  }
+  gwr_data: {
+    egid: number
+    building_category?: string
+    construction_year?: number
+    floors?: number
+    area_m2_gwr?: number
+  }
+  building: {
+    egid: number
+    footprint_area_m2: number
+    bounding_box: {
+      width_m: number
+      depth_m: number
+    }
+  }
+  dimensions: {
+    perimeter_m: number
+    estimated_height_m: number | null
+    height_source: string
+    floors: number | null
+  }
+  scaffolding: {
+    facade_length_total_m: number
+    estimated_scaffold_area_m2: number | null
+    number_of_sides: number
+    main_sides_count: number
+  }
+  sides: ScaffoldingSide[]
+  polygon: {
+    coordinates: [number, number][]
+    coordinate_system: string
+  }
+}
