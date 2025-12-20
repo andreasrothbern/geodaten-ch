@@ -18,13 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Anwendung kopieren
 COPY app ./app/
 
-# Port
+# Port (Railway setzt PORT dynamisch)
 ENV PORT=8000
-EXPOSE 8000
 
-# Health Check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Start
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start - verwendet $PORT von Railway
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
