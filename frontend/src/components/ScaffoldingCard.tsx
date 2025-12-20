@@ -15,7 +15,8 @@ const HEIGHT_SOURCE_LABELS: Record<string, string> = {
 }
 
 // Funktion um Datenbank-Quellen zu erkennen
-function getHeightSourceLabel(source: string): string {
+function getHeightSourceLabel(source: string | undefined | null): string {
+  if (!source) return 'Unbekannt'
   if (source.startsWith('database:')) {
     const dbSource = source.replace('database:', '')
     return `swissBUILDINGS3D (${dbSource})`
@@ -23,8 +24,8 @@ function getHeightSourceLabel(source: string): string {
   return HEIGHT_SOURCE_LABELS[source] || source
 }
 
-function isFromDatabase(source: string): boolean {
-  return source.startsWith('database:')
+function isFromDatabase(source: string | undefined | null): boolean {
+  return source?.startsWith('database:') ?? false
 }
 
 export function ScaffoldingCard({ data, onHeightChange }: ScaffoldingCardProps) {
