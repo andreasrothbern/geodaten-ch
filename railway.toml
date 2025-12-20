@@ -1,0 +1,33 @@
+# Railway.app Multi-Service Konfiguration
+# =========================================
+# Dieses Projekt enthält Backend (FastAPI) und Frontend (React)
+
+[project]
+name = "geodaten-ch"
+
+# Backend Service
+[services.backend]
+source = "backend"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+restartPolicyType = "ON_FAILURE"
+
+[services.backend.build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[services.backend.deploy]
+numReplicas = 1
+sleepApplication = false
+restartPolicyType = "ON_FAILURE"
+
+# Frontend Service  
+[services.frontend]
+source = "frontend"
+
+[services.frontend.build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[services.frontend.deploy]
+numReplicas = 1

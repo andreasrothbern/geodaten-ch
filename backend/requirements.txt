@@ -1,0 +1,21 @@
+# Geodaten Schweiz API - Backend Dependencies
+# ============================================
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# HTTP Client (async)
+httpx==0.26.0
+
+# Validation
+pydantic==2.5.3
+
+# CORS & Middleware
+python-multipart==0.0.6
+
+# Environment
+python-dotenv==1.0.0
+
+# Für Produktion
+gunicorn==21.2.0
