@@ -46,7 +46,11 @@ def parse_citygml(file_path: Path) -> Generator[Tuple[int, float], None, None]:
     CityGML-Datei parsen und EGID + Höhe extrahieren.
 
     swissBUILDINGS3D 3.0 Beta verwendet CityGML 2.0 Format.
-    Gebäude haben gml:id mit EGID und 3D-Geometrie.
+    Gebäude haben:
+    - EGID als gen:intAttribute
+    - DACH_MAX (Dachhöhe absolut) als gen:doubleAttribute
+    - GELAENDEPUNKT (Geländehöhe) als gen:doubleAttribute
+    - Gebäudehöhe = DACH_MAX - GELAENDEPUNKT
 
     Yields:
         Tuple (egid, height_m)
@@ -66,32 +70,20 @@ def parse_citygml(file_path: Path) -> Generator[Tuple[int, float], None, None]:
         context = ET.iterparse(str(file_path), events=('end',))
 
         count = 0
+        skipped = 0
         for event, elem in context:
             # Building-Elemente finden
             if elem.tag.endswith('}Building') or elem.tag == 'Building':
 
                 egid = None
+                dach_max = None
+                gelaendepunkt = None
                 height = None
 
-                # EGID aus gml:id oder Attribut extrahieren
-                gml_id = elem.get('{http://www.opengis.net/gml}id', '')
-                if not gml_id:
-                    gml_id = elem.get('id', '')
-
-                # EGID aus ID extrahieren (Format: EGID_1234567 oder ähnlich)
-                egid_match = re.search(r'EGID[_-]?(\d+)', gml_id, re.IGNORECASE)
-                if egid_match:
-                    egid = int(egid_match.group(1))
-                else:
-                    # Versuche reine Zahl zu finden
-                    num_match = re.search(r'(\d{6,8})', gml_id)
-                    if num_match:
-                        egid = int(num_match.group(1))
-
-                # Alternativ: EGID als genericAttribute
-                for attr in elem.findall('.//gen:stringAttribute', namespaces):
+                # Alle Attribute durchsuchen
+                for attr in elem.findall('.//gen:intAttribute', namespaces):
                     name = attr.get('name', '')
-                    if 'egid' in name.lower():
+                    if name == 'EGID':
                         try:
                             value = attr.find('gen:value', namespaces)
                             if value is not None and value.text:
@@ -99,24 +91,27 @@ def parse_citygml(file_path: Path) -> Generator[Tuple[int, float], None, None]:
                         except ValueError:
                             pass
 
-                # Höhe extrahieren
-                # 1. Versuche measuredHeight
-                measured_height = elem.find('.//bldg:measuredHeight', namespaces)
-                if measured_height is not None and measured_height.text:
+                for attr in elem.findall('.//gen:doubleAttribute', namespaces):
+                    name = attr.get('name', '')
                     try:
-                        height = float(measured_height.text)
+                        value = attr.find('gen:value', namespaces)
+                        if value is not None and value.text:
+                            if name == 'DACH_MAX':
+                                dach_max = float(value.text)
+                            elif name == 'GELAENDEPUNKT':
+                                gelaendepunkt = float(value.text)
                     except ValueError:
                         pass
 
-                # 2. Fallback: Höhe aus Geometrie berechnen
-                if height is None:
-                    height = _extract_height_from_geometry(elem, namespaces)
+                # Höhe berechnen: DACH_MAX - GELAENDEPUNKT
+                if dach_max is not None and gelaendepunkt is not None:
+                    height = dach_max - gelaendepunkt
 
-                # 3. Fallback: genericAttribute "Hoehe"
+                # Fallback: citygml_measured_height auf RoofSurface
                 if height is None:
-                    for attr in elem.findall('.//gen:doubleAttribute', namespaces):
+                    for attr in elem.findall('.//gen:measureAttribute', namespaces):
                         name = attr.get('name', '')
-                        if 'hoehe' in name.lower() or 'height' in name.lower():
+                        if 'measured_height' in name.lower():
                             try:
                                 value = attr.find('gen:value', namespaces)
                                 if value is not None and value.text:
@@ -130,12 +125,14 @@ def parse_citygml(file_path: Path) -> Generator[Tuple[int, float], None, None]:
                     count += 1
                     if count % 1000 == 0:
                         print(f"  ... {count} Gebäude verarbeitet")
-                    yield (egid, height)
+                    yield (egid, round(height, 2))
+                elif egid:
+                    skipped += 1
 
                 # Speicher freigeben
                 elem.clear()
 
-        print(f"  Fertig: {count} Gebäude extrahiert")
+        print(f"  Fertig: {count} Gebäude extrahiert, {skipped} ohne Höhendaten übersprungen")
 
     except ET.ParseError as e:
         print(f"XML Parse Error: {e}")
@@ -400,15 +397,15 @@ Download der Daten:
             version=args.version
         )
 
-        print(f"\n✅ Import abgeschlossen!")
-        print(f"   {total_count:,} Gebäude importiert")
+        print(f"\n[OK] Import abgeschlossen!")
+        print(f"   {total_count:,} Gebaeude importiert")
 
         # Statistiken anzeigen
         stats = get_database_stats()
-        print(f"   Datenbank enthält jetzt {stats.get('records', 0):,} Gebäude")
+        print(f"   Datenbank enthaelt jetzt {stats.get('records', 0):,} Gebaeude")
 
     except Exception as e:
-        print(f"\n❌ FEHLER beim Import: {e}")
+        print(f"\n[FEHLER] Import fehlgeschlagen: {e}")
         sys.exit(1)
 
 

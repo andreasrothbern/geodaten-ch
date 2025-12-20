@@ -59,7 +59,7 @@ def init_database():
 
         conn.commit()
 
-    print(f"✅ Höhendatenbank initialisiert: {HEIGHT_DB_PATH}")
+    print(f"[OK] Hoehendatenbank initialisiert: {HEIGHT_DB_PATH}")
 
 
 def get_building_height(egid: int) -> Optional[Tuple[float, str]]:
