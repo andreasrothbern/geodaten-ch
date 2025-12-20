@@ -491,6 +491,50 @@ async def get_scaffolding_by_egid(
 
 
 # ============================================================================
+# Höhendatenbank
+# ============================================================================
+
+@app.get("/api/v1/heights/stats",
+         tags=["System"])
+async def get_height_database_stats():
+    """
+    Statistiken der Gebäudehöhen-Datenbank abrufen.
+
+    Zeigt an, wie viele Gebäudehöhen aus swissBUILDINGS3D importiert wurden.
+    """
+    try:
+        from app.services.height_db import get_database_stats
+        return get_database_stats()
+    except ImportError:
+        return {"exists": False, "message": "Height database module not available"}
+
+
+@app.get("/api/v1/heights/{egid}",
+         tags=["System"])
+async def get_height_for_egid(egid: int):
+    """
+    Gebäudehöhe für eine EGID aus der Datenbank abrufen.
+    """
+    try:
+        from app.services.height_db import get_building_height
+        result = get_building_height(egid)
+        if result:
+            return {
+                "egid": egid,
+                "height_m": result[0],
+                "source": result[1],
+                "found": True
+            }
+        return {
+            "egid": egid,
+            "found": False,
+            "message": "Keine Höhendaten für dieses Gebäude"
+        }
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Height database not available")
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 

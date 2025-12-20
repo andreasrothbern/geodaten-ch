@@ -14,6 +14,19 @@ const HEIGHT_SOURCE_LABELS: Record<string, string> = {
   unknown: 'Unbekannt',
 }
 
+// Funktion um Datenbank-Quellen zu erkennen
+function getHeightSourceLabel(source: string): string {
+  if (source.startsWith('database:')) {
+    const dbSource = source.replace('database:', '')
+    return `swissBUILDINGS3D (${dbSource})`
+  }
+  return HEIGHT_SOURCE_LABELS[source] || source
+}
+
+function isFromDatabase(source: string): boolean {
+  return source.startsWith('database:')
+}
+
 export function ScaffoldingCard({ data, onHeightChange }: ScaffoldingCardProps) {
   const [showAllSides, setShowAllSides] = useState(false)
   const [manualHeight, setManualHeight] = useState<string>('')
@@ -45,15 +58,17 @@ export function ScaffoldingCard({ data, onHeightChange }: ScaffoldingCardProps) 
             {dimensions.perimeter_m.toFixed(1)} m
           </p>
         </div>
-        <div className="bg-green-50 rounded-lg p-4 text-center">
-          <p className="text-sm text-green-600 font-medium">Höhe (geschätzt)</p>
-          <p className="text-2xl font-bold text-green-900">
+        <div className={`rounded-lg p-4 text-center ${isFromDatabase(dimensions.height_source) ? 'bg-emerald-50' : 'bg-green-50'}`}>
+          <p className={`text-sm font-medium ${isFromDatabase(dimensions.height_source) ? 'text-emerald-600' : 'text-green-600'}`}>
+            {isFromDatabase(dimensions.height_source) ? 'Höhe (gemessen)' : 'Höhe (geschätzt)'}
+          </p>
+          <p className={`text-2xl font-bold ${isFromDatabase(dimensions.height_source) ? 'text-emerald-900' : 'text-green-900'}`}>
             {dimensions.estimated_height_m
               ? `${dimensions.estimated_height_m.toFixed(1)} m`
               : '—'}
           </p>
-          <p className="text-xs text-green-600 mt-1">
-            {HEIGHT_SOURCE_LABELS[dimensions.height_source] || dimensions.height_source}
+          <p className={`text-xs mt-1 ${isFromDatabase(dimensions.height_source) ? 'text-emerald-600' : 'text-green-600'}`}>
+            {getHeightSourceLabel(dimensions.height_source)}
           </p>
         </div>
         <div className="bg-orange-50 rounded-lg p-4 text-center">

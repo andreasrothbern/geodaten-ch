@@ -344,22 +344,38 @@ def estimate_building_height(
     building_category_code: Optional[int] = None,
     area_m2: Optional[int] = None,
     manual_height: Optional[float] = None,
+    egid: Optional[int] = None,
 ) -> tuple[Optional[float], str]:
     """
-    Gebäudehöhe schätzen basierend auf verfügbaren Daten
+    Gebäudehöhe bestimmen mit Fallback-Kette:
+    1. Manuelle Eingabe
+    2. Datenbank (swissBUILDINGS3D)
+    3. Berechnung aus Geschossen
+    4. Standard nach Kategorie
 
     Args:
         floors: Anzahl Geschosse (aus GWR)
         building_category_code: Gebäudekategorie-Code (aus GWR)
         area_m2: Gebäudefläche (für Plausibilität)
         manual_height: Manuell eingegebene Höhe
+        egid: Eidgenössischer Gebäudeidentifikator (für DB-Lookup)
 
     Returns:
         Tuple (Höhe in Metern, Quelle der Schätzung)
     """
-    # Manuelle Eingabe hat Priorität
+    # 1. Manuelle Eingabe hat höchste Priorität
     if manual_height and manual_height > 0:
         return (manual_height, "manual")
+
+    # 2. Datenbank-Lookup (swissBUILDINGS3D)
+    if egid:
+        try:
+            from app.services.height_db import get_building_height
+            db_result = get_building_height(egid)
+            if db_result:
+                return db_result
+        except ImportError:
+            pass  # height_db nicht verfügbar
 
     # Falls Geschosse bekannt
     if floors and floors > 0:
@@ -417,11 +433,12 @@ def calculate_scaffolding_data(
     Returns:
         Dictionary mit Gerüstbau-Daten
     """
-    # Höhe bestimmen (mit Fallback-Kette)
+    # Höhe bestimmen (mit Fallback-Kette inkl. DB-Lookup)
     height, height_source = estimate_building_height(
         floors=floors,
         building_category_code=building_category_code,
         manual_height=manual_height,
+        egid=geometry.egid,  # Für Datenbank-Lookup
     )
 
     # Gerüstfläche berechnen (Umfang × Höhe)

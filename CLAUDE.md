@@ -12,16 +12,26 @@ geodaten-ch/
 │   └── app/
 │       ├── main.py           # API Endpunkte
 │       ├── models/schemas.py # Pydantic Models
+│       ├── data/             # SQLite Datenbanken
+│       │   └── building_heights.db  # swissBUILDINGS3D Höhen
 │       └── services/
 │           ├── swisstopo.py  # swisstopo API Adapter
+│           ├── geodienste.py # geodienste.ch WFS (Gebäudegeometrie)
+│           ├── height_db.py  # Höhendatenbank Service
 │           └── cache.py      # SQLite Cache
+│   └── scripts/
+│       └── import_building_heights.py  # swissBUILDINGS3D Import
 │
 ├── frontend/         # React + Vite + TypeScript + Tailwind
 │   └── src/
 │       ├── App.tsx
 │       └── components/
+│           ├── SearchForm.tsx
+│           ├── BuildingCard.tsx
+│           ├── ScaffoldingCard.tsx  # Gerüstbau-Daten
+│           └── ApiStatus.tsx
 │
-└── railway.toml      # Railway.app Deployment
+└── Deployed on Railway.app
 ```
 
 ## API-Testergebnisse (20.12.2025)
@@ -83,19 +93,52 @@ GET https://api3.geo.admin.ch/rest/services/api/MapServer/identify
 - `gwaerzh1` - Heizungsart
 - `genh1` - Energieträger Heizung
 
+## Gerüstbau-Features
+
+### API-Endpunkte
+
+```python
+# Gerüstbau-Daten per Adresse
+GET /api/v1/scaffolding?address=Bundesplatz 3, 3011 Bern
+
+# Gerüstbau-Daten per EGID
+GET /api/v1/scaffolding/by-egid/2242547
+
+# Höhendatenbank-Statistiken
+GET /api/v1/heights/stats
+```
+
+### Datenquellen für Höhen (Fallback-Kette)
+
+1. **Manuell eingegeben** - Höchste Priorität
+2. **swissBUILDINGS3D** - Gemessene Höhe aus lokaler DB
+3. **Berechnet aus Geschossen** - GWR-Daten × Geschosshöhe
+4. **Standard nach Kategorie** - EFH: 8m, MFH: 12m
+5. **Allgemeiner Standard** - 10m
+
+### swissBUILDINGS3D Import
+
+```bash
+# Daten von swisstopo herunterladen:
+# https://www.swisstopo.admin.ch/de/landschaftmodell-swissbuildings3d-3-0-beta
+
+# Import ausführen
+cd backend
+python scripts/import_building_heights.py daten.gml --canton BE
+```
+
 ## Deployment
 
-**Ziel:** Railway.app
-- Backend: FastAPI Container
-- Frontend: Nginx mit Vite Build
-- Kosten: ~$10-15/Monat
+**Plattform:** Railway.app
+- Backend: FastAPI Container (acceptable-trust-production.up.railway.app)
+- Frontend: Nginx mit Vite Build (cooperative-commitment-production.up.railway.app)
 
 ## Nächste Schritte
 
-1. [ ] Backend lokal testen: `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload`
-2. [ ] Frontend lokal testen: `cd frontend && npm install && npm run dev`
-3. [ ] Git Repository erstellen
-4. [ ] Railway.app Deployment
+1. [x] Backend lokal testen
+2. [x] Frontend lokal testen
+3. [x] Railway.app Deployment
+4. [ ] swissBUILDINGS3D Daten für Kanton Bern importieren
 5. [ ] Custom Domain einrichten
 
 ## Lokale Entwicklung
