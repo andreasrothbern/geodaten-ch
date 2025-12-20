@@ -15,6 +15,11 @@ from typing import Optional, List
 
 from app.services.swisstopo import SwisstopoService
 from app.services.cache import CacheService
+from app.services.geodienste import (
+    GeodiensteService,
+    calculate_scaffolding_data,
+    estimate_building_height,
+)
 from app.models.schemas import (
     AddressSearchResult,
     BuildingInfo,
@@ -25,6 +30,7 @@ from app.models.schemas import (
 
 # Services initialisieren
 swisstopo = SwisstopoService()
+geodienste = GeodiensteService()
 cache = CacheService()
 
 
@@ -305,6 +311,175 @@ async def lookup_address(
         
         cache.set(cache_key, result, ttl_hours=1)
         return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Gerüstbau-Daten (Gebäudegeometrie)
+# ============================================================================
+
+@app.get("/api/v1/scaffolding",
+         tags=["Gerüstbau"])
+async def get_scaffolding_data(
+    address: str = Query(..., min_length=5, description="Adresse"),
+    egid: Optional[int] = Query(None, description="EGID (falls bekannt)")
+):
+    """
+    Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
+
+    Liefert:
+    - Exakten Grundriss (Polygon mit allen Eckpunkten)
+    - Seitenlängen jeder Fassade
+    - Gesamtumfang (für Gerüstmeter)
+    - Geschätzte Gebäudehöhe
+    - Geschätzte Gerüstfläche
+
+    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern`
+    """
+    cache_key = f"scaffolding:{address}:{egid}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        # 1. Adresse geokodieren
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        # 2. GWR-Daten abrufen (für Geschosse, Kategorie)
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e,
+            geo.coordinates.lv95_n,
+            tolerance=15
+        )
+
+        # Erstes Gebäude oder das mit passender EGID
+        building = None
+        if egid:
+            building = next((b for b in buildings if b.egid == egid), None)
+        if not building and buildings:
+            building = buildings[0]
+
+        # 3. Gebäudegeometrie aus WFS abrufen
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=egid or (building.egid if building else None)
+        )
+
+        if not geometry:
+            raise HTTPException(
+                status_code=404,
+                detail="Gebäudegeometrie nicht gefunden. Möglicherweise keine AV-Daten für diesen Standort."
+            )
+
+        # 4. Gerüstbau-Daten berechnen
+        scaffolding_data = calculate_scaffolding_data(
+            geometry=geometry,
+            floors=building.floors if building else None,
+            building_category_code=building.building_category_code if building else None,
+        )
+
+        # 5. Adress- und GWR-Infos hinzufügen
+        result = {
+            "address": {
+                "input": address,
+                "matched": geo.matched_address,
+                "coordinates": {
+                    "lv95_e": geo.coordinates.lv95_e,
+                    "lv95_n": geo.coordinates.lv95_n,
+                }
+            },
+            "gwr_data": {
+                "egid": building.egid if building else geometry.egid,
+                "building_category": building.building_category if building else None,
+                "construction_year": building.construction_year if building else None,
+                "floors": building.floors if building else None,
+                "area_m2_gwr": building.area_m2 if building else None,
+            },
+            **scaffolding_data,
+        }
+
+        cache.set(cache_key, result, ttl_hours=24)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/scaffolding/by-egid/{egid}",
+         tags=["Gerüstbau"])
+async def get_scaffolding_by_egid(
+    egid: int,
+):
+    """
+    Gebäudegeometrie per EGID abrufen.
+
+    Schneller als Adresssuche, wenn EGID bekannt ist.
+
+    **Beispiel:** `/api/v1/scaffolding/by-egid/2242547`
+    """
+    cache_key = f"scaffolding:egid:{egid}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        # 1. Gebäude per EGID aus GWR abrufen
+        building = await swisstopo.get_building_by_egid(egid, include_geometry=True)
+
+        if not building or not building.coordinates:
+            raise HTTPException(status_code=404, detail=f"Gebäude mit EGID {egid} nicht gefunden")
+
+        # 2. Geometrie aus WFS abrufen
+        geometry = await geodienste.get_building_geometry(
+            x=building.coordinates.lv95_e,
+            y=building.coordinates.lv95_n,
+            tolerance=50,
+            egid=egid
+        )
+
+        if not geometry:
+            raise HTTPException(
+                status_code=404,
+                detail="Gebäudegeometrie nicht verfügbar"
+            )
+
+        # 3. Gerüstbau-Daten berechnen
+        scaffolding_data = calculate_scaffolding_data(
+            geometry=geometry,
+            floors=building.floors,
+            building_category_code=building.building_category_code,
+        )
+
+        result = {
+            "address": {
+                "matched": building.address,
+                "coordinates": {
+                    "lv95_e": building.coordinates.lv95_e,
+                    "lv95_n": building.coordinates.lv95_n,
+                }
+            },
+            "gwr_data": {
+                "egid": building.egid,
+                "building_category": building.building_category,
+                "construction_year": building.construction_year,
+                "floors": building.floors,
+                "area_m2_gwr": building.area_m2,
+            },
+            **scaffolding_data,
+        }
+
+        cache.set(cache_key, result, ttl_hours=24)
+        return result
+
     except HTTPException:
         raise
     except Exception as e:
