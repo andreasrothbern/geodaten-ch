@@ -22,13 +22,13 @@ RUN npm run build
 # Production Stage
 FROM nginx:alpine
 
-# Nginx Config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Nginx Config als Template
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 # Built files kopieren
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Port
-EXPOSE 80
+# Railway setzt PORT dynamisch
+ENV PORT=80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/bin/sh", "-c", "envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
