@@ -26,8 +26,8 @@ export function FloorPlanSVG({
   egid,
   areaM2,
   showScaffold = true,
-  width = 400,
-  height = 350
+  width = 500,
+  height = 420
 }: FloorPlanSVGProps) {
   // Normalize polygon to start at 0,0 and calculate scale
   const { normalizedPolygon, scale } = useMemo(() => {
@@ -116,15 +116,15 @@ export function FloorPlanSVG({
       className="bg-gray-50 rounded-lg border"
     >
       <defs>
-        {/* Building hatch pattern */}
-        <pattern id="building-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
-          <path d="M-1,1 l3,-3 M0,6 l6,-6 M5,7 l3,-3" stroke="#666" strokeWidth="0.5" fill="none"/>
+        {/* Building hatch pattern - larger for better visibility */}
+        <pattern id="building-hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+          <path d="M-2,2 l4,-4 M0,8 l8,-8 M6,10 l4,-4" stroke="#666" strokeWidth="0.5" fill="none"/>
         </pattern>
 
-        {/* Scaffold pattern */}
-        <pattern id="scaffold-fill" patternUnits="userSpaceOnUse" width="8" height="8">
-          <rect width="8" height="8" fill="#fff3cd"/>
-          <line x1="0" y1="8" x2="8" y2="0" stroke="#ffc107" strokeWidth="0.5"/>
+        {/* Scaffold pattern - striped for better visibility */}
+        <pattern id="scaffold-fill" patternUnits="userSpaceOnUse" width="12" height="12">
+          <rect width="12" height="12" fill="#fff3cd"/>
+          <rect x="0" y="0" width="12" height="2" fill="#ffc107" opacity="0.5"/>
         </pattern>
       </defs>
 
@@ -153,17 +153,17 @@ export function FloorPlanSVG({
       />
 
       {/* North arrow */}
-      <g transform={`translate(${width - 30}, ${height - 40})`}>
-        <polygon points="0,-12 4,4 0,0 -4,4" fill="#333"/>
-        <text x="0" y="12" textAnchor="middle" fontFamily="Arial" fontSize="10" fontWeight="bold">N</text>
+      <g transform={`translate(${width - 30}, ${height - 50})`}>
+        <polygon points="0,-15 5,5 0,0 -5,5" fill="#333"/>
+        <text x="0" y="15" textAnchor="middle" fontFamily="Arial" fontSize="10" fontWeight="bold">N</text>
       </g>
 
       {/* Scale bar */}
-      <g transform="translate(20, 320)">
+      <g transform={`translate(20, ${height - 50})`}>
         <line x1="0" y1="0" x2={scale * 10} y2="0" stroke="#333" strokeWidth="2"/>
-        <line x1="0" y1="-4" x2="0" y2="4" stroke="#333" strokeWidth="2"/>
-        <line x1={scale * 10} y1="-4" x2={scale * 10} y2="4" stroke="#333" strokeWidth="2"/>
-        <text x={scale * 5} y="14" textAnchor="middle" fontFamily="Arial" fontSize="9">10 m</text>
+        <line x1="0" y1="-5" x2="0" y2="5" stroke="#333" strokeWidth="2"/>
+        <line x1={scale * 10} y1="-5" x2={scale * 10} y2="5" stroke="#333" strokeWidth="2"/>
+        <text x={scale * 5} y="15" textAnchor="middle" fontFamily="Arial" fontSize="10">10 m</text>
       </g>
 
       {/* Dimensions */}
@@ -173,18 +173,42 @@ export function FloorPlanSVG({
         {egid && ` | EGID: ${egid}`}
       </text>
 
-      {/* Legend */}
-      <g transform="translate(20, 40)">
-        <rect x="0" y="0" width="90" height="50" fill="white" stroke="#ccc" rx="3"/>
-        <rect x="8" y="10" width="14" height="10" fill="url(#building-hatch)" stroke="#333"/>
-        <text x="26" y="18" fontFamily="Arial" fontSize="8">Gebäude</text>
+      {/* Legend - positioned in top right like showcase */}
+      <g transform={`translate(${width - 150}, 40)`}>
+        <rect x="0" y="0" width="140" height={showScaffold ? 85 : 50} fill="white" stroke="#ccc" rx="4"/>
+        <text x="10" y="18" fontFamily="Arial" fontSize="11" fontWeight="bold" fill="#333">Legende</text>
+        <rect x="10" y="28" width="20" height="12" fill="url(#building-hatch)" stroke="#333"/>
+        <text x="35" y="38" fontFamily="Arial" fontSize="10">Gebäude</text>
         {showScaffold && (
           <>
-            <rect x="8" y="28" width="14" height="10" fill="url(#scaffold-fill)" stroke="#ffc107"/>
-            <text x="26" y="36" fontFamily="Arial" fontSize="8">Gerüst W09</text>
+            <rect x="10" y="48" width="20" height="12" fill="url(#scaffold-fill)" stroke="#ffc107"/>
+            <text x="35" y="58" fontFamily="Arial" fontSize="10">Gerüst W09</text>
+            <circle cx="20" cy="75" r="4" fill="#dc3545"/>
+            <text x="35" y="79" fontFamily="Arial" fontSize="10">Verankerung</text>
           </>
         )}
       </g>
+
+      {/* Anchor points on scaffold perimeter */}
+      {showScaffold && normalizedPolygon.length >= 3 && (() => {
+        const center = normalizedPolygon.reduce(
+          (acc, p) => [acc[0] + p[0] / normalizedPolygon.length, acc[1] + p[1] / normalizedPolygon.length],
+          [0, 0]
+        )
+        // Place anchors at every 3rd vertex on the scaffold
+        return normalizedPolygon.filter((_, i) => i % 3 === 0).map(([x, y], i) => {
+          const dx = x - center[0]
+          const dy = y - center[1]
+          const len = Math.sqrt(dx * dx + dy * dy)
+          if (len === 0) return null
+          const factor = (len + scaffoldOffset * 0.5) / len
+          const ax = center[0] + dx * factor
+          const ay = center[1] + dy * factor
+          return (
+            <circle key={i} cx={ax} cy={ay} r="4" fill="#dc3545" opacity="0.9"/>
+          )
+        })
+      })()}
     </svg>
   )
 }

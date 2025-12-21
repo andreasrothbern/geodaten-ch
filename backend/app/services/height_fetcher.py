@@ -396,34 +396,41 @@ async def fetch_height_for_coordinates(
     if not get_db_path().exists():
         init_database()
 
-    # Check if we already have the detailed heights
+    # Check if we already have COMPLETE detailed heights
     if egid:
         existing_detailed = get_building_heights_detailed(egid)
         if existing_detailed:
-            return {
-                "status": "already_exists",
-                "egid": egid,
-                "height_m": existing_detailed.get("gebaeudehoehe_m") or existing_detailed.get("firsthoehe_m"),
-                "heights": existing_detailed,
-                "source": existing_detailed.get("source"),
-                "imported_count": 0
-            }
-        # Fallback to legacy
-        existing = get_building_height(egid)
-        if existing:
-            return {
-                "status": "already_exists",
-                "egid": egid,
-                "height_m": existing[0],
-                "source": existing[1],
-                "imported_count": 0
-            }
+            # Check if heights are complete (has trauf or first, not just gebaeudehoehe)
+            has_gebaeudehoehe = existing_detailed.get("gebaeudehoehe_m") is not None
+            has_trauf_first = (existing_detailed.get("traufhoehe_m") is not None or
+                              existing_detailed.get("firsthoehe_m") is not None)
+
+            if has_trauf_first:
+                # Complete data - no need to refresh
+                return {
+                    "success": True,
+                    "status": "already_exists",
+                    "egid": egid,
+                    "height_m": existing_detailed.get("gebaeudehoehe_m") or existing_detailed.get("firsthoehe_m"),
+                    "heights": existing_detailed,
+                    "source": existing_detailed.get("source"),
+                    "imported_count": 0
+                }
+            # Incomplete data - continue to fetch fresh data
+            print(f"EGID {egid} has incomplete heights, refreshing from swissBUILDINGS3D")
+        else:
+            # No detailed heights, check legacy
+            existing = get_building_height(egid)
+            if existing:
+                # Legacy data exists but we want detailed - continue to refresh
+                print(f"EGID {egid} has only legacy height, refreshing for detailed data")
 
     # Find the tile for these coordinates
     tile_info = await find_tile_for_coordinates(e, n)
 
     if not tile_info:
         return {
+            "success": False,
             "status": "no_tile_found",
             "message": f"No swissBUILDINGS3D tile found for coordinates E={e}, N={n}",
             "imported_count": 0
@@ -441,6 +448,7 @@ async def fetch_height_for_coordinates(
 
         if not heights_legacy:
             return {
+                "success": False,
                 "status": "no_heights_found",
                 "tile_id": tile_info["id"],
                 "message": "Tile downloaded but no building heights found",
@@ -464,6 +472,7 @@ async def fetch_height_for_coordinates(
 
         # Look up the requested EGID
         result = {
+            "success": True,
             "status": "success",
             "tile_id": tile_info["id"],
             "imported_count": len(heights_legacy),

@@ -438,6 +438,8 @@ def get_height_details(
         "traufhoehe_m": None,      # Dachhöhe min - Terrain
         "firsthoehe_m": None,      # Dachhöhe max - Terrain
         "gebaeudehoehe_m": None,   # Gesamthöhe
+        # Flag für fehlende/veraltete Daten
+        "needs_height_refresh": False,
     }
 
     # 1. Geschätzte Höhe berechnen (immer, wenn möglich)
@@ -485,6 +487,13 @@ def get_height_details(
                 if main_height and main_height >= 2.0:
                     result["measured_height_m"] = main_height
                     result["measured_source"] = detailed.get("source", "database:swissBUILDINGS3D")
+
+                # Prüfen ob Daten unvollständig sind (nur gebaeudehoehe, keine Trauf/First)
+                has_gebaeudehoehe = detailed.get("gebaeudehoehe_m") is not None
+                has_detailed = (detailed.get("traufhoehe_m") is not None or
+                               detailed.get("firsthoehe_m") is not None)
+                if has_gebaeudehoehe and not has_detailed:
+                    result["needs_height_refresh"] = True
             else:
                 # Fallback: Legacy-Höhe
                 db_result = get_building_height(egid)
@@ -614,4 +623,6 @@ def calculate_scaffolding_data(
             "coordinate_system": "LV95 (EPSG:2056)",
         },
         "viewer_3d_url": viewer_3d_url,
+        # Flag für automatische Höhenaktualisierung
+        "needs_height_refresh": height_info.get("needs_height_refresh", False),
     }

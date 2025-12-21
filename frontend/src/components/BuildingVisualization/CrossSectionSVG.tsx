@@ -27,8 +27,8 @@ export function CrossSectionSVG({
   floors,
   showScaffold = true,
   heightSource,
-  width = 400,
-  height = 300
+  width = 500,
+  height = 380
 }: CrossSectionSVGProps) {
   // Calculate scale
   const margin = { top: 50, right: 80, bottom: 50, left: 50 }
@@ -61,12 +61,12 @@ export function CrossSectionSVG({
       className="bg-gray-50 rounded-lg border"
     >
       <defs>
-        <pattern id="section-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
-          <path d="M-1,1 l3,-3 M0,6 l6,-6 M5,7 l3,-3" stroke="#666" strokeWidth="0.5" fill="none"/>
+        <pattern id="section-hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+          <path d="M-2,2 l4,-4 M0,8 l8,-8 M6,10 l4,-4" stroke="#666" strokeWidth="0.5" fill="none"/>
         </pattern>
-        <pattern id="section-scaffold" patternUnits="userSpaceOnUse" width="8" height="8">
-          <rect width="8" height="8" fill="#fff3cd"/>
-          <line x1="0" y1="8" x2="8" y2="0" stroke="#ffc107" strokeWidth="0.5"/>
+        <pattern id="section-scaffold" patternUnits="userSpaceOnUse" width="12" height="12">
+          <rect width="12" height="12" fill="#fff3cd"/>
+          <rect x="0" y="0" width="12" height="2" fill="#ffc107" opacity="0.5"/>
         </pattern>
       </defs>
 

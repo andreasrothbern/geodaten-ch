@@ -218,6 +218,11 @@ export function ScaffoldingCard({
           </div>
           <p className="text-xs text-emerald-600 mt-2 text-center">
             Photogrammetrisch gemessen aus Luftbildern
+            {data.height_refreshed && (
+              <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-800 rounded-full">
+                ✓ Automatisch aktualisiert
+              </span>
+            )}
           </p>
         </div>
       )}

@@ -115,4 +115,8 @@ export interface ScaffoldingData {
     coordinate_system: string
   }
   viewer_3d_url?: string
+  // Auto-Refresh Flags
+  needs_height_refresh?: boolean
+  height_refreshed?: boolean
+  height_refresh_error?: string
 }

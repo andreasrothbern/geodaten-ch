@@ -408,6 +408,35 @@ async def get_scaffolding_data(
             },
         )
 
+        # 4b. Auto-Refresh: Höhen aktualisieren wenn unvollständig
+        if scaffolding_data.get("needs_height_refresh"):
+            try:
+                from app.services.height_fetcher import fetch_height_for_coordinates
+                # Höhen von swissBUILDINGS3D abrufen (asynchron im Hintergrund)
+                egid_to_refresh = building.egid if building else geometry.egid
+                refresh_result = await fetch_height_for_coordinates(
+                    e=geo.coordinates.lv95_e,
+                    n=geo.coordinates.lv95_n,
+                    egid=egid_to_refresh
+                )
+                # Bei Erfolg: Daten neu berechnen
+                if refresh_result.get("success"):
+                    scaffolding_data = calculate_scaffolding_data(
+                        geometry=geometry,
+                        floors=building.floors if building else None,
+                        building_category_code=building.building_category_code if building else None,
+                        manual_height=height,
+                        coordinates={
+                            "lv95_e": geo.coordinates.lv95_e,
+                            "lv95_n": geo.coordinates.lv95_n,
+                        },
+                    )
+                    scaffolding_data["height_refreshed"] = True
+            except Exception as refresh_error:
+                # Fehler beim Refresh ignorieren - vorhandene Daten verwenden
+                print(f"Height refresh failed: {refresh_error}")
+                scaffolding_data["height_refresh_error"] = str(refresh_error)
+
         # 5. Adress- und GWR-Infos hinzufügen
         result = {
             "address": {
