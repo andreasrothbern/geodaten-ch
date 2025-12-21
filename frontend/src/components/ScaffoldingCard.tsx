@@ -69,38 +69,6 @@ export function ScaffoldingCard({
             {dimensions.perimeter_m.toFixed(1)} m
           </p>
         </div>
-        <div className={`rounded-lg p-4 text-center ${isFromDatabase(dimensions.height_source) ? 'bg-emerald-50' : 'bg-green-50'}`}>
-          <p className={`text-sm font-medium ${isFromDatabase(dimensions.height_source) ? 'text-emerald-600' : 'text-green-600'}`}>
-            {isFromDatabase(dimensions.height_source) ? 'Höhe (gemessen)' : 'Höhe (geschätzt)'}
-          </p>
-          <p className={`text-2xl font-bold ${isFromDatabase(dimensions.height_source) ? 'text-emerald-900' : 'text-green-900'}`}>
-            {dimensions.estimated_height_m
-              ? `${dimensions.estimated_height_m.toFixed(1)} m`
-              : '—'}
-          </p>
-          <p className={`text-xs mt-1 ${isFromDatabase(dimensions.height_source) ? 'text-emerald-600' : 'text-green-600'}`}>
-            {getHeightSourceLabel(dimensions.height_source)}
-          </p>
-          {canFetchMeasuredHeight && (
-            <button
-              onClick={onFetchMeasuredHeight}
-              disabled={fetchingHeight}
-              className="mt-2 px-3 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {fetchingHeight ? (
-                <span className="flex items-center gap-1">
-                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Lädt...
-                </span>
-              ) : (
-                '📡 Gemessene Höhe abrufen'
-              )}
-            </button>
-          )}
-        </div>
         <div className="bg-orange-50 rounded-lg p-4 text-center">
           <p className="text-sm text-orange-600 font-medium">Gerüstfläche</p>
           <p className="text-2xl font-bold text-orange-900">
@@ -114,6 +82,84 @@ export function ScaffoldingCard({
           <p className="text-2xl font-bold text-purple-900">
             {building.footprint_area_m2.toFixed(0)} m²
           </p>
+        </div>
+        {data.viewer_3d_url && (
+          <div className="bg-indigo-50 rounded-lg p-4 text-center">
+            <p className="text-sm text-indigo-600 font-medium">3D Ansicht</p>
+            <a
+              href={data.viewer_3d_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              🏠 3D Viewer
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Höhenangaben - separate Spalten */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Geschätzte Höhe */}
+        <div className="bg-amber-50 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-amber-600 font-medium">Höhe geschätzt</p>
+              <p className="text-2xl font-bold text-amber-900">
+                {dimensions.height_estimated_m
+                  ? `${dimensions.height_estimated_m.toFixed(1)} m`
+                  : '—'}
+              </p>
+              <p className="text-xs text-amber-600 mt-1">
+                {dimensions.height_estimated_source === 'calculated_from_floors'
+                  ? `Berechnet aus ${dimensions.floors} Geschossen`
+                  : dimensions.height_estimated_source === 'default_by_category'
+                  ? 'Standard (Gebäudekategorie)'
+                  : 'Standard (10m)'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Gemessene Höhe */}
+        <div className={`rounded-lg p-4 ${dimensions.height_measured_m ? 'bg-emerald-50' : 'bg-gray-50'}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className={`text-sm font-medium ${dimensions.height_measured_m ? 'text-emerald-600' : 'text-gray-500'}`}>
+                Höhe gemessen (swissBUILDINGS3D)
+              </p>
+              <p className={`text-2xl font-bold ${dimensions.height_measured_m ? 'text-emerald-900' : 'text-gray-400'}`}>
+                {dimensions.height_measured_m
+                  ? `${dimensions.height_measured_m.toFixed(1)} m`
+                  : '—'}
+              </p>
+              {dimensions.height_measured_m ? (
+                <p className="text-xs text-emerald-600 mt-1">
+                  Photogrammetrisch gemessen
+                </p>
+              ) : canFetchMeasuredHeight ? (
+                <button
+                  onClick={onFetchMeasuredHeight}
+                  disabled={fetchingHeight}
+                  className="mt-2 px-3 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {fetchingHeight ? (
+                    <span className="flex items-center gap-1">
+                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Lädt...
+                    </span>
+                  ) : (
+                    '📡 Abrufen'
+                  )}
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400 mt-1">Nicht verfügbar</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

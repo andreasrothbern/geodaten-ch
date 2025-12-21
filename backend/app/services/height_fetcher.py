@@ -317,11 +317,15 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
             try:
                 egid_int = int(egid)
                 height_float = float(height)
-                if egid_int > 0 and height_float > 0:
+                # Minimum height validation: buildings must be at least 2m tall
+                # Heights below 2m are likely data errors
+                if egid_int > 0 and height_float >= 2.0:
                     heights.append((egid_int, round(height_float, 2)))
                     # Collect sample EGIDs
                     if len(debug_info["sample_egids"]) < 10:
                         debug_info["sample_egids"].append(egid_int)
+                elif egid_int > 0 and height_float > 0 and height_float < 2.0:
+                    debug_info["rejected_low_height_count"] = debug_info.get("rejected_low_height_count", 0) + 1
             except (ValueError, TypeError):
                 pass
 

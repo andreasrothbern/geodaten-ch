@@ -402,6 +402,10 @@ async def get_scaffolding_data(
             floors=building.floors if building else None,
             building_category_code=building.building_category_code if building else None,
             manual_height=height,
+            coordinates={
+                "lv95_e": geo.coordinates.lv95_e,
+                "lv95_n": geo.coordinates.lv95_n,
+            },
         )
 
         # 5. Adress- und GWR-Infos hinzufügen

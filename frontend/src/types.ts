@@ -93,6 +93,11 @@ export interface ScaffoldingData {
     estimated_height_m: number | null
     height_source: string
     floors: number | null
+    // Separate Höhenangaben
+    height_estimated_m: number | null
+    height_estimated_source: string | null
+    height_measured_m: number | null
+    height_measured_source: string | null
   }
   scaffolding: {
     facade_length_total_m: number
@@ -105,4 +110,5 @@ export interface ScaffoldingData {
     coordinates: [number, number][]
     coordinate_system: string
   }
+  viewer_3d_url?: string
 }

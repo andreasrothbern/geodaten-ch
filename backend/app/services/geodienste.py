@@ -415,11 +415,86 @@ def estimate_building_height(
     return (10.0, "default_standard")
 
 
+def get_height_details(
+    floors: Optional[int],
+    building_category_code: Optional[int],
+    manual_height: Optional[float],
+    egid: Optional[int],
+) -> Dict[str, Any]:
+    """
+    Alle verfügbaren Höheninformationen sammeln.
+
+    Returns:
+        Dictionary mit geschätzter Höhe, gemessener Höhe und Quellen
+    """
+    result = {
+        "estimated_height_m": None,
+        "estimated_source": None,
+        "measured_height_m": None,
+        "measured_source": None,
+        "active_height_m": None,  # Die tatsächlich verwendete Höhe
+        "active_source": None,
+    }
+
+    # 1. Geschätzte Höhe berechnen (immer, wenn möglich)
+    if floors and floors > 0:
+        floor_height = FLOOR_HEIGHTS_BY_CATEGORY.get(
+            building_category_code,
+            FLOOR_HEIGHT_M
+        )
+        if building_category_code in [1020, 1030, 1040]:
+            roof_height = 3.0
+        elif building_category_code == 1080:
+            roof_height = 0.5
+        else:
+            roof_height = 2.0
+        result["estimated_height_m"] = round(floors * floor_height + roof_height, 1)
+        result["estimated_source"] = "calculated_from_floors"
+    elif building_category_code:
+        DEFAULT_HEIGHTS = {
+            1020: 8.0, 1030: 12.0, 1040: 10.0, 1060: 15.0, 1080: 8.0,
+        }
+        if building_category_code in DEFAULT_HEIGHTS:
+            result["estimated_height_m"] = DEFAULT_HEIGHTS[building_category_code]
+            result["estimated_source"] = "default_by_category"
+        else:
+            result["estimated_height_m"] = 10.0
+            result["estimated_source"] = "default_standard"
+    else:
+        result["estimated_height_m"] = 10.0
+        result["estimated_source"] = "default_standard"
+
+    # 2. Gemessene Höhe aus Datenbank laden (falls verfügbar)
+    if egid:
+        try:
+            from app.services.height_db import get_building_height
+            db_result = get_building_height(egid)
+            if db_result and db_result[0] >= 2.0:  # Mindesthöhe 2m
+                result["measured_height_m"] = db_result[0]
+                result["measured_source"] = db_result[1]
+        except ImportError:
+            pass
+
+    # 3. Aktive Höhe bestimmen (Priorität: manuell > gemessen > geschätzt)
+    if manual_height and manual_height > 0:
+        result["active_height_m"] = manual_height
+        result["active_source"] = "manual"
+    elif result["measured_height_m"]:
+        result["active_height_m"] = result["measured_height_m"]
+        result["active_source"] = result["measured_source"]
+    else:
+        result["active_height_m"] = result["estimated_height_m"]
+        result["active_source"] = result["estimated_source"]
+
+    return result
+
+
 def calculate_scaffolding_data(
     geometry: BuildingGeometry,
     floors: Optional[int] = None,
     building_category_code: Optional[int] = None,
     manual_height: Optional[float] = None,
+    coordinates: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
     Gerüstbau-relevante Daten berechnen
@@ -429,17 +504,20 @@ def calculate_scaffolding_data(
         floors: Anzahl Geschosse (aus GWR)
         building_category_code: Gebäudekategorie (aus GWR)
         manual_height: Manuell eingegebene Höhe
+        coordinates: LV95 Koordinaten für 3D Viewer Link
 
     Returns:
         Dictionary mit Gerüstbau-Daten
     """
-    # Höhe bestimmen (mit Fallback-Kette inkl. DB-Lookup)
-    height, height_source = estimate_building_height(
+    # Höhendetails sammeln (geschätzt + gemessen)
+    height_info = get_height_details(
         floors=floors,
         building_category_code=building_category_code,
         manual_height=manual_height,
-        egid=geometry.egid,  # Für Datenbank-Lookup
+        egid=geometry.egid,
     )
+
+    height = height_info["active_height_m"]
 
     # Gerüstfläche berechnen (Umfang × Höhe)
     if height:
@@ -457,6 +535,19 @@ def calculate_scaffolding_data(
     # Hauptseiten identifizieren (längste Seiten)
     main_sides = [s for s in sides_sorted if s['length_m'] > 3.0]
 
+    # 3D Viewer Link generieren
+    viewer_3d_url = None
+    if coordinates:
+        e = coordinates.get('lv95_e')
+        n = coordinates.get('lv95_n')
+        if e and n:
+            viewer_3d_url = (
+                f"https://map.geo.admin.ch/?lang=de&topic=ech"
+                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
+                f"&layers=ch.swisstopo.swissbuildings3d"
+                f"&E={e:.0f}&N={n:.0f}&zoom=10&3d=true"
+            )
+
     return {
         "building": {
             "egid": geometry.egid,
@@ -469,8 +560,13 @@ def calculate_scaffolding_data(
         "dimensions": {
             "perimeter_m": geometry.perimeter_m,
             "estimated_height_m": height,
-            "height_source": height_source,
+            "height_source": height_info["active_source"],
             "floors": floors,
+            # Separate Höhenangaben
+            "height_estimated_m": height_info["estimated_height_m"],
+            "height_estimated_source": height_info["estimated_source"],
+            "height_measured_m": height_info["measured_height_m"],
+            "height_measured_source": height_info["measured_source"],
         },
         "scaffolding": {
             "facade_length_total_m": geometry.facade_length_total_m,
@@ -483,4 +579,5 @@ def calculate_scaffolding_data(
             "coordinates": geometry.polygon,
             "coordinate_system": "LV95 (EPSG:2056)",
         },
+        "viewer_3d_url": viewer_3d_url,
     }
