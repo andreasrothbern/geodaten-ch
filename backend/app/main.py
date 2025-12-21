@@ -1330,9 +1330,6 @@ async def visualize_cross_section(
                     eave_height_m = measured_height_m * 0.85
                     ridge_height_m = measured_height_m
 
-        # Polygon für komplexe Formen
-        polygon_coords = geometry.polygon if geometry else None
-
         # BuildingData erstellen
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1344,8 +1341,6 @@ async def visualize_cross_section(
             floors=building.floors if building else 3,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
-            measured_height_m=measured_height_m,
-            polygon=polygon_coords
         )
 
         # SVG generieren
@@ -1426,9 +1421,6 @@ async def visualize_elevation(
                     eave_height_m = gebaeudehoehe * 0.85
                     ridge_height_m = gebaeudehoehe
 
-        # Polygon für komplexe Formen
-        polygon_coords = geometry.polygon if geometry else None
-
         building_data = BuildingData(
             address=geo.matched_address,
             egid=building.egid if building else None,
@@ -1439,7 +1431,6 @@ async def visualize_elevation(
             floors=building.floors if building else 3,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
-            polygon=polygon_coords,
         )
 
         generator = get_svg_generator()
@@ -1514,9 +1505,6 @@ async def visualize_floor_plan(
                 if gebaeudehoehe and not heights.get("traufhoehe_m"):
                     eave_height_m = gebaeudehoehe * 0.85
 
-        # Polygon für komplexe Formen
-        polygon_coords = geometry.polygon if geometry else None
-
         building_data = BuildingData(
             address=geo.matched_address,
             egid=building.egid if building else None,
@@ -1526,7 +1514,6 @@ async def visualize_floor_plan(
             floors=building.floors if building else 3,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
-            polygon=polygon_coords,
         )
 
         generator = get_svg_generator()
@@ -1649,11 +1636,6 @@ async def generate_materialbewirtschaftung_document(
         from app.services.svg_generator import get_svg_generator, BuildingData as SVGBuildingData
         svg_generator = get_svg_generator()
 
-        # Polygon-Koordinaten für komplexe Formen
-        polygon_coords = None
-        if geometry and geometry.polygon:
-            polygon_coords = geometry.polygon
-
         svg_building_data = SVGBuildingData(
             address=geo.matched_address,
             egid=building.egid if building else None,
@@ -1664,7 +1646,6 @@ async def generate_materialbewirtschaftung_document(
             floors=building.floors if building else 2,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
-            polygon=polygon_coords,
         )
 
         svg_floor_plan = svg_generator.generate_floor_plan(svg_building_data)
