@@ -601,7 +601,7 @@ class SVGGenerator:
     def _draw_simple_cross_section(self, building: BuildingData, scale: float, ground_y: float,
                                     margin: dict, width: int, height: int, scaffold_width: float,
                                     draw_width: float, eave_h: float, ridge_h: float) -> str:
-        """Zeichnet einfachen rechteckigen Gebäudeschnitt."""
+        """Zeichnet professionellen Gebäudeschnitt im Showcase-Stil."""
         svg = ""
 
         building_x = margin['left'] + (draw_width - building.width_m * scale) / 2
@@ -610,88 +610,122 @@ class SVGGenerator:
         ridge_height_px = ridge_h * scale
 
         floors = building.floors if building.floors and building.floors > 0 else 3
-        floor_height = eave_height_px / floors
+        floor_height_m = eave_h / floors
 
         # Linkes Gerüst
-        scaffold_left_x = building_x - scaffold_width - 12
-        scaffold_height_px = eave_height_px + 30
+        scaffold_left_x = building_x - scaffold_width - 15
+        scaffold_height_px = ridge_height_px + 15
         svg += f'''
   <!-- Linkes Gerüst -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}" fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
   <text x="{scaffold_left_x + scaffold_width/2}" y="{ground_y - scaffold_height_px/2}" text-anchor="middle" font-family="Arial" font-size="8" fill="#996600" transform="rotate(-90, {scaffold_left_x + scaffold_width/2}, {ground_y - scaffold_height_px/2})">Gerüst {building.width_class}</text>
 '''
-        for ratio in [0.25, 0.5, 0.75]:
-            cy = ground_y - eave_height_px * ratio
-            svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+        # Verankerungen mit echten Geschosshöhen
+        for i in range(1, floors + 1):
+            anchor_h = i * floor_height_m
+            if anchor_h < eave_h:
+                cy = ground_y - anchor_h * scale
+                svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
 
-        # Gebäude
+        # Gebäudekörper mit Schraffur
         svg += f'''
   <!-- Gebäude -->
-  <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}" fill="{self.COLORS['building']}" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
+  <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}" fill="url(#building-hatch)" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
 '''
-        # Fenster
-        svg += f'  <rect x="{building_x + 15}" y="{ground_y - eave_height_px + 15}" width="{building_width_px - 30}" height="{eave_height_px - 30}" fill="url(#windows)"/>\n'
+
+        # Fensterbänder pro Geschoss
+        window_margin = 20
+        window_height = (eave_height_px - 20) / floors * 0.6
+        for i in range(floors):
+            window_y = ground_y - (i + 1) * (eave_height_px / floors) + window_margin / 2
+            svg += f'  <rect x="{building_x + window_margin}" y="{window_y}" width="{building_width_px - 2*window_margin}" height="{window_height}" fill="url(#windows)"/>\n'
 
         # Geschosslinien
         for i in range(1, floors):
-            y_floor = ground_y - floor_height * i
-            svg += f'  <line x1="{building_x}" y1="{y_floor}" x2="{building_x + building_width_px}" y2="{y_floor}" stroke="#999" stroke-width="1"/>\n'
+            y_floor = ground_y - (eave_height_px / floors) * i
+            svg += f'  <line x1="{building_x}" y1="{y_floor}" x2="{building_x + building_width_px}" y2="{y_floor}" stroke="#666" stroke-width="1" stroke-dasharray="5,3"/>\n'
 
-        # Dach
+        # Dach mit realistischer Form
         if building.roof_type == 'gable' and ridge_h > eave_h:
+            roof_overhang = 8  # Dachüberstand
             svg += f'''
   <!-- Dach (Satteldach) -->
-  <polygon points="{building_x},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px},{ground_y - eave_height_px}" fill="url(#roof-pattern)" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
+  <polygon points="{building_x - roof_overhang},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + roof_overhang},{ground_y - eave_height_px}" fill="url(#roof-pattern)" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
+  <!-- Dachstuhl angedeutet -->
+  <line x1="{building_x + building_width_px*0.3}" y1="{ground_y - eave_height_px}" x2="{building_x + building_width_px/2}" y2="{ground_y - ridge_height_px*0.95}" stroke="#666" stroke-width="0.5"/>
+  <line x1="{building_x + building_width_px*0.7}" y1="{ground_y - eave_height_px}" x2="{building_x + building_width_px/2}" y2="{ground_y - ridge_height_px*0.95}" stroke="#666" stroke-width="0.5"/>
 '''
         elif building.roof_type == 'flat':
             svg += f'''
-  <!-- Flachdach -->
-  <rect x="{building_x - 5}" y="{ground_y - eave_height_px - 8}" width="{building_width_px + 10}" height="8" fill="#666" stroke="{self.COLORS['building_stroke']}"/>
+  <!-- Flachdach mit Attika -->
+  <rect x="{building_x - 3}" y="{ground_y - eave_height_px - 10}" width="{building_width_px + 6}" height="10" fill="#888" stroke="{self.COLORS['building_stroke']}"/>
 '''
 
         # Rechtes Gerüst
-        scaffold_right_x = building_x + building_width_px + 12
+        scaffold_right_x = building_x + building_width_px + 15
         svg += f'''
   <!-- Rechtes Gerüst -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}" fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
-        for ratio in [0.25, 0.5, 0.75]:
-            cy = ground_y - eave_height_px * ratio
-            svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+        for i in range(1, floors + 1):
+            anchor_h = i * floor_height_m
+            if anchor_h < eave_h:
+                cy = ground_y - anchor_h * scale
+                svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
 
-        # Höhenkoten
+        # Höhenkoten mit durchgehenden gestrichelten Linien
+        kote_start_x = scaffold_left_x - 10
+        kote_end_x = width - margin['right'] + 35
         svg += f'''
   <!-- Höhenkoten -->
   <g font-family="Arial" font-size="9">
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y}" x2="{width - margin['right'] + 35}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
+    <!-- Bodenlinie -->
+    <line x1="{kote_start_x}" y1="{ground_y}" x2="{kote_end_x}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
     <text x="{width - margin['right'] + 40}" y="{ground_y + 3}" fill="#333">±0.00 m</text>
 
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y - eave_height_px}" x2="{width - margin['right'] + 35}" y2="{ground_y - eave_height_px}" stroke="{self.COLORS['dimension']}" stroke-width="0.5" stroke-dasharray="2,2"/>
-    <text x="{width - margin['right'] + 40}" y="{ground_y - eave_height_px + 3}" fill="{self.COLORS['dimension']}">Traufe {eave_h:.1f}m</text>
+    <!-- Traufhöhe -->
+    <line x1="{kote_start_x}" y1="{ground_y - eave_height_px}" x2="{kote_end_x}" y2="{ground_y - eave_height_px}" stroke="{self.COLORS['dimension']}" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <text x="{width - margin['right'] + 40}" y="{ground_y - eave_height_px + 3}" fill="{self.COLORS['dimension']}">Traufe +{eave_h:.1f} m</text>
 '''
         if ridge_h > eave_h:
             svg += f'''
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y - ridge_height_px}" x2="{width - margin['right'] + 35}" y2="{ground_y - ridge_height_px}" stroke="{self.COLORS['ridge']}" stroke-width="0.5" stroke-dasharray="2,2"/>
-    <text x="{width - margin['right'] + 40}" y="{ground_y - ridge_height_px + 3}" fill="{self.COLORS['ridge']}" font-weight="bold">First {ridge_h:.1f}m</text>
+    <!-- Firsthöhe -->
+    <line x1="{kote_start_x}" y1="{ground_y - ridge_height_px}" x2="{kote_end_x}" y2="{ground_y - ridge_height_px}" stroke="{self.COLORS['ridge']}" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <text x="{width - margin['right'] + 40}" y="{ground_y - ridge_height_px + 3}" fill="{self.COLORS['ridge']}" font-weight="bold">First +{ridge_h:.1f} m</text>
 '''
+        # Geschosshöhen anzeigen
+        for i in range(1, min(floors, 4)):  # Max 3 Geschosse beschriften
+            h = i * floor_height_m
+            y_pos = ground_y - h * scale
+            svg += f'    <text x="{margin["left"] - 25}" y="{y_pos + 3}" text-anchor="end" fill="#999" font-size="8">+{h:.1f}m</text>\n'
+
         svg += '  </g>\n'
 
-        # Breitenmass
+        # Breitenmass mit Pfeilen
+        dim_y = ground_y + 30
         svg += f'''
   <!-- Breitenmass -->
-  <g>
-    <line x1="{building_x}" y1="{ground_y + 25}" x2="{building_x + building_width_px}" y2="{ground_y + 25}" stroke="#333" stroke-width="1"/>
-    <line x1="{building_x}" y1="{ground_y + 18}" x2="{building_x}" y2="{ground_y + 32}" stroke="#333" stroke-width="1"/>
-    <line x1="{building_x + building_width_px}" y1="{ground_y + 18}" x2="{building_x + building_width_px}" y2="{ground_y + 32}" stroke="#333" stroke-width="1"/>
-    <text x="{building_x + building_width_px/2}" y="{ground_y + 45}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold">{building.width_m:.1f} m</text>
+  <g stroke="#333" stroke-width="1">
+    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"/>
+    <line x1="{building_x}" y1="{dim_y - 8}" x2="{building_x}" y2="{dim_y + 8}"/>
+    <line x1="{building_x + building_width_px}" y1="{dim_y - 8}" x2="{building_x + building_width_px}" y2="{dim_y + 8}"/>
+    <!-- Pfeile -->
+    <polygon points="{building_x},{dim_y} {building_x + 8},{dim_y - 3} {building_x + 8},{dim_y + 3}" fill="#333"/>
+    <polygon points="{building_x + building_width_px},{dim_y} {building_x + building_width_px - 8},{dim_y - 3} {building_x + building_width_px - 8},{dim_y + 3}" fill="#333"/>
   </g>
+  <text x="{building_x + building_width_px/2}" y="{dim_y + 18}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold">{building.width_m:.1f} m</text>
+'''
+
+        # Gebäudelabel
+        svg += f'''
+  <text x="{building_x + building_width_px/2}" y="{ground_y - eave_height_px/2}" text-anchor="middle" font-family="Arial" font-size="10" fill="{self.COLORS['text_light']}">{floors} Geschosse</text>
 '''
 
         return svg
 
     def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480) -> str:
         """
-        Generiert Fassadenansicht (Elevation)
+        Generiert professionelle Fassadenansicht im Showcase-Stil.
         """
         margin = {'top': 60, 'right': 130, 'bottom': 80, 'left': 60}
         draw_width = width - margin['left'] - margin['right']
@@ -703,8 +737,8 @@ class SVGGenerator:
         ridge_h = building.ridge_height_m or eave_h
 
         # Skalierung
-        scale_x = draw_width / (building.length_m + 4)
-        scale_y = draw_height / (max_height + 3)
+        scale_x = draw_width / (building.length_m + 6)
+        scale_y = draw_height / (max_height + 5)
         scale = min(scale_x, scale_y)
 
         # Positionen
@@ -714,18 +748,24 @@ class SVGGenerator:
         eave_height_px = eave_h * scale
         ridge_height_px = ridge_h * scale
 
+        floors = building.floors if building.floors and building.floors > 0 else 3
+        floor_height_m = eave_h / floors
+
         svg = self._svg_header(width, height, f"Fassadenansicht - {building.address}")
 
         # Himmel
         svg += f'  <rect width="{width}" height="{ground_y}" fill="{self.COLORS["sky"]}"/>\n'
 
-        # Boden
-        svg += f'  <rect x="0" y="{ground_y}" width="{width}" height="{height - ground_y}" fill="{self.COLORS["ground"]}"/>\n'
+        # Boden mit Beschriftung
+        svg += f'''
+  <rect x="0" y="{ground_y}" width="{width}" height="{height - ground_y}" fill="{self.COLORS["ground"]}"/>
+  <text x="{width/2}" y="{ground_y + 15}" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">Terrain</text>
+'''
 
         # Titel
         svg += f'''
   <text x="{width/2}" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="{self.COLORS['text']}">
-    Fassadenansicht mit Gerüstposition
+    Fassadenansicht (Traufseite)
   </text>
   <text x="{width/2}" y="42" text-anchor="middle" font-family="Arial" font-size="11" fill="{self.COLORS['text_light']}">
     {building.address}
@@ -733,76 +773,111 @@ class SVGGenerator:
 '''
 
         # Bodenlinie
-        svg += f'  <line x1="{margin["left"] - 20}" y1="{ground_y}" x2="{width - margin["right"] + 20}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
+        svg += f'  <line x1="{margin["left"] - 30}" y1="{ground_y}" x2="{width - margin["right"] + 30}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
 
-        # Gebäude
+        # Gebäudekörper
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}" fill="{self.COLORS['building']}" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
 '''
 
-        # Fenster
-        svg += f'  <rect x="{building_x + 20}" y="{ground_y - eave_height_px + 20}" width="{building_width_px - 40}" height="{eave_height_px - 40}" fill="url(#windows)"/>\n'
+        # Fenster pro Geschoss
+        window_cols = max(3, int(building.length_m / 4))  # Ca. alle 4m ein Fenster
+        window_w = (building_width_px - 40) / window_cols * 0.6
+        window_spacing = (building_width_px - 40) / window_cols
+        window_h = (eave_height_px / floors) * 0.5
+
+        for floor in range(floors):
+            floor_y = ground_y - (floor + 1) * (eave_height_px / floors) + 15
+            for col in range(window_cols):
+                wx = building_x + 20 + col * window_spacing + (window_spacing - window_w) / 2
+                svg += f'  <rect x="{wx}" y="{floor_y}" width="{window_w}" height="{window_h}" fill="#4a90a4" stroke="#333" stroke-width="0.5"/>\n'
+
+        # Eingang (Erdgeschoss Mitte)
+        door_w = min(40, building_width_px * 0.15)
+        door_h = min(eave_height_px / floors * 0.8, 60)
+        door_x = building_x + building_width_px / 2 - door_w / 2
+        svg += f'''
+  <!-- Eingang -->
+  <rect x="{door_x}" y="{ground_y - door_h}" width="{door_w}" height="{door_h}" fill="#5d4037" stroke="#333" stroke-width="1.5"/>
+  <text x="{door_x + door_w/2}" y="{ground_y - door_h/2}" text-anchor="middle" font-family="Arial" font-size="7" fill="#fff">Eingang</text>
+'''
+
+        # Geschosslinien
+        for i in range(1, floors):
+            y_floor = ground_y - (eave_height_px / floors) * i
+            svg += f'  <line x1="{building_x}" y1="{y_floor}" x2="{building_x + building_width_px}" y2="{y_floor}" stroke="#999" stroke-width="0.5" stroke-dasharray="5,5"/>\n'
 
         # Dach
+        roof_overhang = 12
         if building.roof_type == 'gable' and ridge_h > eave_h:
             svg += f'''
   <!-- Dach (Satteldach) -->
-  <polygon points="{building_x - 10},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + 10},{ground_y - eave_height_px}" fill="url(#roof-pattern)" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
+  <polygon points="{building_x - roof_overhang},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + roof_overhang},{ground_y - eave_height_px}" fill="url(#roof-pattern)" stroke="{self.COLORS['building_stroke']}" stroke-width="1.5"/>
 '''
         elif building.roof_type == 'flat':
             svg += f'''
-  <!-- Flachdach -->
-  <rect x="{building_x - 5}" y="{ground_y - eave_height_px - 8}" width="{building_width_px + 10}" height="8" fill="#666" stroke="{self.COLORS['building_stroke']}"/>
+  <!-- Flachdach mit Attika -->
+  <rect x="{building_x - 5}" y="{ground_y - eave_height_px - 10}" width="{building_width_px + 10}" height="10" fill="#888" stroke="{self.COLORS['building_stroke']}"/>
 '''
 
         # Gerüst (vor Fassade)
-        scaffold_width = 15
-        scaffold_height_px = eave_height_px + 30
-        scaffold_left_x = building_x - scaffold_width - 5
-        scaffold_right_x = building_x + building_width_px + 5
+        scaffold_width = 18
+        scaffold_height_px = ridge_height_px + 20
+        scaffold_left_x = building_x - scaffold_width - 10
+        scaffold_right_x = building_x + building_width_px + 10
 
         svg += f'''
   <!-- Gerüst links -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}" fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
-  <text x="{scaffold_left_x + scaffold_width/2}" y="{ground_y - scaffold_height_px/2}" text-anchor="middle" font-family="Arial" font-size="7" fill="#996600" transform="rotate(-90, {scaffold_left_x + scaffold_width/2}, {ground_y - scaffold_height_px/2})">Gerüst {building.width_class}</text>
+  <text x="{scaffold_left_x + scaffold_width/2}" y="{ground_y - scaffold_height_px/2}" text-anchor="middle" font-family="Arial" font-size="8" fill="#996600" transform="rotate(-90, {scaffold_left_x + scaffold_width/2}, {ground_y - scaffold_height_px/2})">Gerüst {building.width_class}</text>
 
   <!-- Gerüst rechts -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}" fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
 
-        # Verankerungen
-        for ratio in [0.25, 0.5, 0.75]:
-            cy = ground_y - eave_height_px * ratio
-            svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{cy}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
-            svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
+        # Verankerungen mit echten Geschosshöhen
+        for i in range(1, floors + 1):
+            anchor_h = i * floor_height_m
+            if anchor_h < eave_h:
+                cy = ground_y - anchor_h * scale
+                svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+                svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
 
-        # Höhenkoten rechts
+        # Höhenkoten mit durchgehenden Linien
+        kote_start_x = scaffold_left_x - 15
+        kote_end_x = width - margin['right'] + 35
         svg += f'''
   <!-- Höhenkoten -->
   <g font-family="Arial" font-size="9">
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y}" x2="{width - margin['right'] + 35}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
+    <!-- Bodenlinie -->
+    <line x1="{kote_start_x}" y1="{ground_y}" x2="{kote_end_x}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
     <text x="{width - margin['right'] + 40}" y="{ground_y + 3}" fill="#333">±0.00 m</text>
 
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y - eave_height_px}" x2="{width - margin['right'] + 35}" y2="{ground_y - eave_height_px}" stroke="{self.COLORS['dimension']}" stroke-width="0.5" stroke-dasharray="2,2"/>
-    <text x="{width - margin['right'] + 40}" y="{ground_y - eave_height_px + 3}" fill="{self.COLORS['dimension']}">Traufe {eave_h:.1f}m</text>
+    <!-- Traufhöhe -->
+    <line x1="{kote_start_x}" y1="{ground_y - eave_height_px}" x2="{kote_end_x}" y2="{ground_y - eave_height_px}" stroke="{self.COLORS['dimension']}" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <text x="{width - margin['right'] + 40}" y="{ground_y - eave_height_px + 3}" fill="{self.COLORS['dimension']}">Traufe +{eave_h:.1f} m</text>
 '''
         if ridge_h > eave_h:
             svg += f'''
-    <line x1="{width - margin['right'] + 10}" y1="{ground_y - ridge_height_px}" x2="{width - margin['right'] + 35}" y2="{ground_y - ridge_height_px}" stroke="{self.COLORS['ridge']}" stroke-width="0.5" stroke-dasharray="2,2"/>
-    <text x="{width - margin['right'] + 40}" y="{ground_y - ridge_height_px + 3}" fill="{self.COLORS['ridge']}" font-weight="bold">First {ridge_h:.1f}m</text>
+    <!-- Firsthöhe -->
+    <line x1="{kote_start_x}" y1="{ground_y - ridge_height_px}" x2="{kote_end_x}" y2="{ground_y - ridge_height_px}" stroke="{self.COLORS['ridge']}" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <text x="{width - margin['right'] + 40}" y="{ground_y - ridge_height_px + 3}" fill="{self.COLORS['ridge']}" font-weight="bold">First +{ridge_h:.1f} m</text>
 '''
         svg += '  </g>\n'
 
-        # Längenmass unten
+        # Längenmass mit Pfeilen
+        dim_y = ground_y + 30
         svg += f'''
   <!-- Längenmass -->
-  <g>
-    <line x1="{building_x}" y1="{ground_y + 25}" x2="{building_x + building_width_px}" y2="{ground_y + 25}" stroke="#333" stroke-width="1"/>
-    <line x1="{building_x}" y1="{ground_y + 18}" x2="{building_x}" y2="{ground_y + 32}" stroke="#333" stroke-width="1"/>
-    <line x1="{building_x + building_width_px}" y1="{ground_y + 18}" x2="{building_x + building_width_px}" y2="{ground_y + 32}" stroke="#333" stroke-width="1"/>
-    <text x="{building_x + building_width_px/2}" y="{ground_y + 45}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold">{building.length_m:.1f} m</text>
+  <g stroke="#333" stroke-width="1">
+    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"/>
+    <line x1="{building_x}" y1="{dim_y - 8}" x2="{building_x}" y2="{dim_y + 8}"/>
+    <line x1="{building_x + building_width_px}" y1="{dim_y - 8}" x2="{building_x + building_width_px}" y2="{dim_y + 8}"/>
+    <polygon points="{building_x},{dim_y} {building_x + 8},{dim_y - 3} {building_x + 8},{dim_y + 3}" fill="#333"/>
+    <polygon points="{building_x + building_width_px},{dim_y} {building_x + building_width_px - 8},{dim_y - 3} {building_x + building_width_px - 8},{dim_y + 3}" fill="#333"/>
   </g>
+  <text x="{building_x + building_width_px/2}" y="{dim_y + 18}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold">{building.length_m:.1f} m (Traufseite)</text>
 '''
 
         # Legende
