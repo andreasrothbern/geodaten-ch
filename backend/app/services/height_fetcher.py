@@ -283,7 +283,29 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
 
         for _, row in gdf.iterrows():
             egid = row.get('EGID')
+
+            # Try different height columns
+            # GESAMTHOEHE: pre-calculated building height (preferred)
+            # DACH_MAX - GELAENDEPUNKT: calculate from roof and ground
+            # DACH_MAX - DACH_MIN: approximate height if no ground point
             height = row.get('GESAMTHOEHE')
+
+            if height is None:
+                dach_max = row.get('DACH_MAX')
+                gelaendepunkt = row.get('GELAENDEPUNKT')
+                dach_min = row.get('DACH_MIN')
+
+                if dach_max is not None and gelaendepunkt is not None:
+                    try:
+                        height = float(dach_max) - float(gelaendepunkt)
+                    except (ValueError, TypeError):
+                        pass
+                elif dach_max is not None and dach_min is not None:
+                    try:
+                        # DACH_MIN is often floor/wall base, estimate as building height
+                        height = float(dach_max) - float(dach_min)
+                    except (ValueError, TypeError):
+                        pass
 
             if egid is None:
                 debug_info["null_egid_count"] += 1
