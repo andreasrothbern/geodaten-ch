@@ -5,6 +5,7 @@ import { ApiStatus } from './components/ApiStatus'
 import { ScaffoldingCard } from './components/ScaffoldingCard'
 import { AusmassCard } from './components/AusmassCard'
 import { MaterialCard } from './components/MaterialCard'
+import { VisualizationTabs } from './components/BuildingVisualization/ServerSVG'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
 import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
 
@@ -18,7 +19,7 @@ function App() {
   const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
-  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material'>('scaffolding')
+  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material' | 'visualize'>('scaffolding')
 
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)
@@ -261,6 +262,16 @@ function App() {
                   >
                     📦 Materialliste
                   </button>
+                  <button
+                    onClick={() => setActiveTab('visualize')}
+                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                      activeTab === 'visualize'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    🖼️ Visualisierung
+                  </button>
                 </div>
 
                 {/* Tab Content */}
@@ -295,6 +306,18 @@ function App() {
                         scaffoldAreaM2={scaffoldingData.scaffolding.estimated_scaffold_area_m2}
                         apiUrl={API_URL}
                       />
+                    )}
+
+                    {activeTab === 'visualize' && (
+                      <div className="card">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                          <span>🖼️</span> Professionelle Visualisierungen
+                        </h3>
+                        <VisualizationTabs
+                          address={currentAddress}
+                          apiUrl={API_URL}
+                        />
+                      </div>
                     )}
 
                     {/* Export Buttons */}

@@ -10,7 +10,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import Optional, List
 
 from app.services.swisstopo import SwisstopoService
@@ -1203,6 +1203,236 @@ async def berechne_komplettes_ausmass(
         raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
     except KeyError as e:
         raise HTTPException(status_code=400, detail=f"Ungültiger Parameter: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SVG Visualisierung
+# ============================================================================
+
+@app.get("/api/v1/visualize/cross-section",
+         tags=["Visualisierung"],
+         response_class=Response)
+async def visualize_cross_section(
+    address: str,
+    width: int = 700,
+    height: int = 480
+):
+    """
+    Generiert SVG-Schnittansicht für ein Gebäude.
+
+    - **address**: Schweizer Adresse
+    - **width**: SVG-Breite in Pixel (default: 700)
+    - **height**: SVG-Höhe in Pixel (default: 480)
+
+    Returns: SVG-Datei
+    """
+    from app.services.svg_generator import get_svg_generator, BuildingData
+
+    try:
+        # Gebäudedaten abrufen
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e, geo.coordinates.lv95_n, tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        # Geometrie abrufen
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        # Dimensionen bestimmen
+        if geometry and geometry.sides:
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            length_m = side_lengths[0]
+            width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+        elif building and building.area_m2:
+            side = math.sqrt(building.area_m2)
+            length_m = width_m = round(side, 1)
+        else:
+            length_m = width_m = 10.0
+
+        # Höhe bestimmen
+        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+
+        # Gemessene Höhe aus DB
+        measured_height = None
+        if building and building.egid:
+            from app.services.height_db import get_building_height
+            measured_height = get_building_height(building.egid)
+
+        # BuildingData erstellen
+        building_data = BuildingData(
+            address=geo.matched_address,
+            egid=building.egid if building else None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=round(eave_height_m, 1),
+            ridge_height_m=round(eave_height_m + 3.5, 1) if building else None,  # Annahme Satteldach
+            floors=building.floors if building else 3,
+            roof_type="gable",
+            area_m2=building.area_m2 if building else None,
+            measured_height_m=measured_height
+        )
+
+        # SVG generieren
+        generator = get_svg_generator()
+        svg = generator.generate_cross_section(building_data, width, height)
+
+        return Response(content=svg, media_type="image/svg+xml")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/visualize/elevation",
+         tags=["Visualisierung"],
+         response_class=Response)
+async def visualize_elevation(
+    address: str,
+    width: int = 700,
+    height: int = 480
+):
+    """
+    Generiert SVG-Fassadenansicht für ein Gebäude.
+
+    - **address**: Schweizer Adresse
+    - **width**: SVG-Breite in Pixel (default: 700)
+    - **height**: SVG-Höhe in Pixel (default: 480)
+
+    Returns: SVG-Datei
+    """
+    from app.services.svg_generator import get_svg_generator, BuildingData
+
+    try:
+        # Gebäudedaten abrufen (gleiche Logik wie cross-section)
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e, geo.coordinates.lv95_n, tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        if geometry and geometry.sides:
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            length_m = side_lengths[0]
+            width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+        elif building and building.area_m2:
+            side = math.sqrt(building.area_m2)
+            length_m = width_m = round(side, 1)
+        else:
+            length_m = width_m = 10.0
+
+        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+
+        building_data = BuildingData(
+            address=geo.matched_address,
+            egid=building.egid if building else None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=round(eave_height_m, 1),
+            ridge_height_m=round(eave_height_m + 3.5, 1) if building else None,
+            floors=building.floors if building else 3,
+            roof_type="gable",
+            area_m2=building.area_m2 if building else None,
+        )
+
+        generator = get_svg_generator()
+        svg = generator.generate_elevation(building_data, width, height)
+
+        return Response(content=svg, media_type="image/svg+xml")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/visualize/floor-plan",
+         tags=["Visualisierung"],
+         response_class=Response)
+async def visualize_floor_plan(
+    address: str,
+    width: int = 600,
+    height: int = 500
+):
+    """
+    Generiert SVG-Grundriss für ein Gebäude.
+
+    - **address**: Schweizer Adresse
+    - **width**: SVG-Breite in Pixel (default: 600)
+    - **height**: SVG-Höhe in Pixel (default: 500)
+
+    Returns: SVG-Datei
+    """
+    from app.services.svg_generator import get_svg_generator, BuildingData
+
+    try:
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e, geo.coordinates.lv95_n, tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        if geometry and geometry.sides:
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            length_m = side_lengths[0]
+            width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+        elif building and building.area_m2:
+            side = math.sqrt(building.area_m2)
+            length_m = width_m = round(side, 1)
+        else:
+            length_m = width_m = 10.0
+
+        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+
+        building_data = BuildingData(
+            address=geo.matched_address,
+            egid=building.egid if building else None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=round(eave_height_m, 1),
+            floors=building.floors if building else 3,
+            roof_type="gable",
+            area_m2=building.area_m2 if building else None,
+        )
+
+        generator = get_svg_generator()
+        svg = generator.generate_floor_plan(building_data, width, height)
+
+        return Response(content=svg, media_type="image/svg+xml")
+
     except HTTPException:
         raise
     except Exception as e:
