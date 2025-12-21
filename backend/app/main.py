@@ -358,10 +358,23 @@ async def get_scaffolding_data(
             tolerance=15
         )
 
-        # Erstes Gebäude oder das mit passender EGID
+        # Gebäude finden: bevorzugt per EGID, dann per Hausnummer, dann erstes
         building = None
         if egid:
             building = next((b for b in buildings if b.egid == egid), None)
+
+        if not building and buildings:
+            # Hausnummer aus der gesuchten Adresse extrahieren
+            import re
+            match = re.search(r'(\d+\w*)', address)
+            if match:
+                searched_number = match.group(1).lower()
+                # Gebäude mit passender Hausnummer finden
+                for b in buildings:
+                    if b.house_number and b.house_number.lower() == searched_number:
+                        building = b
+                        break
+
         if not building and buildings:
             building = buildings[0]
 
