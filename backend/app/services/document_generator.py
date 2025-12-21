@@ -1103,15 +1103,20 @@ class DocumentGenerator:
         2. svglib + reportlab (pure Python, keine System-Deps)
         """
         if not svg_content:
+            print("SVG-to-PNG: No SVG content provided")
             return None
+
+        print(f"SVG-to-PNG: CAIROSVG_AVAILABLE={CAIROSVG_AVAILABLE}, SVGLIB_AVAILABLE={SVGLIB_AVAILABLE}")
+        print(f"SVG-to-PNG: SVG content length = {len(svg_content)} chars")
 
         # Method 1: cairosvg (if available)
         if CAIROSVG_AVAILABLE:
             try:
                 png_bytes = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
+                print("SVG-to-PNG: cairosvg conversion successful")
                 return BytesIO(png_bytes)
             except Exception as e:
-                print(f"cairosvg conversion error: {e}")
+                print(f"SVG-to-PNG: cairosvg error: {e}")
 
         # Method 2: svglib + reportlab (pure Python fallback)
         if SVGLIB_AVAILABLE:
@@ -1124,24 +1129,34 @@ class DocumentGenerator:
                     f.write(svg_content)
                     temp_svg_path = f.name
 
+                print(f"SVG-to-PNG: Wrote temp file {temp_svg_path}")
+
                 try:
                     from svglib.svglib import svg2rlg
                     from reportlab.graphics import renderPM
 
                     drawing = svg2rlg(temp_svg_path)
+                    print(f"SVG-to-PNG: svg2rlg returned {type(drawing)}")
+
                     if drawing:
                         png_buffer = BytesIO()
                         renderPM.drawToFile(drawing, png_buffer, fmt='PNG')
                         png_buffer.seek(0)
+                        print(f"SVG-to-PNG: PNG created, size = {len(png_buffer.getvalue())} bytes")
                         return png_buffer
+                    else:
+                        print("SVG-to-PNG: svg2rlg returned None")
                 finally:
                     # Temp-Datei löschen
                     if os.path.exists(temp_svg_path):
                         os.remove(temp_svg_path)
 
             except Exception as e:
-                print(f"svglib conversion error: {e}")
+                import traceback
+                print(f"SVG-to-PNG: svglib error: {e}")
+                print(f"SVG-to-PNG: Traceback: {traceback.format_exc()}")
 
+        print("SVG-to-PNG: All methods failed, returning None")
         return None
 
     def _add_section_7(self, doc: Document, building: BuildingData,

@@ -112,6 +112,50 @@ async def root():
     }
 
 
+@app.get("/debug/libraries", tags=["System"])
+async def debug_libraries():
+    """Debug: Zeigt verfügbare Bibliotheken für Dokumentgenerierung"""
+    result = {
+        "docx": False,
+        "cairosvg": False,
+        "svglib": False,
+        "reportlab": False,
+        "pillow": False,
+    }
+
+    try:
+        import docx
+        result["docx"] = True
+    except ImportError:
+        pass
+
+    try:
+        import cairosvg
+        result["cairosvg"] = True
+    except ImportError:
+        pass
+
+    try:
+        from svglib.svglib import svg2rlg
+        result["svglib"] = True
+    except ImportError:
+        pass
+
+    try:
+        from reportlab.graphics import renderPM
+        result["reportlab"] = True
+    except ImportError:
+        pass
+
+    try:
+        from PIL import Image
+        result["pillow"] = True
+    except ImportError:
+        pass
+
+    return result
+
+
 # ============================================================================
 # Adresssuche
 # ============================================================================
