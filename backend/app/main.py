@@ -534,6 +534,42 @@ async def get_height_for_egid(egid: int):
         raise HTTPException(status_code=503, detail="Height database not available")
 
 
+@app.post("/api/v1/heights/fetch-on-demand",
+          tags=["System"])
+async def fetch_height_on_demand(
+    e: float = Query(..., description="LV95 Easting (E-Koordinate)"),
+    n: float = Query(..., description="LV95 Northing (N-Koordinate)"),
+    egid: Optional[int] = Query(None, description="EGID für direkte Höhenabfrage")
+):
+    """
+    Gebäudehöhe on-demand von swissBUILDINGS3D abrufen.
+
+    Diese Funktion:
+    1. Findet das passende Tile für die Koordinaten
+    2. Lädt das Tile herunter und importiert alle Gebäudehöhen
+    3. Gibt die Höhe für das angegebene Gebäude zurück
+
+    **Wichtig:** Diese Operation kann einige Sekunden dauern, da das Tile
+    (~10-50 MB) heruntergeladen und verarbeitet werden muss.
+
+    **Beispiel:** `?e=2600000&n=1199000&egid=12345`
+    """
+    try:
+        from app.services.height_fetcher import fetch_height_for_coordinates
+        result = await fetch_height_for_coordinates(e, n, egid)
+        return result
+    except ImportError as ie:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Height fetcher service not available: {str(ie)}"
+        )
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching height: {str(ex)}"
+        )
+
+
 # ============================================================================
 # Error Handler
 # ============================================================================

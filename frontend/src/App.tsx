@@ -14,6 +14,7 @@ function App() {
   const [scaffoldingData, setScaffoldingData] = useState<ScaffoldingData | null>(null)
   const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
   const [currentAddress, setCurrentAddress] = useState<string>('')
+  const [fetchingHeight, setFetchingHeight] = useState(false)
 
   const fetchScaffoldingData = async (address: string, height?: number) => {
     setScaffoldingLoading(true)
@@ -66,6 +67,39 @@ function App() {
   const handleHeightChange = (height: number) => {
     if (currentAddress) {
       fetchScaffoldingData(currentAddress, height)
+    }
+  }
+
+  const handleFetchMeasuredHeight = async () => {
+    if (!scaffoldingData?.address?.coordinates || !scaffoldingData?.gwr_data?.egid) {
+      return
+    }
+
+    const { lv95_e, lv95_n } = scaffoldingData.address.coordinates
+    const egid = scaffoldingData.gwr_data.egid
+
+    setFetchingHeight(true)
+
+    try {
+      // Call the on-demand height fetch API
+      const url = `${API_URL}/api/v1/heights/fetch-on-demand?e=${lv95_e}&n=${lv95_n}&egid=${egid}`
+      const response = await fetch(url, { method: 'POST' })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Height fetch result:', data)
+
+        // If height was found, reload scaffolding data to get updated height
+        if (data.status === 'success' || data.status === 'already_exists') {
+          if (currentAddress) {
+            await fetchScaffoldingData(currentAddress)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Height fetch error:', err)
+    } finally {
+      setFetchingHeight(false)
     }
   }
 
@@ -150,6 +184,8 @@ function App() {
               <ScaffoldingCard
                 data={scaffoldingData}
                 onHeightChange={handleHeightChange}
+                onFetchMeasuredHeight={handleFetchMeasuredHeight}
+                fetchingHeight={fetchingHeight}
               />
             )}
           </div>
