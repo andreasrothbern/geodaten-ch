@@ -1019,11 +1019,11 @@ async def berechne_ausmass_von_adresse(
         )
 
         # 4. Dimensionen bestimmen
-        if geometry and geometry.side_lengths:
+        if geometry and geometry.sides:
             # Aus Geometrie: Längste zwei Seiten
-            sides = sorted(geometry.side_lengths, reverse=True)
-            laenge = sides[0] if sides else 10.0
-            breite = sides[1] if len(sides) > 1 else laenge
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            laenge = side_lengths[0] if side_lengths else 10.0
+            breite = side_lengths[1] if len(side_lengths) > 1 else laenge
         elif building and building.area_m2:
             # Aus Fläche: Quadratisch approximieren
             seite = math.sqrt(building.area_m2)
@@ -1065,7 +1065,7 @@ async def berechne_ausmass_von_adresse(
                 "flaeche_m2": building.area_m2 if building else None,
                 "laenge_geschaetzt_m": round(laenge, 1),
                 "breite_geschaetzt_m": round(breite, 1),
-                "quelle_dimensionen": "geometrie" if (geometry and geometry.side_lengths) else "flaeche"
+                "quelle_dimensionen": "geometrie" if (geometry and geometry.sides) else "flaeche"
             },
             "eingabe": {
                 "hoehe_traufe_m": hoehe_traufe_m,
@@ -1133,10 +1133,10 @@ async def berechne_komplettes_ausmass(
         )
 
         # 2. Dimensionen
-        if geometry and geometry.side_lengths:
-            sides = sorted(geometry.side_lengths, reverse=True)
-            laenge = sides[0] if sides else 10.0
-            breite = sides[1] if len(sides) > 1 else laenge
+        if geometry and geometry.sides:
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            laenge = side_lengths[0] if side_lengths else 10.0
+            breite = side_lengths[1] if len(side_lengths) > 1 else laenge
         elif building and building.area_m2:
             seite = math.sqrt(building.area_m2)
             laenge = breite = seite
