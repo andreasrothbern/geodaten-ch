@@ -6,9 +6,14 @@ FROM python:3.11-slim
 # Arbeitsverzeichnis
 WORKDIR /app
 
-# System-Dependencies
+# System-Dependencies (inkl. GDAL/Fiona für GDB-Parsing)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libexpat1 \
+    libgdal-dev \
+    gdal-bin \
+    libgeos-dev \
+    libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Python Dependencies
