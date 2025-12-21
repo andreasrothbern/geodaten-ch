@@ -3,6 +3,9 @@ import { SearchForm } from './components/SearchForm'
 import { BuildingCard } from './components/BuildingCard'
 import { ApiStatus } from './components/ApiStatus'
 import { ScaffoldingCard } from './components/ScaffoldingCard'
+import { AusmassCard } from './components/AusmassCard'
+import { MaterialCard } from './components/MaterialCard'
+import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
 import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -15,6 +18,16 @@ function App() {
   const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
+  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material'>('scaffolding')
+
+  const handleExport = (data: any, format: 'csv' | 'pdf') => {
+    const exportData = prepareExportData(data)
+    if (format === 'csv') {
+      exportToCSV(exportData)
+    } else {
+      exportToPDF(exportData)
+    }
+  }
 
   const fetchScaffoldingData = async (address: string, height?: number, refresh?: boolean) => {
     setScaffoldingLoading(true)
@@ -213,20 +226,106 @@ function App() {
               )}
             </div>
 
-            {/* Gerüstbau-Daten */}
-            {scaffoldingLoading && (
-              <div className="card text-center py-8">
-                <p className="text-gray-500">Lade Gerüstbau-Daten...</p>
-              </div>
-            )}
+            {/* Gerüstbau-Daten mit Tabs */}
+            {(scaffoldingLoading || scaffoldingData) && (
+              <div className="space-y-4">
+                {/* Tab Navigation */}
+                <div className="flex gap-2 border-b pb-2">
+                  <button
+                    onClick={() => setActiveTab('scaffolding')}
+                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                      activeTab === 'scaffolding'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    🏗️ Gerüstbau
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('ausmass')}
+                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                      activeTab === 'ausmass'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    📐 NPK 114 Ausmass
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('material')}
+                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                      activeTab === 'material'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    📦 Materialliste
+                  </button>
+                </div>
 
-            {scaffoldingData && !scaffoldingLoading && (
-              <ScaffoldingCard
-                data={scaffoldingData}
-                onHeightChange={handleHeightChange}
-                onFetchMeasuredHeight={handleFetchMeasuredHeight}
-                fetchingHeight={fetchingHeight}
-              />
+                {/* Tab Content */}
+                {scaffoldingLoading && (
+                  <div className="card text-center py-8">
+                    <p className="text-gray-500">Lade Gerüstbau-Daten...</p>
+                  </div>
+                )}
+
+                {scaffoldingData && !scaffoldingLoading && (
+                  <>
+                    {activeTab === 'scaffolding' && (
+                      <ScaffoldingCard
+                        data={scaffoldingData}
+                        onHeightChange={handleHeightChange}
+                        onFetchMeasuredHeight={handleFetchMeasuredHeight}
+                        fetchingHeight={fetchingHeight}
+                      />
+                    )}
+
+                    {activeTab === 'ausmass' && (
+                      <AusmassCard
+                        address={currentAddress}
+                        coordinates={scaffoldingData.address?.coordinates}
+                        apiUrl={API_URL}
+                        onExport={(data) => handleExport(data, 'pdf')}
+                      />
+                    )}
+
+                    {activeTab === 'material' && scaffoldingData.scaffolding?.estimated_scaffold_area_m2 && (
+                      <MaterialCard
+                        scaffoldAreaM2={scaffoldingData.scaffolding.estimated_scaffold_area_m2}
+                        apiUrl={API_URL}
+                      />
+                    )}
+
+                    {/* Export Buttons */}
+                    <div className="flex justify-end gap-2 mt-4">
+                      <button
+                        onClick={() => {
+                          // Fetch ausmass data and export as CSV
+                          fetch(`${API_URL}/api/v1/ausmass/komplett?address=${encodeURIComponent(currentAddress)}`)
+                            .then(r => r.json())
+                            .then(data => handleExport(data, 'csv'))
+                            .catch(console.error)
+                        }}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                      >
+                        📊 CSV Export
+                      </button>
+                      <button
+                        onClick={() => {
+                          fetch(`${API_URL}/api/v1/ausmass/komplett?address=${encodeURIComponent(currentAddress)}`)
+                            .then(r => r.json())
+                            .then(data => handleExport(data, 'pdf'))
+                            .catch(console.error)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                      >
+                        📄 PDF Drucken
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}
