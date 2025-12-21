@@ -30,6 +30,31 @@ STAC_API_BASE = "https://data.geo.admin.ch/api/stac/v0.9"
 COLLECTION_ID = "ch.swisstopo.swissbuildings3d_3_0"
 
 
+def ensure_lv95(e: float, n: float) -> Tuple[float, float]:
+    """
+    Ensure coordinates are in LV95 format.
+
+    Detects LV03 coordinates and converts them to LV95.
+    LV03: E ~480'000-850'000, N ~70'000-300'000
+    LV95: E ~2'480'000-2'850'000, N ~1'070'000-1'300'000
+
+    Args:
+        e: Easting coordinate (LV03 or LV95)
+        n: Northing coordinate (LV03 or LV95)
+
+    Returns:
+        Tuple of (e, n) in LV95 format
+    """
+    # LV03 coordinates are typically < 1'000'000
+    # LV95 coordinates have 2'000'000 added to E and 1'000'000 added to N
+    if e < 1_000_000:
+        # This is LV03, convert to LV95
+        e = e + 2_000_000
+        n = n + 1_000_000
+
+    return e, n
+
+
 def lv95_to_tile_reference(e: float, n: float) -> str:
     """
     Convert LV95 coordinates to swissBUILDINGS3D tile reference.
@@ -237,6 +262,9 @@ async def fetch_height_for_coordinates(
     Returns:
         Dict with status, count of imported buildings, and optional height
     """
+    # Convert LV03 to LV95 if needed
+    e, n = ensure_lv95(e, n)
+
     # Initialize database if needed
     if not get_db_path().exists():
         init_database()
