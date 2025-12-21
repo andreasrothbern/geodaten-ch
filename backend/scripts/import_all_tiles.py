@@ -27,11 +27,11 @@ from app.services.height_db import (
     log_import,
     get_database_stats
 )
-from scripts.import_building_heights import parse_citygml
+from scripts.import_building_heights import parse_citygml, parse_gdb
 
 
 def download_and_extract(url: str, temp_dir: Path) -> Path:
-    """ZIP herunterladen und entpacken"""
+    """ZIP herunterladen und entpacken. Gibt Pfad zu GML oder GDB zurück."""
     zip_path = temp_dir / "tile.zip"
 
     # Download
@@ -45,15 +45,26 @@ def download_and_extract(url: str, temp_dir: Path) -> Path:
     for f in temp_dir.glob("*.gml"):
         return f
 
-    raise FileNotFoundError("Keine GML-Datei im ZIP gefunden")
+    # GDB-Verzeichnis finden
+    for f in temp_dir.iterdir():
+        if f.is_dir() and f.suffix.lower() == '.gdb':
+            return f
+
+    raise FileNotFoundError("Keine GML-Datei oder GDB im ZIP gefunden")
 
 
-def import_tile(gml_path: Path, source: str, batch_size: int = 5000) -> int:
-    """Ein Tile importieren"""
+def import_tile(data_path: Path, source: str, batch_size: int = 5000) -> int:
+    """Ein Tile importieren (GML oder GDB)"""
     batch = []
     total_count = 0
 
-    for egid, height in parse_citygml(gml_path):
+    # Parser basierend auf Dateityp wählen
+    if data_path.suffix.lower() == '.gdb':
+        parser = parse_gdb
+    else:
+        parser = parse_citygml
+
+    for egid, height in parser(data_path):
         batch.append((egid, height))
 
         if len(batch) >= batch_size:

@@ -302,6 +302,53 @@ def _height_from_geom(geom: dict) -> Optional[float]:
     return None
 
 
+def parse_gdb(file_path: Path) -> Generator[Tuple[int, float], None, None]:
+    """
+    ESRI File Geodatabase parsen (benötigt geopandas).
+
+    swissBUILDINGS3D 3.0 Beta GDB Format:
+    - Layer: Building_solid
+    - EGID: Gebäudeidentifikator
+    - GESAMTHOEHE: Gebäudehöhe (DACH_MAX - GELAENDEPUNKT)
+    """
+    try:
+        import geopandas as gpd
+    except ImportError:
+        print("FEHLER: geopandas ist nicht installiert.")
+        print("Installiere mit: pip install geopandas")
+        sys.exit(1)
+
+    print(f"Parsing GDB: {file_path.name}")
+
+    try:
+        # GDB ohne Geometrie lesen (schneller)
+        gdf = gpd.read_file(file_path, layer='Building_solid', engine='fiona', ignore_geometry=True)
+
+        count = 0
+        for _, row in gdf.iterrows():
+            egid = row.get('EGID')
+            height = row.get('GESAMTHOEHE')
+
+            # EGID und Höhe validieren
+            if egid is not None and height is not None:
+                try:
+                    egid_int = int(egid)
+                    height_float = float(height)
+                    if egid_int > 0 and height_float > 0:
+                        count += 1
+                        if count % 1000 == 0:
+                            print(f"  ... {count} Gebäude verarbeitet")
+                        yield (egid_int, round(height_float, 2))
+                except (ValueError, TypeError):
+                    pass
+
+        print(f"  Fertig: {count} Gebäude extrahiert")
+
+    except Exception as e:
+        print(f"Fehler beim Lesen der GDB: {e}")
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Importiert Gebäudehöhen aus swissBUILDINGS3D in die Datenbank',
@@ -360,9 +407,11 @@ Download der Daten:
         parser_func = parse_csv
     elif suffix == '.gpkg':
         parser_func = parse_geopackage
+    elif suffix == '.gdb':
+        parser_func = parse_gdb
     else:
         print(f"FEHLER: Unbekanntes Dateiformat: {suffix}")
-        print("Unterstützt: .gml, .xml, .csv, .gpkg")
+        print("Unterstützt: .gml, .xml, .csv, .gpkg, .gdb")
         sys.exit(1)
 
     # Daten importieren
