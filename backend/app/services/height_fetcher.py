@@ -200,7 +200,7 @@ def download_and_extract_tile(url: str, temp_dir: Path) -> Path:
     raise FileNotFoundError("No GDB or GML found in tile archive")
 
 
-def parse_gdb_for_heights(gdb_path: Path) -> list:
+def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
     """
     Parse a GDB file and extract EGID + height pairs.
 
@@ -208,36 +208,82 @@ def parse_gdb_for_heights(gdb_path: Path) -> list:
         gdb_path: Path to the GDB directory
 
     Returns:
-        List of (egid, height) tuples
+        Tuple of (list of (egid, height) tuples, debug_info dict)
     """
     try:
         import geopandas as gpd
+        import fiona
     except ImportError:
-        raise ImportError("geopandas is required for GDB parsing")
+        raise ImportError("geopandas/fiona is required for GDB parsing")
 
     heights = []
+    debug_info = {
+        "layers": [],
+        "columns": [],
+        "total_rows": 0,
+        "sample_egids": [],
+        "null_egid_count": 0,
+        "null_height_count": 0
+    }
 
     try:
+        # List available layers
+        layers = fiona.listlayers(gdb_path)
+        debug_info["layers"] = layers
+        print(f"GDB layers: {layers}")
+
+        # Try to find the right layer
+        target_layer = None
+        for layer in layers:
+            if 'building' in layer.lower() or 'solid' in layer.lower():
+                target_layer = layer
+                break
+
+        if not target_layer and layers:
+            target_layer = layers[0]
+
+        if not target_layer:
+            print("No suitable layer found in GDB")
+            return heights, debug_info
+
+        print(f"Using layer: {target_layer}")
+
         # Read without geometry for speed
-        gdf = gpd.read_file(gdb_path, layer='Building_solid', engine='fiona', ignore_geometry=True)
+        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona', ignore_geometry=True)
+        debug_info["columns"] = list(gdf.columns)
+        debug_info["total_rows"] = len(gdf)
+        print(f"Columns: {list(gdf.columns)}")
+        print(f"Total rows: {len(gdf)}")
 
         for _, row in gdf.iterrows():
             egid = row.get('EGID')
             height = row.get('GESAMTHOEHE')
 
-            if egid is not None and height is not None:
-                try:
-                    egid_int = int(egid)
-                    height_float = float(height)
-                    if egid_int > 0 and height_float > 0:
-                        heights.append((egid_int, round(height_float, 2)))
-                except (ValueError, TypeError):
-                    pass
+            if egid is None:
+                debug_info["null_egid_count"] += 1
+                continue
+            if height is None:
+                debug_info["null_height_count"] += 1
+                continue
+
+            try:
+                egid_int = int(egid)
+                height_float = float(height)
+                if egid_int > 0 and height_float > 0:
+                    heights.append((egid_int, round(height_float, 2)))
+                    # Collect sample EGIDs
+                    if len(debug_info["sample_egids"]) < 10:
+                        debug_info["sample_egids"].append(egid_int)
+            except (ValueError, TypeError):
+                pass
+
+        print(f"Found {len(heights)} valid heights, sample EGIDs: {debug_info['sample_egids']}")
 
     except Exception as e:
         print(f"Error parsing GDB: {e}")
+        debug_info["error"] = str(e)
 
-    return heights
+    return heights, debug_info
 
 
 async def fetch_height_for_coordinates(
@@ -299,14 +345,15 @@ async def fetch_height_for_coordinates(
         data_path = download_and_extract_tile(tile_info["download_url"], temp_dir)
 
         # Parse
-        heights = parse_gdb_for_heights(data_path)
+        heights, debug_info = parse_gdb_for_heights(data_path)
 
         if not heights:
             return {
                 "status": "no_heights_found",
                 "tile_id": tile_info["id"],
                 "message": "Tile downloaded but no building heights found",
-                "imported_count": 0
+                "imported_count": 0,
+                "debug": debug_info
             }
 
         # Import into database
@@ -326,7 +373,8 @@ async def fetch_height_for_coordinates(
             "status": "success",
             "tile_id": tile_info["id"],
             "imported_count": len(heights),
-            "source": source
+            "source": source,
+            "debug": debug_info
         }
 
         if egid:
@@ -339,6 +387,8 @@ async def fetch_height_for_coordinates(
                 result["egid"] = egid
                 result["height_found"] = False
                 result["message"] = f"EGID {egid} not found in imported tile"
+                # Show sample EGIDs that were found
+                result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
 
         return result
 
