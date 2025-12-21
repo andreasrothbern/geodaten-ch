@@ -96,16 +96,40 @@ function App() {
         throw new Error(data.detail || data.error || 'Fehler beim Abrufen der Höhe')
       }
 
-      // If height was found, reload scaffolding data to get updated height
-      if (data.status === 'success' || data.status === 'already_exists') {
-        console.log(`Success! Imported ${data.imported_count} buildings`)
+      // Handle different response statuses
+      if (data.status === 'already_exists') {
+        console.log(`Height already exists in database`)
         if (currentAddress) {
           await fetchScaffoldingData(currentAddress)
+        }
+      } else if (data.status === 'success') {
+        console.log(`Imported ${data.imported_count} buildings from tile ${data.tile_id}`)
+
+        // Check if the specific EGID was found
+        if (data.height_found === false) {
+          // EGID not in swissBUILDINGS3D - show info message
+          const sampleEgids = data.sample_egids_in_tile || []
+          console.log(`EGID ${egid} not found. Sample EGIDs in tile:`, sampleEgids)
+          setError(`Dieses Gebäude (EGID ${egid}) ist nicht in swissBUILDINGS3D enthalten. Möglicherweise ein Neubau oder Daten noch nicht aktualisiert. (${data.imported_count} andere Gebäude im Tile gefunden)`)
+        } else if (data.height_m) {
+          // Height found - reload scaffolding data
+          console.log(`Found height: ${data.height_m}m`)
+          if (currentAddress) {
+            await fetchScaffoldingData(currentAddress)
+          }
+        } else {
+          // Imported but EGID lookup didn't find height - reload anyway
+          if (currentAddress) {
+            await fetchScaffoldingData(currentAddress)
+          }
         }
       } else if (data.status === 'no_tile_found') {
         setError('Keine swissBUILDINGS3D Daten für diesen Standort verfügbar')
       } else if (data.status === 'no_heights_found') {
-        setError('Tile gefunden, aber keine Höhendaten enthalten')
+        const debug = data.debug || {}
+        const nullCount = debug.null_egid_count || 0
+        const totalRows = debug.total_rows || 0
+        setError(`Tile gefunden (${totalRows} Gebäude), aber keine mit EGID-Zuordnung (${nullCount} ohne EGID). Möglicherweise ältere Daten ohne EGID-Attribut.`)
       }
     } catch (err) {
       console.error('Height fetch error:', err)
