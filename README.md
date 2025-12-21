@@ -135,3 +135,33 @@ Extraktion detaillierter Gebäudemasse aus 3D Tiles:
 Gehostet auf [Railway.app](https://railway.app):
 - Backend: https://acceptable-trust-production.up.railway.app
 - Frontend: https://cooperative-commitment-production.up.railway.app
+
+
+## Test-Adressen
+
+### Kantone mit WFS-Unterstützung (Gerüstbau-Daten verfügbar)
+
+| Kanton | Adresse                           | Status |
+|--------|-----------------------------------|--------|
+| BE     | Kramgasse 49, 3011 Bern           | ✅ DB importiert |
+| SO     | Hauptgasse 10, 4500 Solothurn     | ✅ DB importiert |
+| BS     | Marktplatz 10, 4051 Basel         | ✅ On-Demand |
+| FR     | Rue de Romont 10, 1700 Fribourg   | ✅ On-Demand |
+| ZH     | Bahnhofstrasse 50, 8001 Zürich    | ✅ On-Demand |
+| AG     | Bahnhofstrasse 20, 5000 Aarau     | ✅ On-Demand |
+| SG     | Marktgasse 10, 9000 St. Gallen    | ✅ On-Demand |
+| TG     | Freiestrasse 10, 8500 Frauenfeld  | ✅ On-Demand |
+| BL     | Hauptstrasse 50, 4410 Liestal     | ✅ On-Demand |
+| SH     | Vordergasse 20, 8200 Schaffhausen | ✅ On-Demand |
+
+### Kantone ohne WFS-Unterstützung
+
+| Kanton | Grund |
+|--------|-------|
+| LU     | Keine geodienste.ch WFS-Daten |
+| NE     | Keine geodienste.ch WFS-Daten |
+| weitere | Kantonale Geodienste nicht integriert |
+
+### Bereits in DB importiert (sofortige Höhendaten)
+- Kanton Bern (BE): ~366'000 Gebäude
+- Kanton Solothurn (SO): ~235'000 Gebäude
