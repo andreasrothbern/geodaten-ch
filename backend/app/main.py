@@ -326,7 +326,8 @@ async def lookup_address(
 async def get_scaffolding_data(
     address: str = Query(..., min_length=5, description="Adresse"),
     egid: Optional[int] = Query(None, description="EGID (falls bekannt)"),
-    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern")
+    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern"),
+    refresh: bool = Query(False, description="Cache ignorieren und neu laden")
 ):
     """
     Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
@@ -341,9 +342,12 @@ async def get_scaffolding_data(
     **Beispiel:** `?address=Bundesplatz 3, 3011 Bern`
     """
     cache_key = f"scaffolding:{address}:{egid}"
-    cached = cache.get(cache_key)
-    if cached:
-        return cached
+
+    # Cache nur verwenden wenn nicht refresh und keine manuelle Höhe
+    if not refresh and not height:
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
 
     try:
         # 1. Adresse geokodieren

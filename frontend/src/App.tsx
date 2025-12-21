@@ -16,12 +16,15 @@ function App() {
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
 
-  const fetchScaffoldingData = async (address: string, height?: number) => {
+  const fetchScaffoldingData = async (address: string, height?: number, refresh?: boolean) => {
     setScaffoldingLoading(true)
     try {
       let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
       if (height) {
         url += `&height=${height}`
+      }
+      if (refresh) {
+        url += `&refresh=true`
       }
       const response = await fetch(url)
       if (response.ok) {
@@ -98,9 +101,10 @@ function App() {
 
       // Handle different response statuses
       if (data.status === 'already_exists') {
-        console.log(`Height already exists in database`)
+        console.log(`Height already exists in database: ${data.height_m}m`)
         if (currentAddress) {
-          await fetchScaffoldingData(currentAddress)
+          // Refresh to bypass cache and get updated height
+          await fetchScaffoldingData(currentAddress, undefined, true)
         }
       } else if (data.status === 'success') {
         console.log(`Imported ${data.imported_count} buildings from tile ${data.tile_id}`)
@@ -112,15 +116,15 @@ function App() {
           console.log(`EGID ${egid} not found. Sample EGIDs in tile:`, sampleEgids)
           setError(`Dieses Gebäude (EGID ${egid}) ist nicht in swissBUILDINGS3D enthalten. Möglicherweise ein Neubau oder Daten noch nicht aktualisiert. (${data.imported_count} andere Gebäude im Tile gefunden)`)
         } else if (data.height_m) {
-          // Height found - reload scaffolding data
+          // Height found - reload scaffolding data with refresh to bypass cache
           console.log(`Found height: ${data.height_m}m`)
           if (currentAddress) {
-            await fetchScaffoldingData(currentAddress)
+            await fetchScaffoldingData(currentAddress, undefined, true)
           }
         } else {
-          // Imported but EGID lookup didn't find height - reload anyway
+          // Imported but EGID lookup didn't find height - reload anyway with refresh
           if (currentAddress) {
-            await fetchScaffoldingData(currentAddress)
+            await fetchScaffoldingData(currentAddress, undefined, true)
           }
         }
       } else if (data.status === 'no_tile_found') {
