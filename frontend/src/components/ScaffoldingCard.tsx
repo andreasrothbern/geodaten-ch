@@ -241,7 +241,9 @@ export function ScaffoldingCard({
               <p className="text-xl font-bold text-emerald-700">
                 {dimensions.traufhoehe_m ? `${dimensions.traufhoehe_m.toFixed(1)} m` : '—'}
               </p>
-              <p className="text-xs text-gray-400">Dachtraufe</p>
+              <p className="text-xs text-gray-400">
+                {dimensions.heights_estimated ? '~85% geschätzt' : 'Dachtraufe'}
+              </p>
             </div>
             {/* Firsthöhe */}
             <div className="bg-white rounded-lg p-3 text-center border">
@@ -249,7 +251,9 @@ export function ScaffoldingCard({
               <p className="text-xl font-bold text-teal-700">
                 {dimensions.firsthoehe_m ? `${dimensions.firsthoehe_m.toFixed(1)} m` : '—'}
               </p>
-              <p className="text-xs text-gray-400">Dachfirst</p>
+              <p className="text-xs text-gray-400">
+                {dimensions.heights_estimated ? '= Gebäudehöhe' : 'Dachfirst'}
+              </p>
             </div>
             {/* Gebäudehöhe */}
             <div className="bg-white rounded-lg p-3 text-center border">
@@ -261,7 +265,9 @@ export function ScaffoldingCard({
             </div>
           </div>
           <p className="text-xs text-emerald-600 mt-2 text-center">
-            Photogrammetrisch gemessen aus Luftbildern
+            {dimensions.heights_estimated
+              ? 'Trauf-/Firsthöhe geschätzt aus Gesamthöhe'
+              : 'Photogrammetrisch gemessen aus Luftbildern'}
             {data.height_refreshed && (
               <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-800 rounded-full">
                 ✓ Automatisch aktualisiert

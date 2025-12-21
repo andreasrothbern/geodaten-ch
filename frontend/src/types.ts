@@ -102,6 +102,7 @@ export interface ScaffoldingData {
     traufhoehe_m: number | null      // Dachhöhe min - Terrain (Eave)
     firsthoehe_m: number | null      // Dachhöhe max - Terrain (Ridge)
     gebaeudehoehe_m: number | null   // Gesamthöhe (Building)
+    heights_estimated?: boolean      // True wenn Trauf/First aus Gesamthöhe geschätzt
   }
   scaffolding: {
     facade_length_total_m: number

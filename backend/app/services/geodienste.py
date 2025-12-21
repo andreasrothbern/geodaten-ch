@@ -494,6 +494,11 @@ def get_height_details(
                                detailed.get("firsthoehe_m") is not None)
                 if has_gebaeudehoehe and not has_detailed:
                     result["needs_height_refresh"] = True
+                    # Schätze Trauf/First aus Gesamthöhe (85% Traufe, 100% First)
+                    gebaeudehoehe = detailed.get("gebaeudehoehe_m")
+                    result["traufhoehe_m"] = round(gebaeudehoehe * 0.85, 1)
+                    result["firsthoehe_m"] = round(gebaeudehoehe, 1)
+                    result["heights_estimated"] = True  # Flag für Frontend
             else:
                 # Fallback: Legacy-Höhe
                 db_result = get_building_height(egid)
