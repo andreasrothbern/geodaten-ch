@@ -131,7 +131,7 @@ class SVGGenerator:
     <rect x="0" y="0" width="280" height="50" fill="{self.COLORS['npk_bg']}" stroke="{self.COLORS['npk_border']}" rx="4"/>
     <text x="10" y="15" font-family="Arial" font-size="10" font-weight="bold" fill="{self.COLORS['npk_text']}">NPK 114 Ausmass:</text>
     <text x="10" y="30" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Ausmasshöhe: {building.eave_height_m:.1f}m + 1.0m = {height_ausmass:.1f}m</text>
-    <text x="10" y="43" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Geschosse: {building.floors} | Breitenklasse: {building.width_class} | Fläche: {ausmass_m2:.0f} m²</text>
+    <text x="10" y="43" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Geschosse: {building.floors or '—'} | Breitenklasse: {building.width_class} | Fläche: {ausmass_m2:.0f} m²</text>
   </g>
 '''
 
@@ -185,8 +185,9 @@ class SVGGenerator:
         ridge_height_px = ridge_h * scale
         scaffold_width = 18
 
-        # Geschosshöhe
-        floor_height = eave_height_px / building.floors
+        # Geschosshöhe (Default 3 falls None oder 0)
+        floors = building.floors if building.floors and building.floors > 0 else 3
+        floor_height = eave_height_px / floors
 
         svg = self._svg_header(width, height, f"Gebäudeschnitt - {building.address}")
 
@@ -239,7 +240,7 @@ class SVGGenerator:
         svg += f'  <rect x="{building_x + 15}" y="{ground_y - eave_height_px + 15}" width="{building_width_px - 30}" height="{eave_height_px - 30}" fill="url(#windows)"/>\n'
 
         # Geschosslinien
-        for i in range(1, building.floors):
+        for i in range(1, floors):
             y_floor = ground_y - floor_height * i
             svg += f'  <line x1="{building_x}" y1="{y_floor}" x2="{building_x + building_width_px}" y2="{y_floor}" stroke="#999" stroke-width="1"/>\n'
 
