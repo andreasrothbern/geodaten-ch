@@ -26,8 +26,11 @@ build/
 Thumbs.db
 
 # Cache
-*.db
 .cache/
+
+# Databases (except catalog files needed for deployment)
+*.db
+!backend/app/data/layher_catalog.db
 
 # Logs
 *.log
