@@ -465,6 +465,7 @@ def get_height_details(
         result["estimated_source"] = "default_standard"
 
     # 2. Gemessene Höhe aus Datenbank laden (falls verfügbar)
+    measured_is_plausible = True
     if egid:
         try:
             from app.services.height_db import get_building_height
@@ -472,14 +473,23 @@ def get_height_details(
             if db_result and db_result[0] >= 2.0:  # Mindesthöhe 2m
                 result["measured_height_m"] = db_result[0]
                 result["measured_source"] = db_result[1]
+
+                # Plausibilitätsprüfung: gemessene Höhe sollte mindestens 40%
+                # der geschätzten Höhe sein, sonst ist es wahrscheinlich ein
+                # Nebengebäude oder Datenfehler
+                if result["estimated_height_m"]:
+                    ratio = db_result[0] / result["estimated_height_m"]
+                    if ratio < 0.4:
+                        measured_is_plausible = False
+                        result["measured_source"] = f"{db_result[1]} (unplausibel: nur {ratio*100:.0f}% der geschätzten Höhe)"
         except ImportError:
             pass
 
-    # 3. Aktive Höhe bestimmen (Priorität: manuell > gemessen > geschätzt)
+    # 3. Aktive Höhe bestimmen (Priorität: manuell > gemessen (wenn plausibel) > geschätzt)
     if manual_height and manual_height > 0:
         result["active_height_m"] = manual_height
         result["active_source"] = "manual"
-    elif result["measured_height_m"]:
+    elif result["measured_height_m"] and measured_is_plausible:
         result["active_height_m"] = result["measured_height_m"]
         result["active_source"] = result["measured_source"]
     else:
