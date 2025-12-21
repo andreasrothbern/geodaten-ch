@@ -1097,48 +1097,46 @@ class DocumentGenerator:
 
         # Anhang A: Grundriss
         doc.add_heading("Anhang A: Grundriss Gerüst", level=2)
-        if svg_floor_plan:
-            png_buffer = self._svg_to_png(svg_floor_plan)
-            if png_buffer:
-                doc.add_picture(png_buffer, width=Inches(6))
-            else:
-                p = doc.add_paragraph()
-                p.add_run("[Grundriss-Visualisierung: Bitte manuell einfügen]")
-                p = doc.add_paragraph()
-                p.add_run("API-Endpunkt: /api/v1/visualize/floor-plan").italic = True
+        png_buffer = self._svg_to_png(svg_floor_plan) if svg_floor_plan else None
+        if png_buffer:
+            doc.add_picture(png_buffer, width=Inches(6))
         else:
             p = doc.add_paragraph()
-            p.add_run("[Grundriss-Visualisierung: Bitte manuell einfügen]")
+            p.add_run("[Grundriss hier einfügen]")
+            p = doc.add_paragraph()
+            run = p.add_run(f"SVG abrufbar unter: /api/v1/visualize/floor-plan?address={building.address}")
+            run.italic = True
+            run.font.size = Pt(9)
 
         doc.add_page_break()
 
         # Anhang B: Schnitt
         doc.add_heading("Anhang B: Schnitt Giebelseite", level=2)
-        if svg_cross_section:
-            png_buffer = self._svg_to_png(svg_cross_section)
-            if png_buffer:
-                doc.add_picture(png_buffer, width=Inches(6))
-            else:
-                p = doc.add_paragraph()
-                p.add_run("[Schnitt-Visualisierung: Bitte manuell einfügen]")
+        png_buffer = self._svg_to_png(svg_cross_section) if svg_cross_section else None
+        if png_buffer:
+            doc.add_picture(png_buffer, width=Inches(6))
         else:
             p = doc.add_paragraph()
-            p.add_run("[Schnitt-Visualisierung: Bitte manuell einfügen]")
+            p.add_run("[Schnittansicht hier einfügen]")
+            p = doc.add_paragraph()
+            run = p.add_run(f"SVG abrufbar unter: /api/v1/visualize/cross-section?address={building.address}")
+            run.italic = True
+            run.font.size = Pt(9)
 
         doc.add_page_break()
 
         # Anhang B2: Fassadenansicht
         doc.add_heading("Anhang B2: Fassadenansicht", level=2)
-        if svg_elevation:
-            png_buffer = self._svg_to_png(svg_elevation)
-            if png_buffer:
-                doc.add_picture(png_buffer, width=Inches(6))
-            else:
-                p = doc.add_paragraph()
-                p.add_run("[Fassadenansicht: Bitte manuell einfügen]")
+        png_buffer = self._svg_to_png(svg_elevation) if svg_elevation else None
+        if png_buffer:
+            doc.add_picture(png_buffer, width=Inches(6))
         else:
             p = doc.add_paragraph()
-            p.add_run("[Fassadenansicht: Bitte manuell einfügen]")
+            p.add_run("[Fassadenansicht hier einfügen]")
+            p = doc.add_paragraph()
+            run = p.add_run(f"SVG abrufbar unter: /api/v1/visualize/elevation?address={building.address}")
+            run.italic = True
+            run.font.size = Pt(9)
 
         doc.add_heading("Anhang C: Gerüstkarte / Kennzeichnung", level=2)
 
