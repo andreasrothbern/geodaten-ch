@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { ScaffoldingData, ScaffoldingSide } from '../types'
-import { BuildingVisualization } from './BuildingVisualization'
+import { ServerSVG } from './BuildingVisualization/ServerSVG'
 
 interface ScaffoldingCardProps {
   data: ScaffoldingData
+  apiUrl: string
   onHeightChange?: (height: number) => void
   onFetchMeasuredHeight?: () => void
   fetchingHeight?: boolean
@@ -15,12 +16,14 @@ function isFromDatabase(source: string | undefined | null): boolean {
 
 export function ScaffoldingCard({
   data,
+  apiUrl,
   onHeightChange,
   onFetchMeasuredHeight,
   fetchingHeight = false
 }: ScaffoldingCardProps) {
   const [showAllSides, setShowAllSides] = useState(false)
   const [manualHeight, setManualHeight] = useState<string>('')
+  const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
 
   const { dimensions, scaffolding, building, gwr_data, sides } = data
 
@@ -81,20 +84,61 @@ export function ScaffoldingCard({
         )}
       </div>
 
-      {/* Gebäude-Visualisierung */}
-      {data.polygon.coordinates.length >= 3 && (
-        <BuildingVisualization
-          polygon={data.polygon.coordinates}
-          widthM={building.bounding_box.width_m}
-          depthM={building.bounding_box.depth_m}
-          eaveHeightM={dimensions.height_measured_m || dimensions.height_estimated_m || 10}
-          ridgeHeightM={dimensions.height_measured_m ? dimensions.height_measured_m * 1.15 : undefined}
-          floors={dimensions.floors || undefined}
-          egid={gwr_data.egid}
-          areaM2={building.footprint_area_m2}
-          heightSource={dimensions.height_source}
-        />
-      )}
+      {/* Gebäude-Visualisierung - Server-generierte SVGs */}
+      <div className="bg-white rounded-lg border shadow-sm">
+        {/* Header with tabs */}
+        <div className="flex items-center justify-between border-b px-4 py-2">
+          <div className="flex gap-1">
+            {[
+              { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
+              { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' },
+              { id: 'floor-plan' as const, label: 'Grundriss', icon: '📋' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveVizTab(tab.id)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  activeVizTab === tab.id
+                    ? 'bg-red-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Download Button */}
+          <a
+            href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700`}
+            download={`${activeVizTab}_${data.address.matched.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+          >
+            SVG
+          </a>
+        </div>
+
+        {/* Visualization */}
+        <div className="p-4 flex justify-center">
+          <ServerSVG
+            type={activeVizTab}
+            address={data.address.matched}
+            apiUrl={apiUrl}
+            width={650}
+            height={activeVizTab === 'floor-plan' ? 450 : 400}
+          />
+        </div>
+
+        {/* NPK 114 Info */}
+        <div className="border-t px-4 py-2 bg-blue-50 text-sm">
+          <span className="font-medium text-blue-700">NPK 114: </span>
+          <span className="text-blue-600">
+            Ausmass = (Länge + 2×1.0m) × (Höhe + 1.0m)
+          </span>
+        </div>
+      </div>
 
       {/* Höhenangaben - separate Spalten */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

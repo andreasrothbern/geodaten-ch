@@ -1440,6 +1440,128 @@ async def visualize_floor_plan(
 
 
 # ============================================================================
+# Dokumentgenerierung (Materialbewirtschaftung)
+# ============================================================================
+
+@app.get("/api/v1/document/materialbewirtschaftung",
+         tags=["Dokumentgenerierung"],
+         response_class=Response)
+async def generate_materialbewirtschaftung_document(
+    address: str = Query(..., min_length=5, description="Schweizer Adresse"),
+    author_name: str = Query("Teilnehmer GL 2025", description="Name des Verfassers"),
+    project_description: str = Query("Fassadensanierung", description="Beschreibung des Bauvorhabens"),
+    include_reflexion: bool = Query(True, description="Reflexions-Vorlage inkludieren")
+):
+    """
+    Generiert ein Word-Dokument (.docx) für die Materialbewirtschaftung.
+
+    Das Dokument enthält:
+    1. Baustellenbeschrieb (Objektdaten, Gebäudemasse, Anforderungen)
+    2. Ausmass nach NPK 114
+    3. Materialauszug (Layher Blitz 70)
+    4. Personalbedarf
+    5. Dokumentation Baustelle (inkl. Sicherheitskonzept)
+    6. Reflexion (Vorlage zum Ausfüllen)
+    7. Anhang (Gerüstkarte, Checkliste)
+
+    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&author_name=Max Muster`
+
+    Returns: Word-Dokument (.docx)
+    """
+    import math
+    from app.services.document_generator import get_document_generator, BuildingData
+
+    try:
+        # 1. Adresse geokodieren
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        # 2. Gebäude suchen
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e,
+            geo.coordinates.lv95_n,
+            tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        # 3. Gebäudegeometrie abrufen
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        # 4. Dimensionen bestimmen
+        if geometry and geometry.sides:
+            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
+            length_m = side_lengths[0] if side_lengths else 10.0
+            width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+        elif building and building.area_m2:
+            seite = math.sqrt(building.area_m2)
+            length_m = width_m = seite
+        else:
+            length_m = width_m = 10.0
+
+        # 5. Höhe bestimmen
+        eave_height_m = 8.0
+        if building and building.floors:
+            eave_height_m = building.floors * 2.8
+
+        # Ridge height für Satteldach
+        ridge_height_m = eave_height_m + 3.5
+
+        # 6. Gebäudedaten zusammenstellen
+        building_data = BuildingData(
+            address=geo.matched_address,
+            egid=building.egid if building else None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=round(eave_height_m, 1),
+            ridge_height_m=round(ridge_height_m, 1),
+            floors=building.floors if building else 2,
+            building_category=building.building_category or "Einfamilienhaus" if building else "Einfamilienhaus",
+            construction_year=building.construction_year if building else None,
+            area_m2=building.area_m2 if building else None,
+            roof_type="satteldach",
+            lv95_e=geo.coordinates.lv95_e,
+            lv95_n=geo.coordinates.lv95_n
+        )
+
+        # 7. Dokument generieren
+        generator = get_document_generator()
+        docx_bytes = generator.generate_word_document(
+            building=building_data,
+            author_name=author_name,
+            project_description=project_description,
+            include_reflexion_template=include_reflexion
+        )
+
+        # Dateiname erstellen
+        safe_address = geo.matched_address.replace(",", "").replace(" ", "_")[:50]
+        filename = f"Materialbewirtschaftung_{safe_address}.docx"
+
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Dokumentgenerierung nicht verfügbar. Bitte 'pip install python-docx' ausführen. Fehler: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 

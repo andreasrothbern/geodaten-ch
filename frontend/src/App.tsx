@@ -5,7 +5,7 @@ import { ApiStatus } from './components/ApiStatus'
 import { ScaffoldingCard } from './components/ScaffoldingCard'
 import { AusmassCard } from './components/AusmassCard'
 import { MaterialCard } from './components/MaterialCard'
-import { VisualizationTabs } from './components/BuildingVisualization/ServerSVG'
+import { SchulaufgabenCard } from './components/SchulaufgabenCard'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
 import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
 
@@ -19,7 +19,7 @@ function App() {
   const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
-  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material' | 'visualize'>('scaffolding')
+  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material' | 'schulaufgaben'>('scaffolding')
 
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)
@@ -260,17 +260,17 @@ function App() {
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    📦 Materialliste
+                    Materialliste
                   </button>
                   <button
-                    onClick={() => setActiveTab('visualize')}
+                    onClick={() => setActiveTab('schulaufgaben')}
                     className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
-                      activeTab === 'visualize'
+                      activeTab === 'schulaufgaben'
                         ? 'bg-red-600 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    🖼️ Visualisierung
+                    Schulaufgaben
                   </button>
                 </div>
 
@@ -286,6 +286,7 @@ function App() {
                     {activeTab === 'scaffolding' && (
                       <ScaffoldingCard
                         data={scaffoldingData}
+                        apiUrl={API_URL}
                         onHeightChange={handleHeightChange}
                         onFetchMeasuredHeight={handleFetchMeasuredHeight}
                         fetchingHeight={fetchingHeight}
@@ -308,16 +309,11 @@ function App() {
                       />
                     )}
 
-                    {activeTab === 'visualize' && (
-                      <div className="card">
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                          <span>🖼️</span> Professionelle Visualisierungen
-                        </h3>
-                        <VisualizationTabs
-                          address={currentAddress}
-                          apiUrl={API_URL}
-                        />
-                      </div>
+                    {activeTab === 'schulaufgaben' && (
+                      <SchulaufgabenCard
+                        address={currentAddress}
+                        apiUrl={API_URL}
+                      />
                     )}
 
                     {/* Export Buttons */}
