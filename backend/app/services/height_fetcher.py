@@ -113,11 +113,12 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # Query STAC API for items intersecting the bbox
+        # IMPORTANT: Use 2023+ to get tiles with EGID (BE/JU got EGID in June 2024)
         url = f"{STAC_API_BASE}/collections/{COLLECTION_ID}/items"
         params = {
             "bbox": bbox,
-            "limit": 10,
-            "datetime": "2021-01-01T00:00:00Z/2025-12-31T23:59:59Z"  # Only recent tiles with EGID
+            "limit": 20,
+            "datetime": "2023-01-01T00:00:00Z/2025-12-31T23:59:59Z"  # 2023+ tiles have EGID
         }
 
         response = await client.get(url, params=params)
@@ -127,11 +128,26 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
         features = data.get("features", [])
 
         if not features:
+            print(f"No tiles found for bbox {bbox}")
             return None
 
-        # Find the best matching tile (prefer GDB format)
+        # Sort by datetime descending to get newest tiles first (they have EGID)
+        def get_datetime(f):
+            dt = f.get("properties", {}).get("datetime", "")
+            return dt if dt else "1900-01-01"
+
+        features = sorted(features, key=get_datetime, reverse=True)
+        print(f"Found {len(features)} tiles, sorted by date. First: {features[0].get('id')}")
+
+        # Find the best matching tile (prefer GDB format, newest first)
         for feature in features:
             assets = feature.get("assets", {})
+            feature_id = feature.get("id", "")
+
+            # Skip aggregate datasets (they don't have spatial tiles)
+            if feature_id in ["swissbuildings3d_3_0_2023", "swissbuildings3d_3_0_2024", "swissbuildings3d_3_0_2025"]:
+                print(f"Skipping aggregate dataset: {feature_id}")
+                continue
 
             # Look for GDB asset first
             gdb_asset = None
@@ -142,6 +158,7 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
                     break
 
             if gdb_asset:
+                print(f"Selected tile: {feature_id}, URL: {gdb_asset.get('href')}")
                 return {
                     "id": feature.get("id"),
                     "download_url": gdb_asset.get("href"),
@@ -151,18 +168,21 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
                 }
 
         # Fallback to first available asset
-        if features:
-            first_feature = features[0]
-            assets = first_feature.get("assets", {})
+        for feature in features:
+            feature_id = feature.get("id", "")
+            if feature_id in ["swissbuildings3d_3_0_2023", "swissbuildings3d_3_0_2024", "swissbuildings3d_3_0_2025"]:
+                continue
+
+            assets = feature.get("assets", {})
             for asset in assets.values():
                 href = asset.get("href", "")
                 if href.endswith(".zip"):
                     return {
-                        "id": first_feature.get("id"),
+                        "id": feature.get("id"),
                         "download_url": href,
                         "format": "gdb" if ".gdb" in href else "gml",
-                        "bbox": first_feature.get("bbox"),
-                        "properties": first_feature.get("properties", {})
+                        "bbox": feature.get("bbox"),
+                        "properties": feature.get("properties", {})
                     }
 
         return None
