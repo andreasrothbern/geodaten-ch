@@ -27,5 +27,7 @@ fiona>=1.9.0
 # Document Generation (Word/PDF)
 python-docx>=1.1.0
 
-# Note: cairosvg for SVG-to-PNG would require system libraries (cairo)
-# SVG images are available via API endpoints and can be added manually
+# SVG to PNG conversion (pure Python, no system dependencies)
+svglib>=1.5.0
+reportlab>=4.0.0
+Pillow>=10.0.0

@@ -38,13 +38,23 @@ except ImportError:
     Inches = Pt = Cm = RGBColor = None
     WD_ALIGN_PARAGRAPH = WD_TABLE_ALIGNMENT = WD_STYLE_TYPE = None
 
-# SVG to PNG conversion (optional - requires cairo system library)
+# SVG to PNG conversion - try multiple methods
 CAIROSVG_AVAILABLE = False
+SVGLIB_AVAILABLE = False
+
+# Method 1: cairosvg (requires cairo system library)
 try:
     import cairosvg
     CAIROSVG_AVAILABLE = True
 except Exception:
-    # cairosvg requires cairo system library which may not be available
+    pass
+
+# Method 2: svglib + reportlab (pure Python, no system dependencies)
+try:
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPM
+    SVGLIB_AVAILABLE = True
+except Exception:
     pass
 
 
@@ -1086,15 +1096,53 @@ class DocumentGenerator:
         table.cell(1, 0).text = "\n\n\n"  # Platz zum Ausfüllen
 
     def _svg_to_png(self, svg_content: str) -> Optional[BytesIO]:
-        """Konvertiert SVG zu PNG für Word-Embedding"""
-        if not CAIROSVG_AVAILABLE or not svg_content:
+        """Konvertiert SVG zu PNG für Word-Embedding.
+
+        Versucht mehrere Methoden:
+        1. cairosvg (schnell, aber braucht System-Bibliotheken)
+        2. svglib + reportlab (pure Python, keine System-Deps)
+        """
+        if not svg_content:
             return None
-        try:
-            png_bytes = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
-            return BytesIO(png_bytes)
-        except Exception as e:
-            print(f"SVG to PNG conversion error: {e}")
-            return None
+
+        # Method 1: cairosvg (if available)
+        if CAIROSVG_AVAILABLE:
+            try:
+                png_bytes = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
+                return BytesIO(png_bytes)
+            except Exception as e:
+                print(f"cairosvg conversion error: {e}")
+
+        # Method 2: svglib + reportlab (pure Python fallback)
+        if SVGLIB_AVAILABLE:
+            try:
+                import tempfile
+                import os
+
+                # svglib braucht eine Datei, nicht einen String
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False, encoding='utf-8') as f:
+                    f.write(svg_content)
+                    temp_svg_path = f.name
+
+                try:
+                    from svglib.svglib import svg2rlg
+                    from reportlab.graphics import renderPM
+
+                    drawing = svg2rlg(temp_svg_path)
+                    if drawing:
+                        png_buffer = BytesIO()
+                        renderPM.drawToFile(drawing, png_buffer, fmt='PNG')
+                        png_buffer.seek(0)
+                        return png_buffer
+                finally:
+                    # Temp-Datei löschen
+                    if os.path.exists(temp_svg_path):
+                        os.remove(temp_svg_path)
+
+            except Exception as e:
+                print(f"svglib conversion error: {e}")
+
+        return None
 
     def _add_section_7(self, doc: Document, building: BuildingData,
                        svg_floor_plan: Optional[str] = None,
