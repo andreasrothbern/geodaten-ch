@@ -104,9 +104,15 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
         STAC item dict with tile info and download URL, or None
     """
     # Convert LV95 to WGS84 for STAC API query
-    # Approximate conversion (good enough for finding tiles)
-    lon = (e - 2600000) / 111320 * (1 / 0.8) + 8.2275  # Rough conversion
-    lat = (n - 1200000) / 110540 + 46.8182  # Rough conversion
+    # Approximation formulas from swisstopo (accurate to ~1m)
+    # Reference: https://www.swisstopo.admin.ch/en/knowledge-facts/surveying-geodesy/reference-frames/local/lv95.html
+    y = (e - 2600000) / 1000000  # Auxiliary value
+    x = (n - 1200000) / 1000000  # Auxiliary value
+
+    lon = (2.6779094 + 4.728982 * y + 0.791484 * y * x + 0.1306 * y * x * x - 0.0436 * y * y * y) * 100 / 36
+    lat = (16.9023892 + 3.238272 * x - 0.270978 * y * y - 0.002528 * x * x - 0.0447 * y * y * x - 0.0140 * x * x * x) * 100 / 36
+
+    print(f"Converted LV95 ({e}, {n}) to WGS84 ({lon:.4f}, {lat:.4f})")
 
     # Use a small bbox around the point
     bbox = f"{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}"
