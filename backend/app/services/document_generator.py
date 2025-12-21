@@ -31,6 +31,13 @@ try:
 except ImportError:
     DOCX_AVAILABLE = False
 
+# SVG to PNG conversion (optional)
+try:
+    import cairosvg
+    CAIROSVG_AVAILABLE = True
+except ImportError:
+    CAIROSVG_AVAILABLE = False
+
 
 @dataclass
 class BuildingData:
@@ -371,7 +378,10 @@ class DocumentGenerator:
         building: BuildingData,
         author_name: str = "Teilnehmer GL 2025",
         project_description: str = "Fassadensanierung",
-        include_reflexion_template: bool = True
+        include_reflexion_template: bool = True,
+        svg_floor_plan: Optional[str] = None,
+        svg_cross_section: Optional[str] = None,
+        svg_elevation: Optional[str] = None
     ) -> bytes:
         """Generiert ein Word-Dokument (.docx) für die Materialbewirtschaftung"""
 
@@ -430,7 +440,7 @@ class DocumentGenerator:
 
         # === 7. ANHANG ===
         doc.add_page_break()
-        self._add_section_7(doc, building)
+        self._add_section_7(doc, building, svg_floor_plan, svg_cross_section, svg_elevation)
 
         # Als Bytes zurückgeben
         buffer = BytesIO()
@@ -615,11 +625,20 @@ class DocumentGenerator:
         p.add_run("Die Zufahrt zur Baustelle ist für LKW bis 18 t möglich. ")
         p.add_run("Das Gelände um das Gebäude ist eben und bietet ausreichend Platz für die Gerüstmontage und Materiallagerung.")
 
-        doc.add_paragraph("• Zufahrt: Strasse, befahrbar für LKW", style='List Bullet')
-        doc.add_paragraph("• Terrain: Eben", style='List Bullet')
-        doc.add_paragraph("• Nachbarbebauung: [Abstand prüfen]", style='List Bullet')
-        doc.add_paragraph("• Hindernisse: [Freileitungen prüfen]", style='List Bullet')
-        doc.add_paragraph("• Lagerplatz: Ca. 50 m² verfügbar", style='List Bullet')
+        # Baustellensituation als Tabelle
+        table = doc.add_table(rows=5, cols=2)
+        table.style = 'Table Grid'
+        data = [
+            ("Zufahrt", "Strasse, befahrbar für LKW"),
+            ("Terrain", "Eben"),
+            ("Nachbarbebauung", "[Abstand prüfen]"),
+            ("Hindernisse", "[Freileitungen prüfen]"),
+            ("Lagerplatz", "Ca. 50 m² verfügbar"),
+        ]
+        for i, (label, value) in enumerate(data):
+            table.cell(i, 0).text = label
+            table.cell(i, 0).paragraphs[0].runs[0].bold = True
+            table.cell(i, 1).text = value
 
         # 1.5 Termine
         doc.add_heading("1.5 Termine", level=2)
@@ -657,11 +676,20 @@ class DocumentGenerator:
         # Grundsätze
         doc.add_heading("2.2.1 Ausmassgrundsätze (NPK 114, Anhang 1)", level=3)
 
-        doc.add_paragraph("• Längen und Höhen: In Meter [m] mit Genauigkeit 0.1 m", style='List Bullet')
-        doc.add_paragraph("• Flächen: In Quadratmeter [m²] mit Genauigkeit 0.01 m²", style='List Bullet')
-        doc.add_paragraph("• Rundung: Kaufmännisch (0-4 abrunden, 5-9 aufrunden)", style='List Bullet')
-        doc.add_paragraph("• Minimale Ausmasslänge: LAmin ≥ 2.5 m", style='List Bullet')
-        doc.add_paragraph("• Minimale Ausmasshöhe: HAmin ≥ 4.0 m", style='List Bullet')
+        # Grundsätze als Tabelle
+        table = doc.add_table(rows=5, cols=2)
+        table.style = 'Table Grid'
+        data = [
+            ("Längen und Höhen", "In Meter [m] mit Genauigkeit 0.1 m"),
+            ("Flächen", "In Quadratmeter [m²] mit Genauigkeit 0.01 m²"),
+            ("Rundung", "Kaufmännisch (0-4 abrunden, 5-9 aufrunden)"),
+            ("Minimale Ausmasslänge", "LAmin ≥ 2.5 m"),
+            ("Minimale Ausmasshöhe", "HAmin ≥ 4.0 m"),
+        ]
+        for i, (label, value) in enumerate(data):
+            table.cell(i, 0).text = label
+            table.cell(i, 0).paragraphs[0].runs[0].bold = True
+            table.cell(i, 1).text = value
 
         # Zuschläge
         doc.add_heading("2.2.2 Zuschläge (NPK 114, Anhang 2-4)", level=3)
@@ -889,17 +917,19 @@ class DocumentGenerator:
         # 5.1 Materialtransport
         doc.add_heading("5.1 Materialtransport", level=2)
 
-        p = doc.add_paragraph()
-        run = p.add_run("Transportmittel:")
-        run.bold = True
-        doc.add_paragraph("3-Achs-LKW mit Pritsche und Kran (HIAB), Nutzlast ca. 12-14 Tonnen")
-
-        p = doc.add_paragraph()
-        run = p.add_run("Ladungssicherung:")
-        run.bold = True
-        doc.add_paragraph("• Stellrahmen gebündelt und mit Spanngurten gesichert", style='List Bullet')
-        doc.add_paragraph("• Beläge in Gitterboxen oder auf Paletten gestapelt", style='List Bullet')
-        doc.add_paragraph("• Kleinmaterial in beschrifteten Kisten", style='List Bullet')
+        # Transportmittel als Tabelle
+        table = doc.add_table(rows=4, cols=2)
+        table.style = 'Table Grid'
+        data = [
+            ("Transportmittel", "3-Achs-LKW mit Pritsche und Kran (HIAB), Nutzlast ca. 12-14 t"),
+            ("Stellrahmen", "Gebündelt und mit Spanngurten gesichert"),
+            ("Beläge", "In Gitterboxen oder auf Paletten gestapelt"),
+            ("Kleinmaterial", "In beschrifteten Kisten"),
+        ]
+        for i, (label, value) in enumerate(data):
+            table.cell(i, 0).text = label
+            table.cell(i, 0).paragraphs[0].runs[0].bold = True
+            table.cell(i, 1).text = value
 
         # 5.2 Ablad
         doc.add_heading("5.2 Ablad", level=2)
@@ -965,69 +995,150 @@ class DocumentGenerator:
                 table.cell(i, j).text = val
 
         doc.add_heading("5.4.2 Persönliche Schutzausrüstung (PSA)", level=3)
-        doc.add_paragraph("• Schutzhelm (obligatorisch)", style='List Bullet')
-        doc.add_paragraph("• Sicherheitsschuhe S3", style='List Bullet')
-        doc.add_paragraph("• Arbeitshandschuhe", style='List Bullet')
-        doc.add_paragraph("• PSAgA (Auffanggurt, Verbindungsmittel) für Montage", style='List Bullet')
-        doc.add_paragraph("• Signalweste bei Arbeiten im Verkehrsbereich", style='List Bullet')
+
+        # PSA als Tabelle
+        table = doc.add_table(rows=5, cols=2)
+        table.style = 'Table Grid'
+        data = [
+            ("Schutzhelm", "Obligatorisch"),
+            ("Sicherheitsschuhe", "S3"),
+            ("Arbeitshandschuhe", "Lederhandschuhe"),
+            ("PSAgA", "Auffanggurt, Verbindungsmittel für Montage"),
+            ("Signalweste", "Bei Arbeiten im Verkehrsbereich"),
+        ]
+        for i, (label, value) in enumerate(data):
+            table.cell(i, 0).text = label
+            table.cell(i, 0).paragraphs[0].runs[0].bold = True
+            table.cell(i, 1).text = value
 
     def _add_section_6(self, doc: Document):
         """Kapitel 6: Reflexion (Vorlage zum Ausfüllen)"""
 
         doc.add_heading("6. Reflexion", level=1)
 
+        p = doc.add_paragraph()
+        p.add_run("Die Reflexion dient der Nachbearbeitung und Auswertung der praktischen Arbeit. Füllen Sie die untenstehenden Felder nach Abschluss der Arbeiten aus.")
+
         # 6.1 Planungsphase
         doc.add_heading("6.1 Planungsphase", level=2)
 
-        p = doc.add_paragraph()
-        run = p.add_run("Leitfragen:")
-        run.italic = True
+        # Leitfragen als Tabelle
+        table = doc.add_table(rows=4, cols=2)
+        table.style = 'Table Grid'
+        table.cell(0, 0).text = "Leitfrage"
+        table.cell(0, 0).paragraphs[0].runs[0].bold = True
+        table.cell(0, 1).text = "Ihre Antwort"
+        table.cell(0, 1).paragraphs[0].runs[0].bold = True
 
-        doc.add_paragraph("• Was lief gut bei der Materialdisposition?", style='List Bullet')
-        doc.add_paragraph("• Welche Herausforderungen gab es bei der Mengenermittlung?", style='List Bullet')
-        doc.add_paragraph("• Wie wurde die Kommunikation mit dem Lager / der Disposition geführt?", style='List Bullet')
-
-        p = doc.add_paragraph()
-        p.add_run("[Hier Ihre Reflexion zur Planungsphase eintragen...]")
+        questions = [
+            "Was lief gut bei der Materialdisposition?",
+            "Welche Herausforderungen gab es bei der Mengenermittlung?",
+            "Wie wurde die Kommunikation mit dem Lager / der Disposition geführt?",
+        ]
+        for i, q in enumerate(questions, 1):
+            table.cell(i, 0).text = q
+            table.cell(i, 1).text = ""
 
         # 6.2 Ausführungsphase
         doc.add_heading("6.2 Ausführungsphase", level=2)
 
-        p = doc.add_paragraph()
-        run = p.add_run("Leitfragen:")
-        run.italic = True
+        table = doc.add_table(rows=4, cols=2)
+        table.style = 'Table Grid'
+        table.cell(0, 0).text = "Leitfrage"
+        table.cell(0, 0).paragraphs[0].runs[0].bold = True
+        table.cell(0, 1).text = "Ihre Antwort"
+        table.cell(0, 1).paragraphs[0].runs[0].bold = True
 
-        doc.add_paragraph("• War das bestellte Material vollständig und korrekt?", style='List Bullet')
-        doc.add_paragraph("• Wie verlief der Transport und Ablad?", style='List Bullet')
-        doc.add_paragraph("• Gab es Material-Engpässe oder Überschüsse?", style='List Bullet')
-
-        p = doc.add_paragraph()
-        p.add_run("[Hier Ihre Reflexion zur Ausführungsphase eintragen...]")
+        questions = [
+            "War das bestellte Material vollständig und korrekt?",
+            "Wie verlief der Transport und Ablad?",
+            "Gab es Material-Engpässe oder Überschüsse?",
+        ]
+        for i, q in enumerate(questions, 1):
+            table.cell(i, 0).text = q
+            table.cell(i, 1).text = ""
 
         # 6.3 Erkenntnisse
         doc.add_heading("6.3 Erkenntnisse und Verbesserungspotential", level=2)
 
-        p = doc.add_paragraph()
-        p.add_run("[Hier Ihre Erkenntnisse eintragen...]")
+        table = doc.add_table(rows=2, cols=1)
+        table.style = 'Table Grid'
+        table.cell(0, 0).text = "Erkenntnisse"
+        table.cell(0, 0).paragraphs[0].runs[0].bold = True
+        table.cell(1, 0).text = "\n\n\n"  # Platz zum Ausfüllen
 
         # 6.4 Persönliches Fazit
         doc.add_heading("6.4 Persönliches Fazit", level=2)
 
-        p = doc.add_paragraph()
-        p.add_run("[Hier Ihr persönliches Fazit eintragen...]")
+        table = doc.add_table(rows=2, cols=1)
+        table.style = 'Table Grid'
+        table.cell(0, 0).text = "Persönliches Fazit"
+        table.cell(0, 0).paragraphs[0].runs[0].bold = True
+        table.cell(1, 0).text = "\n\n\n"  # Platz zum Ausfüllen
 
-    def _add_section_7(self, doc: Document, building: BuildingData):
+    def _svg_to_png(self, svg_content: str) -> Optional[BytesIO]:
+        """Konvertiert SVG zu PNG für Word-Embedding"""
+        if not CAIROSVG_AVAILABLE or not svg_content:
+            return None
+        try:
+            png_bytes = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
+            return BytesIO(png_bytes)
+        except Exception as e:
+            print(f"SVG to PNG conversion error: {e}")
+            return None
+
+    def _add_section_7(self, doc: Document, building: BuildingData,
+                       svg_floor_plan: Optional[str] = None,
+                       svg_cross_section: Optional[str] = None,
+                       svg_elevation: Optional[str] = None):
         """Kapitel 7: Anhang"""
 
         doc.add_heading("7. Anhang", level=1)
 
+        # Anhang A: Grundriss
         doc.add_heading("Anhang A: Grundriss Gerüst", level=2)
-        p = doc.add_paragraph()
-        p.add_run("[SVG-Visualisierung wird hier eingefügt - siehe API-Endpunkt /api/v1/visualize/floor-plan]")
+        if svg_floor_plan:
+            png_buffer = self._svg_to_png(svg_floor_plan)
+            if png_buffer:
+                doc.add_picture(png_buffer, width=Inches(6))
+            else:
+                p = doc.add_paragraph()
+                p.add_run("[Grundriss-Visualisierung: Bitte manuell einfügen]")
+                p = doc.add_paragraph()
+                p.add_run("API-Endpunkt: /api/v1/visualize/floor-plan").italic = True
+        else:
+            p = doc.add_paragraph()
+            p.add_run("[Grundriss-Visualisierung: Bitte manuell einfügen]")
 
-        doc.add_heading("Anhang B: Schnitt / Ansicht Giebelseite", level=2)
-        p = doc.add_paragraph()
-        p.add_run("[SVG-Visualisierung wird hier eingefügt - siehe API-Endpunkt /api/v1/visualize/cross-section]")
+        doc.add_page_break()
+
+        # Anhang B: Schnitt
+        doc.add_heading("Anhang B: Schnitt Giebelseite", level=2)
+        if svg_cross_section:
+            png_buffer = self._svg_to_png(svg_cross_section)
+            if png_buffer:
+                doc.add_picture(png_buffer, width=Inches(6))
+            else:
+                p = doc.add_paragraph()
+                p.add_run("[Schnitt-Visualisierung: Bitte manuell einfügen]")
+        else:
+            p = doc.add_paragraph()
+            p.add_run("[Schnitt-Visualisierung: Bitte manuell einfügen]")
+
+        doc.add_page_break()
+
+        # Anhang B2: Fassadenansicht
+        doc.add_heading("Anhang B2: Fassadenansicht", level=2)
+        if svg_elevation:
+            png_buffer = self._svg_to_png(svg_elevation)
+            if png_buffer:
+                doc.add_picture(png_buffer, width=Inches(6))
+            else:
+                p = doc.add_paragraph()
+                p.add_run("[Fassadenansicht: Bitte manuell einfügen]")
+        else:
+            p = doc.add_paragraph()
+            p.add_run("[Fassadenansicht: Bitte manuell einfügen]")
 
         doc.add_heading("Anhang C: Gerüstkarte / Kennzeichnung", level=2)
 

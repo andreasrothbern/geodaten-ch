@@ -1262,14 +1262,24 @@ async def visualize_cross_section(
         else:
             length_m = width_m = 10.0
 
-        # Höhe bestimmen
+        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
         eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+        ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
 
-        # Gemessene Höhe aus DB
-        measured_height = None
+        # Gemessene Höhe aus swissBUILDINGS3D DB
+        measured_height_m = None
         if building and building.egid:
-            from app.services.height_db import get_building_height
-            measured_height = get_building_height(building.egid)
+            from app.services.height_db import get_building_heights_detailed
+            heights = get_building_heights_detailed(building.egid)
+            if heights:
+                # Verwende gemessene Traufhöhe wenn vorhanden
+                if heights.get("traufhoehe_m"):
+                    eave_height_m = heights["traufhoehe_m"]
+                # Verwende gemessene Firsthöhe wenn vorhanden
+                if heights.get("firsthoehe_m"):
+                    ridge_height_m = heights["firsthoehe_m"]
+                # Gesamthöhe als Referenz
+                measured_height_m = heights.get("gebaeudehoehe_m")
 
         # BuildingData erstellen
         building_data = BuildingData(
@@ -1278,11 +1288,11 @@ async def visualize_cross_section(
             length_m=round(length_m, 1),
             width_m=round(width_m, 1),
             eave_height_m=round(eave_height_m, 1),
-            ridge_height_m=round(eave_height_m + 3.5, 1) if building else None,  # Annahme Satteldach
+            ridge_height_m=round(ridge_height_m, 1) if ridge_height_m else None,
             floors=building.floors if building else 3,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
-            measured_height_m=measured_height
+            measured_height_m=measured_height_m
         )
 
         # SVG generieren
@@ -1344,7 +1354,19 @@ async def visualize_elevation(
         else:
             length_m = width_m = 10.0
 
+        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
         eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+        ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
+
+        # Gemessene Höhe aus swissBUILDINGS3D DB
+        if building and building.egid:
+            from app.services.height_db import get_building_heights_detailed
+            heights = get_building_heights_detailed(building.egid)
+            if heights:
+                if heights.get("traufhoehe_m"):
+                    eave_height_m = heights["traufhoehe_m"]
+                if heights.get("firsthoehe_m"):
+                    ridge_height_m = heights["firsthoehe_m"]
 
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1352,7 +1374,7 @@ async def visualize_elevation(
             length_m=round(length_m, 1),
             width_m=round(width_m, 1),
             eave_height_m=round(eave_height_m, 1),
-            ridge_height_m=round(eave_height_m + 3.5, 1) if building else None,
+            ridge_height_m=round(ridge_height_m, 1) if ridge_height_m else None,
             floors=building.floors if building else 3,
             roof_type="gable",
             area_m2=building.area_m2 if building else None,
@@ -1415,7 +1437,15 @@ async def visualize_floor_plan(
         else:
             length_m = width_m = 10.0
 
+        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
         eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+
+        # Gemessene Höhe aus swissBUILDINGS3D DB (für NPK-Info im Grundriss)
+        if building and building.egid:
+            from app.services.height_db import get_building_heights_detailed
+            heights = get_building_heights_detailed(building.egid)
+            if heights and heights.get("traufhoehe_m"):
+                eave_height_m = heights["traufhoehe_m"]
 
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1504,13 +1534,23 @@ async def generate_materialbewirtschaftung_document(
         else:
             length_m = width_m = 10.0
 
-        # 5. Höhe bestimmen
+        # 5. Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
         eave_height_m = 8.0
         if building and building.floors:
             eave_height_m = building.floors * 2.8
 
-        # Ridge height für Satteldach
+        # Ridge height für Satteldach (default)
         ridge_height_m = eave_height_m + 3.5
+
+        # Gemessene Höhe aus swissBUILDINGS3D DB
+        if building and building.egid:
+            from app.services.height_db import get_building_heights_detailed
+            heights = get_building_heights_detailed(building.egid)
+            if heights:
+                if heights.get("traufhoehe_m"):
+                    eave_height_m = heights["traufhoehe_m"]
+                if heights.get("firsthoehe_m"):
+                    ridge_height_m = heights["firsthoehe_m"]
 
         # 6. Gebäudedaten zusammenstellen
         building_data = BuildingData(
@@ -1529,13 +1569,36 @@ async def generate_materialbewirtschaftung_document(
             lv95_n=geo.coordinates.lv95_n
         )
 
-        # 7. Dokument generieren
+        # 7. SVG-Visualisierungen generieren
+        from app.services.svg_generator import get_svg_generator, BuildingData as SVGBuildingData
+        svg_generator = get_svg_generator()
+
+        svg_building_data = SVGBuildingData(
+            address=geo.matched_address,
+            egid=building.egid if building else None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=round(eave_height_m, 1),
+            ridge_height_m=round(ridge_height_m, 1),
+            floors=building.floors if building else 2,
+            roof_type="gable",
+            area_m2=building.area_m2 if building else None,
+        )
+
+        svg_floor_plan = svg_generator.generate_floor_plan(svg_building_data)
+        svg_cross_section = svg_generator.generate_cross_section(svg_building_data)
+        svg_elevation = svg_generator.generate_elevation(svg_building_data)
+
+        # 8. Dokument generieren
         generator = get_document_generator()
         docx_bytes = generator.generate_word_document(
             building=building_data,
             author_name=author_name,
             project_description=project_description,
-            include_reflexion_template=include_reflexion
+            include_reflexion_template=include_reflexion,
+            svg_floor_plan=svg_floor_plan,
+            svg_cross_section=svg_cross_section,
+            svg_elevation=svg_elevation
         )
 
         # Dateiname erstellen

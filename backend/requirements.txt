@@ -26,3 +26,6 @@ fiona>=1.9.0
 
 # Document Generation (Word/PDF)
 python-docx>=1.1.0
+
+# SVG to PNG conversion for Word document embedding
+cairosvg>=2.7.0
