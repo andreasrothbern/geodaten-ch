@@ -1280,6 +1280,11 @@ async def visualize_cross_section(
                     ridge_height_m = heights["firsthoehe_m"]
                 # Gesamthöhe als Referenz
                 measured_height_m = heights.get("gebaeudehoehe_m")
+                # Fallback: Wenn nur gebaeudehoehe vorhanden, verwende als eave/ridge
+                if measured_height_m and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
+                    # Schätze Traufe als 85% der Gesamthöhe (typisch für Satteldach)
+                    eave_height_m = measured_height_m * 0.85
+                    ridge_height_m = measured_height_m
 
         # BuildingData erstellen
         building_data = BuildingData(
@@ -1367,6 +1372,11 @@ async def visualize_elevation(
                     eave_height_m = heights["traufhoehe_m"]
                 if heights.get("firsthoehe_m"):
                     ridge_height_m = heights["firsthoehe_m"]
+                # Fallback: Wenn nur gebaeudehoehe vorhanden
+                gebaeudehoehe = heights.get("gebaeudehoehe_m")
+                if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
+                    eave_height_m = gebaeudehoehe * 0.85
+                    ridge_height_m = gebaeudehoehe
 
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1444,8 +1454,13 @@ async def visualize_floor_plan(
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
-            if heights and heights.get("traufhoehe_m"):
-                eave_height_m = heights["traufhoehe_m"]
+            if heights:
+                if heights.get("traufhoehe_m"):
+                    eave_height_m = heights["traufhoehe_m"]
+                # Fallback: Wenn nur gebaeudehoehe vorhanden
+                gebaeudehoehe = heights.get("gebaeudehoehe_m")
+                if gebaeudehoehe and not heights.get("traufhoehe_m"):
+                    eave_height_m = gebaeudehoehe * 0.85
 
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1551,6 +1566,11 @@ async def generate_materialbewirtschaftung_document(
                     eave_height_m = heights["traufhoehe_m"]
                 if heights.get("firsthoehe_m"):
                     ridge_height_m = heights["firsthoehe_m"]
+                # Fallback: Wenn nur gebaeudehoehe vorhanden
+                gebaeudehoehe = heights.get("gebaeudehoehe_m")
+                if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
+                    eave_height_m = gebaeudehoehe * 0.85
+                    ridge_height_m = gebaeudehoehe
 
         # 6. Gebäudedaten zusammenstellen
         building_data = BuildingData(
