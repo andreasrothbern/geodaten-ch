@@ -21,6 +21,11 @@ from io import BytesIO
 import math
 
 # Document generation imports
+from typing import TYPE_CHECKING
+
+DOCX_AVAILABLE = False
+Document = None  # Placeholder for type hints
+
 try:
     from docx import Document
     from docx.shared import Inches, Pt, Cm, RGBColor
@@ -29,14 +34,18 @@ try:
     from docx.enum.style import WD_STYLE_TYPE
     DOCX_AVAILABLE = True
 except ImportError:
-    DOCX_AVAILABLE = False
+    # Create mock classes for type hints when docx not available
+    Inches = Pt = Cm = RGBColor = None
+    WD_ALIGN_PARAGRAPH = WD_TABLE_ALIGNMENT = WD_STYLE_TYPE = None
 
-# SVG to PNG conversion (optional)
+# SVG to PNG conversion (optional - requires cairo system library)
+CAIROSVG_AVAILABLE = False
 try:
     import cairosvg
     CAIROSVG_AVAILABLE = True
-except ImportError:
-    CAIROSVG_AVAILABLE = False
+except Exception:
+    # cairosvg requires cairo system library which may not be available
+    pass
 
 
 @dataclass
