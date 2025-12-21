@@ -267,9 +267,15 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
         # Try to find the right layer
         target_layer = None
         for layer in layers:
-            if 'building' in layer.lower() or 'solid' in layer.lower():
+            if 'building' in layer.lower() and 'solid' in layer.lower():
                 target_layer = layer
                 break
+
+        if not target_layer:
+            for layer in layers:
+                if 'building' in layer.lower():
+                    target_layer = layer
+                    break
 
         if not target_layer and layers:
             target_layer = layers[0]
@@ -280,8 +286,8 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
 
         print(f"Using layer: {target_layer}")
 
-        # Read without geometry for speed
-        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona', ignore_geometry=True)
+        # Read WITH geometry to calculate heights from 3D coordinates if needed
+        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
         debug_info["columns"] = list(gdf.columns)
         debug_info["total_rows"] = len(gdf)
         print(f"Columns: {list(gdf.columns)}")
@@ -299,7 +305,7 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
                 if egid_int <= 0:
                     continue
 
-                # Extract all height values
+                # Extract all height values from attributes
                 dach_max = row.get('DACH_MAX')
                 dach_min = row.get('DACH_MIN')
                 gelaendepunkt = row.get('GELAENDEPUNKT')
@@ -325,6 +331,37 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
                 # If no GESAMTHOEHE, calculate from firsthoehe
                 if gebaeudehoehe is None and firsthoehe is not None:
                     gebaeudehoehe = firsthoehe
+
+                # Fallback: Calculate height from 3D geometry (max Z - min Z)
+                if gebaeudehoehe is None and firsthoehe is None and traufhoehe is None:
+                    geom = row.get('geometry')
+                    if geom is not None and hasattr(geom, 'bounds'):
+                        try:
+                            # Try to get Z values from 3D geometry
+                            if hasattr(geom, 'exterior') and hasattr(geom.exterior, 'coords'):
+                                z_values = [c[2] for c in geom.exterior.coords if len(c) >= 3]
+                                if z_values:
+                                    gebaeudehoehe = round(max(z_values) - min(z_values), 2)
+                            elif hasattr(geom, 'geoms'):
+                                # MultiPolygon or similar
+                                z_values = []
+                                for g in geom.geoms:
+                                    if hasattr(g, 'exterior') and hasattr(g.exterior, 'coords'):
+                                        z_values.extend([c[2] for c in g.exterior.coords if len(c) >= 3])
+                                if z_values:
+                                    gebaeudehoehe = round(max(z_values) - min(z_values), 2)
+                                    # Also estimate trauf/first from Z distribution
+                                    z_sorted = sorted(set(z_values))
+                                    if len(z_sorted) >= 2:
+                                        min_z = z_sorted[0]
+                                        max_z = z_sorted[-1]
+                                        # Traufe is typically the second-highest common Z level
+                                        if len(z_sorted) >= 3:
+                                            # Estimate traufe as 80% of building height
+                                            traufhoehe = round((max_z - min_z) * 0.8, 2)
+                                        firsthoehe = gebaeudehoehe
+                        except Exception as e:
+                            debug_info["geometry_errors"] = debug_info.get("geometry_errors", 0) + 1
 
                 # Validate: at least one valid height
                 if gebaeudehoehe is None and firsthoehe is None and traufhoehe is None:
