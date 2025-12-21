@@ -62,43 +62,17 @@ class SVGGenerator:
         pass
 
     def _svg_header(self, width: int, height: int, title: str) -> str:
-        """SVG-Header mit Definitionen"""
+        """SVG-Header - einfach ohne Patterns für maximale Kompatibilität"""
         return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <title>{title}</title>
-
-  <defs>
-    <!-- Gebäude Schraffur -->
-    <pattern id="building-hatch" patternUnits="userSpaceOnUse" width="8" height="8">
-      <path d="M-2,2 l4,-4 M0,8 l8,-8 M6,10 l4,-4" stroke="#666" stroke-width="0.5" fill="none"/>
-    </pattern>
-
-    <!-- Fenster-Muster -->
-    <pattern id="windows" patternUnits="userSpaceOnUse" width="20" height="25">
-      <rect width="20" height="25" fill="#e8e8e8"/>
-      <rect x="3" y="3" width="14" height="18" fill="{self.COLORS['window']}" stroke="#333" stroke-width="0.5"/>
-    </pattern>
-
-    <!-- Gerüst Schraffur -->
-    <pattern id="scaffold-pattern" patternUnits="userSpaceOnUse" width="8" height="8">
-      <rect width="8" height="8" fill="{self.COLORS['scaffold']}"/>
-      <line x1="0" y1="8" x2="8" y2="0" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="0.5"/>
-      <line x1="0" y1="0" x2="0" y2="8" stroke="#d4a005" stroke-width="0.3"/>
-    </pattern>
-
-    <!-- Dach Schraffur -->
-    <pattern id="roof-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
-      <rect width="10" height="10" fill="{self.COLORS['roof']}"/>
-      <line x1="0" y1="5" x2="10" y2="5" stroke="#7a6245" stroke-width="0.5"/>
-    </pattern>
-  </defs>
 '''
 
     def _svg_footer(self) -> str:
         return '</svg>'
 
     def _legend(self, x: int, y: int, items: List[dict], width: int = 140) -> str:
-        """Generiert Legende"""
+        """Generiert Legende mit einfachen Farben"""
         height = 25 + len(items) * 20
         svg = f'''
   <!-- Legende -->
@@ -108,12 +82,12 @@ class SVGGenerator:
 '''
         for i, item in enumerate(items):
             item_y = 30 + i * 20
-            if item['type'] == 'rect':
-                svg += f'    <rect x="10" y="{item_y}" width="20" height="12" fill="{item["fill"]}" stroke="{item.get("stroke", "#333")}"/>\n'
-            elif item['type'] == 'circle':
+            if item['type'] == 'circle':
                 svg += f'    <circle cx="20" cy="{item_y + 6}" r="4" fill="{item["fill"]}"/>\n'
-            elif item['type'] == 'pattern':
-                svg += f'    <rect x="10" y="{item_y}" width="20" height="12" fill="url(#{item["pattern"]})" stroke="{item.get("stroke", "#333")}"/>\n'
+            else:
+                # Alle anderen (rect, pattern) als einfache Rechtecke
+                fill_color = item.get('fill', item.get('color', '#e0e0e0'))
+                svg += f'    <rect x="10" y="{item_y}" width="20" height="12" fill="{fill_color}" stroke="{item.get("stroke", "#333")}"/>\n'
             svg += f'    <text x="35" y="{item_y + 10}" font-family="Arial" font-size="9" fill="{self.COLORS["text"]}">{item["label"]}</text>\n'
 
         svg += '  </g>\n'
@@ -213,8 +187,8 @@ class SVGGenerator:
 
         # Legende
         legend_items = [
-            {'type': 'pattern', 'pattern': 'building-hatch', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'pattern', 'pattern': 'scaffold-pattern', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
+            {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
+            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
             {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
         ]
         svg += self._legend(width - 155, 55, legend_items)
@@ -246,7 +220,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst links -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
         # Verankerungen
         for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
@@ -257,7 +231,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
-        fill="url(#building-hatch)" stroke="#333" stroke-width="2"/>
+        fill="#e0e0e0" stroke="#333" stroke-width="2"/>
 '''
 
         # Dach
@@ -265,7 +239,7 @@ class SVGGenerator:
             svg += f'''
   <!-- Dach -->
   <polygon points="{building_x},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px},{ground_y - eave_height_px}"
-           fill="url(#roof-pattern)" stroke="#333" stroke-width="2"/>
+           fill="#8b7355" stroke="#333" stroke-width="2"/>
 '''
 
         # Gerüst rechts
@@ -273,7 +247,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst rechts -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
         for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
             cy = ground_y - h * scale
@@ -377,14 +351,14 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst links -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
 '''
 
         # Gebäude - einfacher Umriss mit Schraffur
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
-        fill="url(#building-hatch)" stroke="#333" stroke-width="2"/>
+        fill="#e0e0e0" stroke="#333" stroke-width="2"/>
 '''
 
         # Dach
@@ -392,7 +366,7 @@ class SVGGenerator:
             svg += f'''
   <!-- Dach -->
   <polygon points="{building_x - 8},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + 8},{ground_y - eave_height_px}"
-           fill="url(#roof-pattern)" stroke="#333" stroke-width="2"/>
+           fill="#8b7355" stroke="#333" stroke-width="2"/>
 '''
         elif building.roof_type == 'flat':
             svg += f'''
@@ -406,7 +380,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst rechts -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
 '''
 
         # Verankerungspunkte (3 Stück pro Seite)
@@ -449,8 +423,8 @@ class SVGGenerator:
 
         # Legende
         legend_items = [
-            {'type': 'pattern', 'pattern': 'building-hatch', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'pattern', 'pattern': 'scaffold-pattern', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
+            {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
+            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
             {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
         ]
         svg += self._legend(width - 155, 55, legend_items)
@@ -506,8 +480,8 @@ class SVGGenerator:
 
         # Legende
         legend_items = [
-            {'type': 'pattern', 'pattern': 'building-hatch', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'pattern', 'pattern': 'scaffold-pattern', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
+            {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
+            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
             {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
         ]
         svg += self._legend(width - 155, 55, legend_items)
@@ -553,7 +527,7 @@ class SVGGenerator:
   <!-- Gerüst umlaufend -->
   <rect x="{building_x - scaffold_offset - scaffold_width}" y="{building_y - scaffold_offset - scaffold_width}"
         width="{building_width_px + 2*scaffold_offset + 2*scaffold_width}" height="{building_height_px + 2*scaffold_offset + 2*scaffold_width}"
-        fill="url(#scaffold-pattern)" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
 '''
 
         # Innerer Ausschnitt
@@ -567,7 +541,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{building_y}" width="{building_width_px}" height="{building_height_px}"
-        fill="url(#building-hatch)" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
+        fill="#e0e0e0" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
 '''
 
         # Fassaden-Beschriftungen
