@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ScaffoldingData, ScaffoldingSide } from '../types'
+import { BuildingVisualization } from './BuildingVisualization'
 
 interface ScaffoldingCardProps {
   data: ScaffoldingData
@@ -80,6 +81,21 @@ export function ScaffoldingCard({
         )}
       </div>
 
+      {/* Gebäude-Visualisierung */}
+      {data.polygon.coordinates.length >= 3 && (
+        <BuildingVisualization
+          polygon={data.polygon.coordinates}
+          widthM={building.bounding_box.width_m}
+          depthM={building.bounding_box.depth_m}
+          eaveHeightM={dimensions.height_measured_m || dimensions.height_estimated_m || 10}
+          ridgeHeightM={dimensions.height_measured_m ? dimensions.height_measured_m * 1.15 : undefined}
+          floors={dimensions.floors || undefined}
+          egid={gwr_data.egid}
+          areaM2={building.footprint_area_m2}
+          heightSource={dimensions.height_source}
+        />
+      )}
+
       {/* Höhenangaben - separate Spalten */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Geschätzte Höhe */}
@@ -106,7 +122,7 @@ export function ScaffoldingCard({
         {/* Gemessene Höhe */}
         <div className={`rounded-lg p-4 ${dimensions.height_measured_m ? 'bg-emerald-50' : 'bg-gray-50'}`}>
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <p className={`text-sm font-medium ${dimensions.height_measured_m ? 'text-emerald-600' : 'text-gray-500'}`}>
                 Höhe gemessen (swissBUILDINGS3D)
               </p>
@@ -116,9 +132,21 @@ export function ScaffoldingCard({
                   : '—'}
               </p>
               {dimensions.height_measured_m ? (
-                <p className="text-xs text-emerald-600 mt-1">
-                  Photogrammetrisch gemessen
-                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-xs text-emerald-600">
+                    Photogrammetrisch gemessen
+                  </p>
+                  {data.viewer_3d_url && (
+                    <a
+                      href={data.viewer_3d_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-700 hover:text-emerald-900 underline"
+                    >
+                      → 3D anzeigen
+                    </a>
+                  )}
+                </div>
               ) : canFetchMeasuredHeight ? (
                 <button
                   onClick={onFetchMeasuredHeight}

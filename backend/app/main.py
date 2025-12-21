@@ -665,6 +665,522 @@ async def get_height_for_egid(egid: int):
 
 
 # ============================================================================
+# Layher Materialkatalog
+# ============================================================================
+
+@app.get("/api/v1/catalog/systems",
+         tags=["Materialkatalog"])
+async def get_scaffold_systems():
+    """
+    Alle verfügbaren Gerüstsysteme abrufen.
+
+    Liefert Layher Blitz 70, Allround und weitere Systeme.
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        return service.get_systems()
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+
+
+@app.get("/api/v1/catalog/systems/{system_id}",
+         tags=["Materialkatalog"])
+async def get_scaffold_system(system_id: str):
+    """
+    Details zu einem Gerüstsystem abrufen.
+
+    Inkl. verfügbare Feldlängen und Rahmenhöhen.
+
+    **Beispiel:** `/api/v1/catalog/systems/blitz70`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        system = service.get_system(system_id)
+        if not system:
+            raise HTTPException(status_code=404, detail=f"System '{system_id}' nicht gefunden")
+        return system
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+
+
+@app.get("/api/v1/catalog/materials/{system_id}",
+         tags=["Materialkatalog"])
+async def get_materials(
+    system_id: str,
+    category: Optional[str] = Query(None, description="Kategorie: frame, ledger, deck, diagonal, base, anchor")
+):
+    """
+    Materialien für ein Gerüstsystem abrufen.
+
+    Optional nach Kategorie filtern.
+
+    **Beispiel:** `/api/v1/catalog/materials/blitz70?category=frame`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        return service.get_materials(system_id, category)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+
+
+@app.get("/api/v1/catalog/load-classes",
+         tags=["Materialkatalog"])
+async def get_load_classes():
+    """
+    Lastklassen nach EN 12811 abrufen.
+
+    Klasse 1-6 mit Nutzlast und typischer Anwendung.
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        return service.get_load_classes()
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+
+
+@app.get("/api/v1/catalog/estimate",
+         tags=["Materialkatalog"])
+async def estimate_material_quantities(
+    system_id: str = Query("blitz70", description="Gerüstsystem: blitz70 oder allround"),
+    area_m2: float = Query(..., description="Gerüstfläche in m²")
+):
+    """
+    Materialmenge basierend auf Gerüstfläche schätzen.
+
+    Verwendet Richtwerte pro 100m² Gerüstfläche.
+
+    **Beispiel:** `/api/v1/catalog/estimate?system_id=blitz70&area_m2=460`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+
+        estimates = service.estimate_material_quantities(system_id, area_m2)
+
+        # Gesamtgewicht berechnen
+        total_weight = sum(e["total_weight_kg"] or 0 for e in estimates)
+        total_pieces = sum(e["quantity_typical"] for e in estimates)
+
+        return {
+            "system_id": system_id,
+            "scaffold_area_m2": area_m2,
+            "materials": estimates,
+            "summary": {
+                "total_pieces": total_pieces,
+                "total_weight_kg": round(total_weight, 1),
+                "total_weight_tons": round(total_weight / 1000, 2),
+                "weight_per_m2_kg": round(total_weight / area_m2, 1) if area_m2 > 0 else 0
+            }
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/v1/catalog/field-layout",
+         tags=["Materialkatalog"])
+async def calculate_field_layout(
+    system_id: str = Query("blitz70", description="Gerüstsystem"),
+    facade_length: float = Query(..., description="Fassadenlänge in Metern")
+):
+    """
+    Optimale Feldaufteilung für eine Fassadenlänge berechnen.
+
+    **Beispiel:** `/api/v1/catalog/field-layout?facade_length=12.5`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        return service.calculate_field_layout(system_id, facade_length)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/v1/catalog/frames-for-height",
+         tags=["Materialkatalog"])
+async def calculate_frames_for_height(
+    system_id: str = Query("blitz70", description="Gerüstsystem"),
+    height: float = Query(..., description="Zielhöhe in Metern")
+):
+    """
+    Optimale Rahmenkombination für eine Zielhöhe berechnen.
+
+    **Beispiel:** `/api/v1/catalog/frames-for-height?height=7.5`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        frames = service.calculate_frames_for_height(system_id, height)
+
+        # Gesamtgewicht
+        total_weight = sum((f["weight_kg"] or 0) * f["quantity"] for f in frames)
+        total_height = sum(f["height_m"] * f["quantity"] for f in frames)
+
+        return {
+            "system_id": system_id,
+            "target_height_m": height,
+            "frames": frames,
+            "summary": {
+                "total_height_m": round(total_height, 2),
+                "total_weight_kg": round(total_weight, 1),
+                "frame_count": sum(f["quantity"] for f in frames)
+            }
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# NPK 114 Ausmass-Berechnung
+# ============================================================================
+
+@app.get("/api/v1/ausmass/gebaeude",
+         tags=["NPK 114 Ausmass"])
+async def berechne_ausmass_gebaeude(
+    laenge_m: float = Query(..., description="Gebäudelänge (Traufseite bei Satteldach)"),
+    breite_m: float = Query(..., description="Gebäudebreite (Giebelseite bei Satteldach)"),
+    hoehe_traufe_m: float = Query(..., description="Traufhöhe in Metern"),
+    hoehe_first_m: Optional[float] = Query(None, description="Firsthöhe (bei Satteldach/Walmdach)"),
+    dachform: str = Query("flach", description="Dachform: flach, satteldach, walmdach"),
+    breitenklasse: str = Query("W09", description="Breitenklasse: W06, W09, W12")
+):
+    """
+    NPK 114 Ausmass für ein rechteckiges Gebäude berechnen.
+
+    Berechnet Gerüstflächen nach Schweizer Norm NPK 114 D/2012.
+
+    **Zuschläge:**
+    - Fassadenabstand: 0.30 m
+    - Gerüstbreite: 0.70 m (W09) / 1.00 m (W12)
+    - Höhenzuschlag: +1.00 m
+    - Eckzuschlag: LS × HA pro Ecke
+
+    **Beispiel:** `?laenge_m=12&breite_m=10&hoehe_traufe_m=6.5&hoehe_first_m=10&dachform=satteldach`
+    """
+    try:
+        from app.services.npk114_calculator import NPK114Calculator, WidthClass
+
+        wk = WidthClass[breitenklasse]
+        calc = NPK114Calculator(breitenklasse=wk)
+
+        result = calc.berechne_rechteckiges_gebaeude(
+            laenge_m=laenge_m,
+            breite_m=breite_m,
+            hoehe_traufe_m=hoehe_traufe_m,
+            hoehe_first_m=hoehe_first_m,
+            dachform=dachform
+        )
+
+        return {
+            "eingabe": {
+                "laenge_m": laenge_m,
+                "breite_m": breite_m,
+                "hoehe_traufe_m": hoehe_traufe_m,
+                "hoehe_first_m": hoehe_first_m,
+                "dachform": dachform,
+                "breitenklasse": breitenklasse
+            },
+            "norm": "NPK 114 D/2012",
+            **result.to_dict()
+        }
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Ungültige Breitenklasse: {breitenklasse}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ausmass/fassade",
+         tags=["NPK 114 Ausmass"])
+async def berechne_ausmass_fassade(
+    laenge_m: float = Query(..., description="Fassadenlänge in Metern"),
+    hoehe_m: float = Query(..., description="Fassadenhöhe (Traufe) in Metern"),
+    hoehe_first_m: Optional[float] = Query(None, description="Firsthöhe (bei Giebel)"),
+    ist_giebel: bool = Query(False, description="Ist Giebelseite?"),
+    breitenklasse: str = Query("W09", description="Breitenklasse: W06, W09, W12")
+):
+    """
+    NPK 114 Ausmass für eine einzelne Fassade berechnen.
+
+    **Formeln:**
+    - Ausmasslänge: LA = LS + L + LS (min. 2.5 m)
+    - Ausmasshöhe: HA = H + 1.0 m (min. 4.0 m)
+    - Giebel: H_mittel = H_Traufe + (H_Giebel × 0.5)
+
+    **Beispiel:** `?laenge_m=12&hoehe_m=6.5`
+    """
+    try:
+        from app.services.npk114_calculator import NPK114Calculator, WidthClass
+
+        wk = WidthClass[breitenklasse]
+        calc = NPK114Calculator(breitenklasse=wk)
+
+        fassade = calc.berechne_fassade(
+            name="Fassade",
+            laenge_m=laenge_m,
+            hoehe_traufe_m=hoehe_m,
+            hoehe_first_m=hoehe_first_m,
+            ist_giebel=ist_giebel
+        )
+
+        return {
+            "norm": "NPK 114 D/2012",
+            **fassade.to_dict()
+        }
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Ungültige Breitenklasse: {breitenklasse}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ausmass/von-adresse",
+         tags=["NPK 114 Ausmass"])
+async def berechne_ausmass_von_adresse(
+    address: str = Query(..., min_length=5, description="Adresse"),
+    hoehe_traufe_m: Optional[float] = Query(None, description="Manuelle Traufhöhe"),
+    hoehe_first_m: Optional[float] = Query(None, description="Manuelle Firsthöhe"),
+    dachform: str = Query("flach", description="Dachform: flach, satteldach, walmdach"),
+    breitenklasse: str = Query("W09", description="Breitenklasse: W06, W09, W12")
+):
+    """
+    NPK 114 Ausmass aus Geodaten berechnen.
+
+    Kombiniert Gebäudedaten von geodaten API mit NPK 114 Berechnung.
+
+    **Workflow:**
+    1. Adresse geokodieren
+    2. Gebäudedaten (Fläche, Geschosse) abrufen
+    3. Dimensionen aus Fläche schätzen
+    4. Höhe aus Geschossen oder manuell
+    5. NPK 114 Ausmass berechnen
+
+    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&dachform=satteldach`
+    """
+    try:
+        import math
+        from app.services.npk114_calculator import NPK114Calculator, WidthClass
+
+        # 1. Adresse geokodieren
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        # 2. Gebäude suchen
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e,
+            geo.coordinates.lv95_n,
+            tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        # 3. Gebäudegeometrie abrufen (für Umfang)
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        # 4. Dimensionen bestimmen
+        if geometry and geometry.side_lengths:
+            # Aus Geometrie: Längste zwei Seiten
+            sides = sorted(geometry.side_lengths, reverse=True)
+            laenge = sides[0] if sides else 10.0
+            breite = sides[1] if len(sides) > 1 else laenge
+        elif building and building.area_m2:
+            # Aus Fläche: Quadratisch approximieren
+            seite = math.sqrt(building.area_m2)
+            laenge = breite = seite
+        else:
+            laenge = breite = 10.0
+
+        # 5. Höhe bestimmen
+        if hoehe_traufe_m is None:
+            if building and building.floors:
+                hoehe_traufe_m = building.floors * 2.8  # 2.8m pro Geschoss
+            else:
+                hoehe_traufe_m = 8.0  # Default EFH
+
+        # 6. NPK 114 berechnen
+        wk = WidthClass[breitenklasse]
+        calc = NPK114Calculator(breitenklasse=wk)
+
+        result = calc.berechne_rechteckiges_gebaeude(
+            laenge_m=round(laenge, 1),
+            breite_m=round(breite, 1),
+            hoehe_traufe_m=hoehe_traufe_m,
+            hoehe_first_m=hoehe_first_m,
+            dachform=dachform
+        )
+
+        return {
+            "adresse": {
+                "eingabe": address,
+                "gefunden": geo.matched_address,
+                "koordinaten": {
+                    "lv95_e": geo.coordinates.lv95_e,
+                    "lv95_n": geo.coordinates.lv95_n
+                }
+            },
+            "gebaeude": {
+                "egid": building.egid if building else None,
+                "geschosse": building.floors if building else None,
+                "flaeche_m2": building.area_m2 if building else None,
+                "laenge_geschaetzt_m": round(laenge, 1),
+                "breite_geschaetzt_m": round(breite, 1),
+                "quelle_dimensionen": "geometrie" if (geometry and geometry.side_lengths) else "flaeche"
+            },
+            "eingabe": {
+                "hoehe_traufe_m": hoehe_traufe_m,
+                "hoehe_first_m": hoehe_first_m,
+                "dachform": dachform,
+                "breitenklasse": breitenklasse
+            },
+            "norm": "NPK 114 D/2012",
+            **result.to_dict()
+        }
+
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Ungültige Breitenklasse: {breitenklasse}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ausmass/komplett",
+         tags=["NPK 114 Ausmass"])
+async def berechne_komplettes_ausmass(
+    address: str = Query(..., min_length=5, description="Adresse"),
+    system_id: str = Query("blitz70", description="Gerüstsystem: blitz70, allround"),
+    hoehe_traufe_m: Optional[float] = Query(None, description="Manuelle Traufhöhe"),
+    hoehe_first_m: Optional[float] = Query(None, description="Manuelle Firsthöhe"),
+    dachform: str = Query("flach", description="Dachform: flach, satteldach, walmdach"),
+    breitenklasse: str = Query("W09", description="Breitenklasse: W06, W09, W12")
+):
+    """
+    Komplettes Gerüst-Ausmass inkl. Materialliste.
+
+    Kombiniert NPK 114 Ausmass mit Materialschätzung.
+
+    **Liefert:**
+    - NPK 114 Ausmass aller Fassaden
+    - Materialliste mit Mengen
+    - Gesamtgewicht
+    - Feldaufteilung
+
+    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&system_id=blitz70&dachform=satteldach`
+    """
+    try:
+        import math
+        from app.services.npk114_calculator import NPK114Calculator, WidthClass
+        from app.services.layher_catalog import get_catalog_service
+
+        # 1. Adresse und Gebäude
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e,
+            geo.coordinates.lv95_n,
+            tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        # 2. Dimensionen
+        if geometry and geometry.side_lengths:
+            sides = sorted(geometry.side_lengths, reverse=True)
+            laenge = sides[0] if sides else 10.0
+            breite = sides[1] if len(sides) > 1 else laenge
+        elif building and building.area_m2:
+            seite = math.sqrt(building.area_m2)
+            laenge = breite = seite
+        else:
+            laenge = breite = 10.0
+
+        # 3. Höhe
+        if hoehe_traufe_m is None:
+            if building and building.floors:
+                hoehe_traufe_m = building.floors * 2.8
+            else:
+                hoehe_traufe_m = 8.0
+
+        # 4. NPK 114 Ausmass
+        wk = WidthClass[breitenklasse]
+        calc = NPK114Calculator(breitenklasse=wk)
+        ausmass = calc.berechne_rechteckiges_gebaeude(
+            laenge_m=round(laenge, 1),
+            breite_m=round(breite, 1),
+            hoehe_traufe_m=hoehe_traufe_m,
+            hoehe_first_m=hoehe_first_m,
+            dachform=dachform
+        )
+
+        # 5. Material schätzen
+        catalog = get_catalog_service()
+        total_flaeche = ausmass.total_ausmass_m2
+        material_schaetzung = catalog.estimate_material_quantities(system_id, total_flaeche)
+
+        total_weight = sum(e["total_weight_kg"] or 0 for e in material_schaetzung)
+        total_pieces = sum(e["quantity_typical"] for e in material_schaetzung)
+
+        # 6. Feldaufteilung für längste Fassade
+        feld_layout = catalog.calculate_field_layout(system_id, laenge)
+
+        return {
+            "adresse": {
+                "eingabe": address,
+                "gefunden": geo.matched_address
+            },
+            "gebaeude": {
+                "egid": building.egid if building else None,
+                "laenge_m": round(laenge, 1),
+                "breite_m": round(breite, 1),
+                "hoehe_traufe_m": hoehe_traufe_m,
+                "hoehe_first_m": hoehe_first_m,
+                "dachform": dachform
+            },
+            "ausmass": ausmass.to_dict(),
+            "material": {
+                "system": system_id,
+                "liste": material_schaetzung,
+                "zusammenfassung": {
+                    "total_stueck": total_pieces,
+                    "total_gewicht_kg": round(total_weight, 1),
+                    "total_gewicht_tonnen": round(total_weight / 1000, 2),
+                    "gewicht_pro_m2_kg": round(total_weight / total_flaeche, 1) if total_flaeche > 0 else 0
+                }
+            },
+            "feldaufteilung": feld_layout
+        }
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Ungültiger Parameter: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 
