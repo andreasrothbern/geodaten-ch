@@ -29,13 +29,28 @@ def init_database():
     with sqlite3.connect(HEIGHT_DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Haupttabelle für Gebäudehöhen
+        # Haupttabelle für Gebäudehöhen (Legacy, wird noch unterstützt)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS building_heights (
                 egid INTEGER PRIMARY KEY,
                 height_m REAL NOT NULL,
                 height_type TEXT DEFAULT 'measured',  -- measured, estimated, lidar
                 source TEXT,  -- z.B. 'swissBUILDINGS3D_3.0_BE'
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Erweiterte Tabelle für alle Höhentypen (Gerüstbau-relevant)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS building_heights_detailed (
+                egid INTEGER PRIMARY KEY,
+                traufhoehe_m REAL,           -- Dachhöhe min - Terrain (Eave height)
+                firsthoehe_m REAL,           -- Dachhöhe max - Terrain (Ridge height)
+                gebaeudehoehe_m REAL,        -- Gesamthöhe (Building height)
+                dach_max_m REAL,             -- Absolut ü.M.
+                dach_min_m REAL,             -- Absolut ü.M.
+                terrain_m REAL,              -- Geländepunkt ü.M.
+                source TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -91,6 +106,103 @@ def get_building_height(egid: int) -> Optional[Tuple[float, str]]:
     except sqlite3.Error as e:
         print(f"SQLite Error: {e}")
         return None
+
+
+def get_building_heights_detailed(egid: int) -> Optional[dict]:
+    """
+    Alle Höhenwerte für ein Gebäude aus der Datenbank abrufen.
+
+    Args:
+        egid: Eidgenössischer Gebäudeidentifikator
+
+    Returns:
+        Dict mit allen Höhenwerten oder None wenn nicht gefunden
+        {
+            "traufhoehe_m": float,      # Höhe Dachtraufe
+            "firsthoehe_m": float,      # Höhe Dachfirst
+            "gebaeudehoehe_m": float,   # Gesamthöhe Gebäude
+            "dach_max_m": float,        # Absolut ü.M.
+            "dach_min_m": float,        # Absolut ü.M.
+            "terrain_m": float,         # Terrain ü.M.
+            "source": str
+        }
+    """
+    if not HEIGHT_DB_PATH.exists():
+        return None
+
+    try:
+        with sqlite3.connect(HEIGHT_DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+                       dach_max_m, dach_min_m, terrain_m, source
+                FROM building_heights_detailed
+                WHERE egid = ?
+            """, (egid,))
+            result = cursor.fetchone()
+
+            if result:
+                return {
+                    "traufhoehe_m": result[0],
+                    "firsthoehe_m": result[1],
+                    "gebaeudehoehe_m": result[2],
+                    "dach_max_m": result[3],
+                    "dach_min_m": result[4],
+                    "terrain_m": result[5],
+                    "source": f"database:{result[6]}"
+                }
+            return None
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return None
+
+
+def insert_building_heights_detailed(
+    egid: int,
+    traufhoehe_m: Optional[float] = None,
+    firsthoehe_m: Optional[float] = None,
+    gebaeudehoehe_m: Optional[float] = None,
+    dach_max_m: Optional[float] = None,
+    dach_min_m: Optional[float] = None,
+    terrain_m: Optional[float] = None,
+    source: str = "unknown"
+):
+    """
+    Detaillierte Gebäudehöhen in die Datenbank einfügen.
+    """
+    with sqlite3.connect(HEIGHT_DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO building_heights_detailed
+            (egid, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+             dach_max_m, dach_min_m, terrain_m, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (egid, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+              dach_max_m, dach_min_m, terrain_m, source))
+        conn.commit()
+
+
+def bulk_insert_heights_detailed(data: list, source: str = "unknown"):
+    """
+    Mehrere detaillierte Gebäudehöhen auf einmal einfügen.
+
+    Args:
+        data: Liste von dicts mit {egid, traufhoehe_m, firsthoehe_m, ...}
+        source: Datenquelle
+    """
+    with sqlite3.connect(HEIGHT_DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT OR REPLACE INTO building_heights_detailed
+            (egid, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+             dach_max_m, dach_min_m, terrain_m, source)
+            VALUES (:egid, :traufhoehe_m, :firsthoehe_m, :gebaeudehoehe_m,
+                    :dach_max_m, :dach_min_m, :terrain_m, :source)
+        """, [{**d, "source": source} for d in data])
+        conn.commit()
+
+    return len(data)
 
 
 def insert_building_height(

@@ -98,6 +98,10 @@ export interface ScaffoldingData {
     height_estimated_source: string | null
     height_measured_m: number | null
     height_measured_source: string | null
+    // Detaillierte Höhen aus swissBUILDINGS3D
+    traufhoehe_m: number | null      // Dachhöhe min - Terrain (Eave)
+    firsthoehe_m: number | null      // Dachhöhe max - Terrain (Ridge)
+    gebaeudehoehe_m: number | null   // Gesamthöhe (Building)
   }
   scaffolding: {
     facade_length_total_m: number

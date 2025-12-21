@@ -173,6 +173,55 @@ export function ScaffoldingCard({
         </div>
       </div>
 
+      {/* Detaillierte Höhen aus swissBUILDINGS3D */}
+      {(dimensions.traufhoehe_m || dimensions.firsthoehe_m || dimensions.gebaeudehoehe_m) && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-4 border border-emerald-200">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">📏</span>
+            <h4 className="font-medium text-emerald-800">Gemessene Höhen (swissBUILDINGS3D)</h4>
+            {data.viewer_3d_url && (
+              <a
+                href={data.viewer_3d_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto text-xs text-emerald-700 hover:text-emerald-900 underline"
+              >
+                → 3D Viewer
+              </a>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {/* Traufhöhe */}
+            <div className="bg-white rounded-lg p-3 text-center border">
+              <p className="text-xs text-gray-500 mb-1">Traufhöhe</p>
+              <p className="text-xl font-bold text-emerald-700">
+                {dimensions.traufhoehe_m ? `${dimensions.traufhoehe_m.toFixed(1)} m` : '—'}
+              </p>
+              <p className="text-xs text-gray-400">Dachtraufe</p>
+            </div>
+            {/* Firsthöhe */}
+            <div className="bg-white rounded-lg p-3 text-center border">
+              <p className="text-xs text-gray-500 mb-1">Firsthöhe</p>
+              <p className="text-xl font-bold text-teal-700">
+                {dimensions.firsthoehe_m ? `${dimensions.firsthoehe_m.toFixed(1)} m` : '—'}
+              </p>
+              <p className="text-xs text-gray-400">Dachfirst</p>
+            </div>
+            {/* Gebäudehöhe */}
+            <div className="bg-white rounded-lg p-3 text-center border">
+              <p className="text-xs text-gray-500 mb-1">Gebäudehöhe</p>
+              <p className="text-xl font-bold text-cyan-700">
+                {dimensions.gebaeudehoehe_m ? `${dimensions.gebaeudehoehe_m.toFixed(1)} m` : '—'}
+              </p>
+              <p className="text-xs text-gray-400">Gesamt</p>
+            </div>
+          </div>
+          <p className="text-xs text-emerald-600 mt-2 text-center">
+            Photogrammetrisch gemessen aus Luftbildern
+          </p>
+        </div>
+      )}
+
       {/* Manuelle Höheneingabe */}
       <div className="bg-gray-50 rounded-lg p-4">
         <p className="text-sm font-medium text-gray-700 mb-2">

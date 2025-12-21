@@ -20,7 +20,9 @@ import httpx
 from app.services.height_db import (
     init_database,
     get_building_height,
+    get_building_heights_detailed,
     bulk_insert_heights,
+    bulk_insert_heights_detailed,
     log_import,
     get_db_path
 )
@@ -226,15 +228,18 @@ def download_and_extract_tile(url: str, temp_dir: Path) -> Path:
     raise FileNotFoundError("No GDB or GML found in tile archive")
 
 
-def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
+def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
     """
-    Parse a GDB file and extract EGID + height pairs.
+    Parse a GDB file and extract EGID + height data.
 
     Args:
         gdb_path: Path to the GDB directory
 
     Returns:
-        Tuple of (list of (egid, height) tuples, debug_info dict)
+        Tuple of:
+        - list of (egid, height) tuples (legacy format)
+        - list of dicts with detailed heights (new format)
+        - debug_info dict
     """
     try:
         import geopandas as gpd
@@ -242,7 +247,8 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
     except ImportError:
         raise ImportError("geopandas/fiona is required for GDB parsing")
 
-    heights = []
+    heights_legacy = []
+    heights_detailed = []
     debug_info = {
         "layers": [],
         "columns": [],
@@ -270,7 +276,7 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
 
         if not target_layer:
             print("No suitable layer found in GDB")
-            return heights, debug_info
+            return heights_legacy, heights_detailed, debug_info
 
         print(f"Using layer: {target_layer}")
 
@@ -284,58 +290,81 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, Dict[str, Any]]:
         for _, row in gdf.iterrows():
             egid = row.get('EGID')
 
-            # Try different height columns
-            # GESAMTHOEHE: pre-calculated building height (preferred)
-            # DACH_MAX - GELAENDEPUNKT: calculate from roof and ground
-            # DACH_MAX - DACH_MIN: approximate height if no ground point
-            height = row.get('GESAMTHOEHE')
-
-            if height is None:
-                dach_max = row.get('DACH_MAX')
-                gelaendepunkt = row.get('GELAENDEPUNKT')
-                dach_min = row.get('DACH_MIN')
-
-                if dach_max is not None and gelaendepunkt is not None:
-                    try:
-                        height = float(dach_max) - float(gelaendepunkt)
-                    except (ValueError, TypeError):
-                        pass
-                elif dach_max is not None and dach_min is not None:
-                    try:
-                        # DACH_MIN is often floor/wall base, estimate as building height
-                        height = float(dach_max) - float(dach_min)
-                    except (ValueError, TypeError):
-                        pass
-
             if egid is None:
                 debug_info["null_egid_count"] += 1
-                continue
-            if height is None:
-                debug_info["null_height_count"] += 1
                 continue
 
             try:
                 egid_int = int(egid)
-                height_float = float(height)
-                # Minimum height validation: buildings must be at least 2m tall
-                # Heights below 2m are likely data errors
-                if egid_int > 0 and height_float >= 2.0:
-                    heights.append((egid_int, round(height_float, 2)))
-                    # Collect sample EGIDs
-                    if len(debug_info["sample_egids"]) < 10:
-                        debug_info["sample_egids"].append(egid_int)
-                elif egid_int > 0 and height_float > 0 and height_float < 2.0:
+                if egid_int <= 0:
+                    continue
+
+                # Extract all height values
+                dach_max = row.get('DACH_MAX')
+                dach_min = row.get('DACH_MIN')
+                gelaendepunkt = row.get('GELAENDEPUNKT')
+                gesamthoehe = row.get('GESAMTHOEHE')
+
+                # Convert to floats
+                dach_max_f = float(dach_max) if dach_max is not None else None
+                dach_min_f = float(dach_min) if dach_min is not None else None
+                terrain_f = float(gelaendepunkt) if gelaendepunkt is not None else None
+                gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
+
+                # Calculate relative heights
+                traufhoehe = None
+                firsthoehe = None
+                gebaeudehoehe = gesamt_f
+
+                if terrain_f is not None:
+                    if dach_min_f is not None:
+                        traufhoehe = round(dach_min_f - terrain_f, 2)
+                    if dach_max_f is not None:
+                        firsthoehe = round(dach_max_f - terrain_f, 2)
+
+                # If no GESAMTHOEHE, calculate from firsthoehe
+                if gebaeudehoehe is None and firsthoehe is not None:
+                    gebaeudehoehe = firsthoehe
+
+                # Validate: at least one valid height
+                if gebaeudehoehe is None and firsthoehe is None and traufhoehe is None:
+                    debug_info["null_height_count"] += 1
+                    continue
+
+                # Minimum height validation
+                main_height = gebaeudehoehe or firsthoehe or traufhoehe
+                if main_height < 2.0:
                     debug_info["rejected_low_height_count"] = debug_info.get("rejected_low_height_count", 0) + 1
+                    continue
+
+                # Legacy format (single height)
+                heights_legacy.append((egid_int, round(main_height, 2)))
+
+                # Detailed format (all heights)
+                heights_detailed.append({
+                    "egid": egid_int,
+                    "traufhoehe_m": traufhoehe,
+                    "firsthoehe_m": firsthoehe,
+                    "gebaeudehoehe_m": round(gebaeudehoehe, 2) if gebaeudehoehe else None,
+                    "dach_max_m": round(dach_max_f, 2) if dach_max_f else None,
+                    "dach_min_m": round(dach_min_f, 2) if dach_min_f else None,
+                    "terrain_m": round(terrain_f, 2) if terrain_f else None
+                })
+
+                # Collect sample EGIDs
+                if len(debug_info["sample_egids"]) < 10:
+                    debug_info["sample_egids"].append(egid_int)
+
             except (ValueError, TypeError):
                 pass
 
-        print(f"Found {len(heights)} valid heights, sample EGIDs: {debug_info['sample_egids']}")
+        print(f"Found {len(heights_legacy)} valid heights, sample EGIDs: {debug_info['sample_egids']}")
 
     except Exception as e:
         print(f"Error parsing GDB: {e}")
         debug_info["error"] = str(e)
 
-    return heights, debug_info
+    return heights_legacy, heights_detailed, debug_info
 
 
 async def fetch_height_for_coordinates(
@@ -367,8 +396,19 @@ async def fetch_height_for_coordinates(
     if not get_db_path().exists():
         init_database()
 
-    # Check if we already have the height
+    # Check if we already have the detailed heights
     if egid:
+        existing_detailed = get_building_heights_detailed(egid)
+        if existing_detailed:
+            return {
+                "status": "already_exists",
+                "egid": egid,
+                "height_m": existing_detailed.get("gebaeudehoehe_m") or existing_detailed.get("firsthoehe_m"),
+                "heights": existing_detailed,
+                "source": existing_detailed.get("source"),
+                "imported_count": 0
+            }
+        # Fallback to legacy
         existing = get_building_height(egid)
         if existing:
             return {
@@ -397,9 +437,9 @@ async def fetch_height_for_coordinates(
         data_path = download_and_extract_tile(tile_info["download_url"], temp_dir)
 
         # Parse
-        heights, debug_info = parse_gdb_for_heights(data_path)
+        heights_legacy, heights_detailed, debug_info = parse_gdb_for_heights(data_path)
 
-        if not heights:
+        if not heights_legacy:
             return {
                 "status": "no_heights_found",
                 "tile_id": tile_info["id"],
@@ -408,15 +448,17 @@ async def fetch_height_for_coordinates(
                 "debug": debug_info
             }
 
-        # Import into database
+        # Import into database (both legacy and detailed)
         source = f"swissBUILDINGS3D_3.0_ondemand_{tile_info['id']}"
-        bulk_insert_heights(heights, source)
+        bulk_insert_heights(heights_legacy, source)
+        if heights_detailed:
+            bulk_insert_heights_detailed(heights_detailed, source)
 
         # Log the import
         log_import(
             source_file=f"ondemand_{tile_info['id']}",
             canton="ondemand",
-            records=len(heights),
+            records=len(heights_legacy),
             version="3.0"
         )
 
@@ -424,23 +466,31 @@ async def fetch_height_for_coordinates(
         result = {
             "status": "success",
             "tile_id": tile_info["id"],
-            "imported_count": len(heights),
+            "imported_count": len(heights_legacy),
             "source": source,
             "debug": debug_info
         }
 
         if egid:
-            height = get_building_height(egid)
-            if height:
+            # Try detailed heights first
+            heights_detail = get_building_heights_detailed(egid)
+            if heights_detail:
                 result["egid"] = egid
-                result["height_m"] = height[0]
-                result["height_source"] = height[1]
+                result["height_m"] = heights_detail.get("gebaeudehoehe_m") or heights_detail.get("firsthoehe_m")
+                result["heights"] = heights_detail
+                result["height_source"] = heights_detail.get("source")
             else:
-                result["egid"] = egid
-                result["height_found"] = False
-                result["message"] = f"EGID {egid} not found in imported tile"
-                # Show sample EGIDs that were found
-                result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
+                # Fallback to legacy
+                height = get_building_height(egid)
+                if height:
+                    result["egid"] = egid
+                    result["height_m"] = height[0]
+                    result["height_source"] = height[1]
+                else:
+                    result["egid"] = egid
+                    result["height_found"] = False
+                    result["message"] = f"EGID {egid} not found in imported tile"
+                    result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
 
         return result
 

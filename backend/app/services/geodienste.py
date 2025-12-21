@@ -434,6 +434,10 @@ def get_height_details(
         "measured_source": None,
         "active_height_m": None,  # Die tatsächlich verwendete Höhe
         "active_source": None,
+        # Detaillierte Höhen aus swissBUILDINGS3D
+        "traufhoehe_m": None,      # Dachhöhe min - Terrain
+        "firsthoehe_m": None,      # Dachhöhe max - Terrain
+        "gebaeudehoehe_m": None,   # Gesamthöhe
     }
 
     # 1. Geschätzte Höhe berechnen (immer, wenn möglich)
@@ -468,20 +472,32 @@ def get_height_details(
     measured_is_plausible = True
     if egid:
         try:
-            from app.services.height_db import get_building_height
-            db_result = get_building_height(egid)
-            if db_result and db_result[0] >= 2.0:  # Mindesthöhe 2m
-                result["measured_height_m"] = db_result[0]
-                result["measured_source"] = db_result[1]
+            from app.services.height_db import get_building_height, get_building_heights_detailed
 
-                # Plausibilitätsprüfung: gemessene Höhe sollte mindestens 40%
-                # der geschätzten Höhe sein, sonst ist es wahrscheinlich ein
-                # Nebengebäude oder Datenfehler
-                if result["estimated_height_m"]:
-                    ratio = db_result[0] / result["estimated_height_m"]
-                    if ratio < 0.4:
-                        measured_is_plausible = False
-                        result["measured_source"] = f"{db_result[1]} (unplausibel: nur {ratio*100:.0f}% der geschätzten Höhe)"
+            # Zuerst detaillierte Höhen versuchen
+            detailed = get_building_heights_detailed(egid)
+            if detailed:
+                result["traufhoehe_m"] = detailed.get("traufhoehe_m")
+                result["firsthoehe_m"] = detailed.get("firsthoehe_m")
+                result["gebaeudehoehe_m"] = detailed.get("gebaeudehoehe_m")
+                # Haupthöhe ist Gebäudehöhe oder Firsthöhe
+                main_height = detailed.get("gebaeudehoehe_m") or detailed.get("firsthoehe_m")
+                if main_height and main_height >= 2.0:
+                    result["measured_height_m"] = main_height
+                    result["measured_source"] = detailed.get("source", "database:swissBUILDINGS3D")
+            else:
+                # Fallback: Legacy-Höhe
+                db_result = get_building_height(egid)
+                if db_result and db_result[0] >= 2.0:
+                    result["measured_height_m"] = db_result[0]
+                    result["measured_source"] = db_result[1]
+
+            # Plausibilitätsprüfung
+            if result["measured_height_m"] and result["estimated_height_m"]:
+                ratio = result["measured_height_m"] / result["estimated_height_m"]
+                if ratio < 0.4:
+                    measured_is_plausible = False
+                    result["measured_source"] = f"{result['measured_source']} (unplausibel: nur {ratio*100:.0f}% der geschätzten Höhe)"
         except ImportError:
             pass
 
@@ -581,6 +597,10 @@ def calculate_scaffolding_data(
             "height_estimated_source": height_info["estimated_source"],
             "height_measured_m": height_info["measured_height_m"],
             "height_measured_source": height_info["measured_source"],
+            # Detaillierte Höhen aus swissBUILDINGS3D (für Gerüstbau)
+            "traufhoehe_m": height_info.get("traufhoehe_m"),
+            "firsthoehe_m": height_info.get("firsthoehe_m"),
+            "gebaeudehoehe_m": height_info.get("gebaeudehoehe_m"),
         },
         "scaffolding": {
             "facade_length_total_m": geometry.facade_length_total_m,
