@@ -526,31 +526,6 @@ async def get_height_database_stats():
         return {"exists": False, "message": "Height database module not available"}
 
 
-@app.get("/api/v1/heights/{egid}",
-         tags=["System"])
-async def get_height_for_egid(egid: int):
-    """
-    Gebäudehöhe für eine EGID aus der Datenbank abrufen.
-    """
-    try:
-        from app.services.height_db import get_building_height
-        result = get_building_height(egid)
-        if result:
-            return {
-                "egid": egid,
-                "height_m": result[0],
-                "source": result[1],
-                "found": True
-            }
-        return {
-            "egid": egid,
-            "found": False,
-            "message": "Keine Höhendaten für dieses Gebäude"
-        }
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Height database not available")
-
-
 @app.post("/api/v1/heights/fetch-on-demand",
           tags=["System"])
 async def fetch_height_on_demand(
@@ -655,6 +630,34 @@ async def get_height_from_3d_tiles_lv95(
             status_code=500,
             detail=f"Error fetching height from 3D Tiles: {str(ex)}"
         )
+
+
+@app.get("/api/v1/heights/{egid}",
+         tags=["Höhendaten"])
+async def get_height_for_egid(egid: int):
+    """
+    Gebäudehöhe für eine EGID aus der Datenbank abrufen.
+
+    **Hinweis:** Diese Route muss nach den spezifischen Routes definiert sein,
+    da {egid} sonst Pfade wie "3d-tiles" matchen würde.
+    """
+    try:
+        from app.services.height_db import get_building_height
+        result = get_building_height(egid)
+        if result:
+            return {
+                "egid": egid,
+                "height_m": result[0],
+                "source": result[1],
+                "found": True
+            }
+        return {
+            "egid": egid,
+            "found": False,
+            "message": "Keine Höhendaten für dieses Gebäude"
+        }
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Height database not available")
 
 
 # ============================================================================
