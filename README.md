@@ -1,101 +1,137 @@
-# 🇨🇭 Geodaten Schweiz
+# Geodaten Schweiz - Gerüstbau-Modul
 
-Full-Stack Anwendung für Schweizer Geodaten (Gebäude, Adressen, Grundstücke).
+API und Web-App für Schweizer Geodaten mit Fokus auf Gerüstbau-Berechnungen.
 
-## 📦 Projektstruktur
+**Live Demo:** https://cooperative-commitment-production.up.railway.app
+
+## Integrierte Datenquellen
+
+| Quelle | Daten | Genauigkeit | Status |
+|--------|-------|-------------|--------|
+| **GWR (BFS)** | EGID, Adresse, Geschosse, Kategorie, Baujahr | Amtlich, aktuell | Live-API |
+| **geodienste.ch WFS** | Gebäudegrundriss (Polygon) | ±10cm (AV-Daten) | Live-API |
+| **swissBUILDINGS3D 3.0** | Gemessene Gebäudehöhe | ±50cm (Photogrammetrie) | DB + On-Demand |
+| **swisstopo Geocoding** | Adress-Koordinaten | ±1m | Live-API |
+
+## Höhendaten-Verfügbarkeit
+
+### Lokal importiert (sofort verfügbar)
+- Kanton Bern: 365'790 Gebäude
+- Kanton Solothurn: 234'879 Gebäude
+- **Total: ~600'000 Gebäude**
+
+### On-Demand abrufbar
+Kantone mit EGID-Support: AG, AI, AR, BE, BL, BS, FR, GL, JU, LU, NE, SG, SH, SO, SZ, TG + Stadt Zürich
+
+## Datengenauigkeit
+
+| Messwert | Quelle | Genauigkeit |
+|----------|--------|-------------|
+| Gebäudehöhe (gemessen) | swissBUILDINGS3D | ±0.5m |
+| Gebäudehöhe (geschätzt) | Geschosse × 3.2m | ±2-3m |
+| Fassadenlänge | AV-Grundriss | ±10cm |
+| Grundfläche | AV-Grundriss | ±0.1m² |
+| Koordinaten | LV95 | ±1m |
+
+## API-Endpunkte
+
+### Hauptfunktionen
+```
+GET  /api/v1/lookup?address=...           # Adresse -> Gebäudedaten
+GET  /api/v1/scaffolding?address=...      # Gerüstbau-Daten
+POST /api/v1/heights/fetch-on-demand      # On-Demand Höhenabruf
+GET  /api/v1/heights/stats                # Datenbank-Statistiken
+```
+
+### Dokumentation
+- Swagger UI: https://acceptable-trust-production.up.railway.app/docs
+- ReDoc: https://acceptable-trust-production.up.railway.app/redoc
+
+## 3D-Daten
+
+### swisstopo 3D Viewer
+Gebäude in 3D ansehen:
+https://map.geo.admin.ch/?topic=ech&lang=de&bgLayer=ch.swisstopo.pixelkarte-farbe&layers=ch.swisstopo.swissbuildings3d&3d=true
+
+### 3D Tiles Endpoint
+```
+https://3d.geo.admin.ch/ch.swisstopo.swissbuildings3d.3d/v1/tileset.json
+```
+
+## Architektur
 
 ```
 geodaten-ch/
-├── backend/          # FastAPI Backend
+├── backend/                 # FastAPI + Python 3.11
 │   ├── app/
-│   │   ├── main.py           # API Endpunkte
-│   │   ├── models/           # Pydantic Schemas
-│   │   └── services/         # swisstopo Adapter, Cache
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/         # React + Vite Frontend
-│   ├── src/
-│   │   ├── App.tsx           # Haupt-App
-│   │   ├── components/       # React Komponenten
-│   │   └── types.ts          # TypeScript Types
-│   ├── Dockerfile
-│   └── package.json
-└── railway.toml      # Railway.app Deployment Config
+│   │   ├── main.py         # API Endpunkte
+│   │   ├── models/         # Pydantic Schemas
+│   │   ├── services/       # Business Logic
+│   │   │   ├── swisstopo.py
+│   │   │   ├── geodienste.py
+│   │   │   ├── height_db.py
+│   │   │   └── height_fetcher.py  # On-Demand Import
+│   │   └── data/
+│   │       └── building_heights.db
+│   └── scripts/
+│       └── import_building_heights.py
+│
+├── frontend/               # React + Vite + TypeScript + Tailwind
+│   └── src/
+│       ├── App.tsx
+│       └── components/
+│           ├── SearchForm.tsx
+│           ├── BuildingCard.tsx
+│           └── ScaffoldingCard.tsx
+│
+└── Deployed on Railway.app
 ```
 
-## 🚀 Lokale Entwicklung
-
-### Backend starten
+## Lokale Entwicklung
 
 ```bash
+# Backend
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
-```
 
-API Docs: http://localhost:8000/docs
-
-### Frontend starten
-
-```bash
+# Frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Frontend: http://localhost:3000
+## Geplante Erweiterungen
 
-## 🌐 Deployment auf Railway.app
+### SUVA Gerüst-Kategorien
 
-### 1. Repository erstellen
+Für präzise Gerüstplanung nach SUVA-Normen:
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin <your-repo-url>
-git push -u origin main
-```
+| Arbeitstyp | Benötigte Daten | Status |
+|------------|-----------------|--------|
+| Fassade komplett | Gesamthöhe, Umfang | Vorhanden |
+| Malerarbeiten | Fassadenfläche pro Seite | Vorhanden |
+| Dachuntersicht | Traufhöhe, Dachüberstand | Geplant (3D Tiles) |
+| Dacharbeiten | Dachhöhe, Neigung, First | Geplant (3D Tiles) |
 
-### 2. Railway Projekt erstellen
+### 3D Tiles Integration
 
-1. [Railway.app](https://railway.app) öffnen
-2. "New Project" → "Deploy from GitHub repo"
-3. Repository auswählen
-4. Railway erkennt automatisch Backend und Frontend
+Extraktion detaillierter Gebäudemasse aus 3D Tiles:
+- Traufhöhe vs. Firsthöhe
+- Dachform und Neigung
+- Dachüberstand
+- Fassadenflächen nach Himmelsrichtung
 
-### 3. Environment Variables setzen
+## Datenquellen & Lizenzen
 
-**Backend Service:**
-- Keine speziellen Variablen nötig
+- **swisstopo**: [Open Government Data](https://www.swisstopo.admin.ch/de/geodata.html)
+- **BFS GWR**: [Gebäude- und Wohnungsregister](https://www.housing-stat.ch/)
+- **geodienste.ch**: [Amtliche Vermessung](https://geodienste.ch/)
 
-**Frontend Service:**
-- `VITE_API_URL` = `https://<backend-service>.railway.app`
+## Deployment
 
-### 4. Custom Domains (optional)
-
-- Backend: `api.geodaten.ch`
-- Frontend: `geodaten.ch`
-
-## 📡 API Endpunkte
-
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/health` | Health Check |
-| GET | `/api/v1/address/search?q=...` | Adresssuche |
-| GET | `/api/v1/geocode?address=...` | Geokodierung |
-| GET | `/api/v1/building/egid/{egid}` | Gebäude per EGID |
-| GET | `/api/v1/building/at?x=...&y=...` | Gebäude an Koordinate |
-| GET | `/api/v1/building/search?q=...` | Gebäudesuche |
-| GET | `/api/v1/lookup?address=...` | Kombinierte Abfrage |
-
-## 🗂️ Datenquellen
-
-- **swisstopo / geo.admin.ch** - Primäre Datenquelle
-- **GWR** - Eidg. Gebäude- und Wohnungsregister
-
-## 📄 Lizenz
-
-Daten: © swisstopo, BFS/GWR
+Gehostet auf [Railway.app](https://railway.app):
+- Backend: https://acceptable-trust-production.up.railway.app
+- Frontend: https://cooperative-commitment-production.up.railway.app

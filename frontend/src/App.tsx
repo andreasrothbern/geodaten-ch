@@ -247,14 +247,23 @@ function App() {
       <footer className="bg-gray-100 border-t mt-12">
         <div className="max-w-6xl mx-auto px-4 py-6 text-center text-sm text-gray-500">
           <p>
-            Daten: © swisstopo, BFS/GWR | 
-            <a 
-              href="https://api3.geo.admin.ch" 
-              target="_blank" 
+            Daten: © swisstopo, BFS/GWR |
+            <a
+              href="https://api3.geo.admin.ch"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-red-600 hover:underline ml-1"
             >
               geo.admin.ch
+            </a>
+            {' | '}
+            <a
+              href="https://map.geo.admin.ch/?topic=ech&lang=de&bgLayer=ch.swisstopo.pixelkarte-farbe&layers=ch.swisstopo.swissbuildings3d&3d=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-600 hover:underline"
+            >
+              3D Viewer
             </a>
           </p>
         </div>
