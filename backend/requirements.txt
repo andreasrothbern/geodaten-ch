@@ -19,3 +19,7 @@ python-dotenv==1.0.0
 
 # Für Produktion
 gunicorn==21.2.0
+
+# swissBUILDINGS3D GDB Parsing (On-Demand Height Fetch)
+geopandas>=0.14.0
+fiona>=1.9.0
