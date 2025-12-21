@@ -8,24 +8,6 @@ interface ScaffoldingCardProps {
   fetchingHeight?: boolean
 }
 
-const HEIGHT_SOURCE_LABELS: Record<string, string> = {
-  manual: 'Manuell eingegeben',
-  calculated_from_floors: 'Berechnet aus Geschossen',
-  default_by_category: 'Standard (Gebäudekategorie)',
-  default_standard: 'Standard (10m)',
-  unknown: 'Unbekannt',
-}
-
-// Funktion um Datenbank-Quellen zu erkennen
-function getHeightSourceLabel(source: string | undefined | null): string {
-  if (!source) return 'Unbekannt'
-  if (source.startsWith('database:')) {
-    const dbSource = source.replace('database:', '')
-    return `swissBUILDINGS3D (${dbSource})`
-  }
-  return HEIGHT_SOURCE_LABELS[source] || source
-}
-
 function isFromDatabase(source: string | undefined | null): boolean {
   return source?.startsWith('database:') ?? false
 }
