@@ -551,11 +551,15 @@ def calculate_scaffolding_data(
         e = coordinates.get('lv95_e')
         n = coordinates.get('lv95_n')
         if e and n:
+            # LV95 Koordinaten brauchen volles Format (E: 2xxxxxx, N: 1xxxxxx)
+            # Falls Koordinaten im verkürzten Format sind, Präfix hinzufügen
+            e_full = e if e > 2000000 else e + 2000000
+            n_full = n if n > 1000000 else n + 1000000
             viewer_3d_url = (
                 f"https://map.geo.admin.ch/?lang=de&topic=ech"
                 f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
                 f"&layers=ch.swisstopo.swissbuildings3d"
-                f"&E={e:.0f}&N={n:.0f}&zoom=10&3d=true"
+                f"&E={e_full:.0f}&N={n_full:.0f}&zoom=10&3d=true"
             )
 
     return {
