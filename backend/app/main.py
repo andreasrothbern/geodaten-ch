@@ -587,6 +587,76 @@ async def fetch_height_on_demand(
         )
 
 
+@app.get("/api/v1/heights/3d-tiles",
+         tags=["Höhendaten"])
+async def get_height_from_3d_tiles(
+    lat: float = Query(..., description="WGS84 Latitude"),
+    lon: float = Query(..., description="WGS84 Longitude"),
+    max_distance: float = Query(100.0, description="Maximale Suchentfernung in Metern")
+):
+    """
+    Gebäudehöhe aus 3D Tiles abrufen (koordinatenbasiert).
+
+    Diese Funktion sucht das nächstgelegene Gebäude in den swissBUILDINGS3D 3D Tiles
+    und gibt dessen gemessene Höhe zurück.
+
+    **Vorteile:**
+    - Keine EGID erforderlich
+    - Direkte Koordinatensuche
+    - Schnell (~1-2 Sekunden)
+
+    **Einschränkungen:**
+    - Nicht alle Gebiete der Schweiz sind abgedeckt (insb. städtische Zentren)
+    - Genauigkeit abhängig von der Gebäudedichte im Tile
+
+    **Beispiel:** `?lat=46.3131&lon=8.4476`
+    """
+    try:
+        from app.services.tiles3d_fetcher import fetch_height_from_3d_tiles
+        result = await fetch_height_from_3d_tiles(lat, lon, max_distance)
+        return result
+    except ImportError as ie:
+        raise HTTPException(
+            status_code=503,
+            detail=f"3D Tiles service not available: {str(ie)}"
+        )
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching height from 3D Tiles: {str(ex)}"
+        )
+
+
+@app.get("/api/v1/heights/3d-tiles-lv95",
+         tags=["Höhendaten"])
+async def get_height_from_3d_tiles_lv95(
+    e: float = Query(..., description="LV95 Easting (E-Koordinate)"),
+    n: float = Query(..., description="LV95 Northing (N-Koordinate)"),
+    max_distance: float = Query(100.0, description="Maximale Suchentfernung in Metern")
+):
+    """
+    Gebäudehöhe aus 3D Tiles mit LV95-Koordinaten abrufen.
+
+    Konvertiert LV95 zu WGS84 und sucht dann in den 3D Tiles.
+
+    **Beispiel:** `?e=2679000&n=1247000`
+    """
+    try:
+        from app.services.tiles3d_fetcher import fetch_height_from_3d_tiles_lv95
+        result = await fetch_height_from_3d_tiles_lv95(e, n, max_distance)
+        return result
+    except ImportError as ie:
+        raise HTTPException(
+            status_code=503,
+            detail=f"3D Tiles service not available: {str(ie)}"
+        )
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching height from 3D Tiles: {str(ex)}"
+        )
+
+
 # ============================================================================
 # Error Handler
 # ============================================================================
