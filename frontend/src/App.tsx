@@ -72,32 +72,44 @@ function App() {
 
   const handleFetchMeasuredHeight = async () => {
     if (!scaffoldingData?.address?.coordinates || !scaffoldingData?.gwr_data?.egid) {
+      console.log('Missing coordinates or EGID')
       return
     }
 
     const { lv95_e, lv95_n } = scaffoldingData.address.coordinates
     const egid = scaffoldingData.gwr_data.egid
 
+    console.log(`Fetching height for EGID ${egid} at E=${lv95_e}, N=${lv95_n}`)
     setFetchingHeight(true)
+    setError(null)
 
     try {
       // Call the on-demand height fetch API
       const url = `${API_URL}/api/v1/heights/fetch-on-demand?e=${lv95_e}&n=${lv95_n}&egid=${egid}`
+      console.log('Calling API:', url)
+
       const response = await fetch(url, { method: 'POST' })
+      const data = await response.json()
+      console.log('Height fetch result:', data)
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Height fetch result:', data)
+      if (!response.ok) {
+        throw new Error(data.detail || data.error || 'Fehler beim Abrufen der Höhe')
+      }
 
-        // If height was found, reload scaffolding data to get updated height
-        if (data.status === 'success' || data.status === 'already_exists') {
-          if (currentAddress) {
-            await fetchScaffoldingData(currentAddress)
-          }
+      // If height was found, reload scaffolding data to get updated height
+      if (data.status === 'success' || data.status === 'already_exists') {
+        console.log(`Success! Imported ${data.imported_count} buildings`)
+        if (currentAddress) {
+          await fetchScaffoldingData(currentAddress)
         }
+      } else if (data.status === 'no_tile_found') {
+        setError('Keine swissBUILDINGS3D Daten für diesen Standort verfügbar')
+      } else if (data.status === 'no_heights_found') {
+        setError('Tile gefunden, aber keine Höhendaten enthalten')
       }
     } catch (err) {
       console.error('Height fetch error:', err)
+      setError(err instanceof Error ? err.message : 'Fehler beim Abrufen der gemessenen Höhe')
     } finally {
       setFetchingHeight(false)
     }
