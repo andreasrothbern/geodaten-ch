@@ -121,12 +121,12 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # Query STAC API for items intersecting the bbox
-        # IMPORTANT: Use 2023+ to get tiles with EGID (BE/JU got EGID in June 2024)
+        # Note: Older tiles (2018-2021) may not have EGID, but we still want them for height data
         url = f"{STAC_API_BASE}/collections/{COLLECTION_ID}/items"
         params = {
             "bbox": bbox,
-            "limit": 20,
-            "datetime": "2023-01-01T00:00:00Z/2025-12-31T23:59:59Z"  # 2023+ tiles have EGID
+            "limit": 20
+            # Removed datetime filter to include all available tiles
         }
 
         response = await client.get(url, params=params)
