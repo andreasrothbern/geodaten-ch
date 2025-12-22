@@ -515,11 +515,18 @@ def get_height_details(
                     result["heights_estimated"] = True  # Flag für Frontend
                     print(f"[DEBUG get_height_details] EGID {egid}: estimated trauf={result['traufhoehe_m']}, first={result['firsthoehe_m']} from gebaeude={gebaeudehoehe}")
             else:
-                # Fallback: Legacy-Höhe
+                # Fallback: Legacy-Höhe (nur gebaeudehoehe, keine Trauf/First)
                 db_result = get_building_height(egid)
                 if db_result and db_result[0] >= 2.0:
-                    result["measured_height_m"] = db_result[0]
+                    legacy_height = db_result[0]
+                    result["measured_height_m"] = legacy_height
                     result["measured_source"] = db_result[1]
+                    result["gebaeudehoehe_m"] = legacy_height
+                    # Schätze Trauf/First aus Legacy-Höhe (85% Traufe, 100% First)
+                    result["traufhoehe_m"] = round(legacy_height * 0.85, 1)
+                    result["firsthoehe_m"] = round(legacy_height, 1)
+                    result["heights_estimated"] = True
+                    result["legacy_height_used"] = legacy_height  # Debug info
 
             # Plausibilitätsprüfung für measured_height_m
             if result["measured_height_m"] and result["estimated_height_m"]:
