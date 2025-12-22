@@ -403,7 +403,7 @@ function App() {
                             const MIN_HOEHE = 4.0
 
                             // Calculate ausmass for each selected facade
-                            const fassaden = selectedSides.map((side, i) => {
+                            const fassaden = selectedSides.map((side) => {
                               const laenge = side.length_m
                               const hoehe = config.scaffoldHeight
 
