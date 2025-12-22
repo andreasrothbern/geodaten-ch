@@ -1819,6 +1819,7 @@ async def visualize_floor_plan_get(
             length_m = width_m = 10.0
 
         eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
+        ridge_height_m = None
 
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
@@ -1826,9 +1827,17 @@ async def visualize_floor_plan_get(
             if heights:
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
+                if heights.get("firsthoehe_m"):
+                    ridge_height_m = heights["firsthoehe_m"]
                 gebaeudehoehe = heights.get("gebaeudehoehe_m")
                 if gebaeudehoehe and not heights.get("traufhoehe_m"):
                     eave_height_m = gebaeudehoehe * 0.85
+
+        # Manuelle Werte überschreiben DB-Werte
+        if traufhoehe and traufhoehe > 0:
+            eave_height_m = traufhoehe
+        if firsthoehe and firsthoehe > 0:
+            ridge_height_m = firsthoehe
 
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1836,6 +1845,7 @@ async def visualize_floor_plan_get(
             length_m=round(length_m, 1),
             width_m=round(width_m, 1),
             eave_height_m=round(eave_height_m, 1),
+            ridge_height_m=round(ridge_height_m, 1) if ridge_height_m else None,
             floors=building.floors if building else 3,
             roof_type="flat",  # Grundriss zeigt keine Dachform
             area_m2=building.area_m2 if building else None,
