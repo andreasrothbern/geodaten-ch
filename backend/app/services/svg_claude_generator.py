@@ -53,6 +53,8 @@ class ClaudeSVGGenerator:
     MODEL = "claude-sonnet-4-20250514"
 
     def __init__(self):
+        self._cache_available = False
+        self._memory_cache = {}
         self._init_cache()
         self._init_client()
         self._fallback_generator = SVGGenerator()  # Fallback bei API-Fehler
@@ -82,19 +84,25 @@ class ClaudeSVGGenerator:
 
     def _init_cache(self):
         """Initialisiert die Cache-Datenbank"""
-        os.makedirs(os.path.dirname(self.CACHE_DB_PATH), exist_ok=True)
-        conn = sqlite3.connect(self.CACHE_DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS svg_cache (
-                cache_key TEXT PRIMARY KEY,
-                svg_type TEXT NOT NULL,
-                svg_content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        conn.close()
+        try:
+            os.makedirs(os.path.dirname(self.CACHE_DB_PATH), exist_ok=True)
+            conn = sqlite3.connect(self.CACHE_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS svg_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    svg_type TEXT NOT NULL,
+                    svg_content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            conn.close()
+            self._cache_available = True
+        except Exception as e:
+            print(f"Cache init error (will use in-memory): {e}")
+            self._cache_available = False
+            self._memory_cache = {}
 
     def _get_cache_key(self, building: BuildingData, svg_type: str) -> str:
         """Generiert einen Cache-Key basierend auf Gebäudedaten"""
@@ -103,6 +111,10 @@ class ClaudeSVGGenerator:
 
     def _get_cached_svg(self, cache_key: str) -> Optional[str]:
         """Holt SVG aus dem Cache"""
+        # Memory Cache Fallback
+        if not self._cache_available:
+            return self._memory_cache.get(cache_key)
+
         try:
             conn = sqlite3.connect(self.CACHE_DB_PATH)
             cursor = conn.cursor()
@@ -111,10 +123,15 @@ class ClaudeSVGGenerator:
             conn.close()
             return row[0] if row else None
         except Exception:
-            return None
+            return self._memory_cache.get(cache_key)
 
     def _cache_svg(self, cache_key: str, svg_type: str, svg_content: str):
         """Speichert SVG im Cache"""
+        # Memory Cache Fallback
+        if not self._cache_available:
+            self._memory_cache[cache_key] = svg_content
+            return
+
         try:
             conn = sqlite3.connect(self.CACHE_DB_PATH)
             cursor = conn.cursor()
@@ -126,6 +143,7 @@ class ClaudeSVGGenerator:
             conn.close()
         except Exception as e:
             print(f"Cache error: {e}")
+            self._memory_cache[cache_key] = svg_content
 
     def _call_claude(self, prompt: str) -> Optional[str]:
         """Ruft Claude API auf und extrahiert SVG"""

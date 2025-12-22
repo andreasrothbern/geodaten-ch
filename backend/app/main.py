@@ -1357,7 +1357,10 @@ async def visualize_cross_section(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        print(f"Visualization error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Visualization error: {str(e)}")
 
 
 @app.get("/api/v1/visualize/elevation",
