@@ -459,6 +459,7 @@ export function ScaffoldingCard({
             address={data.address?.matched || ''}
             apiUrl={apiUrl}
             sides={sides}
+            polygonCoordinates={data.polygon?.coordinates || []}
             selectedFacades={selectedFacades}
             onFacadeToggle={handleFacadeToggle}
             onSelectAll={handleSelectAllFacades}

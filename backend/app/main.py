@@ -1671,22 +1671,78 @@ async def visualize_elevation(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/visualize/floor-plan",
+class FloorPlanRequest(BaseModel):
+    """Request body für floor-plan mit vorberechneten Daten"""
+    address: str
+    sides: List[Dict[str, Any]]
+    polygon_coordinates: List[List[float]]
+    width: int = 600
+    height: int = 500
+
+
+@app.post("/api/v1/visualize/floor-plan",
          tags=["Visualisierung"],
          response_class=Response)
-async def visualize_floor_plan(
+async def visualize_floor_plan_post(request: FloorPlanRequest):
+    """
+    Generiert SVG-Grundriss mit übergebenen Geometrie-Daten.
+
+    Verwendet die gleichen sides/polygon Daten wie die Tabelle.
+    """
+    from app.services.svg_generator import get_svg_generator, BuildingData
+
+    try:
+        sides_data = request.sides
+        polygon_coords = request.polygon_coordinates
+
+        if not sides_data or not polygon_coords:
+            raise HTTPException(status_code=400, detail="sides und polygon_coordinates erforderlich")
+
+        # Dimensionen aus sides berechnen
+        side_lengths = sorted([s['length_m'] for s in sides_data], reverse=True)
+        length_m = side_lengths[0] if side_lengths else 10.0
+        width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+
+        building_data = BuildingData(
+            address=request.address,
+            egid=None,
+            length_m=round(length_m, 1),
+            width_m=round(width_m, 1),
+            eave_height_m=8.0,  # Nicht relevant für Grundriss
+            floors=3,
+            roof_type="flat",
+            area_m2=None,
+            polygon_coordinates=polygon_coords,
+            sides=sides_data,
+        )
+
+        generator = get_svg_generator()
+        svg = generator.generate_floor_plan(building_data, request.width, request.height)
+
+        if not svg:
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
+
+        return Response(content=svg, media_type="image/svg+xml")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/visualize/floor-plan",
+         tags=["Visualisierung"],
+         response_class=Response,
+         deprecated=True)
+async def visualize_floor_plan_get(
     address: str,
     width: int = 600,
     height: int = 500
 ):
     """
-    Generiert SVG-Grundriss für ein Gebäude.
+    DEPRECATED: Verwende POST mit sides/polygon Daten für konsistente Ergebnisse.
 
-    - **address**: Schweizer Adresse
-    - **width**: SVG-Breite in Pixel (default: 600)
-    - **height**: SVG-Höhe in Pixel (default: 500)
-
-    Returns: SVG-Datei
+    Generiert SVG-Grundriss für ein Gebäude (holt eigene Daten).
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
 

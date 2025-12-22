@@ -12,6 +12,7 @@ interface InteractiveFloorPlanProps {
   address: string
   apiUrl: string
   sides: ScaffoldingSide[]
+  polygonCoordinates: number[][]  // Polygon-Koordinaten für SVG-Generierung
   selectedFacades: number[]
   onFacadeToggle: (index: number) => void
   onSelectAll?: () => void
@@ -23,6 +24,7 @@ export function InteractiveFloorPlan({
   address,
   apiUrl,
   sides,
+  polygonCoordinates,
   selectedFacades,
   onFacadeToggle,
   onSelectAll,
@@ -35,17 +37,25 @@ export function InteractiveFloorPlan({
   const [zoom, setZoom] = useState(1)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Fetch SVG from server
+  // Fetch SVG from server using POST with sides/polygon data
   useEffect(() => {
     const fetchSvg = async () => {
       setLoading(true)
       setError(null)
       try {
-        const params = new URLSearchParams({
-          address,
-          height: height.toString()
+        // Sende die gleichen Daten, die auch die Tabelle verwendet
+        const response = await fetch(`${apiUrl}/api/v1/visualize/floor-plan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            address,
+            sides: sides,
+            polygon_coordinates: polygonCoordinates,
+            height: height
+          })
         })
-        const response = await fetch(`${apiUrl}/api/v1/visualize/floor-plan?${params}`)
         if (!response.ok) {
           throw new Error('SVG konnte nicht geladen werden')
         }
@@ -58,10 +68,10 @@ export function InteractiveFloorPlan({
       }
     }
 
-    if (address) {
+    if (address && sides.length > 0 && polygonCoordinates.length > 0) {
       fetchSvg()
     }
-  }, [address, apiUrl, height])
+  }, [address, apiUrl, sides, polygonCoordinates, height])
 
   // Add click handlers to facade segments after SVG is loaded (only once)
   useEffect(() => {
