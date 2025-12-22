@@ -1,0 +1,8 @@
+# Nixpacks Konfiguration für Railway
+# Installiert System-Bibliotheken für SVG-to-PNG Konvertierung
+
+[phases.setup]
+nixPkgs = ["cairo", "pango", "gdk-pixbuf", "librsvg", "pkg-config"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
