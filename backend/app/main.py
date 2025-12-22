@@ -1771,12 +1771,15 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
 async def visualize_floor_plan_get(
     address: str,
     width: int = 600,
-    height: int = 500
+    height: int = 500,
+    traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe (nicht verwendet für Grundriss)"),
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe (nicht verwendet für Grundriss)")
 ):
     """
     DEPRECATED: Verwende POST mit sides/polygon Daten für konsistente Ergebnisse.
 
     Generiert SVG-Grundriss für ein Gebäude (holt eigene Daten).
+    Hinweis: traufhoehe/firsthoehe werden akzeptiert aber nicht verwendet (Grundriss ist 2D).
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
 
