@@ -1677,6 +1677,10 @@ class FloorPlanRequest(BaseModel):
     address: str
     sides: List[Dict[str, Any]]
     polygon_coordinates: List[List[float]]
+    # Gebäudedaten für NPK-Anzeige
+    eave_height_m: Optional[float] = None
+    floors: Optional[int] = None
+    area_m2: Optional[float] = None
     width: int = 600
     height: int = 500
 
@@ -1709,10 +1713,10 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
             egid=None,
             length_m=round(length_m, 1),
             width_m=round(width_m, 1),
-            eave_height_m=8.0,  # Nicht relevant für Grundriss
-            floors=3,
+            eave_height_m=request.eave_height_m or 8.0,
+            floors=request.floors or 3,
             roof_type="flat",
-            area_m2=None,
+            area_m2=request.area_m2,
             polygon_coordinates=polygon_coords,
             sides=sides_data,
         )

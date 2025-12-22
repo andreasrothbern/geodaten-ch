@@ -465,6 +465,9 @@ export function ScaffoldingCard({
             onSelectAll={handleSelectAllFacades}
             onDeselectAll={handleDeselectAllFacades}
             height={280}
+            eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
+            floors={dimensions.floors || gwr_data?.floors}
+            areaM2={building?.footprint_area_m2}
           />
         </div>
 

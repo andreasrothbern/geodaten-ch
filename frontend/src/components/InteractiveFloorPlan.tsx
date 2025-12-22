@@ -18,6 +18,10 @@ interface InteractiveFloorPlanProps {
   onSelectAll?: () => void
   onDeselectAll?: () => void
   height?: number
+  // Gebäudedaten für NPK-Anzeige im SVG
+  eaveHeightM?: number | null
+  floors?: number | null
+  areaM2?: number | null
 }
 
 export function InteractiveFloorPlan({
@@ -29,7 +33,10 @@ export function InteractiveFloorPlan({
   onFacadeToggle,
   onSelectAll,
   onDeselectAll,
-  height = 300
+  height = 300,
+  eaveHeightM,
+  floors,
+  areaM2
 }: InteractiveFloorPlanProps) {
   const [svgContent, setSvgContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -53,7 +60,10 @@ export function InteractiveFloorPlan({
             address,
             sides: sides,
             polygon_coordinates: polygonCoordinates,
-            height: height
+            height: height,
+            eave_height_m: eaveHeightM,
+            floors: floors,
+            area_m2: areaM2
           })
         })
         if (!response.ok) {
@@ -71,7 +81,7 @@ export function InteractiveFloorPlan({
     if (address && sides.length > 0 && polygonCoordinates.length > 0) {
       fetchSvg()
     }
-  }, [address, apiUrl, sides, polygonCoordinates, height])
+  }, [address, apiUrl, sides, polygonCoordinates, height, eaveHeightM, floors, areaM2])
 
   // Add click handlers to facade segments after SVG is loaded (only once)
   useEffect(() => {
