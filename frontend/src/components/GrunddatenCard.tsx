@@ -106,7 +106,7 @@ export function GrunddatenCard({
 
       {/* GWR Data */}
       <section className="space-y-2">
-        <h4 className="font-medium text-gray-700">GWR-Daten (Gebaude- und Wohnungsregister)</h4>
+        <h4 className="font-medium text-gray-700">GWR-Daten (Gebäude- und Wohnungsregister)</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div className="bg-gray-50 rounded p-3">
             <p className="text-gray-500 text-xs">EGID</p>
@@ -117,7 +117,7 @@ export function GrunddatenCard({
             <p className="font-medium">{gwr_data?.floors || dimensions.floors || '-'}</p>
           </div>
           <div className="bg-gray-50 rounded p-3">
-            <p className="text-gray-500 text-xs">Grundflache</p>
+            <p className="text-gray-500 text-xs">Grundfläche</p>
             <p className="font-medium">
               {building?.footprint_area_m2?.toFixed(0) || gwr_data?.area_m2_gwr?.toFixed(0) || '-'} m2
             </p>
@@ -142,14 +142,14 @@ export function GrunddatenCard({
       {/* Height Data */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h4 className="font-medium text-gray-700">Hohendaten</h4>
+          <h4 className="font-medium text-gray-700">Höhendaten</h4>
           {!hasMeasuredHeight && onFetchMeasuredHeight && (
             <button
               onClick={onFetchMeasuredHeight}
               disabled={fetchingHeight}
               className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {fetchingHeight ? 'Lade...' : 'Hohe aus swissBUILDINGS3D abrufen'}
+              {fetchingHeight ? 'Lade...' : 'Höhe aus swissBUILDINGS3D abrufen'}
             </button>
           )}
         </div>
@@ -157,7 +157,7 @@ export function GrunddatenCard({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Estimated Height */}
           <div className={`rounded-lg p-4 ${hasMeasuredHeight ? 'bg-gray-100' : 'bg-yellow-50 border border-yellow-200'}`}>
-            <p className="text-xs text-gray-500 mb-1">Geschatzte Hohe</p>
+            <p className="text-xs text-gray-500 mb-1">Geschätzte Höhe</p>
             <p className="text-2xl font-bold text-gray-700">
               {dimensions.height_estimated_m?.toFixed(1) || '-'} m
             </p>
@@ -169,7 +169,7 @@ export function GrunddatenCard({
           {/* Traufhöhe */}
           <div className={`rounded-lg p-4 ${dimensions.traufhoehe_m ? 'bg-green-50 border border-green-200' : 'bg-gray-100'}`}>
             <p className={`text-xs mb-1 ${dimensions.traufhoehe_m ? 'text-green-600' : 'text-gray-500'}`}>
-              Traufhohe {dimensions.traufhoehe_m ? '(gemessen)' : '(nicht verfugbar)'}
+              Traufhöhe {dimensions.traufhoehe_m ? '(gemessen)' : '(nicht verfügbar)'}
             </p>
             <p className={`text-2xl font-bold ${dimensions.traufhoehe_m ? 'text-green-700' : 'text-gray-400'}`}>
               {dimensions.traufhoehe_m?.toFixed(1) || '-'} m
@@ -182,7 +182,7 @@ export function GrunddatenCard({
           {/* Firsthöhe */}
           <div className={`rounded-lg p-4 ${dimensions.firsthoehe_m ? 'bg-green-50 border border-green-200' : 'bg-gray-100'}`}>
             <p className={`text-xs mb-1 ${dimensions.firsthoehe_m ? 'text-green-600' : 'text-gray-500'}`}>
-              Firsthohe {dimensions.firsthoehe_m ? '(gemessen)' : '(nicht verfugbar)'}
+              Firsthöhe {dimensions.firsthoehe_m ? '(gemessen)' : '(nicht verfügbar)'}
             </p>
             <p className={`text-2xl font-bold ${dimensions.firsthoehe_m ? 'text-green-700' : 'text-gray-400'}`}>
               {dimensions.firsthoehe_m?.toFixed(1) || '-'} m
@@ -196,11 +196,11 @@ export function GrunddatenCard({
         {/* Manual Height Input for Traufe and First */}
         <div className="bg-gray-50 rounded-lg p-4 space-y-3">
           <p className="text-sm text-gray-600 font-medium">
-            Manuelle Hoheneingabe (falls Daten falsch oder nicht verfugbar)
+            Manuelle Höheneingabe (falls Daten falsch oder nicht verfügbar)
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Traufhohe (m)</label>
+              <label className="block text-xs text-gray-500 mb-1">Traufhöhe (m)</label>
               <input
                 type="number"
                 step="0.1"
@@ -213,7 +213,7 @@ export function GrunddatenCard({
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Firsthohe (m)</label>
+              <label className="block text-xs text-gray-500 mb-1">Firsthöhe (m)</label>
               <input
                 type="number"
                 step="0.1"
@@ -231,10 +231,10 @@ export function GrunddatenCard({
             disabled={(!manualTraufe || parseFloat(manualTraufe) <= 0) && (!manualFirst || parseFloat(manualFirst) <= 0)}
             className="w-full md:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors text-sm"
           >
-            Hohen ubernehmen
+            Höhen übernehmen
           </button>
           <p className="text-xs text-gray-400">
-            Hinweis: Manuelle Eingaben uberschreiben die gemessenen Werte fur die Berechnung.
+            Hinweis: Manuelle Eingaben überschreiben die gemessenen Werte für die Berechnung.
           </p>
         </div>
 
@@ -243,7 +243,7 @@ export function GrunddatenCard({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-blue-600">Aktive Hohe fur Berechnung</p>
+                <p className="text-xs text-blue-600">Aktive Höhe für Berechnung</p>
                 <p className="text-xl font-bold text-blue-700">
                   {dimensions.estimated_height_m?.toFixed(1)} m
                 </p>
@@ -261,13 +261,13 @@ export function GrunddatenCard({
         <h4 className="font-medium text-gray-700">Kennzahlen</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 rounded-lg p-4 text-center">
-            <p className="text-sm text-blue-600 font-medium">Fassadenlange</p>
+            <p className="text-sm text-blue-600 font-medium">Fassadenlänge</p>
             <p className="text-2xl font-bold text-blue-900">
               {dimensions.perimeter_m?.toFixed(1) || '-'} m
             </p>
           </div>
           <div className="bg-purple-50 rounded-lg p-4 text-center">
-            <p className="text-sm text-purple-600 font-medium">Grundflache</p>
+            <p className="text-sm text-purple-600 font-medium">Grundfläche</p>
             <p className="text-2xl font-bold text-purple-900">
               {building?.footprint_area_m2?.toFixed(0) || '-'} m2
             </p>
@@ -291,7 +291,7 @@ export function GrunddatenCard({
       {/* Building Visualization - Server-generated SVGs */}
       {data.address?.matched && (
         <section className="space-y-3">
-          <h4 className="font-medium text-gray-700">Gebaude-Visualisierung</h4>
+          <h4 className="font-medium text-gray-700">Gebäude-Visualisierung</h4>
           <div className="bg-white rounded-lg border shadow-sm">
             {/* Header with tabs */}
             <div className="flex items-center justify-between border-b px-4 py-2">

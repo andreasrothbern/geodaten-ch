@@ -87,22 +87,22 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Standard-Gerustart</label>
+              <label className="block text-sm text-gray-600 mb-1">Standard-Gerüstart</label>
               <select
                 value={localPrefs.defaultScaffoldType}
                 onChange={(e) => setLocalPrefs({ ...localPrefs, defaultScaffoldType: e.target.value as ScaffoldType })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                <option value="arbeitsgeruest">Arbeitsgerust (Standard)</option>
-                <option value="schutzgeruest">Schutzgerust (Dacharbeiten)</option>
-                <option value="fanggeruest">Fanggerust (Absturzsicherung)</option>
+                <option value="arbeitsgeruest">Arbeitsgerüst (Standard)</option>
+                <option value="schutzgeruest">Schutzgerüst (Dacharbeiten)</option>
+                <option value="fanggeruest">Fanggerüst (Absturzsicherung)</option>
               </select>
             </div>
           </section>
 
           {/* System Section */}
           <section className="space-y-3">
-            <h3 className="font-medium text-gray-900 border-b pb-2">Gerustsystem</h3>
+            <h3 className="font-medium text-gray-900 border-b pb-2">Gerüstsystem</h3>
 
             <div>
               <label className="block text-sm text-gray-600 mb-1">Bevorzugtes System</label>
@@ -116,7 +116,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 <option value="combined">Blitz + Allround Kombination</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Blitz: Schneller Aufbau, leichte Lasten. Allround: Hohere Tragfahigkeit, flexibel.
+                Blitz: Schneller Aufbau, leichte Lasten. Allround: Höhere Tragfähigkeit, flexibel.
               </p>
             </div>
 
@@ -139,7 +139,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             <h3 className="font-medium text-gray-900 border-b pb-2">Material</h3>
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Bevorzugte Bodenhohe</label>
+              <label className="block text-sm text-gray-600 mb-1">Bevorzugte Bodenhöhe</label>
               <select
                 value={localPrefs.defaultFloorHeight}
                 onChange={(e) => setLocalPrefs({ ...localPrefs, defaultFloorHeight: e.target.value as FloorHeight })}
@@ -149,14 +149,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 <option value="3.0">3.0m Boden (Standard)</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                2.5m Boden sind leichter zu handhaben, 3.0m bieten mehr Arbeitshohe.
+                2.5m Boden sind leichter zu handhaben, 3.0m bieten mehr Arbeitshöhe.
               </p>
             </div>
           </section>
 
           {/* Building Defaults */}
           <section className="space-y-3">
-            <h3 className="font-medium text-gray-900 border-b pb-2">Gebaude-Annahmen</h3>
+            <h3 className="font-medium text-gray-900 border-b pb-2">Gebäude-Annahmen</h3>
 
             <div>
               <label className="block text-sm text-gray-600 mb-1">Standard-Dachform</label>
@@ -184,7 +184,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               onClick={handleReset}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              Zurucksetzen
+              Zurücksetzen
             </button>
           </div>
 

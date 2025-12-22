@@ -518,12 +518,27 @@ def get_height_details(
                     result["measured_height_m"] = db_result[0]
                     result["measured_source"] = db_result[1]
 
-            # Plausibilitätsprüfung
+            # Plausibilitätsprüfung für measured_height_m
             if result["measured_height_m"] and result["estimated_height_m"]:
                 ratio = result["measured_height_m"] / result["estimated_height_m"]
                 if ratio < 0.4:
                     measured_is_plausible = False
                     result["measured_source"] = f"{result['measured_source']} (unplausibel: nur {ratio*100:.0f}% der geschätzten Höhe)"
+
+            # Plausibilitätsprüfung für Trauf-/Firsthöhe
+            # Falls Traufhöhe < 50% der geschätzten Höhe, ist sie unplausibel
+            # (z.B. falsches Nebengebäude in der DB gefunden)
+            if result["traufhoehe_m"] and result["estimated_height_m"]:
+                trauf_ratio = result["traufhoehe_m"] / result["estimated_height_m"]
+                if trauf_ratio < 0.5:
+                    # Unplausible Traufhöhe - auf geschätzte Werte zurückfallen
+                    print(f"[WARNUNG] Unplausible Traufhöhe: {result['traufhoehe_m']:.1f}m vs. geschätzt {result['estimated_height_m']:.1f}m (nur {trauf_ratio*100:.0f}%)")
+                    result["traufhoehe_m_original"] = result["traufhoehe_m"]
+                    result["traufhoehe_m"] = None
+                    result["firsthoehe_m_original"] = result.get("firsthoehe_m")
+                    result["firsthoehe_m"] = None
+                    result["height_data_implausible"] = True
+                    measured_is_plausible = False
         except ImportError:
             pass
 

@@ -178,7 +178,7 @@ export function InteractiveFloorPlan({
               onClick={onSelectAll}
               className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
             >
-              Alle auswahlen
+              Alle auswählen
             </button>
           )}
           {onDeselectAll && (
@@ -186,7 +186,7 @@ export function InteractiveFloorPlan({
               onClick={onDeselectAll}
               className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
             >
-              Keine auswahlen
+              Keine auswählen
             </button>
           )}
         </div>
@@ -204,7 +204,7 @@ export function InteractiveFloorPlan({
             <button
               onClick={handleZoomReset}
               className="px-2 h-7 text-xs text-gray-600 hover:bg-gray-200 rounded font-mono"
-              title="Zurucksetzen"
+              title="Zurücksetzen"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -212,13 +212,13 @@ export function InteractiveFloorPlan({
               onClick={handleZoomIn}
               disabled={zoom >= 3}
               className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Vergrossern"
+              title="Vergrössern"
             >
               +
             </button>
           </div>
           <div className="text-sm text-gray-600">
-            <span className="font-medium">{selectedCount}</span> von {totalCount} Fassaden ausgewahlt
+            <span className="font-medium">{selectedCount}</span> von {totalCount} Fassaden ausgewählt
             ({selectedLength.toFixed(1)}m von {totalLength.toFixed(1)}m)
           </div>
         </div>
@@ -246,7 +246,7 @@ export function InteractiveFloorPlan({
       <div className="flex flex-wrap gap-4 text-sm text-gray-600">
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-gray-600 rounded"></div>
-          <span>Nicht ausgewahlt</span>
+          <span>Nicht ausgewählt</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-blue-500 rounded"></div>
@@ -254,13 +254,13 @@ export function InteractiveFloorPlan({
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-red-500 rounded"></div>
-          <span>Ausgewahlt (Gerust)</span>
+          <span>Ausgewählt (Gerüst)</span>
         </div>
       </div>
 
       {/* Tip */}
       <p className="text-xs text-gray-400">
-        Klicken Sie auf eine Fassade im Grundriss, um sie fur das Gerust auszuwahlen oder abzuwahlen.
+        Klicken Sie auf eine Fassade im Grundriss, um sie für das Gerüst auszuwählen oder abzuwählen.
       </p>
     </div>
   )

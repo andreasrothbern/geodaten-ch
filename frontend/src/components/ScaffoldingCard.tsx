@@ -48,18 +48,18 @@ export function ScaffoldingCard({
   return (
     <div className="card space-y-6">
       <h3 className="text-lg font-semibold flex items-center gap-2">
-        Gerustbau-Konfiguration
+        Gerüstbau-Konfiguration
       </h3>
 
       {/* Fassaden-Auswahl mit interaktivem Grundriss */}
       <div className="space-y-4">
         <h4 className="font-medium text-gray-700">
-          Fassaden-Auswahl ({selectedFacades.length} von {sides.filter(s => s.length_m > 0.5).length} ausgewahlt)
+          Fassaden-Auswahl ({selectedFacades.length} von {sides.filter(s => s.length_m > 0.5).length} ausgewählt)
         </h4>
 
         {/* Interactive Floor Plan */}
         <div className="border rounded-lg p-4 bg-white">
-          <h5 className="text-sm font-medium text-gray-600 mb-3">Grundriss - Klicken zum Auswahlen</h5>
+          <h5 className="text-sm font-medium text-gray-600 mb-3">Grundriss - Klicken zum Auswählen</h5>
           <InteractiveFloorPlan
             address={data.address?.matched || ''}
             apiUrl={apiUrl}
@@ -90,14 +90,14 @@ export function ScaffoldingCard({
         {/* Selected Facade Summary */}
         {selectedFacades.length > 0 && (
           <div className="bg-green-50 rounded-lg p-4">
-            <h5 className="font-medium text-green-800 mb-2">Ausgewahlte Fassaden</h5>
+            <h5 className="font-medium text-green-800 mb-2">Ausgewählte Fassaden</h5>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-green-600">Anzahl</p>
                 <p className="font-bold text-green-900">{selectedFacades.length} Fassaden</p>
               </div>
               <div>
-                <p className="text-green-600">Gesamtlange</p>
+                <p className="text-green-600">Gesamtlänge</p>
                 <p className="font-bold text-green-900">
                   {selectedFacades.reduce((sum, idx) => {
                     const side = sides.find(s => s.index === idx)
@@ -106,11 +106,11 @@ export function ScaffoldingCard({
                 </p>
               </div>
               <div>
-                <p className="text-green-600">Gerusthohe</p>
+                <p className="text-green-600">Gerüsthöhe</p>
                 <p className="font-bold text-green-900">{scaffoldHeight.toFixed(1)} m</p>
               </div>
               <div>
-                <p className="text-green-600">Gerustflache</p>
+                <p className="text-green-600">Gerüstfläche</p>
                 <p className="font-bold text-green-900">
                   {(selectedFacades.reduce((sum, idx) => {
                     const side = sides.find(s => s.index === idx)
@@ -125,7 +125,7 @@ export function ScaffoldingCard({
 
       {/* Arbeitstyp und Gerustart Konfiguration */}
       <div className="bg-blue-50 rounded-lg p-4 space-y-4">
-        <h4 className="font-medium text-blue-900">Arbeitstyp & Gerustart</h4>
+        <h4 className="font-medium text-blue-900">Arbeitstyp & Gerüstart</h4>
 
         {/* Arbeitstyp */}
         <div>
@@ -154,34 +154,34 @@ export function ScaffoldingCard({
           </div>
           <p className="text-xs text-blue-600 mt-2">
             {workType === 'dacharbeiten'
-              ? 'Gerust bis +1m uber First (SUVA Vorschrift) - fur Dachsanierung, Ziegel, Spengler'
-              : 'Gerust bis Traufhohe - fur Malen, Verputzen, Fassadendammung'}
+              ? 'Gerüst bis +1m über First (SUVA Vorschrift) - für Dachsanierung, Ziegel, Spengler'
+              : 'Gerüst bis Traufhöhe - für Malen, Verputzen, Fassadendämmung'}
           </p>
         </div>
 
         {/* Gerustart */}
         <div>
-          <p className="text-sm text-blue-700 mb-2">Gerustart:</p>
+          <p className="text-sm text-blue-700 mb-2">Gerüstart:</p>
           <select
             value={scaffoldType}
             onChange={(e) => setScaffoldType(e.target.value as ScaffoldType)}
             className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
           >
-            <option value="arbeitsgeruest">Arbeitsgerust (Standard)</option>
-            <option value="schutzgeruest">Schutzgerust (Absturzsicherung)</option>
-            <option value="fanggeruest">Fanggerust (Material-/Personenauffang)</option>
+            <option value="arbeitsgeruest">Arbeitsgerüst (Standard)</option>
+            <option value="schutzgeruest">Schutzgerüst (Absturzsicherung)</option>
+            <option value="fanggeruest">Fanggerüst (Material-/Personenauffang)</option>
           </select>
           <p className="text-xs text-blue-600 mt-2">
-            {scaffoldType === 'arbeitsgeruest' && 'Fur Arbeiten an der Fassade - Belagen, Leitern, Aufgange (NPK 114.1xx)'}
+            {scaffoldType === 'arbeitsgeruest' && 'Für Arbeiten an der Fassade - Beläge, Leitern, Aufgänge (NPK 114.1xx)'}
             {scaffoldType === 'schutzgeruest' && 'Absturzsicherung bei Dacharbeiten - Fanglagen, Seitenschutz (NPK 114.2xx)'}
             {scaffoldType === 'fanggeruest' && 'Auffangen von herabfallenden Materialien oder Personen (NPK 114.3xx)'}
           </p>
         </div>
 
-        {/* Berechnete Hohe anzeigen */}
+        {/* Berechnete Höhe anzeigen */}
         <div className="pt-3 border-t border-blue-200">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-blue-700">Berechnete Gerusthohe:</span>
+            <span className="text-sm text-blue-700">Berechnete Gerüsthöhe:</span>
             <span className="font-bold text-blue-900">
               {workType === 'dacharbeiten'
                 ? `${((dimensions.firsthoehe_m || dimensions.estimated_height_m || 0) + 1.0).toFixed(1)} m`
@@ -190,8 +190,8 @@ export function ScaffoldingCard({
           </div>
           <p className="text-xs text-blue-500 mt-1">
             {workType === 'dacharbeiten'
-              ? `Firsthohe ${(dimensions.firsthoehe_m || dimensions.estimated_height_m || 0).toFixed(1)}m + 1.0m SUVA`
-              : `Traufhohe (Unterdach)`}
+              ? `Firsthöhe ${(dimensions.firsthoehe_m || dimensions.estimated_height_m || 0).toFixed(1)}m + 1.0m SUVA`
+              : `Traufhöhe (Unterdach)`}
           </p>
         </div>
       </div>
@@ -220,7 +220,7 @@ export function ScaffoldingCard({
             <span>-&gt;</span>
           </button>
           <p className="text-xs text-gray-500 mt-2 text-center">
-            NPK 114 Berechnung fur {selectedFacades.length} Fassaden ({scaffoldHeight.toFixed(1)}m Hohe)
+            NPK 114 Berechnung für {selectedFacades.length} Fassaden ({scaffoldHeight.toFixed(1)}m Höhe)
           </p>
         </div>
       )}

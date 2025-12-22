@@ -85,7 +85,7 @@ export function MaterialCard({ ausmassData, onBack }: MaterialCardProps) {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-gray-50 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-600">Gerustflache</p>
+          <p className="text-sm text-gray-600">Gerüstfläche</p>
           <p className="text-xl font-bold">{scaffoldAreaM2.toFixed(0)} m2</p>
         </div>
         <div className="bg-amber-50 rounded-lg p-4 text-center">
@@ -147,10 +147,10 @@ export function MaterialCard({ ausmassData, onBack }: MaterialCardProps) {
       {/* Weight per m² info */}
       <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
         <p>
-          <strong>Gewicht pro m2 Gerustflache:</strong> {material.zusammenfassung.gewicht_pro_m2_kg.toFixed(1)} kg/m2
+          <strong>Gewicht pro m² Gerüstfläche:</strong> {material.zusammenfassung.gewicht_pro_m2_kg.toFixed(1)} kg/m²
         </p>
         <p className="text-xs mt-1">
-          Richtwerte basierend auf Layher {material.system === 'blitz70' ? 'Blitz 70' : 'Allround'} Systemgerust
+          Richtwerte basierend auf Layher {material.system === 'blitz70' ? 'Blitz 70' : 'Allround'} Systemgerüst
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export function MaterialCard({ ausmassData, onBack }: MaterialCardProps) {
             onClick={onBack}
             className="px-4 py-2 text-gray-700 border rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
-            <span>←</span> Zuruck zum Ausmass
+            <span>←</span> Zurück zum Ausmass
           </button>
         </div>
       )}
