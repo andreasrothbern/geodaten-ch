@@ -162,30 +162,21 @@ async def debug_libraries():
 
 @app.get("/api/v1/cache/stats", tags=["System"])
 async def get_cache_stats():
-    """Zeigt Cache-Statistiken für SVG und Daten"""
-    from app.services.svg_claude_generator import get_claude_svg_generator
+    """Zeigt Cache-Statistiken für Daten"""
     from app.services.data_cache import get_cache_stats as get_data_cache_stats
 
-    svg_gen = get_claude_svg_generator()
-
     return {
-        "svg_cache": svg_gen.get_cache_stats(),
         "data_cache": get_data_cache_stats()
     }
 
 
 @app.delete("/api/v1/cache/svg", tags=["System"])
 async def clear_svg_cache():
-    """Löscht den gesamten SVG-Cache (erzwingt Neugenerierung mit aktuellen Prompts)"""
-    from app.services.svg_claude_generator import get_claude_svg_generator
-
-    svg_gen = get_claude_svg_generator()
-    deleted = svg_gen.clear_all_cache()
-
+    """SVG-Cache wurde entfernt (einfacher Generator ohne Cache)"""
     return {
         "success": True,
-        "deleted_entries": deleted,
-        "message": f"SVG cache cleared. {deleted} entries deleted."
+        "deleted_entries": 0,
+        "message": "SVG cache not used (simple generator without caching)"
     }
 
 
@@ -205,19 +196,15 @@ async def clear_data_cache():
 
 @app.delete("/api/v1/cache/all", tags=["System"])
 async def clear_all_caches():
-    """Löscht alle Caches (SVG + Daten)"""
-    from app.services.svg_claude_generator import get_claude_svg_generator
+    """Löscht alle Caches (Daten)"""
     from app.services.data_cache import clear_cache
 
-    svg_gen = get_claude_svg_generator()
-    svg_deleted = svg_gen.clear_all_cache()
     data_deleted = clear_cache()
 
     return {
         "success": True,
-        "svg_deleted": svg_deleted,
         "data_deleted": data_deleted,
-        "message": f"All caches cleared. SVG: {svg_deleted}, Data: {data_deleted}"
+        "message": f"Data cache cleared: {data_deleted} entries"
     }
 
 
@@ -1478,20 +1465,18 @@ async def berechne_komplettes_ausmass(
 async def visualize_cross_section(
     address: str,
     width: int = 700,
-    height: int = 480,
-    force_refresh: bool = False
+    height: int = 480
 ):
     """
-    Generiert SVG-Schnittansicht für ein Gebäude via Claude API.
+    Generiert SVG-Schnittansicht für ein Gebäude.
 
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
-    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
 
-    Returns: SVG-Datei (von Claude generiert, gecached)
+    Returns: SVG-Datei
     """
-    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
+    from app.services.svg_generator import get_svg_generator, BuildingData
 
     try:
         # Gebäudedaten abrufen
@@ -1524,26 +1509,20 @@ async def visualize_cross_section(
             length_m = width_m = 10.0
 
         # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
-        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+        eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
         ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
 
         # Gemessene Höhe aus swissBUILDINGS3D DB
-        measured_height_m = None
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
             if heights:
-                # Verwende gemessene Traufhöhe wenn vorhanden
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
-                # Verwende gemessene Firsthöhe wenn vorhanden
                 if heights.get("firsthoehe_m"):
                     ridge_height_m = heights["firsthoehe_m"]
-                # Gesamthöhe als Referenz
                 measured_height_m = heights.get("gebaeudehoehe_m")
-                # Fallback: Wenn nur gebaeudehoehe vorhanden, verwende als eave/ridge
                 if measured_height_m and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
-                    # Schätze Traufe als 85% der Gesamthöhe (typisch für Satteldach)
                     eave_height_m = measured_height_m * 0.85
                     ridge_height_m = measured_height_m
 
@@ -1560,12 +1539,12 @@ async def visualize_cross_section(
             area_m2=building.area_m2 if building else None,
         )
 
-        # SVG via Claude generieren
-        generator = get_claude_svg_generator()
-        svg = generator.generate_cross_section(building_data, width, height, force_refresh=force_refresh)
+        # SVG generieren
+        generator = get_svg_generator()
+        svg = generator.generate_cross_section(building_data, width, height)
 
         if not svg:
-            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1584,23 +1563,20 @@ async def visualize_cross_section(
 async def visualize_elevation(
     address: str,
     width: int = 700,
-    height: int = 480,
-    force_refresh: bool = False
+    height: int = 480
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
 
     - **address**: Schweizer Adresse
-    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
 
     Returns: SVG-Datei
     """
-    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
+    from app.services.svg_generator import get_svg_generator, BuildingData
 
     try:
-        # Gebäudedaten abrufen (gleiche Logik wie cross-section)
         geo = await swisstopo.geocode(address)
         if not geo:
             raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
@@ -1627,11 +1603,9 @@ async def visualize_elevation(
         else:
             length_m = width_m = 10.0
 
-        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
-        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
-        ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
+        eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
+        ridge_height_m = eave_height_m + 3.5
 
-        # Gemessene Höhe aus swissBUILDINGS3D DB
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
@@ -1640,7 +1614,6 @@ async def visualize_elevation(
                     eave_height_m = heights["traufhoehe_m"]
                 if heights.get("firsthoehe_m"):
                     ridge_height_m = heights["firsthoehe_m"]
-                # Fallback: Wenn nur gebaeudehoehe vorhanden
                 gebaeudehoehe = heights.get("gebaeudehoehe_m")
                 if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
                     eave_height_m = gebaeudehoehe * 0.85
@@ -1658,11 +1631,11 @@ async def visualize_elevation(
             area_m2=building.area_m2 if building else None,
         )
 
-        generator = get_claude_svg_generator()
-        svg = generator.generate_elevation(building_data, width, height, force_refresh=force_refresh)
+        generator = get_svg_generator()
+        svg = generator.generate_elevation(building_data, width, height)
 
         if not svg:
-            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1678,8 +1651,7 @@ async def visualize_elevation(
 async def visualize_floor_plan(
     address: str,
     width: int = 600,
-    height: int = 500,
-    force_refresh: bool = False
+    height: int = 500
 ):
     """
     Generiert SVG-Grundriss für ein Gebäude.
@@ -1687,11 +1659,10 @@ async def visualize_floor_plan(
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 600)
     - **height**: SVG-Höhe in Pixel (default: 500)
-    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
 
     Returns: SVG-Datei
     """
-    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
+    from app.services.svg_generator import get_svg_generator, BuildingData
 
     try:
         geo = await swisstopo.geocode(address)
@@ -1720,17 +1691,14 @@ async def visualize_floor_plan(
         else:
             length_m = width_m = 10.0
 
-        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
-        eave_height_m = building.floors * 2.8 if building and building.floors else 8.0
+        eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
 
-        # Gemessene Höhe aus swissBUILDINGS3D DB (für NPK-Info im Grundriss)
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
             if heights:
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
-                # Fallback: Wenn nur gebaeudehoehe vorhanden
                 gebaeudehoehe = heights.get("gebaeudehoehe_m")
                 if gebaeudehoehe and not heights.get("traufhoehe_m"):
                     eave_height_m = gebaeudehoehe * 0.85
@@ -1746,11 +1714,11 @@ async def visualize_floor_plan(
             area_m2=building.area_m2 if building else None,
         )
 
-        generator = get_claude_svg_generator()
-        svg = generator.generate_floor_plan(building_data, width, height, force_refresh=force_refresh)
+        generator = get_svg_generator()
+        svg = generator.generate_floor_plan(building_data, width, height)
 
         if not svg:
-            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1813,9 +1781,9 @@ async def generate_materialbewirtschaftung_document(
             lv95_n=cached.lv95_n
         )
 
-        # 7. SVG-Visualisierungen via Claude API generieren (gecached)
-        from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData as SVGBuildingData
-        svg_generator = get_claude_svg_generator()
+        # 7. SVG-Visualisierungen generieren
+        from app.services.svg_generator import get_svg_generator, BuildingData as SVGBuildingData
+        svg_generator = get_svg_generator()
 
         svg_building_data = SVGBuildingData(
             address=cached.address_matched,
@@ -1829,7 +1797,7 @@ async def generate_materialbewirtschaftung_document(
             area_m2=cached.area_m2,
         )
 
-        # Claude generiert hochwertige SVGs (aus Cache falls vorhanden)
+        # SVGs generieren
         svg_floor_plan = svg_generator.generate_floor_plan(svg_building_data)
         svg_cross_section = svg_generator.generate_cross_section(svg_building_data)
         svg_elevation = svg_generator.generate_elevation(svg_building_data)
