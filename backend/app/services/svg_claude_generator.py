@@ -185,10 +185,19 @@ class ClaudeSVGGenerator:
         ridge_h = building.ridge_height_m or building.eave_height_m
         roof_info = "Satteldach" if ridge_h > building.eave_height_m else "Flachdach"
 
+        # Gebäudetyp basierend auf Grösse bestimmen
+        area = building.area_m2 or (building.length_m * building.width_m)
+        is_large_building = building.floors >= 4 or area >= 300
+        building_type = "Mehrfamilienhaus" if is_large_building else "Einfamilienhaus"
+
+        # Anzahl Verankerungspunkte basierend auf Höhe
+        anchor_points = max(3, building.floors // 2 + 1)
+
         prompt = f"""Generiere ein professionelles SVG für einen Gebäude-Querschnitt mit Gerüstposition.
 
 GEBÄUDEDATEN:
 - Adresse: {building.address}
+- Gebäudetyp: {building_type}
 - Gebäudebreite (Giebelseite): {building.width_m:.1f} m
 - Traufhöhe: {building.eave_height_m:.1f} m
 - Firsthöhe: {ridge_h:.1f} m
@@ -201,20 +210,21 @@ SVG-ANFORDERUNGEN:
 - viewBox: 0 0 {width} {height}
 
 INHALT (von links nach rechts):
-1. Linkes Gerüst (gelb #fff3cd, Rahmen #ffc107, ca. 15px breit)
-2. Gebäude im Schnitt (grau #e0e0e0 mit diagonaler Schraffur)
-3. Dach (braun #8b7355, Dreieck für Satteldach)
+1. Linkes Gerüst (gelb #fff3cd, Rahmen #ffc107, ca. 15-20px breit)
+2. Gebäude im Schnitt (grau #e0e0e0 mit diagonaler Schraffur) - {building.floors} Geschosse sichtbar
+3. Dach (braun #8b7355) - {"Flachdach" if is_large_building and roof_info == "Flachdach" else "Dreieck für Satteldach"}
 4. Rechtes Gerüst (gleich wie links)
-5. Verankerungspunkte (rote Kreise #dc3545, 3 pro Seite)
+5. Verankerungspunkte (rote Kreise #dc3545, {anchor_points} pro Seite - vertikal verteilt)
 
 BESCHRIFTUNGEN:
-- Titel oben: "Gebäudeschnitt (Querschnitt)" + Adresse
-- Höhenkoten rechts: ±0.00, Traufe +{building.eave_height_m:.1f}m, First +{ridge_h:.1f}m
+- Titel oben: "Gebäudeschnitt (Querschnitt) - {building_type}" + Adresse
+- Höhenkoten rechts: ±0.00, Traufe +{building.eave_height_m:.1f}m{f", First +{ridge_h:.1f}m" if ridge_h > building.eave_height_m else ""}
 - Breitenmass unten: {building.width_m:.1f} m
 - Massstab unten rechts
 
 WEITERE ELEMENTE:
 - Höhenraster (gestrichelte horizontale Linien alle 5m)
+- Geschosslinien im Gebäude andeuten ({building.floors} Etagen)
 - NPK 114 Info-Box unten links (grün #e8f5e9)
 - Legende oben rechts
 
@@ -223,6 +233,7 @@ STIL:
 - Arial Schriftart
 - Klare Linien, professionell
 - Dezente Farben
+- Bei {building_type}: entsprechende Proportionen
 
 Antworte NUR mit dem SVG-Code, keine Erklärungen."""
 
@@ -251,16 +262,32 @@ Antworte NUR mit dem SVG-Code, keine Erklärungen."""
         # Fenster pro Geschoss berechnen
         windows_per_floor = max(3, int(building.length_m / 4))
 
+        # Gebäudetyp und Eingänge basierend auf Grösse bestimmen
+        area = building.area_m2 or (building.length_m * building.width_m)
+        is_large_building = building.floors >= 4 or area >= 300
+
+        # Anzahl Eingänge: 1 pro ~15m Fassadenlänge bei grossen Gebäuden
+        if is_large_building:
+            num_entrances = max(2, int(building.length_m / 15))
+            building_type = "Mehrfamilienhaus"
+            entrance_info = f"{num_entrances} Hauseingänge gleichmässig verteilt"
+        else:
+            num_entrances = 1
+            building_type = "Einfamilienhaus"
+            entrance_info = "1 Eingangstür in der Mitte"
+
         prompt = f"""Generiere ein professionelles SVG für eine Gebäude-Fassadenansicht (Traufseite) mit Gerüst.
 
 GEBÄUDEDATEN:
 - Adresse: {building.address}
+- Gebäudetyp: {building_type}
 - Fassadenlänge (Traufseite): {building.length_m:.1f} m
 - Traufhöhe: {building.eave_height_m:.1f} m
 - Firsthöhe: {ridge_h:.1f} m
 - Geschosse: {building.floors}
 - Dachform: {roof_info}
 - Fenster pro Geschoss: ca. {windows_per_floor}
+- Eingänge: {entrance_info}
 
 SVG-ANFORDERUNGEN:
 - Größe: {width}x{height} Pixel
@@ -269,15 +296,15 @@ SVG-ANFORDERUNGEN:
 INHALT:
 1. Hintergrund: Himmel oben (#e3f2fd), Boden unten (#d4c4b0)
 2. Gebäudefassade (hellgrau #e0e0e0)
-3. Fenster (blau #4a90a4) - {windows_per_floor} pro Geschoss
-4. Eingangstür in der Mitte (braun #5d4037)
-5. Dach (braun #8b7355)
+3. Fenster (blau #4a90a4) - {windows_per_floor} pro Geschoss, gleichmässig verteilt
+4. Hauseingänge (braun #5d4037) - {entrance_info}
+5. Dach (braun #8b7355) - {"Flachdach für grosses MFH" if is_large_building and roof_info == "Flachdach" else roof_info}
 6. Gerüst links und rechts (gelb #fff3cd, Rahmen #ffc107)
-7. Verankerungspunkte (rot #dc3545)
+7. Verankerungspunkte (rot #dc3545) - mehr Punkte bei hohen Gebäuden
 
 BESCHRIFTUNGEN:
 - Titel: "Fassadenansicht (Traufseite)" + Adresse
-- Höhenkoten rechts: ±0.00, Traufe, First
+- Höhenkoten rechts: ±0.00, Traufe +{building.eave_height_m:.1f}m{f", First +{ridge_h:.1f}m" if ridge_h > building.eave_height_m else ""}
 - Längenmass unten: {building.length_m:.1f} m
 - Gerüst-Beschriftung: "{building.width_class}"
 
@@ -287,7 +314,7 @@ WEITERE ELEMENTE:
 - Massstab
 
 STIL:
-- Realistische Gebäudedarstellung mit Details
+- Realistische Gebäudedarstellung für {building_type}
 - Professionelle technische Zeichnung
 - Arial Schriftart
 
@@ -315,15 +342,30 @@ Antworte NUR mit dem SVG-Code."""
         area = building.area_m2 or (building.length_m * building.width_m)
         perimeter = 2 * (building.length_m + building.width_m)
 
+        # Gebäudetyp und Eingänge basierend auf Grösse bestimmen
+        is_large_building = building.floors >= 4 or area >= 300
+        building_type = "Mehrfamilienhaus" if is_large_building else "Einfamilienhaus"
+
+        # Anzahl Eingänge
+        if is_large_building:
+            num_entrances = max(2, int(max(building.length_m, building.width_m) / 15))
+            entrance_info = f"{num_entrances} Hauseingänge als kleine Rechtecke an der längsten Seite"
+        else:
+            num_entrances = 1
+            entrance_info = "1 Eingang als kleines Rechteck"
+
         prompt = f"""Generiere ein professionelles SVG für einen Gebäude-Grundriss mit umlaufender Gerüstposition.
 
 GEBÄUDEDATEN:
 - Adresse: {building.address}
+- Gebäudetyp: {building_type}
 - Länge (Nord-Süd): {building.length_m:.1f} m
 - Breite (Ost-West): {building.width_m:.1f} m
 - Grundfläche: {area:.0f} m²
 - Umfang: {perimeter:.0f} m
+- Geschosse: {building.floors}
 - Gerüst-Breitenklasse: {building.width_class}
+- Eingänge: {entrance_info}
 
 SVG-ANFORDERUNGEN:
 - Größe: {width}x{height} Pixel
@@ -334,13 +376,15 @@ INHALT:
 1. Gebäudegrundriss (Rechteck, grau #e0e0e0, mit Schraffur)
 2. Umlaufendes Gerüst (gelber Rahmen #fff3cd um das Gebäude)
 3. Verankerungspunkte an den Ecken und Seiten (rot #dc3545)
-4. Fassadenbeschriftungen: Nord, Süd, Ost, West mit Längenmassen
+4. Hauseingänge: {entrance_info} (braun #5d4037)
+5. Fassadenbeschriftungen: Nord, Süd, Ost, West mit Längenmassen
 
 BESCHRIFTUNGEN:
-- Titel: "Grundriss mit Gerüstposition" + Adresse
+- Titel: "Grundriss mit Gerüstposition - {building_type}" + Adresse
 - Fläche in der Mitte: "{area:.0f} m²"
+- "{building.floors} Geschosse" unter der Fläche
 - Seitenlängen an den Kanten
-- EGID falls vorhanden: {building.egid or 'nicht verfügbar'}
+- EGID: {building.egid or 'nicht verfügbar'}
 
 WEITERE ELEMENTE:
 - Nordpfeil oben rechts
@@ -351,7 +395,7 @@ WEITERE ELEMENTE:
 
 STIL:
 - Klare Draufsicht
-- Professionelle technische Plandarstellung
+- Professionelle technische Plandarstellung für {building_type}
 - Arial Schriftart
 
 Antworte NUR mit dem SVG-Code."""
