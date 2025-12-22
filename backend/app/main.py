@@ -1324,48 +1324,27 @@ async def berechne_komplettes_ausmass(
     **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&system_id=blitz70&dachform=satteldach`
     """
     try:
-        import math
         from app.services.npk114_calculator import NPK114Calculator, WidthClass
         from app.services.layher_catalog import get_catalog_service
+        from app.services.data_cache import get_cached_data, fetch_and_cache_complete_data
 
-        # 1. Adresse und Gebäude
-        geo = await swisstopo.geocode(address)
-        if not geo:
-            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+        # Try to use cached data first
+        cached = get_cached_data(address)
+        if not cached:
+            # Fetch and cache if not available
+            cached = await fetch_and_cache_complete_data(address, swisstopo, geodienste)
 
-        buildings = await swisstopo.identify_buildings(
-            geo.coordinates.lv95_e,
-            geo.coordinates.lv95_n,
-            tolerance=15
-        )
-        building = buildings[0] if buildings else None
+        # Use cached dimensions
+        laenge = cached.length_m
+        breite = cached.width_m
 
-        geometry = await geodienste.get_building_geometry(
-            x=geo.coordinates.lv95_e,
-            y=geo.coordinates.lv95_n,
-            tolerance=50,
-            egid=building.egid if building else None
-        )
-
-        # 2. Dimensionen
-        if geometry and geometry.sides:
-            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
-            laenge = side_lengths[0] if side_lengths else 10.0
-            breite = side_lengths[1] if len(side_lengths) > 1 else laenge
-        elif building and building.area_m2:
-            seite = math.sqrt(building.area_m2)
-            laenge = breite = seite
-        else:
-            laenge = breite = 10.0
-
-        # 3. Höhe
+        # Use provided height or cached
         if hoehe_traufe_m is None:
-            if building and building.floors:
-                hoehe_traufe_m = building.floors * 2.8
-            else:
-                hoehe_traufe_m = 8.0
+            hoehe_traufe_m = cached.eave_height_m
+        if hoehe_first_m is None:
+            hoehe_first_m = cached.ridge_height_m
 
-        # 4. NPK 114 Ausmass
+        # NPK 114 Ausmass
         wk = WidthClass[breitenklasse]
         calc = NPK114Calculator(breitenklasse=wk)
         ausmass = calc.berechne_rechteckiges_gebaeude(
@@ -1390,10 +1369,10 @@ async def berechne_komplettes_ausmass(
         return {
             "adresse": {
                 "eingabe": address,
-                "gefunden": geo.matched_address
+                "gefunden": cached.address_matched
             },
             "gebaeude": {
-                "egid": building.egid if building else None,
+                "egid": cached.egid,
                 "laenge_m": round(laenge, 1),
                 "breite_m": round(breite, 1),
                 "hoehe_traufe_m": hoehe_traufe_m,
