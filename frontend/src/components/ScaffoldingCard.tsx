@@ -476,7 +476,7 @@ export function ScaffoldingCard({
           onSelectAll={handleSelectAllFacades}
           onDeselectAll={handleDeselectAllFacades}
           scaffoldHeight={scaffoldHeight}
-          showArea={true}
+          showArea={false}
         />
 
         {/* Selected Facade Summary */}
