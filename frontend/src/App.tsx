@@ -144,12 +144,16 @@ function App() {
         throw new Error(data.detail || data.error || 'Fehler beim Abrufen der Höhe')
       }
 
+      // Get matched address for cache clearing (SVG cache uses matched address)
+      const matchedAddress = scaffoldingData?.address?.matched
+
       // Handle different response statuses
       if (data.status === 'already_exists') {
         console.log(`Height already exists in database: ${data.height_m}m`)
         if (currentAddress) {
-          // Clear SVG cache to force re-render with new height
-          clearSvgCache(currentAddress)
+          // Clear SVG cache using matched address (what ServerSVG uses)
+          if (matchedAddress) clearSvgCache(matchedAddress)
+          clearSvgCache() // Also clear entire cache to be safe
           // Refresh to bypass cache and get updated height
           await fetchScaffoldingData(currentAddress, undefined, true)
         }
@@ -166,14 +170,14 @@ function App() {
           // Height found - reload scaffolding data with refresh to bypass cache
           console.log(`Found height: ${data.height_m}m`)
           if (currentAddress) {
-            // Clear SVG cache to force re-render with new height
-            clearSvgCache(currentAddress)
+            // Clear entire SVG cache to force re-render with new height
+            clearSvgCache()
             await fetchScaffoldingData(currentAddress, undefined, true)
           }
         } else {
           // Imported but EGID lookup didn't find height - reload anyway with refresh
           if (currentAddress) {
-            clearSvgCache(currentAddress)
+            clearSvgCache()
             await fetchScaffoldingData(currentAddress, undefined, true)
           }
         }
