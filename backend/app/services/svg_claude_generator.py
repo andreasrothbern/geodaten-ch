@@ -242,37 +242,57 @@ GEBÄUDEDATEN:
 - Dachform: {roof_info}
 - Gerüst-Breitenklasse: {building.width_class}
 
-SVG-ANFORDERUNGEN:
+SVG-TECHNISCHE ANFORDERUNGEN:
 - Größe: {width}x{height} Pixel
 - viewBox: 0 0 {width} {height}
+- Verwende <defs> für Patterns:
+  1. building-hatch: Diagonale Schraffur für Gebäudeschnitt
+  2. scaffold-pattern: Gelbes Muster für Gerüst (#fff3cd mit #ffc107 Linien)
 
-INHALT (von links nach rechts):
-1. Linkes Gerüst (gelb #fff3cd, Rahmen #ffc107, ca. 15-20px breit)
-2. Gebäude im Schnitt (grau #e0e0e0 mit diagonaler Schraffur) - {floors} Geschosse sichtbar
-3. Dach (braun #8b7355) - {"Flachdach" if is_large_building and roof_info == "Flachdach" else "Dreieck für Satteldach"}
-4. Rechtes Gerüst (gleich wie links)
-5. Verankerungspunkte (rote Kreise #dc3545, {anchor_points} pro Seite - vertikal verteilt)
+LAYOUT (Proportionen beachten):
+- Hintergrund: Hellgrau #f8f9fa
+- Boden-Linie bei ca. 80% der Höhe
+- Gebäude zentriert mit Gerüst links und rechts
+- Rechts Platz für Höhenkoten lassen
 
-BESCHRIFTUNGEN:
-- Titel oben: "Gebäudeschnitt (Querschnitt) - {building_type}" + Adresse
-- Höhenkoten rechts: ±0.00, Traufe +{building.eave_height_m:.1f}m{f", First +{ridge_h:.1f}m" if ridge_h > building.eave_height_m else ""}
-- Breitenmass unten: {building.width_m:.1f} m
+GEBÄUDE-DARSTELLUNG:
+1. Schnittfläche mit Schraffur-Pattern (fill="url(#building-hatch)")
+2. {floors} Geschosse durch horizontale Linien andeuten
+3. Dach: {"Rechteck für Flachdach" if roof_info == "Flachdach" else "Dreieck für Satteldach"} (braun #8b7355)
+4. Dicke Aussenlinien (stroke-width="1.5")
+
+GERÜST:
+1. Links und rechts vom Gebäude (ca. 15px breit)
+2. fill="url(#scaffold-pattern)" mit #ffc107 Rahmen
+3. {anchor_points} rote Verankerungspunkte pro Seite (Kreise r="3" fill="#dc3545")
+4. Punkte vertikal gleichmässig verteilt
+
+BESCHRIFTUNGEN (Arial, gut lesbar):
+- Titel: "Gebäudeschnitt - {building_type}" (16px, fett, oben mittig)
+- Untertitel: Adresse (11px, grau)
+- Höhenkoten rechts mit gestrichelten Linien:
+  * ±0.00 m (Terrain)
+  * +{building.eave_height_m:.1f} m (Traufe)
+  {f"* +{ridge_h:.1f} m (First) - rot hervorgehoben" if ridge_h > building.eave_height_m else ""}
+- Breitenmass unten: {building.width_m:.1f} m mit Masspfeilen
 - Massstab unten rechts
 
-WEITERE ELEMENTE:
-- Höhenraster (gestrichelte horizontale Linien alle 5m)
-- Geschosslinien im Gebäude andeuten ({floors} Etagen)
-- NPK 114 Info-Box unten links (grün #e8f5e9)
-- Legende oben rechts
+LEGENDE (oben rechts, weisser Kasten):
+- Gerüst (gelb)
+- Gebäudeschnitt (grau schraffiert)
+- Verankerung (roter Kreis)
+
+NPK 114 INFO-BOX (unten links, grün #e8f5e9):
+- "NPK 114 D/2012"
+- "Ausmass = Länge × Höhe"
+- Breitenklasse: {building.width_class}
 
 STIL:
-- Saubere technische Zeichnung
-- Arial Schriftart
-- Klare Linien, professionell
-- Dezente Farben
-- Bei {building_type}: entsprechende Proportionen
+- Technische Zeichnung wie Architekturplan
+- Klare, saubere Linien
+- Professionell und lesbar
 
-Antworte NUR mit dem SVG-Code, keine Erklärungen."""
+Antworte NUR mit dem vollständigen SVG-Code."""
 
         svg = self._call_claude(prompt)
 
@@ -320,44 +340,67 @@ Antworte NUR mit dem SVG-Code, keine Erklärungen."""
 GEBÄUDEDATEN:
 - Adresse: {building.address}
 - Gebäudetyp: {building_type}
-- Fassadenlänge (Traufseite): {building.length_m:.1f} m
+- Fassadenlänge: {building.length_m:.1f} m
 - Traufhöhe: {building.eave_height_m:.1f} m
 - Firsthöhe: {ridge_h:.1f} m
 - Geschosse: {floors}
 - Dachform: {roof_info}
-- Fenster pro Geschoss: ca. {windows_per_floor}
+- Fenster pro Geschoss: {windows_per_floor}
 - Eingänge: {entrance_info}
 
-SVG-ANFORDERUNGEN:
+SVG-TECHNISCHE ANFORDERUNGEN:
 - Größe: {width}x{height} Pixel
 - viewBox: 0 0 {width} {height}
+- Verwende <defs> für Patterns:
+  1. windows-pattern: Fenster-Raster für Fassade
+  2. scaffold-pattern: Gelbes Gerüst-Muster (#fff3cd mit #ffc107 Linien)
 
-INHALT:
-1. Hintergrund: Himmel oben (#e3f2fd), Boden unten (#d4c4b0)
-2. Gebäudefassade (hellgrau #e0e0e0)
-3. Fenster (blau #4a90a4) - {windows_per_floor} pro Geschoss, gleichmässig verteilt
-4. Hauseingänge (braun #5d4037) - {entrance_info}
-5. Dach (braun #8b7355) - {"Flachdach für grosses MFH" if is_large_building and roof_info == "Flachdach" else roof_info}
-6. Gerüst links und rechts (gelb #fff3cd, Rahmen #ffc107)
-7. Verankerungspunkte (rot #dc3545) - mehr Punkte bei hohen Gebäuden
+LAYOUT:
+- Himmel oben (#e3f2fd, ca. 75% der Höhe)
+- Boden/Strasse unten (#d4c4b0, ca. 15%)
+- Gebäude zentriert, Gerüst links/rechts
+- Platz rechts für Höhenkoten
 
-BESCHRIFTUNGEN:
-- Titel: "Fassadenansicht (Traufseite)" + Adresse
-- Höhenkoten rechts: ±0.00, Traufe +{building.eave_height_m:.1f}m{f", First +{ridge_h:.1f}m" if ridge_h > building.eave_height_m else ""}
-- Längenmass unten: {building.length_m:.1f} m
-- Gerüst-Beschriftung: "{building.width_class}"
+FASSADEN-DARSTELLUNG:
+1. Hauptkörper (#e0e0e0 bis #d8d8d8, mit leichtem Schatten)
+2. Fenster: {windows_per_floor} pro Geschoss, blau #4a90a4 mit dunklem Rahmen
+3. Eingang: {entrance_info} (braun #5d4037, grösser als Fenster)
+4. Dach: {"Flachlinie für Flachdach" if roof_info == "Flachdach" else "Satteldach-Dreieck"} (braun #8b7355)
+5. Geschosstrennung durch feine Linien andeuten
 
-WEITERE ELEMENTE:
-- NPK 114 Info-Box
-- Legende
-- Massstab
+GERÜST (beidseitig):
+1. Gerüst-Streifen links und rechts (ca. 15-20px breit)
+2. fill="url(#scaffold-pattern)" mit gelb/orange Rahmen
+3. Beschriftung vertikal: "{building.width_class}"
+4. Rote Verankerungspunkte (Kreise r="3" fill="#dc3545")
+5. Punkte vertikal alle 3-4m
+
+BESCHRIFTUNGEN (Arial):
+- Titel: "Fassadenansicht - {building_type}" (16px, fett, oben mittig)
+- Untertitel: Adresse (11px, grau)
+- Höhenkoten rechts mit gestrichelten Bezugslinien:
+  * ±0.00 m (Terrain)
+  * +{building.eave_height_m:.1f} m (Traufe)
+  {f"* +{ridge_h:.1f} m (First) - rot hervorgehoben" if ridge_h > building.eave_height_m else ""}
+- Längenmass unten: {building.length_m:.1f} m mit Masspfeilen
+- Massstab unten
+
+LEGENDE (oben rechts, weisser Kasten mit Rahmen):
+- Fassadengerüst (gelb)
+- Verankerung (roter Kreis)
+- Eingang (braun)
+
+NPK 114 INFO-BOX (unten, grün #e8f5e9):
+- "NPK 114 D/2012 - Traufseite"
+- "Ausmass: ({building.length_m:.1f} + 2×Zuschlag) × ({building.eave_height_m:.1f} + 1.0)"
+- Breitenklasse: {building.width_class}
 
 STIL:
-- Realistische Gebäudedarstellung für {building_type}
-- Professionelle technische Zeichnung
-- Arial Schriftart
+- Professionelle Architektur-Zeichnung
+- Realistische Proportionen
+- Saubere Linien, lesbare Beschriftungen
 
-Antworte NUR mit dem SVG-Code."""
+Antworte NUR mit dem vollständigen SVG-Code."""
 
         svg = self._call_claude(prompt)
 
@@ -408,38 +451,65 @@ GEBÄUDEDATEN:
 - Gerüst-Breitenklasse: {building.width_class}
 - Eingänge: {entrance_info}
 
-SVG-ANFORDERUNGEN:
+SVG-TECHNISCHE ANFORDERUNGEN:
 - Größe: {width}x{height} Pixel
 - viewBox: 0 0 {width} {height}
-- Draufsicht (Vogelperspektive)
+- Verwende <defs> für Patterns:
+  1. building-hatch: Diagonale Schraffur für Gebäude
+  2. scaffold-pattern: Gelbes Muster für Gerüst
 
-INHALT:
-1. Gebäudegrundriss (Rechteck, grau #e0e0e0, mit Schraffur)
-2. Umlaufendes Gerüst (gelber Rahmen #fff3cd um das Gebäude)
-3. Verankerungspunkte an den Ecken und Seiten (rot #dc3545)
-4. Hauseingänge: {entrance_info} (braun #5d4037)
-5. Fassadenbeschriftungen: Nord, Süd, Ost, West mit Längenmassen
+LAYOUT (Draufsicht):
+- Weisser/hellgrauer Hintergrund
+- Gebäude zentriert (ca. 60% der Fläche)
+- Umlaufendes Gerüst um Gebäude
+- Platz für Beschriftungen an allen Seiten
 
-BESCHRIFTUNGEN:
-- Titel: "Grundriss mit Gerüstposition - {building_type}" + Adresse
-- Fläche in der Mitte: "{area:.0f} m²"
-- "{floors} Geschosse" unter der Fläche
-- Seitenlängen an den Kanten
-- EGID: {building.egid or 'nicht verfügbar'}
+GRUNDRISS-DARSTELLUNG:
+1. Gebäude-Rechteck mit Schraffur (#e0e0e0, fill="url(#building-hatch)")
+2. Dicke Aussenwände (stroke-width="2", #333)
+3. Innenwände angedeutet (dünne Linien)
+4. Eingänge: {entrance_info} als Öffnungen in der Wand (braun #5d4037)
+5. Norden oben
 
-WEITERE ELEMENTE:
-- Nordpfeil oben rechts
-- Massstab unten links
-- NPK 114 Info-Box
-- Legende
-- Koordinatensystem-Hinweis: "LV95 (EPSG:2056)"
+GERÜST (umlaufend):
+1. Gelber Streifen um das gesamte Gebäude (ca. 1m Abstand = 15-20px)
+2. fill="url(#scaffold-pattern)" mit #ffc107 Rahmen
+3. Verankerungspunkte an allen 4 Ecken + Zwischenpunkte
+4. Rote Kreise (r="4" fill="#dc3545")
+
+BESCHRIFTUNGEN (Arial):
+- Titel: "Grundriss - {building_type}" (14px, fett, oben)
+- Adresse als Untertitel (10px, grau)
+- Fläche gross in der Gebäudemitte: "{area:.0f} m²" (18px, fett)
+- "{floors} Geschosse" darunter (10px)
+- EGID: {building.egid or '-'} (8px, grau)
+- Seitenlängen aussen mit Masspfeilen:
+  * Nord/Süd: {building.length_m:.1f} m
+  * Ost/West: {building.width_m:.1f} m
+- Himmelsrichtungen: N, S, O, W
+
+ZUSÄTZLICHE ELEMENTE:
+1. Nordpfeil (oben rechts, deutlich sichtbar)
+2. Massstab-Balken (unten links): "5 m" oder "10 m"
+3. Koordinaten-Hinweis: "LV95 (CH1903+)"
+
+LEGENDE (unten rechts, weisser Kasten):
+- Gebäudegrundriss (grau schraffiert)
+- Gerüstzone (gelb)
+- Verankerungspunkt (roter Kreis)
+- Eingang (braun)
+
+NPK 114 INFO-BOX (unten links, grün #e8f5e9):
+- "NPK 114 D/2012"
+- "Umfang: {perimeter:.0f} m"
+- "Breitenklasse: {building.width_class}"
 
 STIL:
-- Klare Draufsicht
-- Professionelle technische Plandarstellung für {building_type}
-- Arial Schriftart
+- Technischer Lageplan / Bauplan
+- Klare Linien, gute Lesbarkeit
+- Professionell wie Architekturzeichnung
 
-Antworte NUR mit dem SVG-Code."""
+Antworte NUR mit dem vollständigen SVG-Code."""
 
         svg = self._call_claude(prompt)
 
