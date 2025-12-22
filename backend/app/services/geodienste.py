@@ -614,6 +614,8 @@ def get_height_details(
     result["_debug"] = {
         "egid_used": egid,
         "detailed_from_db": detailed if egid else None,
+        "detailed_has_data": detailed_has_data if egid else None,
+        "legacy_height": result.get('legacy_height_used'),
         "final_trauf": result.get('traufhoehe_m'),
         "final_first": result.get('firsthoehe_m'),
         "final_active": result.get('active_height_m'),
