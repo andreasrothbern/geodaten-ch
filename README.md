@@ -183,7 +183,7 @@ Gehostet auf [Railway.app](https://railway.app):
 | FR     | Rue de Romont 10, 1700 Fribourg   | On-Demand | ✅ |
 | ZH     | Bahnhofstrasse 50, 8001 Zürich    | On-Demand | ✅ |
 | AG     | Bahnhofstrasse 20, 5000 Aarau     | On-Demand | ✅ |
-| SG     | Marktgasse 10, 9000 St. Gallen    | On-Demand | ✅ |
+| SG     | Marktgasse 11, 9000 St. Gallen    | On-Demand | ✅ |
 | TG     | Freiestrasse 10, 8500 Frauenfeld  | On-Demand | ✅ |
 | BL     | Hauptstrasse 50, 4410 Liestal     | On-Demand | ✅ |
 | SH     | Vordergasse 20, 8200 Schaffhausen | On-Demand | ✅ |
