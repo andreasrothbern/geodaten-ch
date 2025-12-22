@@ -600,11 +600,12 @@ class SVGGenerator:
             svg_end = to_svg(end[0], end[1])
             length = side.get('length_m', 0)
             direction = side.get('direction', '')
+            side_index = side.get('index', i)  # Index aus side-Objekt für Konsistenz
 
             # Fassaden-Segment als klickbare Linie
             svg += f'''  <line x1="{svg_start[0]:.1f}" y1="{svg_start[1]:.1f}" x2="{svg_end[0]:.1f}" y2="{svg_end[1]:.1f}"
         class="facade-segment"
-        data-facade-index="{i}"
+        data-facade-index="{side_index}"
         data-facade-length="{length:.2f}"
         data-facade-direction="{direction}"
         stroke="{self.COLORS['building_stroke']}" stroke-width="3" stroke-linecap="round"/>
@@ -630,6 +631,7 @@ class SVGGenerator:
 
             length = side.get('length_m', 0)
             direction = side.get('direction', '')
+            side_index = side.get('index', i)  # Index aus side-Objekt
 
             # Label Position (leicht nach aussen versetzt)
             # Normaler Vektor zur Seite berechnen
@@ -644,8 +646,8 @@ class SVGGenerator:
             else:
                 label_x, label_y = svg_mid
 
-            # Index-Nummer an jeder Fassade
-            svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{i}">[{i+1}] {direction}</text>\n'
+            # Index-Nummer an jeder Fassade (0-basiert intern, 1-basiert angezeigt)
+            svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}] {direction}</text>\n'
             svg += f'  <text x="{label_x:.1f}" y="{label_y + 10:.1f}" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
 
         # Verankerungspunkte an allen Polygon-Ecken

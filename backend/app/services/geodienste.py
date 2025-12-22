@@ -271,7 +271,7 @@ class GeodiensteService:
             direction = self._angle_to_direction(angle)
 
             sides.append({
-                'index': i + 1,
+                'index': i,  # 0-basiert für Konsistenz mit SVG und Frontend
                 'start': {'x': p1[0], 'y': p1[1]},
                 'end': {'x': p2[0], 'y': p2[1]},
                 'length_m': round(length, 2),
@@ -565,15 +565,8 @@ def calculate_scaffolding_data(
     else:
         scaffold_area = None
 
-    # Seitenlängen nach Größe sortieren
-    sides_sorted = sorted(
-        geometry.sides,
-        key=lambda s: s['length_m'],
-        reverse=True
-    )
-
     # Hauptseiten identifizieren (längste Seiten)
-    main_sides = [s for s in sides_sorted if s['length_m'] > 3.0]
+    main_sides = [s for s in geometry.sides if s['length_m'] > 3.0]
 
     # 3D Viewer Link generieren
     viewer_3d_url = None
@@ -623,7 +616,7 @@ def calculate_scaffolding_data(
             "number_of_sides": len(geometry.sides),
             "main_sides_count": len(main_sides),
         },
-        "sides": sides_sorted,
+        "sides": geometry.sides,  # Geometrische Reihenfolge beibehalten für SVG-Konsistenz
         "polygon": {
             "coordinates": geometry.polygon,
             "coordinate_system": "LV95 (EPSG:2056)",

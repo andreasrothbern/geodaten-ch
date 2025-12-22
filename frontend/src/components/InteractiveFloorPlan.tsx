@@ -32,6 +32,7 @@ export function InteractiveFloorPlan({
   const [svgContent, setSvgContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(1)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Fetch SVG from server
@@ -116,6 +117,11 @@ export function InteractiveFloorPlan({
     })
   }, [svgContent, selectedFacades])
 
+  // Zoom handlers
+  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3))
+  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5))
+  const handleZoomReset = () => setZoom(1)
+
   // Calculate summary stats
   const selectedCount = selectedFacades.length
   const totalCount = sides.length
@@ -164,19 +170,57 @@ export function InteractiveFloorPlan({
             </button>
           )}
         </div>
-        <div className="text-sm text-gray-600">
-          <span className="font-medium">{selectedCount}</span> von {totalCount} Fassaden ausgewahlt
-          ({selectedLength.toFixed(1)}m von {totalLength.toFixed(1)}m)
+        <div className="flex items-center gap-4">
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 border rounded-lg p-1 bg-gray-50">
+            <button
+              onClick={handleZoomOut}
+              disabled={zoom <= 0.5}
+              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Verkleinern"
+            >
+              -
+            </button>
+            <button
+              onClick={handleZoomReset}
+              className="px-2 h-7 text-xs text-gray-600 hover:bg-gray-200 rounded font-mono"
+              title="Zurucksetzen"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={handleZoomIn}
+              disabled={zoom >= 3}
+              className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Vergrossern"
+            >
+              +
+            </button>
+          </div>
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">{selectedCount}</span> von {totalCount} Fassaden ausgewahlt
+            ({selectedLength.toFixed(1)}m von {totalLength.toFixed(1)}m)
+          </div>
         </div>
       </div>
 
-      {/* SVG Container */}
+      {/* SVG Container with zoom */}
       <div
-        ref={containerRef}
-        className="bg-white border rounded-lg p-4 overflow-hidden"
-        style={{ minHeight: height }}
-        dangerouslySetInnerHTML={{ __html: svgContent }}
-      />
+        className="bg-white border rounded-lg overflow-auto"
+        style={{ maxHeight: Math.max(height * 1.5, 450) }}
+      >
+        <div
+          ref={containerRef}
+          className="p-4 transition-transform duration-200 origin-top-left"
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: 'center center',
+            minHeight: height,
+            width: zoom > 1 ? `${100 / zoom}%` : '100%'
+          }}
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+        />
+      </div>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-sm text-gray-600">
