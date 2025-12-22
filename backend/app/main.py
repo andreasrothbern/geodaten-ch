@@ -1266,15 +1266,15 @@ async def visualize_cross_section(
     height: int = 480
 ):
     """
-    Generiert SVG-Schnittansicht für ein Gebäude.
+    Generiert SVG-Schnittansicht für ein Gebäude via Claude API.
 
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
 
-    Returns: SVG-Datei
+    Returns: SVG-Datei (von Claude generiert, gecached)
     """
-    from app.services.svg_generator import get_svg_generator, BuildingData
+    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
 
     try:
         # Gebäudedaten abrufen
@@ -1343,9 +1343,12 @@ async def visualize_cross_section(
             area_m2=building.area_m2 if building else None,
         )
 
-        # SVG generieren
-        generator = get_svg_generator()
+        # SVG via Claude generieren
+        generator = get_claude_svg_generator()
         svg = generator.generate_cross_section(building_data, width, height)
+
+        if not svg:
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1372,7 +1375,7 @@ async def visualize_elevation(
 
     Returns: SVG-Datei
     """
-    from app.services.svg_generator import get_svg_generator, BuildingData
+    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
 
     try:
         # Gebäudedaten abrufen (gleiche Logik wie cross-section)
@@ -1433,8 +1436,11 @@ async def visualize_elevation(
             area_m2=building.area_m2 if building else None,
         )
 
-        generator = get_svg_generator()
+        generator = get_claude_svg_generator()
         svg = generator.generate_elevation(building_data, width, height)
+
+        if not svg:
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1461,7 +1467,7 @@ async def visualize_floor_plan(
 
     Returns: SVG-Datei
     """
-    from app.services.svg_generator import get_svg_generator, BuildingData
+    from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData
 
     try:
         geo = await swisstopo.geocode(address)
@@ -1516,8 +1522,11 @@ async def visualize_floor_plan(
             area_m2=building.area_m2 if building else None,
         )
 
-        generator = get_svg_generator()
+        generator = get_claude_svg_generator()
         svg = generator.generate_floor_plan(building_data, width, height)
+
+        if not svg:
+            raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
 
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -1632,9 +1641,9 @@ async def generate_materialbewirtschaftung_document(
             lv95_n=geo.coordinates.lv95_n
         )
 
-        # 7. SVG-Visualisierungen generieren
-        from app.services.svg_generator import get_svg_generator, BuildingData as SVGBuildingData
-        svg_generator = get_svg_generator()
+        # 7. SVG-Visualisierungen via Claude API generieren
+        from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData as SVGBuildingData
+        svg_generator = get_claude_svg_generator()
 
         svg_building_data = SVGBuildingData(
             address=geo.matched_address,
@@ -1648,6 +1657,7 @@ async def generate_materialbewirtschaftung_document(
             area_m2=building.area_m2 if building else None,
         )
 
+        # Claude API generiert hochwertige SVGs (gecached um Kosten zu sparen)
         svg_floor_plan = svg_generator.generate_floor_plan(svg_building_data)
         svg_cross_section = svg_generator.generate_cross_section(svg_building_data)
         svg_elevation = svg_generator.generate_elevation(svg_building_data)
