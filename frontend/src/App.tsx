@@ -46,7 +46,7 @@ function App() {
         url += `&height=${height}`
       }
       if (refresh) {
-        url += `&force_refresh=true`
+        url += `&refresh=true`
       }
       const response = await fetch(url)
       if (response.ok) {
