@@ -5,14 +5,17 @@
  * - Address and coordinates
  * - GWR data (EGID, floors, area, etc.)
  * - Height data (estimated + measured from swissBUILDINGS3D)
+ * - Building visualization (cross-section, elevation, floor plan)
  * - Manual height input option
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ScaffoldingData } from '../types'
+import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 
 interface GrunddatenCardProps {
   data: ScaffoldingData
+  apiUrl: string
   onFetchMeasuredHeight?: () => void
   fetchingHeight?: boolean
   onHeightChange?: (height: number) => void
@@ -20,11 +23,13 @@ interface GrunddatenCardProps {
 
 export function GrunddatenCard({
   data,
+  apiUrl,
   onFetchMeasuredHeight,
   fetchingHeight = false,
   onHeightChange
 }: GrunddatenCardProps) {
   const [manualHeight, setManualHeight] = useState<string>('')
+  const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
   const { dimensions, gwr_data, building, address } = data
 
   const handleManualHeightSubmit = () => {
@@ -37,6 +42,13 @@ export function GrunddatenCard({
 
   // Check if measured height exists
   const hasMeasuredHeight = dimensions.traufhoehe_m !== null || dimensions.firsthoehe_m !== null
+
+  // Preload all SVG visualizations when component mounts
+  useEffect(() => {
+    if (data.address?.matched && apiUrl) {
+      preloadAllSvgs(data.address.matched, apiUrl)
+    }
+  }, [data.address?.matched, apiUrl])
 
   return (
     <div className="card space-y-6">
@@ -198,18 +210,98 @@ export function GrunddatenCard({
         )}
       </section>
 
-      {/* 3D Viewer Link */}
-      {data.viewer_3d_url && (
-        <section className="pt-2 border-t">
-          <a
-            href={data.viewer_3d_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm"
-          >
-            <span>3D-Ansicht in map.geo.admin.ch offnen</span>
-            <span>↗</span>
-          </a>
+      {/* Key figures */}
+      <section className="space-y-3">
+        <h4 className="font-medium text-gray-700">Kennzahlen</h4>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 rounded-lg p-4 text-center">
+            <p className="text-sm text-blue-600 font-medium">Fassadenlange</p>
+            <p className="text-2xl font-bold text-blue-900">
+              {dimensions.perimeter_m?.toFixed(1) || '-'} m
+            </p>
+          </div>
+          <div className="bg-purple-50 rounded-lg p-4 text-center">
+            <p className="text-sm text-purple-600 font-medium">Grundflache</p>
+            <p className="text-2xl font-bold text-purple-900">
+              {building?.footprint_area_m2?.toFixed(0) || '-'} m2
+            </p>
+          </div>
+          {data.viewer_3d_url && (
+            <div className="bg-indigo-50 rounded-lg p-4 text-center">
+              <p className="text-sm text-indigo-600 font-medium">3D Ansicht</p>
+              <a
+                href={data.viewer_3d_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                3D Viewer
+              </a>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Building Visualization - Server-generated SVGs */}
+      {data.address?.matched && (
+        <section className="space-y-3">
+          <h4 className="font-medium text-gray-700">Gebaude-Visualisierung</h4>
+          <div className="bg-white rounded-lg border shadow-sm">
+            {/* Header with tabs */}
+            <div className="flex items-center justify-between border-b px-4 py-2">
+              <div className="flex gap-1">
+                {[
+                  { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
+                  { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' },
+                  { id: 'floor-plan' as const, label: 'Grundriss', icon: '📋' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveVizTab(tab.id)}
+                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      activeVizTab === tab.id
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tab.icon} {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Download Button */}
+              <a
+                href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700`}
+                download={`${activeVizTab}_${data.address.matched.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+              >
+                SVG
+              </a>
+            </div>
+
+            {/* Visualization */}
+            <div className="p-4 flex justify-center">
+              <ServerSVG
+                type={activeVizTab}
+                address={data.address.matched}
+                apiUrl={apiUrl}
+                width={650}
+                height={activeVizTab === 'floor-plan' ? 450 : 400}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Polygon info */}
+      {data.polygon?.coordinates && (
+        <section className="pt-2 border-t text-sm text-gray-500">
+          <p>
+            Polygon mit {data.polygon.coordinates.length} Eckpunkten |{' '}
+            Koordinatensystem: {data.polygon.coordinate_system}
+          </p>
         </section>
       )}
     </div>

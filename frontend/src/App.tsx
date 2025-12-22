@@ -305,6 +305,7 @@ function App() {
                     {activeTab === 'grunddaten' && (
                       <GrunddatenCard
                         data={scaffoldingData}
+                        apiUrl={API_URL}
                         onHeightChange={handleHeightChange}
                         onFetchMeasuredHeight={handleFetchMeasuredHeight}
                         fetchingHeight={fetchingHeight}
