@@ -1691,10 +1691,18 @@ async def visualize_floor_plan(
             egid=building.egid if building else None
         )
 
+        # Polygon und Seiten-Daten erfassen
+        polygon_coords = None
+        sides_data = None
+
         if geometry and geometry.sides:
             side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
             length_m = side_lengths[0]
             width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
+            # Polygon-Koordinaten und Seiten für echte Darstellung
+            if hasattr(geometry, 'polygon') and geometry.polygon:
+                polygon_coords = [[p[0], p[1]] for p in geometry.polygon]
+            sides_data = geometry.sides
         elif building and building.area_m2:
             side = math.sqrt(building.area_m2)
             length_m = width_m = round(side, 1)
@@ -1722,6 +1730,8 @@ async def visualize_floor_plan(
             floors=building.floors if building else 3,
             roof_type="flat",  # Grundriss zeigt keine Dachform
             area_m2=building.area_m2 if building else None,
+            polygon_coordinates=polygon_coords,
+            sides=sides_data,
         )
 
         generator = get_svg_generator()

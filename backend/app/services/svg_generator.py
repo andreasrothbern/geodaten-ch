@@ -14,8 +14,8 @@ Design-Philosophie:
 - NPK 114 Info-Box
 """
 
-from typing import Optional, List, Tuple
-from dataclasses import dataclass
+from typing import Optional, List, Tuple, Dict, Any
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -31,6 +31,9 @@ class BuildingData:
     roof_type: str = "gable"  # flat, gable, hip
     area_m2: Optional[float] = None
     width_class: str = "W09"
+    # Polygon data for irregular buildings
+    polygon_coordinates: Optional[List[List[float]]] = None  # [[x,y], [x,y], ...]
+    sides: Optional[List[Dict[str, Any]]] = None  # [{length_m, direction, ...}, ...]
 
 
 class SVGGenerator:
@@ -442,6 +445,7 @@ class SVGGenerator:
     def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500) -> str:
         """
         Generiert sauberen technischen Grundriss.
+        Verwendet echte Polygon-Daten falls vorhanden.
         """
         margin = {'top': 60, 'right': 160, 'bottom': 80, 'left': 50}
         draw_width = width - margin['left'] - margin['right']
@@ -463,20 +467,29 @@ class SVGGenerator:
         # Hintergrund
         svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
 
+        # Anzahl Seiten für Titel
+        num_sides = len(building.sides) if building.sides else 4
+        shape_info = f" ({num_sides} Seiten)" if num_sides != 4 else ""
+
         # Titel
         svg += f'''
   <text x="{width/2}" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">
-    Grundriss mit Gerüstposition
+    Grundriss mit Gerüstposition{shape_info}
   </text>
   <text x="{width/2}" y="42" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">
     {building.address}
   </text>
 '''
 
-        # Gebäude zeichnen (immer rechteckig - vereinfacht)
-        svg += self._draw_rectangle_floor_plan(
-            building, scale, center_x, center_y, width, height, margin
-        )
+        # Gebäude zeichnen - Polygon wenn vorhanden, sonst Rechteck
+        if building.polygon_coordinates and len(building.polygon_coordinates) >= 3:
+            svg += self._draw_polygon_floor_plan(
+                building, scale, center_x, center_y, width, height, margin
+            )
+        else:
+            svg += self._draw_rectangle_floor_plan(
+                building, scale, center_x, center_y, width, height, margin
+            )
 
         # Legende
         legend_items = [
@@ -506,6 +519,116 @@ class SVGGenerator:
 '''
 
         svg += self._svg_footer()
+        return svg
+
+    def _draw_polygon_floor_plan(self, building: BuildingData, scale: float,
+                                   center_x: float, center_y: float,
+                                   width: int, height: int, margin: dict) -> str:
+        """Zeichnet Grundriss mit echtem Polygon."""
+        svg = ""
+        coords = building.polygon_coordinates
+        sides = building.sides or []
+
+        if not coords or len(coords) < 3:
+            return self._draw_rectangle_floor_plan(building, scale, center_x, center_y, width, height, margin)
+
+        # Koordinaten in Meter umrechnen (von LV95)
+        # LV95 Koordinaten sind in Metern, wir müssen sie zentrieren
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        center_geo_x = (min_x + max_x) / 2
+        center_geo_y = (min_y + max_y) / 2
+
+        # Umrechnung: Geo-Koordinaten -> SVG-Koordinaten
+        # Y-Achse invertieren (SVG hat Y nach unten)
+        def to_svg(gx, gy):
+            sx = center_x + (gx - center_geo_x) * scale
+            sy = center_y - (gy - center_geo_y) * scale  # Y invertiert
+            return sx, sy
+
+        # Polygon-Punkte für SVG
+        svg_points = [to_svg(c[0], c[1]) for c in coords]
+        points_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_points])
+
+        # Scaffold zone (offset polygon)
+        scaffold_offset = 1.0 * scale  # 1m Abstand
+
+        # Vereinfachte Scaffold-Zone: Bounding box + offset
+        svg_xs = [p[0] for p in svg_points]
+        svg_ys = [p[1] for p in svg_points]
+        bbox_min_x = min(svg_xs) - scaffold_offset - 10
+        bbox_max_x = max(svg_xs) + scaffold_offset + 10
+        bbox_min_y = min(svg_ys) - scaffold_offset - 10
+        bbox_max_y = max(svg_ys) + scaffold_offset + 10
+
+        # Gerüst-Zone (als Rechteck um das Polygon)
+        svg += f'''
+  <!-- Gerüst-Zone -->
+  <rect x="{bbox_min_x}" y="{bbox_min_y}"
+        width="{bbox_max_x - bbox_min_x}" height="{bbox_max_y - bbox_min_y}"
+        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
+'''
+
+        # Innerer Bereich (Gebäude-Polygon mit kleinem Offset)
+        svg += f'''
+  <!-- Gebäude-Polygon -->
+  <polygon points="{points_str}"
+           fill="#e0e0e0" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
+'''
+
+        # Seiten-Beschriftungen
+        svg += '  <!-- Fassaden-Beschriftungen -->\n'
+        for i, side in enumerate(sides):
+            if side.get('length_m', 0) < 0.5:  # Sehr kurze Seiten überspringen
+                continue
+
+            # Mittelpunkt der Seite berechnen
+            if i < len(coords) - 1:
+                start = coords[i]
+                end = coords[i + 1]
+            else:
+                start = coords[i]
+                end = coords[0]
+
+            mid_x = (start[0] + end[0]) / 2
+            mid_y = (start[1] + end[1]) / 2
+            svg_mid = to_svg(mid_x, mid_y)
+
+            length = side.get('length_m', 0)
+            direction = side.get('direction', '')
+
+            # Label Position (leicht nach aussen versetzt)
+            # Normaler Vektor zur Seite berechnen
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            seg_len = (dx**2 + dy**2)**0.5
+            if seg_len > 0:
+                nx = -dy / seg_len  # Normal (nach aussen)
+                ny = dx / seg_len
+                label_x = svg_mid[0] + nx * scale * 1.5
+                label_y = svg_mid[1] - ny * scale * 1.5
+            else:
+                label_x, label_y = svg_mid
+
+            if length >= 1.0:
+                svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS["text_light"]}">{direction} {length:.1f}m</text>\n'
+
+        # Verankerungspunkte an allen Polygon-Ecken
+        svg += '  <!-- Verankerungspunkte -->\n'
+        for i, (px, py) in enumerate(svg_points[:-1]):  # Letzter Punkt = erster Punkt
+            svg += f'  <circle cx="{px:.1f}" cy="{py:.1f}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+
+        # Fläche und Info in der Mitte
+        area = building.area_m2 or 0
+        perimeter = sum(s.get('length_m', 0) for s in sides) if sides else 0
+        svg += f'''
+  <text x="{center_x}" y="{center_y - 8}" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="{self.COLORS['text']}">{area:.0f} m²</text>
+  <text x="{center_x}" y="{center_y + 8}" text-anchor="middle" font-family="Arial" font-size="9" fill="{self.COLORS['text_light']}">Umfang: {perimeter:.1f} m</text>
+'''
+
         return svg
 
     def _draw_rectangle_floor_plan(self, building: BuildingData, scale: float,
