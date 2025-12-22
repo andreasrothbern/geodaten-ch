@@ -8,6 +8,7 @@ import { MaterialCard } from './components/MaterialCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useUserPreferences } from './hooks/useUserPreferences'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
+import { clearSvgCache } from './components/BuildingVisualization/ServerSVG'
 import type { LookupResult, ScaffoldingData } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -147,6 +148,8 @@ function App() {
       if (data.status === 'already_exists') {
         console.log(`Height already exists in database: ${data.height_m}m`)
         if (currentAddress) {
+          // Clear SVG cache to force re-render with new height
+          clearSvgCache(currentAddress)
           // Refresh to bypass cache and get updated height
           await fetchScaffoldingData(currentAddress, undefined, true)
         }
@@ -163,11 +166,14 @@ function App() {
           // Height found - reload scaffolding data with refresh to bypass cache
           console.log(`Found height: ${data.height_m}m`)
           if (currentAddress) {
+            // Clear SVG cache to force re-render with new height
+            clearSvgCache(currentAddress)
             await fetchScaffoldingData(currentAddress, undefined, true)
           }
         } else {
           // Imported but EGID lookup didn't find height - reload anyway with refresh
           if (currentAddress) {
+            clearSvgCache(currentAddress)
             await fetchScaffoldingData(currentAddress, undefined, true)
           }
         }
