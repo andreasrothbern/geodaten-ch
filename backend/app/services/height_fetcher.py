@@ -7,6 +7,7 @@ Uses the STAC API to find tiles based on coordinates, downloads and imports them
 """
 
 import asyncio
+import math
 import tempfile
 import zipfile
 import urllib.request
@@ -368,8 +369,27 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
                     debug_info["null_height_count"] += 1
                     continue
 
+                # Select main height (prefer gebaeudehoehe, then firsthoehe, then traufhoehe)
+                # Don't use 'or' chain as it fails for 0.0 values
+                main_height = None
+                if gebaeudehoehe is not None and gebaeudehoehe > 0:
+                    main_height = gebaeudehoehe
+                elif firsthoehe is not None and firsthoehe > 0:
+                    main_height = firsthoehe
+                elif traufhoehe is not None and traufhoehe > 0:
+                    main_height = traufhoehe
+
+                # Skip if no valid height or NaN
+                if main_height is None:
+                    debug_info["null_height_count"] += 1
+                    continue
+
+                # Check for NaN
+                if math.isnan(main_height):
+                    debug_info["nan_height_count"] = debug_info.get("nan_height_count", 0) + 1
+                    continue
+
                 # Minimum height validation
-                main_height = gebaeudehoehe or firsthoehe or traufhoehe
                 if main_height < 2.0:
                     debug_info["rejected_low_height_count"] = debug_info.get("rejected_low_height_count", 0) + 1
                     continue
