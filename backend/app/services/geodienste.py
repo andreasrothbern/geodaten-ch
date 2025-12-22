@@ -595,7 +595,15 @@ def get_height_details(
         result["active_height_m"] = result["estimated_height_m"]
         result["active_source"] = result["estimated_source"]
 
-    print(f"[DEBUG get_height_details] FINAL: trauf={result.get('traufhoehe_m')}, first={result.get('firsthoehe_m')}, active={result.get('active_height_m')} ({result.get('active_source')})")
+    # Debug info für API Response
+    result["_debug"] = {
+        "egid_used": egid,
+        "detailed_from_db": detailed if egid else None,
+        "final_trauf": result.get('traufhoehe_m'),
+        "final_first": result.get('firsthoehe_m'),
+        "final_active": result.get('active_height_m'),
+        "final_source": result.get('active_source'),
+    }
     return result
 
 
@@ -705,4 +713,6 @@ def calculate_scaffolding_data(
         "viewer_3d_url": viewer_3d_url,
         # Flag für automatische Höhenaktualisierung
         "needs_height_refresh": height_info.get("needs_height_refresh", False),
+        # Debug info (temporär)
+        "_height_debug": height_info.get("_debug"),
     }

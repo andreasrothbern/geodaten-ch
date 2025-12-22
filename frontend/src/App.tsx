@@ -67,6 +67,7 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         console.log(`[DEBUG fetchScaffoldingData] Response OK, traufhoehe_m=${data.dimensions?.traufhoehe_m}, firsthoehe_m=${data.dimensions?.firsthoehe_m}`)
+        console.log(`[DEBUG fetchScaffoldingData] _height_debug:`, data._height_debug)
         setScaffoldingData(data)
         // Clear SVG cache when heights are manually set
         if (heights?.traufhoehe_m || heights?.firsthoehe_m) {
