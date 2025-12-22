@@ -1,4 +1,54 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+
+// Global cache for SVGs to persist across component remounts
+const svgCache = new Map<string, string>()
+
+// Clear cache for a specific address (when address changes)
+export function clearSvgCache(address?: string) {
+  if (address) {
+    // Clear only entries for this address
+    for (const key of svgCache.keys()) {
+      if (key.includes(address)) {
+        svgCache.delete(key)
+      }
+    }
+  } else {
+    svgCache.clear()
+  }
+}
+
+// Preload all visualization types for an address
+export async function preloadAllSvgs(
+  address: string,
+  apiUrl: string,
+  width = 650,
+  heights = { 'cross-section': 400, 'elevation': 400, 'floor-plan': 450 }
+) {
+  const types: Array<'cross-section' | 'elevation' | 'floor-plan'> = ['cross-section', 'elevation', 'floor-plan']
+
+  await Promise.all(types.map(async (type) => {
+    const height = heights[type]
+    const cacheKey = `${type}|${address}|${width}|${height}`
+
+    // Skip if already cached
+    if (svgCache.has(cacheKey)) return
+
+    try {
+      const params = new URLSearchParams({
+        address,
+        width: width.toString(),
+        height: height.toString()
+      })
+      const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
+      if (response.ok) {
+        const svgText = await response.text()
+        svgCache.set(cacheKey, svgText)
+      }
+    } catch (err) {
+      console.error(`Failed to preload ${type}:`, err)
+    }
+  }))
+}
 
 interface ServerSVGProps {
   /** API endpoint type */
@@ -17,7 +67,7 @@ interface ServerSVGProps {
 
 /**
  * Lädt SVG-Visualisierungen vom Backend-Server
- * Professionelle Darstellung im Showcase-Stil
+ * Mit Cache um wiederholtes Laden zu vermeiden
  */
 export function ServerSVG({
   type,
@@ -30,12 +80,30 @@ export function ServerSVG({
   const [svg, setSvg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const fetchedRef = useRef<string | null>(null)
+
+  // Cache key
+  const cacheKey = `${type}|${address}|${width}|${height}`
 
   useEffect(() => {
     if (!address) {
       setLoading(false)
       return
     }
+
+    // Check cache first
+    const cached = svgCache.get(cacheKey)
+    if (cached) {
+      setSvg(cached)
+      setLoading(false)
+      return
+    }
+
+    // Prevent duplicate fetches
+    if (fetchedRef.current === cacheKey) {
+      return
+    }
+    fetchedRef.current = cacheKey
 
     const fetchSVG = async () => {
       setLoading(true)
@@ -55,6 +123,8 @@ export function ServerSVG({
         }
 
         const svgText = await response.text()
+        // Store in cache
+        svgCache.set(cacheKey, svgText)
         setSvg(svgText)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
@@ -64,7 +134,7 @@ export function ServerSVG({
     }
 
     fetchSVG()
-  }, [type, address, apiUrl, width, height])
+  }, [cacheKey, address, apiUrl, type, width, height])
 
   if (loading) {
     return (

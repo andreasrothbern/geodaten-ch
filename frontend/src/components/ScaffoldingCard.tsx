@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ScaffoldingData, ScaffoldingSide } from '../types'
-import { ServerSVG } from './BuildingVisualization/ServerSVG'
+import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 
 interface ScaffoldingCardProps {
   data: ScaffoldingData
@@ -26,6 +26,13 @@ export function ScaffoldingCard({
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
 
   const { dimensions, scaffolding, building, gwr_data, sides } = data
+
+  // Preload all SVG visualizations when component mounts
+  useEffect(() => {
+    if (data.address?.matched && apiUrl) {
+      preloadAllSvgs(data.address.matched, apiUrl)
+    }
+  }, [data.address?.matched, apiUrl])
 
   // Check if measured height can be fetched (not already from database)
   const canFetchMeasuredHeight = !isFromDatabase(dimensions.height_source) && onFetchMeasuredHeight
