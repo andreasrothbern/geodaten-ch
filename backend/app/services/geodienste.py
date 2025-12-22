@@ -490,12 +490,21 @@ def get_height_details(
 
             # Zuerst detaillierte Höhen versuchen
             detailed = get_building_heights_detailed(egid)
-            print(f"[DEBUG get_height_details] EGID {egid}: detailed from DB = {detailed}")
+
+            # Prüfen ob detailed verwertbare Daten hat
+            detailed_has_data = False
             if detailed:
+                detailed_has_data = (
+                    detailed.get("gebaeudehoehe_m") is not None or
+                    detailed.get("traufhoehe_m") is not None or
+                    detailed.get("firsthoehe_m") is not None
+                )
+
+            if detailed and detailed_has_data:
                 result["traufhoehe_m"] = detailed.get("traufhoehe_m")
                 result["firsthoehe_m"] = detailed.get("firsthoehe_m")
                 result["gebaeudehoehe_m"] = detailed.get("gebaeudehoehe_m")
-                print(f"[DEBUG get_height_details] EGID {egid}: set trauf={result['traufhoehe_m']}, first={result['firsthoehe_m']}, gebaeude={result['gebaeudehoehe_m']}")
+
                 # Haupthöhe ist Gebäudehöhe oder Firsthöhe
                 main_height = detailed.get("gebaeudehoehe_m") or detailed.get("firsthoehe_m")
                 if main_height and main_height >= 2.0:
@@ -504,18 +513,17 @@ def get_height_details(
 
                 # Prüfen ob Daten unvollständig sind (nur gebaeudehoehe, keine Trauf/First)
                 has_gebaeudehoehe = detailed.get("gebaeudehoehe_m") is not None
-                has_detailed = (detailed.get("traufhoehe_m") is not None or
-                               detailed.get("firsthoehe_m") is not None)
-                if has_gebaeudehoehe and not has_detailed:
+                has_trauf_first = (detailed.get("traufhoehe_m") is not None or
+                                   detailed.get("firsthoehe_m") is not None)
+                if has_gebaeudehoehe and not has_trauf_first:
                     result["needs_height_refresh"] = True
                     # Schätze Trauf/First aus Gesamthöhe (85% Traufe, 100% First)
                     gebaeudehoehe = detailed.get("gebaeudehoehe_m")
                     result["traufhoehe_m"] = round(gebaeudehoehe * 0.85, 1)
                     result["firsthoehe_m"] = round(gebaeudehoehe, 1)
-                    result["heights_estimated"] = True  # Flag für Frontend
-                    print(f"[DEBUG get_height_details] EGID {egid}: estimated trauf={result['traufhoehe_m']}, first={result['firsthoehe_m']} from gebaeude={gebaeudehoehe}")
+                    result["heights_estimated"] = True
             else:
-                # Fallback: Legacy-Höhe (nur gebaeudehoehe, keine Trauf/First)
+                # Fallback: Legacy-Höhe (detailed war leer oder hatte nur NULL-Werte)
                 db_result = get_building_height(egid)
                 if db_result and db_result[0] >= 2.0:
                     legacy_height = db_result[0]
@@ -526,7 +534,7 @@ def get_height_details(
                     result["traufhoehe_m"] = round(legacy_height * 0.85, 1)
                     result["firsthoehe_m"] = round(legacy_height, 1)
                     result["heights_estimated"] = True
-                    result["legacy_height_used"] = legacy_height  # Debug info
+                    result["legacy_height_used"] = legacy_height
 
             # Plausibilitätsprüfung für measured_height_m
             if result["measured_height_m"] and result["estimated_height_m"]:
