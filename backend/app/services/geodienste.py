@@ -535,6 +535,7 @@ def calculate_scaffolding_data(
     building_category_code: Optional[int] = None,
     manual_height: Optional[float] = None,
     coordinates: Optional[Dict[str, float]] = None,
+    egid: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Gerüstbau-relevante Daten berechnen
@@ -545,16 +546,20 @@ def calculate_scaffolding_data(
         building_category_code: Gebäudekategorie (aus GWR)
         manual_height: Manuell eingegebene Höhe
         coordinates: LV95 Koordinaten für 3D Viewer Link
+        egid: EGID aus GWR (hat Priorität über geometry.egid)
 
     Returns:
         Dictionary mit Gerüstbau-Daten
     """
+    # EGID: Priorität hat der übergebene EGID (aus GWR), dann geometry.egid
+    effective_egid = egid if egid is not None else geometry.egid
+
     # Höhendetails sammeln (geschätzt + gemessen)
     height_info = get_height_details(
         floors=floors,
         building_category_code=building_category_code,
         manual_height=manual_height,
-        egid=geometry.egid,
+        egid=effective_egid,
     )
 
     height = height_info["active_height_m"]

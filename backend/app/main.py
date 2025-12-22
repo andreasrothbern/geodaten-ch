@@ -648,6 +648,7 @@ async def get_scaffolding_data(
                 "lv95_e": geo.coordinates.lv95_e,
                 "lv95_n": geo.coordinates.lv95_n,
             },
+            egid=building.egid if building else None,
         )
 
         # 4b. Auto-Refresh: Höhen aktualisieren wenn unvollständig
@@ -672,6 +673,7 @@ async def get_scaffolding_data(
                             "lv95_e": geo.coordinates.lv95_e,
                             "lv95_n": geo.coordinates.lv95_n,
                         },
+                        egid=building.egid if building else None,
                     )
                     scaffolding_data["height_refreshed"] = True
             except Exception as refresh_error:
@@ -795,6 +797,7 @@ async def get_scaffolding_by_egid(
             floors=building.floors,
             building_category_code=building.building_category_code,
             manual_height=height,
+            egid=building.egid,
         )
 
         result = {
