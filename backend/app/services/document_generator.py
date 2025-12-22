@@ -47,6 +47,14 @@ try:
 except Exception:
     pass
 
+# Pillow für direkte PNG-Generierung (Fallback)
+PILLOW_AVAILABLE = False
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PILLOW_AVAILABLE = True
+except Exception:
+    pass
+
 
 @dataclass
 class BuildingData:
@@ -73,6 +81,9 @@ class BuildingData:
     # Koordinaten
     lv95_e: Optional[float] = None
     lv95_n: Optional[float] = None
+
+    # Gerüst
+    width_class: str = "W09"
 
 
 @dataclass
@@ -1103,6 +1114,303 @@ class DocumentGenerator:
 
         return None
 
+    def _generate_cross_section_png(self, building: BuildingData) -> Optional[BytesIO]:
+        """Generiert Querschnitt-PNG direkt mit Pillow (ohne SVG/Cairo)"""
+        if not PILLOW_AVAILABLE:
+            return None
+
+        try:
+            width, height = 700, 480
+            img = Image.new('RGB', (width, height), color='white')
+            draw = ImageDraw.Draw(img)
+
+            # Farben
+            sky_color = (227, 242, 253)
+            ground_color = (212, 196, 176)
+            building_color = (224, 224, 224)
+            roof_color = (139, 115, 85)
+            scaffold_color = (255, 243, 205)
+            scaffold_stroke = (255, 193, 7)
+            anchor_color = (220, 53, 69)
+            text_color = (51, 51, 51)
+
+            # Hintergrund
+            draw.rectangle([0, 0, width, height * 0.7], fill=sky_color)
+            draw.rectangle([0, height * 0.7, width, height], fill=ground_color)
+
+            # Skalierung
+            scale = min((width - 150) / (building.width_m + 4), (height - 150) / (building.eave_height_m + 5))
+            base_y = int(height * 0.7)
+
+            # Gebäudemasse
+            b_width = int(building.width_m * scale)
+            b_height = int(building.eave_height_m * scale)
+            ridge_h = building.ridge_height_m or building.eave_height_m
+            gable_h = int((ridge_h - building.eave_height_m) * scale)
+
+            # Zentrierung
+            center_x = width // 2
+            left = center_x - b_width // 2
+            right = center_x + b_width // 2
+
+            # Gerüst links
+            scaffold_w = 15
+            draw.rectangle([left - scaffold_w - 10, base_y - b_height - gable_h - 20, left - 10, base_y],
+                          fill=scaffold_color, outline=scaffold_stroke, width=2)
+
+            # Gerüst rechts
+            draw.rectangle([right + 10, base_y - b_height - gable_h - 20, right + scaffold_w + 10, base_y],
+                          fill=scaffold_color, outline=scaffold_stroke, width=2)
+
+            # Gebäude
+            draw.rectangle([left, base_y - b_height, right, base_y],
+                          fill=building_color, outline=text_color, width=2)
+
+            # Dach (Satteldach)
+            if gable_h > 0:
+                roof_points = [(left - 10, base_y - b_height),
+                              (center_x, base_y - b_height - gable_h),
+                              (right + 10, base_y - b_height)]
+                draw.polygon(roof_points, fill=roof_color, outline=text_color)
+
+            # Verankerungspunkte
+            for i in range(3):
+                y = base_y - int((i + 1) * b_height / 4)
+                draw.ellipse([left - scaffold_w - 15, y - 4, left - scaffold_w - 7, y + 4], fill=anchor_color)
+                draw.ellipse([right + scaffold_w + 7, y - 4, right + scaffold_w + 15, y + 4], fill=anchor_color)
+
+            # Beschriftungen
+            try:
+                font = ImageFont.truetype("arial.ttf", 12)
+                font_title = ImageFont.truetype("arial.ttf", 14)
+            except:
+                font = ImageFont.load_default()
+                font_title = font
+
+            # Titel
+            title = f"Gebäudeschnitt - {building.address[:40]}"
+            draw.text((20, 15), title, fill=text_color, font=font_title)
+
+            # Höhenkoten
+            draw.text((right + 50, base_y - 10), "±0.00", fill=text_color, font=font)
+            draw.text((right + 50, base_y - b_height - 5), f"+{building.eave_height_m:.1f}m", fill=text_color, font=font)
+            if gable_h > 0:
+                draw.text((right + 50, base_y - b_height - gable_h - 5), f"+{ridge_h:.1f}m", fill=text_color, font=font)
+
+            # Breitenmass
+            draw.text((center_x - 30, base_y + 20), f"{building.width_m:.1f} m", fill=text_color, font=font)
+
+            # NPK Info Box
+            npk_x, npk_y = 20, height - 80
+            draw.rectangle([npk_x, npk_y, npk_x + 150, npk_y + 60], fill=(232, 245, 233), outline=(76, 175, 80))
+            draw.text((npk_x + 5, npk_y + 5), "NPK 114", fill=(46, 125, 50), font=font)
+            ausmass = (building.width_m + 2) * (building.eave_height_m + 1) * 2
+            draw.text((npk_x + 5, npk_y + 22), f"Ausmass: {ausmass:.0f} m²", fill=(46, 125, 50), font=font)
+            draw.text((npk_x + 5, npk_y + 39), f"Breitenklasse: {building.width_class}", fill=(46, 125, 50), font=font)
+
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            buffer.seek(0)
+            return buffer
+
+        except Exception as e:
+            print(f"Pillow PNG generation error: {e}")
+            return None
+
+    def _generate_elevation_png(self, building: BuildingData) -> Optional[BytesIO]:
+        """Generiert Fassadenansicht-PNG direkt mit Pillow"""
+        if not PILLOW_AVAILABLE:
+            return None
+
+        try:
+            width, height = 700, 480
+            img = Image.new('RGB', (width, height), color='white')
+            draw = ImageDraw.Draw(img)
+
+            # Farben
+            sky_color = (227, 242, 253)
+            ground_color = (212, 196, 176)
+            building_color = (224, 224, 224)
+            roof_color = (139, 115, 85)
+            window_color = (74, 144, 164)
+            scaffold_color = (255, 243, 205)
+            scaffold_stroke = (255, 193, 7)
+            text_color = (51, 51, 51)
+
+            # Hintergrund
+            draw.rectangle([0, 0, width, height * 0.75], fill=sky_color)
+            draw.rectangle([0, height * 0.75, width, height], fill=ground_color)
+
+            # Skalierung
+            scale = min((width - 150) / (building.length_m + 4), (height - 150) / (building.eave_height_m + 3))
+            base_y = int(height * 0.75)
+
+            b_width = int(building.length_m * scale)
+            b_height = int(building.eave_height_m * scale)
+
+            center_x = width // 2
+            left = center_x - b_width // 2
+            right = center_x + b_width // 2
+
+            # Gerüst links und rechts
+            scaffold_w = 12
+            draw.rectangle([left - scaffold_w - 8, base_y - b_height - 15, left - 8, base_y],
+                          fill=scaffold_color, outline=scaffold_stroke, width=2)
+            draw.rectangle([right + 8, base_y - b_height - 15, right + scaffold_w + 8, base_y],
+                          fill=scaffold_color, outline=scaffold_stroke, width=2)
+
+            # Gebäude
+            draw.rectangle([left, base_y - b_height, right, base_y],
+                          fill=building_color, outline=text_color, width=2)
+
+            # Dach (flach bei Traufseite)
+            draw.rectangle([left - 5, base_y - b_height - 8, right + 5, base_y - b_height],
+                          fill=roof_color, outline=text_color)
+
+            # Fenster
+            windows_per_floor = max(3, int(building.length_m / 4))
+            for floor in range(building.floors):
+                floor_y = base_y - int((floor + 0.5) * b_height / building.floors) - 15
+                for w in range(windows_per_floor):
+                    win_x = left + int((w + 0.5) * b_width / windows_per_floor) - 10
+                    draw.rectangle([win_x, floor_y, win_x + 20, floor_y + 25], fill=window_color, outline=text_color)
+
+            # Tür
+            door_x = center_x - 15
+            draw.rectangle([door_x, base_y - 45, door_x + 30, base_y], fill=(93, 64, 55), outline=text_color)
+
+            # Beschriftungen
+            try:
+                font = ImageFont.truetype("arial.ttf", 12)
+                font_title = ImageFont.truetype("arial.ttf", 14)
+            except:
+                font = ImageFont.load_default()
+                font_title = font
+
+            title = f"Fassadenansicht (Traufseite) - {building.address[:35]}"
+            draw.text((20, 15), title, fill=text_color, font=font_title)
+
+            draw.text((right + 40, base_y - 10), "±0.00", fill=text_color, font=font)
+            draw.text((right + 40, base_y - b_height - 5), f"+{building.eave_height_m:.1f}m", fill=text_color, font=font)
+            draw.text((center_x - 30, base_y + 15), f"{building.length_m:.1f} m", fill=text_color, font=font)
+
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            buffer.seek(0)
+            return buffer
+
+        except Exception as e:
+            print(f"Pillow PNG generation error: {e}")
+            return None
+
+    def _generate_floor_plan_png(self, building: BuildingData) -> Optional[BytesIO]:
+        """Generiert Grundriss-PNG direkt mit Pillow"""
+        if not PILLOW_AVAILABLE:
+            return None
+
+        try:
+            width, height = 600, 500
+            img = Image.new('RGB', (width, height), color='white')
+            draw = ImageDraw.Draw(img)
+
+            # Farben
+            building_color = (224, 224, 224)
+            scaffold_color = (255, 243, 205)
+            scaffold_stroke = (255, 193, 7)
+            anchor_color = (220, 53, 69)
+            text_color = (51, 51, 51)
+
+            # Skalierung
+            max_dim = max(building.length_m, building.width_m)
+            scale = min((width - 150) / max_dim, (height - 150) / max_dim)
+
+            b_length = int(building.length_m * scale)
+            b_width = int(building.width_m * scale)
+
+            center_x, center_y = width // 2, height // 2 + 20
+            left = center_x - b_length // 2
+            right = center_x + b_length // 2
+            top = center_y - b_width // 2
+            bottom = center_y + b_width // 2
+
+            # Gerüst (umlaufend)
+            scaffold_w = 20
+            draw.rectangle([left - scaffold_w, top - scaffold_w, right + scaffold_w, bottom + scaffold_w],
+                          fill=scaffold_color, outline=scaffold_stroke, width=2)
+
+            # Gebäude
+            draw.rectangle([left, top, right, bottom], fill=building_color, outline=text_color, width=2)
+
+            # Schraffur
+            for i in range(0, b_length + b_width, 15):
+                x1 = left + i
+                y1 = top
+                x2 = left
+                y2 = top + i
+                if x1 <= right and y2 <= bottom:
+                    draw.line([(min(x1, right), y1), (x2, min(y2, bottom))], fill=(180, 180, 180), width=1)
+
+            # Verankerungspunkte (Ecken + Mitte)
+            anchors = [
+                (left - scaffold_w // 2, top - scaffold_w // 2),
+                (right + scaffold_w // 2, top - scaffold_w // 2),
+                (left - scaffold_w // 2, bottom + scaffold_w // 2),
+                (right + scaffold_w // 2, bottom + scaffold_w // 2),
+                (center_x, top - scaffold_w // 2),
+                (center_x, bottom + scaffold_w // 2),
+                (left - scaffold_w // 2, center_y),
+                (right + scaffold_w // 2, center_y),
+            ]
+            for ax, ay in anchors:
+                draw.ellipse([ax - 5, ay - 5, ax + 5, ay + 5], fill=anchor_color)
+
+            # Beschriftungen
+            try:
+                font = ImageFont.truetype("arial.ttf", 12)
+                font_title = ImageFont.truetype("arial.ttf", 14)
+                font_small = ImageFont.truetype("arial.ttf", 10)
+            except:
+                font = font_title = font_small = ImageFont.load_default()
+
+            title = f"Grundriss - {building.address[:40]}"
+            draw.text((20, 15), title, fill=text_color, font=font_title)
+
+            # Fläche in der Mitte
+            area = building.area_m2 or (building.length_m * building.width_m)
+            draw.text((center_x - 25, center_y - 8), f"{area:.0f} m²", fill=text_color, font=font)
+
+            # Seitenlängen
+            draw.text((center_x - 20, bottom + scaffold_w + 10), f"{building.length_m:.1f} m", fill=text_color, font=font)
+            draw.text((right + scaffold_w + 10, center_y - 6), f"{building.width_m:.1f} m", fill=text_color, font=font)
+
+            # Himmelsrichtungen
+            draw.text((center_x - 5, top - scaffold_w - 25), "N", fill=text_color, font=font)
+            draw.text((center_x - 5, bottom + scaffold_w + 30), "S", fill=text_color, font=font)
+            draw.text((left - scaffold_w - 20, center_y - 6), "W", fill=text_color, font=font)
+            draw.text((right + scaffold_w + 35, center_y - 6), "O", fill=text_color, font=font)
+
+            # Nordpfeil
+            arrow_x, arrow_y = width - 60, 50
+            draw.polygon([(arrow_x, arrow_y - 20), (arrow_x - 8, arrow_y + 10), (arrow_x + 8, arrow_y + 10)],
+                        fill=text_color)
+            draw.text((arrow_x - 4, arrow_y + 15), "N", fill=text_color, font=font)
+
+            # NPK Info
+            draw.rectangle([20, height - 70, 160, height - 20], fill=(232, 245, 233), outline=(76, 175, 80))
+            draw.text((25, height - 65), "NPK 114", fill=(46, 125, 50), font=font_small)
+            perimeter = 2 * (building.length_m + building.width_m)
+            draw.text((25, height - 50), f"Umfang: {perimeter:.0f} m", fill=(46, 125, 50), font=font_small)
+            draw.text((25, height - 35), f"Breitenklasse: {building.width_class}", fill=(46, 125, 50), font=font_small)
+
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            buffer.seek(0)
+            return buffer
+
+        except Exception as e:
+            print(f"Pillow PNG generation error: {e}")
+            return None
+
     def _add_section_7(self, doc: Document, building: BuildingData,
                        svg_floor_plan: Optional[str] = None,
                        svg_cross_section: Optional[str] = None,
@@ -1113,7 +1421,10 @@ class DocumentGenerator:
 
         # Anhang A: Grundriss
         doc.add_heading("Anhang A: Grundriss Gerüst", level=2)
+        # Versuche SVG->PNG, dann Pillow direkt
         png_buffer = self._svg_to_png(svg_floor_plan) if svg_floor_plan else None
+        if not png_buffer:
+            png_buffer = self._generate_floor_plan_png(building)
         if png_buffer:
             doc.add_picture(png_buffer, width=Inches(6))
         else:
@@ -1129,6 +1440,8 @@ class DocumentGenerator:
         # Anhang B: Schnitt
         doc.add_heading("Anhang B: Schnitt Giebelseite", level=2)
         png_buffer = self._svg_to_png(svg_cross_section) if svg_cross_section else None
+        if not png_buffer:
+            png_buffer = self._generate_cross_section_png(building)
         if png_buffer:
             doc.add_picture(png_buffer, width=Inches(6))
         else:
@@ -1144,6 +1457,8 @@ class DocumentGenerator:
         # Anhang B2: Fassadenansicht
         doc.add_heading("Anhang B2: Fassadenansicht", level=2)
         png_buffer = self._svg_to_png(svg_elevation) if svg_elevation else None
+        if not png_buffer:
+            png_buffer = self._generate_elevation_png(building)
         if png_buffer:
             doc.add_picture(png_buffer, width=Inches(6))
         else:

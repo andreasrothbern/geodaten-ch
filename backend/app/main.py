@@ -1641,37 +1641,18 @@ async def generate_materialbewirtschaftung_document(
             lv95_n=geo.coordinates.lv95_n
         )
 
-        # 7. SVG-Visualisierungen via Claude API generieren
-        from app.services.svg_claude_generator import get_claude_svg_generator, BuildingData as SVGBuildingData
-        svg_generator = get_claude_svg_generator()
-
-        svg_building_data = SVGBuildingData(
-            address=geo.matched_address,
-            egid=building.egid if building else None,
-            length_m=round(length_m, 1),
-            width_m=round(width_m, 1),
-            eave_height_m=round(eave_height_m, 1),
-            ridge_height_m=round(ridge_height_m, 1),
-            floors=building.floors if building else 2,
-            roof_type="gable",
-            area_m2=building.area_m2 if building else None,
-        )
-
-        # Claude API generiert hochwertige SVGs (gecached um Kosten zu sparen)
-        svg_floor_plan = svg_generator.generate_floor_plan(svg_building_data)
-        svg_cross_section = svg_generator.generate_cross_section(svg_building_data)
-        svg_elevation = svg_generator.generate_elevation(svg_building_data)
-
-        # 8. Dokument generieren
+        # 7. Dokument generieren (PNGs werden direkt mit Pillow erstellt - schnell!)
+        # SVG-Generierung wird übersprungen - das spart Claude API Kosten und Zeit
         generator = get_document_generator()
         docx_bytes = generator.generate_word_document(
             building=building_data,
             author_name=author_name,
             project_description=project_description,
             include_reflexion_template=include_reflexion,
-            svg_floor_plan=svg_floor_plan,
-            svg_cross_section=svg_cross_section,
-            svg_elevation=svg_elevation
+            # Keine SVGs - Pillow generiert PNGs direkt im DocumentGenerator
+            svg_floor_plan=None,
+            svg_cross_section=None,
+            svg_elevation=None
         )
 
         # Dateiname erstellen
