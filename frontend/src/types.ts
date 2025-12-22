@@ -120,4 +120,33 @@ export interface ScaffoldingData {
   needs_height_refresh?: boolean
   height_refreshed?: boolean
   height_refresh_error?: string
+  // Configuration (from API)
+  configuration?: {
+    work_type: string
+    scaffold_type: string
+  }
+}
+
+// Scaffolding Configuration Types
+export type WorkType = 'dacharbeiten' | 'fassadenarbeiten'
+export type ScaffoldType = 'arbeitsgeruest' | 'schutzgeruest' | 'fanggeruest'
+export type ScaffoldingSystem = 'blitz70' | 'allround' | 'combined'
+export type WidthClass = 'W06' | 'W09' | 'W12'
+
+export interface ScaffoldingConfiguration {
+  selectedFacades: number[]
+  workType: WorkType
+  scaffoldType: ScaffoldType
+  systemId: ScaffoldingSystem
+  widthClass: WidthClass
+  liftEnabled: boolean
+  liftPosition?: number
+}
+
+export interface FacadeSelection {
+  index: number
+  selected: boolean
+  length_m: number
+  direction: string
+  area_m2: number
 }

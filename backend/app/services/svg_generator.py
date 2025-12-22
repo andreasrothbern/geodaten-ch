@@ -572,11 +572,42 @@ class SVGGenerator:
         fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
 '''
 
-        # Innerer Bereich (Gebäude-Polygon mit kleinem Offset)
+        # Innerer Bereich (Gebäude-Polygon - Hintergrund)
         svg += f'''
-  <!-- Gebäude-Polygon -->
+  <!-- Gebäude-Polygon Hintergrund -->
   <polygon points="{points_str}"
-           fill="#e0e0e0" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
+           fill="#e0e0e0" stroke="none"/>
+'''
+
+        # Klickbare Fassaden-Segmente (einzeln für Interaktivität)
+        svg += '  <!-- Klickbare Fassaden-Segmente -->\n'
+        svg += '''  <style>
+    .facade-segment { cursor: pointer; transition: stroke 0.2s, stroke-width 0.2s; }
+    .facade-segment:hover { stroke: #2563eb; stroke-width: 5; }
+    .facade-segment.selected { stroke: #dc2626; stroke-width: 5; }
+  </style>
+'''
+        for i, side in enumerate(sides):
+            # Segment-Koordinaten berechnen
+            if i < len(coords) - 1:
+                start = coords[i]
+                end = coords[i + 1]
+            else:
+                start = coords[i]
+                end = coords[0]
+
+            svg_start = to_svg(start[0], start[1])
+            svg_end = to_svg(end[0], end[1])
+            length = side.get('length_m', 0)
+            direction = side.get('direction', '')
+
+            # Fassaden-Segment als klickbare Linie
+            svg += f'''  <line x1="{svg_start[0]:.1f}" y1="{svg_start[1]:.1f}" x2="{svg_end[0]:.1f}" y2="{svg_end[1]:.1f}"
+        class="facade-segment"
+        data-facade-index="{i}"
+        data-facade-length="{length:.2f}"
+        data-facade-direction="{direction}"
+        stroke="{self.COLORS['building_stroke']}" stroke-width="3" stroke-linecap="round"/>
 '''
 
         # Seiten-Beschriftungen
@@ -613,8 +644,9 @@ class SVGGenerator:
             else:
                 label_x, label_y = svg_mid
 
-            if length >= 1.0:
-                svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS["text_light"]}">{direction} {length:.1f}m</text>\n'
+            # Index-Nummer an jeder Fassade
+            svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{i}">[{i+1}] {direction}</text>\n'
+            svg += f'  <text x="{label_x:.1f}" y="{label_y + 10:.1f}" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
 
         # Verankerungspunkte an allen Polygon-Ecken
         svg += '  <!-- Verankerungspunkte -->\n'
