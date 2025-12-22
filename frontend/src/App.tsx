@@ -46,7 +46,7 @@ function App() {
         url += `&height=${height}`
       }
       if (refresh) {
-        url += `&refresh=true`
+        url += `&force_refresh=true`
       }
       const response = await fetch(url)
       if (response.ok) {
@@ -102,8 +102,8 @@ function App() {
       const data = await response.json()
       setResult(data)
 
-      // Alle Tab-Daten parallel laden
-      fetchScaffoldingData(address)
+      // Alle Tab-Daten parallel laden (force_refresh für aktuelle Geometrie-Daten)
+      fetchScaffoldingData(address, undefined, true)
       fetchAusmassData(address)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
