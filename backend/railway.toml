@@ -1,0 +1,14 @@
+# Railway Configuration for Backend Service
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Volume for persistent data (building heights database)
+# Note: Volumes must also be created in Railway Dashboard:
+# Service Settings -> Volumes -> Add Volume -> Mount Path: /app/data

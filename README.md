@@ -169,6 +169,32 @@ Gehostet auf [Railway.app](https://railway.app):
 - Backend: https://acceptable-trust-production.up.railway.app
 - Frontend: https://cooperative-commitment-production.up.railway.app
 
+### Railway Volume (Persistente Daten)
+
+Die Höhendatenbank (`building_heights.db`) wird in einem Railway Volume gespeichert,
+damit die on-demand importierten Gebäudehöhen bei Deployments erhalten bleiben.
+
+**Volume einrichten (einmalig):**
+```bash
+# Railway CLI installieren (falls nicht vorhanden)
+npm install -g @railway/cli
+
+# Login
+npx @railway/cli login
+
+# Ins Backend-Verzeichnis wechseln und Projekt verlinken
+cd backend
+npx @railway/cli link
+
+# Volume erstellen mit Mount-Pfad
+npx @railway/cli volume add --mount-path /app/data
+```
+
+**Gespeicherte Daten im Volume (`/app/data`):**
+- `building_heights.db` - swissBUILDINGS3D Höhen (on-demand importiert)
+- `layher_catalog.db` - Gerüst-Materialkatalog
+- `svg_cache.db` - SVG-Visualisierungs-Cache
+
 
 ## Test-Adressen
 
