@@ -223,11 +223,12 @@ class ClaudeSVGGenerator:
 
         # Gebäudetyp basierend auf Grösse bestimmen
         area = building.area_m2 or (building.length_m * building.width_m)
-        is_large_building = building.floors >= 4 or area >= 300
+        floors = building.floors or 3
+        is_large_building = floors >= 4 or area >= 300
         building_type = "Mehrfamilienhaus" if is_large_building else "Einfamilienhaus"
 
         # Anzahl Verankerungspunkte basierend auf Höhe
-        anchor_points = max(3, building.floors // 2 + 1)
+        anchor_points = max(3, floors // 2 + 1)
 
         prompt = f"""Generiere ein professionelles SVG für einen Gebäude-Querschnitt mit Gerüstposition.
 
@@ -237,7 +238,7 @@ GEBÄUDEDATEN:
 - Gebäudebreite (Giebelseite): {building.width_m:.1f} m
 - Traufhöhe: {building.eave_height_m:.1f} m
 - Firsthöhe: {ridge_h:.1f} m
-- Geschosse: {building.floors}
+- Geschosse: {floors}
 - Dachform: {roof_info}
 - Gerüst-Breitenklasse: {building.width_class}
 
@@ -247,7 +248,7 @@ SVG-ANFORDERUNGEN:
 
 INHALT (von links nach rechts):
 1. Linkes Gerüst (gelb #fff3cd, Rahmen #ffc107, ca. 15-20px breit)
-2. Gebäude im Schnitt (grau #e0e0e0 mit diagonaler Schraffur) - {building.floors} Geschosse sichtbar
+2. Gebäude im Schnitt (grau #e0e0e0 mit diagonaler Schraffur) - {floors} Geschosse sichtbar
 3. Dach (braun #8b7355) - {"Flachdach" if is_large_building and roof_info == "Flachdach" else "Dreieck für Satteldach"}
 4. Rechtes Gerüst (gleich wie links)
 5. Verankerungspunkte (rote Kreise #dc3545, {anchor_points} pro Seite - vertikal verteilt)
@@ -260,7 +261,7 @@ BESCHRIFTUNGEN:
 
 WEITERE ELEMENTE:
 - Höhenraster (gestrichelte horizontale Linien alle 5m)
-- Geschosslinien im Gebäude andeuten ({building.floors} Etagen)
+- Geschosslinien im Gebäude andeuten ({floors} Etagen)
 - NPK 114 Info-Box unten links (grün #e8f5e9)
 - Legende oben rechts
 
@@ -301,7 +302,8 @@ Antworte NUR mit dem SVG-Code, keine Erklärungen."""
 
         # Gebäudetyp und Eingänge basierend auf Grösse bestimmen
         area = building.area_m2 or (building.length_m * building.width_m)
-        is_large_building = building.floors >= 4 or area >= 300
+        floors = building.floors or 3
+        is_large_building = floors >= 4 or area >= 300
 
         # Anzahl Eingänge: 1 pro ~15m Fassadenlänge bei grossen Gebäuden
         if is_large_building:
@@ -321,7 +323,7 @@ GEBÄUDEDATEN:
 - Fassadenlänge (Traufseite): {building.length_m:.1f} m
 - Traufhöhe: {building.eave_height_m:.1f} m
 - Firsthöhe: {ridge_h:.1f} m
-- Geschosse: {building.floors}
+- Geschosse: {floors}
 - Dachform: {roof_info}
 - Fenster pro Geschoss: ca. {windows_per_floor}
 - Eingänge: {entrance_info}
@@ -379,9 +381,10 @@ Antworte NUR mit dem SVG-Code."""
 
         area = building.area_m2 or (building.length_m * building.width_m)
         perimeter = 2 * (building.length_m + building.width_m)
+        floors = building.floors or 3
 
         # Gebäudetyp und Eingänge basierend auf Grösse bestimmen
-        is_large_building = building.floors >= 4 or area >= 300
+        is_large_building = floors >= 4 or area >= 300
         building_type = "Mehrfamilienhaus" if is_large_building else "Einfamilienhaus"
 
         # Anzahl Eingänge
@@ -401,7 +404,7 @@ GEBÄUDEDATEN:
 - Breite (Ost-West): {building.width_m:.1f} m
 - Grundfläche: {area:.0f} m²
 - Umfang: {perimeter:.0f} m
-- Geschosse: {building.floors}
+- Geschosse: {floors}
 - Gerüst-Breitenklasse: {building.width_class}
 - Eingänge: {entrance_info}
 
@@ -420,7 +423,7 @@ INHALT:
 BESCHRIFTUNGEN:
 - Titel: "Grundriss mit Gerüstposition - {building_type}" + Adresse
 - Fläche in der Mitte: "{area:.0f} m²"
-- "{building.floors} Geschosse" unter der Fläche
+- "{floors} Geschosse" unter der Fläche
 - Seitenlängen an den Kanten
 - EGID: {building.egid or 'nicht verfügbar'}
 
