@@ -70,6 +70,78 @@ export function ScaffoldingCard({
         Gerustbau-Konfiguration
       </h3>
 
+      {/* Fassaden-Auswahl mit interaktivem Grundriss */}
+      <div className="space-y-4">
+        <h4 className="font-medium text-gray-700">
+          Fassaden-Auswahl ({selectedFacades.length} von {sides.filter(s => s.length_m > 0.5).length} ausgewahlt)
+        </h4>
+
+        {/* Interactive Floor Plan */}
+        <div className="border rounded-lg p-4 bg-white">
+          <h5 className="text-sm font-medium text-gray-600 mb-3">Grundriss - Klicken zum Auswahlen</h5>
+          <InteractiveFloorPlan
+            address={data.address?.matched || ''}
+            apiUrl={apiUrl}
+            sides={sides}
+            polygonCoordinates={data.polygon?.coordinates || []}
+            selectedFacades={selectedFacades}
+            onFacadeToggle={handleFacadeToggle}
+            onSelectAll={handleSelectAllFacades}
+            onDeselectAll={handleDeselectAllFacades}
+            height={280}
+            eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
+            floors={dimensions.floors || gwr_data?.floors}
+            areaM2={building?.footprint_area_m2}
+          />
+        </div>
+
+        {/* Facade Selection Table */}
+        <FacadeSelectionTable
+          sides={sides}
+          selectedFacades={selectedFacades}
+          onFacadeToggle={handleFacadeToggle}
+          onSelectAll={handleSelectAllFacades}
+          onDeselectAll={handleDeselectAllFacades}
+          scaffoldHeight={scaffoldHeight}
+          showArea={false}
+        />
+
+        {/* Selected Facade Summary */}
+        {selectedFacades.length > 0 && (
+          <div className="bg-green-50 rounded-lg p-4">
+            <h5 className="font-medium text-green-800 mb-2">Ausgewahlte Fassaden</h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-green-600">Anzahl</p>
+                <p className="font-bold text-green-900">{selectedFacades.length} Fassaden</p>
+              </div>
+              <div>
+                <p className="text-green-600">Gesamtlange</p>
+                <p className="font-bold text-green-900">
+                  {selectedFacades.reduce((sum, idx) => {
+                    const side = sides.find(s => s.index === idx)
+                    return sum + (side?.length_m || 0)
+                  }, 0).toFixed(1)} m
+                </p>
+              </div>
+              <div>
+                <p className="text-green-600">Gerusthohe</p>
+                <p className="font-bold text-green-900">{scaffoldHeight.toFixed(1)} m</p>
+              </div>
+              <div>
+                <p className="text-green-600">Gerustflache</p>
+                <p className="font-bold text-green-900">
+                  {(selectedFacades.reduce((sum, idx) => {
+                    const side = sides.find(s => s.index === idx)
+                    return sum + (side?.length_m || 0)
+                  }, 0) * scaffoldHeight).toFixed(0)} m2
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Arbeitstyp und Gerustart Konfiguration */}
       <div className="bg-blue-50 rounded-lg p-4 space-y-4">
         <h4 className="font-medium text-blue-900">Arbeitstyp & Gerustart</h4>
@@ -141,78 +213,6 @@ export function ScaffoldingCard({
               : `Traufhohe (Unterdach)`}
           </p>
         </div>
-      </div>
-
-      {/* Fassaden-Auswahl mit interaktivem Grundriss */}
-      <div className="space-y-4">
-        <h4 className="font-medium text-gray-700">
-          Fassaden-Auswahl ({selectedFacades.length} von {sides.filter(s => s.length_m > 0.5).length} ausgewahlt)
-        </h4>
-
-        {/* Interactive Floor Plan */}
-        <div className="border rounded-lg p-4 bg-white">
-          <h5 className="text-sm font-medium text-gray-600 mb-3">Grundriss - Klicken zum Auswahlen</h5>
-          <InteractiveFloorPlan
-            address={data.address?.matched || ''}
-            apiUrl={apiUrl}
-            sides={sides}
-            polygonCoordinates={data.polygon?.coordinates || []}
-            selectedFacades={selectedFacades}
-            onFacadeToggle={handleFacadeToggle}
-            onSelectAll={handleSelectAllFacades}
-            onDeselectAll={handleDeselectAllFacades}
-            height={280}
-            eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
-            floors={dimensions.floors || gwr_data?.floors}
-            areaM2={building?.footprint_area_m2}
-          />
-        </div>
-
-        {/* Facade Selection Table */}
-        <FacadeSelectionTable
-          sides={sides}
-          selectedFacades={selectedFacades}
-          onFacadeToggle={handleFacadeToggle}
-          onSelectAll={handleSelectAllFacades}
-          onDeselectAll={handleDeselectAllFacades}
-          scaffoldHeight={scaffoldHeight}
-          showArea={false}
-        />
-
-        {/* Selected Facade Summary */}
-        {selectedFacades.length > 0 && (
-          <div className="bg-green-50 rounded-lg p-4">
-            <h5 className="font-medium text-green-800 mb-2">Ausgewahlte Fassaden</h5>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-green-600">Anzahl</p>
-                <p className="font-bold text-green-900">{selectedFacades.length} Fassaden</p>
-              </div>
-              <div>
-                <p className="text-green-600">Gesamtlange</p>
-                <p className="font-bold text-green-900">
-                  {selectedFacades.reduce((sum, idx) => {
-                    const side = sides.find(s => s.index === idx)
-                    return sum + (side?.length_m || 0)
-                  }, 0).toFixed(1)} m
-                </p>
-              </div>
-              <div>
-                <p className="text-green-600">Gerusthohe</p>
-                <p className="font-bold text-green-900">{scaffoldHeight.toFixed(1)} m</p>
-              </div>
-              <div>
-                <p className="text-green-600">Gerustflache</p>
-                <p className="font-bold text-green-900">
-                  {(selectedFacades.reduce((sum, idx) => {
-                    const side = sides.find(s => s.index === idx)
-                    return sum + (side?.length_m || 0)
-                  }, 0) * scaffoldHeight).toFixed(0)} m2
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Berechnung starten */}
