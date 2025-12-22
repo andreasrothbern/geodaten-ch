@@ -526,18 +526,35 @@ def get_height_details(
                     result["measured_source"] = f"{result['measured_source']} (unplausibel: nur {ratio*100:.0f}% der geschätzten Höhe)"
 
             # Plausibilitätsprüfung für Trauf-/Firsthöhe
-            # Nur bei SEHR niedrigen Höhen (< 3m) als unplausibel verwerfen
-            # (falsches Nebengebäude/Garage in der DB gefunden)
-            # Grund: GWR-Geschossschätzung ist oft ungenau bei großen Gebäuden,
-            # daher keine Verhältnisprüfung mehr zur geschätzten Höhe
-            if result["traufhoehe_m"] and result["traufhoehe_m"] < 3.0:
-                # Absolute Minimalprüfung: Traufhöhe unter 3m ist unrealistisch
-                print(f"[WARNUNG] Unplausible Traufhöhe: {result['traufhoehe_m']:.1f}m (< 3m Minimum)")
+            # Prüft auf zwei Arten:
+            # 1. Absolute Mindesthöhe (5m für bewohnte Gebäude)
+            # 2. Mindesthöhe basierend auf GWR-Geschossen (2m pro Geschoss)
+            # Bei Verstoß: Wahrscheinlich falsches Nebengebäude/Garage in DB gefunden
+            is_implausible = False
+            implausible_reason = ""
+
+            if result["traufhoehe_m"]:
+                # Prüfung 1: Absolute Mindesthöhe (5m)
+                if result["traufhoehe_m"] < 5.0:
+                    is_implausible = True
+                    implausible_reason = f"< 5m Minimum ({result['traufhoehe_m']:.1f}m)"
+
+                # Prüfung 2: Mindesthöhe basierend auf Geschossen
+                # Mindestens 2m pro Geschoss (sehr konservativ)
+                elif floors and floors >= 2:
+                    min_height_by_floors = floors * 2.0
+                    if result["traufhoehe_m"] < min_height_by_floors:
+                        is_implausible = True
+                        implausible_reason = f"{result['traufhoehe_m']:.1f}m < {min_height_by_floors:.0f}m ({floors} Geschosse × 2m)"
+
+            if is_implausible:
+                print(f"[WARNUNG] Unplausible Traufhöhe: {implausible_reason}")
                 result["traufhoehe_m_original"] = result["traufhoehe_m"]
                 result["traufhoehe_m"] = None
                 result["firsthoehe_m_original"] = result.get("firsthoehe_m")
                 result["firsthoehe_m"] = None
                 result["height_data_implausible"] = True
+                result["implausible_reason"] = implausible_reason
                 measured_is_plausible = False
         except ImportError:
             pass
