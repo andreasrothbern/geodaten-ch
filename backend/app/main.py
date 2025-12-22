@@ -1708,80 +1708,28 @@ async def generate_materialbewirtschaftung_document(
 
     Returns: Word-Dokument (.docx)
     """
-    import math
     from app.services.document_generator import get_document_generator, BuildingData
+    from app.services.data_cache import fetch_and_cache_complete_data
 
     try:
-        # 1. Adresse geokodieren
-        geo = await swisstopo.geocode(address)
-        if not geo:
-            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+        # Use cached data (fetches if not cached)
+        cached = await fetch_and_cache_complete_data(address, swisstopo, geodienste)
 
-        # 2. Gebäude suchen
-        buildings = await swisstopo.identify_buildings(
-            geo.coordinates.lv95_e,
-            geo.coordinates.lv95_n,
-            tolerance=15
-        )
-        building = buildings[0] if buildings else None
-
-        # 3. Gebäudegeometrie abrufen
-        geometry = await geodienste.get_building_geometry(
-            x=geo.coordinates.lv95_e,
-            y=geo.coordinates.lv95_n,
-            tolerance=50,
-            egid=building.egid if building else None
-        )
-
-        # 4. Dimensionen bestimmen
-        if geometry and geometry.sides:
-            side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
-            length_m = side_lengths[0] if side_lengths else 10.0
-            width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
-        elif building and building.area_m2:
-            seite = math.sqrt(building.area_m2)
-            length_m = width_m = seite
-        else:
-            length_m = width_m = 10.0
-
-        # 5. Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
-        eave_height_m = 8.0
-        if building and building.floors:
-            eave_height_m = building.floors * 2.8
-
-        # Ridge height für Satteldach (default)
-        ridge_height_m = eave_height_m + 3.5
-
-        # Gemessene Höhe aus swissBUILDINGS3D DB
-        if building and building.egid:
-            from app.services.height_db import get_building_heights_detailed
-            heights = get_building_heights_detailed(building.egid)
-            if heights:
-                if heights.get("traufhoehe_m"):
-                    eave_height_m = heights["traufhoehe_m"]
-                if heights.get("firsthoehe_m"):
-                    ridge_height_m = heights["firsthoehe_m"]
-                # Fallback: Wenn nur gebaeudehoehe vorhanden
-                gebaeudehoehe = heights.get("gebaeudehoehe_m")
-                if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
-                    eave_height_m = gebaeudehoehe * 0.85
-                    ridge_height_m = gebaeudehoehe
-
-        # 6. Gebäudedaten zusammenstellen
+        # Build document data from cache
         building_data = BuildingData(
-            address=geo.matched_address,
-            egid=building.egid if building else None,
-            length_m=round(length_m, 1),
-            width_m=round(width_m, 1),
-            eave_height_m=round(eave_height_m, 1),
-            ridge_height_m=round(ridge_height_m, 1),
-            floors=building.floors if building else 2,
-            building_category=building.building_category or "Einfamilienhaus" if building else "Einfamilienhaus",
-            construction_year=building.construction_year if building else None,
-            area_m2=building.area_m2 if building else None,
+            address=cached.address_matched,
+            egid=cached.egid,
+            length_m=cached.length_m,
+            width_m=cached.width_m,
+            eave_height_m=cached.eave_height_m,
+            ridge_height_m=cached.ridge_height_m or (cached.eave_height_m + 3.5),
+            floors=cached.floors or 2,
+            building_category=cached.building_category or "Einfamilienhaus",
+            construction_year=cached.construction_year,
+            area_m2=cached.area_m2,
             roof_type="satteldach",
-            lv95_e=geo.coordinates.lv95_e,
-            lv95_n=geo.coordinates.lv95_n
+            lv95_e=cached.lv95_e,
+            lv95_n=cached.lv95_n
         )
 
         # 7. SVG-Visualisierungen via Claude API generieren (gecached)
@@ -1789,15 +1737,15 @@ async def generate_materialbewirtschaftung_document(
         svg_generator = get_claude_svg_generator()
 
         svg_building_data = SVGBuildingData(
-            address=geo.matched_address,
-            egid=building.egid if building else None,
-            length_m=round(length_m, 1),
-            width_m=round(width_m, 1),
-            eave_height_m=round(eave_height_m, 1),
-            ridge_height_m=round(ridge_height_m, 1),
-            floors=building.floors if building else 2,
+            address=cached.address_matched,
+            egid=cached.egid,
+            length_m=cached.length_m,
+            width_m=cached.width_m,
+            eave_height_m=cached.eave_height_m,
+            ridge_height_m=cached.ridge_height_m or (cached.eave_height_m + 3.5),
+            floors=cached.floors or 2,
             roof_type="gable",
-            area_m2=building.area_m2 if building else None,
+            area_m2=cached.area_m2,
         )
 
         # Claude generiert hochwertige SVGs (aus Cache falls vorhanden)
@@ -1805,7 +1753,7 @@ async def generate_materialbewirtschaftung_document(
         svg_cross_section = svg_generator.generate_cross_section(svg_building_data)
         svg_elevation = svg_generator.generate_elevation(svg_building_data)
 
-        # 8. Dokument generieren (SVGs werden via svglib zu PNG konvertiert)
+        # 8. Dokument generieren (SVGs werden via Pillow zu PNG konvertiert)
         generator = get_document_generator()
         docx_bytes = generator.generate_word_document(
             building=building_data,
@@ -1818,7 +1766,7 @@ async def generate_materialbewirtschaftung_document(
         )
 
         # Dateiname erstellen
-        safe_address = geo.matched_address.replace(",", "").replace(" ", "_")[:50]
+        safe_address = cached.address_matched.replace(",", "").replace(" ", "_")[:50]
         filename = f"Materialbewirtschaftung_{safe_address}.docx"
 
         return Response(
