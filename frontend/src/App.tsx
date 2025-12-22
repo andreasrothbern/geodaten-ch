@@ -49,6 +49,7 @@ function App() {
     heights?: ManualHeights,
     refresh?: boolean
   ) => {
+    console.log(`[DEBUG fetchScaffoldingData] Called with address="${address}", refresh=${refresh}`)
     setScaffoldingLoading(true)
     try {
       let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
@@ -61,9 +62,11 @@ function App() {
       if (refresh) {
         url += `&refresh=true`
       }
+      console.log(`[DEBUG fetchScaffoldingData] Fetching URL: ${url}`)
       const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
+        console.log(`[DEBUG fetchScaffoldingData] Response OK, traufhoehe_m=${data.dimensions?.traufhoehe_m}, firsthoehe_m=${data.dimensions?.firsthoehe_m}`)
         setScaffoldingData(data)
         // Clear SVG cache when heights are manually set
         if (heights?.traufhoehe_m || heights?.firsthoehe_m) {
@@ -211,12 +214,17 @@ function App() {
       // Handle different response statuses
       if (data.status === 'already_exists') {
         console.log(`Height already exists in database: ${data.height_m}m`)
+        console.log(`[DEBUG] currentAddress="${currentAddress}", will refresh scaffolding data`)
         if (currentAddress) {
           // Clear SVG cache using matched address (what ServerSVG uses)
           if (matchedAddress) clearSvgCache(matchedAddress)
           clearSvgCache() // Also clear entire cache to be safe
           // Refresh to bypass cache and get updated height
+          console.log(`[DEBUG] Calling fetchScaffoldingData with refresh=true`)
           await fetchScaffoldingData(currentAddress, undefined, true)
+          console.log(`[DEBUG] fetchScaffoldingData completed`)
+        } else {
+          console.log(`[DEBUG] currentAddress is empty, cannot refresh!`)
         }
       } else if (data.status === 'success') {
         console.log(`Imported ${data.imported_count} buildings from tile ${data.tile_id}`)
@@ -230,16 +238,24 @@ function App() {
         } else if (data.height_m) {
           // Height found - reload scaffolding data with refresh to bypass cache
           console.log(`Found height: ${data.height_m}m`)
+          console.log(`[DEBUG] currentAddress="${currentAddress}", will refresh scaffolding data`)
           if (currentAddress) {
             // Clear entire SVG cache to force re-render with new height
             clearSvgCache()
+            console.log(`[DEBUG] Calling fetchScaffoldingData with refresh=true`)
             await fetchScaffoldingData(currentAddress, undefined, true)
+            console.log(`[DEBUG] fetchScaffoldingData completed`)
+          } else {
+            console.log(`[DEBUG] currentAddress is empty, cannot refresh!`)
           }
         } else {
           // Imported but EGID lookup didn't find height - reload anyway with refresh
+          console.log(`[DEBUG] No height_m in response, currentAddress="${currentAddress}"`)
           if (currentAddress) {
             clearSvgCache()
+            console.log(`[DEBUG] Calling fetchScaffoldingData with refresh=true (fallback)`)
             await fetchScaffoldingData(currentAddress, undefined, true)
+            console.log(`[DEBUG] fetchScaffoldingData completed (fallback)`)
           }
         }
       } else if (data.status === 'no_tile_found') {
