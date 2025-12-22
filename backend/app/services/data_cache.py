@@ -217,10 +217,10 @@ async def fetch_and_cache_complete_data(
             e += 2000000
         if n < 1000000:
             n += 1000000
+        # 3D view automatically shows buildings - no layers parameter needed
         viewer_3d_url = (
             f"https://map.geo.admin.ch/#/map?lang=de"
             f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&layers=ch.swisstopo.swissbuildings3d_2"
             f"&center={e:.0f},{n:.0f}&z=12&3d=true"
         )
 

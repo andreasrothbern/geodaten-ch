@@ -586,10 +586,10 @@ def calculate_scaffolding_data(
             e_full = e if e > 2000000 else e + 2000000
             n_full = n if n > 1000000 else n + 1000000
             # Neue URL-Format seit 2024 (center statt E/N)
+            # 3D-Ansicht zeigt Gebäude automatisch - kein layers Parameter nötig
             viewer_3d_url = (
                 f"https://map.geo.admin.ch/#/map?lang=de"
                 f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-                f"&layers=ch.swisstopo.swissbuildings3d_2"
                 f"&center={e_full:.0f},{n_full:.0f}&z=12&3d=true"
             )
 
