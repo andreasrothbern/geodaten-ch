@@ -228,7 +228,7 @@ async def fetch_and_cache_complete_data(
         egid=building.egid if building else None,
         floors=building.floors if building else None,
         area_m2=building.area_m2 if building else None,
-        building_category=building.category if building else None,
+        building_category=building.building_category if building else None,
         construction_year=building.construction_year if building else None,
         length_m=round(length_m, 1),
         width_m=round(width_m, 1),
