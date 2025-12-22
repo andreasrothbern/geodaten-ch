@@ -448,21 +448,7 @@ function App() {
 
                             // Calculate totals
                             const fassadenFlaeche = fassaden.reduce((sum, f) => sum + f.ausmass.flaeche_m2, 0)
-
-                            // Eckzuschlag: Nur wenn zwei BENACHBARTE Fassaden beide ausgewählt sind
-                            // Bei einem Polygon sind Fassade i und (i+1) % n benachbart
-                            const totalSides = scaffoldingData.sides.length
-                            const selectedIndices = new Set(config.selectedFacades)
-                            let anzahlEcken = 0
-
-                            for (const idx of selectedIndices) {
-                              // Prüfe ob die nächste Fassade (im Uhrzeigersinn) auch ausgewählt ist
-                              const nextIdx = (idx + 1) % totalSides
-                              if (selectedIndices.has(nextIdx)) {
-                                anzahlEcken++
-                              }
-                            }
-
+                            const anzahlEcken = selectedSides.length
                             // Eckzuschlag: LS × HA per corner (where adjacent facades meet)
                             const eckZuschlag = anzahlEcken * LS * (config.scaffoldHeight + HOEHE_ZUSCHLAG)
                             const totalAusmass = fassadenFlaeche + eckZuschlag

@@ -103,7 +103,7 @@ export function AusmassCard({ data, onReconfigure, onContinue, onExport }: Ausma
               {config.selectedFacades.length} Fassaden
             </span>
             <span className="px-2 py-1 bg-gray-100 rounded">
-              {config.scaffoldHeight.toFixed(1)}m Hohe
+              {config.scaffoldHeight.toFixed(1)}m Höhe
             </span>
             <span className={`px-2 py-1 rounded ${config.workType === 'dacharbeiten' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
               {config.workType === 'dacharbeiten' ? 'Dacharbeiten' : 'Fassadenarbeiten'}
@@ -119,7 +119,12 @@ export function AusmassCard({ data, onReconfigure, onContinue, onExport }: Ausma
           <p className="text-2xl font-bold text-red-900">
             {ausmass.zusammenfassung.total_ausmass_m2.toFixed(0)} m²
           </p>
-          <p className="text-xs text-red-500">inkl. Eckzuschlag</p>
+          <p className="text-xs text-red-500">
+            {ausmass.zusammenfassung.fassaden_flaeche_m2.toFixed(0)} m²
+            {ausmass.zusammenfassung.eck_zuschlag_m2 > 0 && (
+              <> + {ausmass.zusammenfassung.eck_zuschlag_m2.toFixed(0)} m² ({ausmass.zusammenfassung.anzahl_ecken} Ecken)</>
+            )}
+          </p>
         </div>
         <div className="bg-blue-50 rounded-lg p-4 text-center">
           <p className="text-sm text-blue-600 font-medium">Materialteile</p>
