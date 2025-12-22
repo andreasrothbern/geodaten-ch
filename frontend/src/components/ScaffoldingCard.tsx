@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { ScaffoldingData, ScaffoldingSide } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
+import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/useUserPreferences'
 
 interface ScaffoldingCardProps {
   data: ScaffoldingData
@@ -24,6 +25,11 @@ export function ScaffoldingCard({
   const [showAllSides, setShowAllSides] = useState(false)
   const [manualHeight, setManualHeight] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
+
+  // Work type and scaffold type configuration
+  const { preferences } = useUserPreferences()
+  const [workType, setWorkType] = useState<WorkType>(preferences.defaultWorkType)
+  const [scaffoldType, setScaffoldType] = useState<ScaffoldType>(preferences.defaultScaffoldType)
 
   const { dimensions, scaffolding, building, gwr_data, sides } = data
 
@@ -308,6 +314,79 @@ export function ScaffoldingCard({
           >
             Aktualisieren
           </button>
+        </div>
+      </div>
+
+      {/* Arbeitstyp und Gerustart Konfiguration */}
+      <div className="bg-blue-50 rounded-lg p-4 space-y-4">
+        <h4 className="font-medium text-blue-900">Gerustkonfiguration</h4>
+
+        {/* Arbeitstyp */}
+        <div>
+          <p className="text-sm text-blue-700 mb-2">Arbeitstyp:</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setWorkType('dacharbeiten')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                workType === 'dacharbeiten'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <span>&#127968;</span> Dacharbeiten
+            </button>
+            <button
+              onClick={() => setWorkType('fassadenarbeiten')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                workType === 'fassadenarbeiten'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <span>&#127912;</span> Fassadenarbeiten
+            </button>
+          </div>
+          <p className="text-xs text-blue-600 mt-2">
+            {workType === 'dacharbeiten'
+              ? 'Gerust bis +1m uber First (SUVA Vorschrift) - fur Dachsanierung, Ziegel, Spengler'
+              : 'Gerust bis Traufhohe - fur Malen, Verputzen, Fassadendammung'}
+          </p>
+        </div>
+
+        {/* Gerustart */}
+        <div>
+          <p className="text-sm text-blue-700 mb-2">Gerustart:</p>
+          <select
+            value={scaffoldType}
+            onChange={(e) => setScaffoldType(e.target.value as ScaffoldType)}
+            className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="arbeitsgeruest">Arbeitsgerust (Standard)</option>
+            <option value="schutzgeruest">Schutzgerust (Absturzsicherung)</option>
+            <option value="fanggeruest">Fanggerust (Material-/Personenauffang)</option>
+          </select>
+          <p className="text-xs text-blue-600 mt-2">
+            {scaffoldType === 'arbeitsgeruest' && 'Fur Arbeiten an der Fassade - Belagen, Leitern, Aufgange (NPK 114.1xx)'}
+            {scaffoldType === 'schutzgeruest' && 'Absturzsicherung bei Dacharbeiten - Fanglagen, Seitenschutz (NPK 114.2xx)'}
+            {scaffoldType === 'fanggeruest' && 'Auffangen von herabfallenden Materialien oder Personen (NPK 114.3xx)'}
+          </p>
+        </div>
+
+        {/* Berechnete Hohe anzeigen */}
+        <div className="pt-3 border-t border-blue-200">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-blue-700">Berechnete Gerusthöhe:</span>
+            <span className="font-bold text-blue-900">
+              {workType === 'dacharbeiten'
+                ? `${((dimensions.firsthoehe_m || dimensions.estimated_height_m || 0) + 1.0).toFixed(1)} m`
+                : `${(dimensions.traufhoehe_m || dimensions.estimated_height_m || 0).toFixed(1)} m`}
+            </span>
+          </div>
+          <p className="text-xs text-blue-500 mt-1">
+            {workType === 'dacharbeiten'
+              ? `Firsthohe ${(dimensions.firsthoehe_m || dimensions.estimated_height_m || 0).toFixed(1)}m + 1.0m SUVA`
+              : `Traufhohe (Unterdach)`}
+          </p>
         </div>
       </div>
 

@@ -557,7 +557,9 @@ async def get_scaffolding_data(
     address: str = Query(..., min_length=5, description="Adresse"),
     egid: Optional[int] = Query(None, description="EGID (falls bekannt)"),
     height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern"),
-    refresh: bool = Query(False, description="Cache ignorieren und neu laden")
+    refresh: bool = Query(False, description="Cache ignorieren und neu laden"),
+    work_type: str = Query("dacharbeiten", description="Arbeitstyp: dacharbeiten (First+1m) oder fassadenarbeiten (Traufe)"),
+    scaffold_type: str = Query("arbeitsgeruest", description="Gerüstart: arbeitsgeruest, schutzgeruest, fanggeruest")
 ):
     """
     Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
@@ -569,7 +571,16 @@ async def get_scaffolding_data(
     - Geschätzte Gebäudehöhe
     - Geschätzte Gerüstfläche
 
-    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern`
+    **Arbeitstyp:**
+    - `dacharbeiten`: Gerüsthöhe = Firsthöhe + 1.0m (SUVA Vorschrift)
+    - `fassadenarbeiten`: Gerüsthöhe = Traufhöhe (Unterdach)
+
+    **Gerüstart:**
+    - `arbeitsgeruest`: Standard für Fassadenarbeiten (NPK 114.1xx)
+    - `schutzgeruest`: Absturzsicherung bei Dacharbeiten (NPK 114.2xx)
+    - `fanggeruest`: Auffangen von Material/Personen (NPK 114.3xx)
+
+    **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&work_type=dacharbeiten`
     """
     cache_key = f"scaffolding:{address}:{egid}"
 
@@ -683,6 +694,11 @@ async def get_scaffolding_data(
                 "construction_year": building.construction_year if building else None,
                 "floors": building.floors if building else None,
                 "area_m2_gwr": building.area_m2 if building else None,
+            },
+            # Gerüstkonfiguration
+            "configuration": {
+                "work_type": work_type,
+                "scaffold_type": scaffold_type,
             },
             **scaffolding_data,
         }

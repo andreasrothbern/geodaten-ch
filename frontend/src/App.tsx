@@ -6,6 +6,8 @@ import { ScaffoldingCard } from './components/ScaffoldingCard'
 import { AusmassCard } from './components/AusmassCard'
 import { MaterialCard } from './components/MaterialCard'
 import { SchulaufgabenCard } from './components/SchulaufgabenCard'
+import { SettingsPanel } from './components/SettingsPanel'
+import { useUserPreferences } from './hooks/useUserPreferences'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
 import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
 
@@ -23,6 +25,9 @@ function App() {
   // Cached data for all tabs (loaded in parallel)
   const [ausmassData, setAusmassData] = useState<any>(null)
   const [ausmassLoading, setAusmassLoading] = useState(false)
+  // Settings panel
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const { preferences } = useUserPreferences()
 
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)
@@ -188,17 +193,32 @@ function App() {
       {/* Header */}
       <header className="bg-red-600 text-white shadow-lg">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">🇨🇭</span>
-            <div>
-              <h1 className="text-2xl font-bold">Geodaten Schweiz</h1>
-              <p className="text-red-100 text-sm">
-                Gebäude- und Grundstücksinformationen
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🇨🇭</span>
+              <div>
+                <h1 className="text-2xl font-bold">Geodaten Schweiz</h1>
+                <p className="text-red-100 text-sm">
+                  Gebäude- und Grundstücksinformationen
+                </p>
+              </div>
             </div>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-2 rounded-lg hover:bg-red-700 transition-colors"
+              title="Einstellungen"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
           </div>
         </div>
       </header>
+
+      {/* Settings Panel */}
+      <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 py-8">
