@@ -208,6 +208,45 @@ class ClaudeSVGGenerator:
             print(f"Cache clear error: {e}")
             return 0
 
+    def clear_all_cache(self) -> int:
+        """Löscht den gesamten SVG-Cache"""
+        # Memory cache
+        if not self._cache_available:
+            count = len(self._memory_cache)
+            self._memory_cache = {}
+            return count
+
+        try:
+            conn = sqlite3.connect(self.CACHE_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM svg_cache')
+            count = cursor.fetchone()[0]
+            cursor.execute('DELETE FROM svg_cache')
+            conn.commit()
+            conn.close()
+            print(f"SVG cache cleared: {count} entries deleted")
+            return count
+        except Exception as e:
+            print(f"Cache clear error: {e}")
+            return 0
+
+    def get_cache_stats(self) -> dict:
+        """Gibt Cache-Statistiken zurück"""
+        if not self._cache_available:
+            return {"entries": len(self._memory_cache), "type": "memory"}
+
+        try:
+            conn = sqlite3.connect(self.CACHE_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM svg_cache')
+            count = cursor.fetchone()[0]
+            cursor.execute('SELECT svg_type, COUNT(*) FROM svg_cache GROUP BY svg_type')
+            by_type = dict(cursor.fetchall())
+            conn.close()
+            return {"entries": count, "by_type": by_type, "type": "sqlite"}
+        except Exception:
+            return {"entries": 0, "type": "error"}
+
     def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480, force_refresh: bool = False) -> Optional[str]:
         """Generiert Querschnitt-SVG via Claude"""
         cache_key = self._get_cache_key(building, f"cross_section_{width}x{height}")

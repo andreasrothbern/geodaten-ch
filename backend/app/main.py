@@ -157,6 +157,71 @@ async def debug_libraries():
 
 
 # ============================================================================
+# Cache Management
+# ============================================================================
+
+@app.get("/api/v1/cache/stats", tags=["System"])
+async def get_cache_stats():
+    """Zeigt Cache-Statistiken für SVG und Daten"""
+    from app.services.svg_claude_generator import get_claude_svg_generator
+    from app.services.data_cache import get_cache_stats as get_data_cache_stats
+
+    svg_gen = get_claude_svg_generator()
+
+    return {
+        "svg_cache": svg_gen.get_cache_stats(),
+        "data_cache": get_data_cache_stats()
+    }
+
+
+@app.delete("/api/v1/cache/svg", tags=["System"])
+async def clear_svg_cache():
+    """Löscht den gesamten SVG-Cache (erzwingt Neugenerierung mit aktuellen Prompts)"""
+    from app.services.svg_claude_generator import get_claude_svg_generator
+
+    svg_gen = get_claude_svg_generator()
+    deleted = svg_gen.clear_all_cache()
+
+    return {
+        "success": True,
+        "deleted_entries": deleted,
+        "message": f"SVG cache cleared. {deleted} entries deleted."
+    }
+
+
+@app.delete("/api/v1/cache/data", tags=["System"])
+async def clear_data_cache():
+    """Löscht den Daten-Cache (Gebäude, Ausmass)"""
+    from app.services.data_cache import clear_cache
+
+    deleted = clear_cache()
+
+    return {
+        "success": True,
+        "deleted_entries": deleted,
+        "message": f"Data cache cleared. {deleted} entries deleted."
+    }
+
+
+@app.delete("/api/v1/cache/all", tags=["System"])
+async def clear_all_caches():
+    """Löscht alle Caches (SVG + Daten)"""
+    from app.services.svg_claude_generator import get_claude_svg_generator
+    from app.services.data_cache import clear_cache
+
+    svg_gen = get_claude_svg_generator()
+    svg_deleted = svg_gen.clear_all_cache()
+    data_deleted = clear_cache()
+
+    return {
+        "success": True,
+        "svg_deleted": svg_deleted,
+        "data_deleted": data_deleted,
+        "message": f"All caches cleared. SVG: {svg_deleted}, Data: {data_deleted}"
+    }
+
+
+# ============================================================================
 # Adresssuche
 # ============================================================================
 
