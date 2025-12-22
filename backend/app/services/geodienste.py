@@ -490,10 +490,12 @@ def get_height_details(
 
             # Zuerst detaillierte Höhen versuchen
             detailed = get_building_heights_detailed(egid)
+            print(f"[DEBUG get_height_details] EGID {egid}: detailed from DB = {detailed}")
             if detailed:
                 result["traufhoehe_m"] = detailed.get("traufhoehe_m")
                 result["firsthoehe_m"] = detailed.get("firsthoehe_m")
                 result["gebaeudehoehe_m"] = detailed.get("gebaeudehoehe_m")
+                print(f"[DEBUG get_height_details] EGID {egid}: set trauf={result['traufhoehe_m']}, first={result['firsthoehe_m']}, gebaeude={result['gebaeudehoehe_m']}")
                 # Haupthöhe ist Gebäudehöhe oder Firsthöhe
                 main_height = detailed.get("gebaeudehoehe_m") or detailed.get("firsthoehe_m")
                 if main_height and main_height >= 2.0:
@@ -511,6 +513,7 @@ def get_height_details(
                     result["traufhoehe_m"] = round(gebaeudehoehe * 0.85, 1)
                     result["firsthoehe_m"] = round(gebaeudehoehe, 1)
                     result["heights_estimated"] = True  # Flag für Frontend
+                    print(f"[DEBUG get_height_details] EGID {egid}: estimated trauf={result['traufhoehe_m']}, first={result['firsthoehe_m']} from gebaeude={gebaeudehoehe}")
             else:
                 # Fallback: Legacy-Höhe
                 db_result = get_building_height(egid)
@@ -592,6 +595,7 @@ def get_height_details(
         result["active_height_m"] = result["estimated_height_m"]
         result["active_source"] = result["estimated_source"]
 
+    print(f"[DEBUG get_height_details] FINAL: trauf={result.get('traufhoehe_m')}, first={result.get('firsthoehe_m')}, active={result.get('active_height_m')} ({result.get('active_source')})")
     return result
 
 

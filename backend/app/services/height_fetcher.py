@@ -517,6 +517,12 @@ async def fetch_height_for_coordinates(
         source = f"swissBUILDINGS3D_3.0_ondemand_{tile_info['id']}"
         bulk_insert_heights(heights_legacy, source)
         if heights_detailed:
+            # Debug: Log what we're storing for the requested EGID
+            if egid:
+                for h in heights_detailed:
+                    if h.get("egid") == egid:
+                        print(f"[DEBUG height_fetcher] Storing for EGID {egid}: trauf={h.get('traufhoehe_m')}, first={h.get('firsthoehe_m')}, gebaeude={h.get('gebaeudehoehe_m')}")
+                        break
             bulk_insert_heights_detailed(heights_detailed, source)
 
         # Log the import

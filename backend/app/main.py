@@ -641,6 +641,8 @@ async def get_scaffolding_data(
             )
 
         # 4. Gerüstbau-Daten berechnen
+        effective_egid = building.egid if building else None
+        print(f"[DEBUG /scaffolding] Calling calculate_scaffolding_data with EGID={effective_egid}, refresh={refresh}")
         scaffolding_data = calculate_scaffolding_data(
             geometry=geometry,
             floors=building.floors if building else None,
@@ -650,10 +652,12 @@ async def get_scaffolding_data(
                 "lv95_e": geo.coordinates.lv95_e,
                 "lv95_n": geo.coordinates.lv95_n,
             },
-            egid=building.egid if building else None,
+            egid=effective_egid,
             manual_traufhoehe=traufhoehe,
             manual_firsthoehe=firsthoehe,
         )
+        dims = scaffolding_data.get("dimensions", {})
+        print(f"[DEBUG /scaffolding] Result dimensions: trauf={dims.get('traufhoehe_m')}, first={dims.get('firsthoehe_m')}, active={dims.get('estimated_height_m')}")
 
         # 4b. Auto-Refresh: Höhen aktualisieren wenn unvollständig
         if scaffolding_data.get("needs_height_refresh"):
