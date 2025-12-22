@@ -1263,7 +1263,8 @@ async def berechne_komplettes_ausmass(
 async def visualize_cross_section(
     address: str,
     width: int = 700,
-    height: int = 480
+    height: int = 480,
+    force_refresh: bool = False
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude via Claude API.
@@ -1271,6 +1272,7 @@ async def visualize_cross_section(
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
+    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
 
     Returns: SVG-Datei (von Claude generiert, gecached)
     """
@@ -1345,7 +1347,7 @@ async def visualize_cross_section(
 
         # SVG via Claude generieren
         generator = get_claude_svg_generator()
-        svg = generator.generate_cross_section(building_data, width, height)
+        svg = generator.generate_cross_section(building_data, width, height, force_refresh=force_refresh)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
@@ -1364,12 +1366,14 @@ async def visualize_cross_section(
 async def visualize_elevation(
     address: str,
     width: int = 700,
-    height: int = 480
+    height: int = 480,
+    force_refresh: bool = False
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
 
     - **address**: Schweizer Adresse
+    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
 
@@ -1437,7 +1441,7 @@ async def visualize_elevation(
         )
 
         generator = get_claude_svg_generator()
-        svg = generator.generate_elevation(building_data, width, height)
+        svg = generator.generate_elevation(building_data, width, height, force_refresh=force_refresh)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")
@@ -1456,7 +1460,8 @@ async def visualize_elevation(
 async def visualize_floor_plan(
     address: str,
     width: int = 600,
-    height: int = 500
+    height: int = 500,
+    force_refresh: bool = False
 ):
     """
     Generiert SVG-Grundriss für ein Gebäude.
@@ -1464,6 +1469,7 @@ async def visualize_floor_plan(
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 600)
     - **height**: SVG-Höhe in Pixel (default: 500)
+    - **force_refresh**: Cache ignorieren und neu generieren (default: false)
 
     Returns: SVG-Datei
     """
@@ -1523,7 +1529,7 @@ async def visualize_floor_plan(
         )
 
         generator = get_claude_svg_generator()
-        svg = generator.generate_floor_plan(building_data, width, height)
+        svg = generator.generate_floor_plan(building_data, width, height, force_refresh=force_refresh)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen. Prüfen Sie ANTHROPIC_API_KEY.")

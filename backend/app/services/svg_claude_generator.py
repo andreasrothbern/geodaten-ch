@@ -173,14 +173,32 @@ class ClaudeSVGGenerator:
             print(f"Claude API error: {e}")
             return None
 
-    def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480) -> Optional[str]:
+    def clear_cache_for_address(self, address: str):
+        """Löscht alle Cache-Einträge für eine Adresse"""
+        try:
+            conn = sqlite3.connect(self.CACHE_DB_PATH)
+            cursor = conn.cursor()
+            # Cache-Keys enthalten die Adresse im Hash, aber wir können nach Zeitstempel löschen
+            # Einfacher: Alle Einträge älter als jetzt löschen die diese Adresse betreffen
+            cursor.execute('DELETE FROM svg_cache WHERE cache_key LIKE ?', (f'%{address[:20]}%',))
+            conn.commit()
+            deleted = cursor.rowcount
+            conn.close()
+            print(f"Cache cleared: {deleted} entries for {address}")
+            return deleted
+        except Exception as e:
+            print(f"Cache clear error: {e}")
+            return 0
+
+    def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480, force_refresh: bool = False) -> Optional[str]:
         """Generiert Querschnitt-SVG via Claude"""
         cache_key = self._get_cache_key(building, f"cross_section_{width}x{height}")
 
-        # Cache prüfen
-        cached = self._get_cached_svg(cache_key)
-        if cached:
-            return cached
+        # Cache prüfen (ausser bei force_refresh)
+        if not force_refresh:
+            cached = self._get_cached_svg(cache_key)
+            if cached:
+                return cached
 
         ridge_h = building.ridge_height_m or building.eave_height_m
         roof_info = "Satteldach" if ridge_h > building.eave_height_m else "Flachdach"
@@ -248,13 +266,14 @@ Antworte NUR mit dem SVG-Code, keine Erklärungen."""
         fallback_data = self._to_fallback_data(building)
         return self._fallback_generator.generate_cross_section(fallback_data, width, height)
 
-    def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480) -> Optional[str]:
+    def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480, force_refresh: bool = False) -> Optional[str]:
         """Generiert Fassadenansicht-SVG via Claude"""
         cache_key = self._get_cache_key(building, f"elevation_{width}x{height}")
 
-        cached = self._get_cached_svg(cache_key)
-        if cached:
-            return cached
+        if not force_refresh:
+            cached = self._get_cached_svg(cache_key)
+            if cached:
+                return cached
 
         ridge_h = building.ridge_height_m or building.eave_height_m
         roof_info = "Satteldach" if ridge_h > building.eave_height_m else "Flachdach"
@@ -331,13 +350,14 @@ Antworte NUR mit dem SVG-Code."""
         fallback_data = self._to_fallback_data(building)
         return self._fallback_generator.generate_elevation(fallback_data, width, height)
 
-    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500) -> Optional[str]:
+    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, force_refresh: bool = False) -> Optional[str]:
         """Generiert Grundriss-SVG via Claude"""
         cache_key = self._get_cache_key(building, f"floor_plan_{width}x{height}")
 
-        cached = self._get_cached_svg(cache_key)
-        if cached:
-            return cached
+        if not force_refresh:
+            cached = self._get_cached_svg(cache_key)
+            if cached:
+                return cached
 
         area = building.area_m2 or (building.length_m * building.width_m)
         perimeter = 2 * (building.length_m + building.width_m)
