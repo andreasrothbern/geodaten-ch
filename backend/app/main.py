@@ -1396,6 +1396,10 @@ async def berechne_komplettes_ausmass(
         if hoehe_first_m is None:
             hoehe_first_m = cached.ridge_height_m
 
+        # Auto-detect roof type from heights if using default
+        if dachform == "flach" and hoehe_first_m and hoehe_first_m > hoehe_traufe_m:
+            dachform = "satteldach"
+
         # NPK 114 Ausmass
         wk = WidthClass[breitenklasse]
         calc = NPK114Calculator(breitenklasse=wk)
@@ -1526,6 +1530,9 @@ async def visualize_cross_section(
                     eave_height_m = measured_height_m * 0.85
                     ridge_height_m = measured_height_m
 
+        # Auto-detect roof type from heights
+        roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
+
         # BuildingData erstellen
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1535,7 +1542,7 @@ async def visualize_cross_section(
             eave_height_m=round(eave_height_m, 1),
             ridge_height_m=round(ridge_height_m, 1) if ridge_height_m else None,
             floors=building.floors if building else 3,
-            roof_type="gable",
+            roof_type=roof_type,
             area_m2=building.area_m2 if building else None,
         )
 
@@ -1619,6 +1626,9 @@ async def visualize_elevation(
                     eave_height_m = gebaeudehoehe * 0.85
                     ridge_height_m = gebaeudehoehe
 
+        # Auto-detect roof type from heights
+        roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
+
         building_data = BuildingData(
             address=geo.matched_address,
             egid=building.egid if building else None,
@@ -1627,7 +1637,7 @@ async def visualize_elevation(
             eave_height_m=round(eave_height_m, 1),
             ridge_height_m=round(ridge_height_m, 1) if ridge_height_m else None,
             floors=building.floors if building else 3,
-            roof_type="gable",
+            roof_type=roof_type,
             area_m2=building.area_m2 if building else None,
         )
 
@@ -1710,7 +1720,7 @@ async def visualize_floor_plan(
             width_m=round(width_m, 1),
             eave_height_m=round(eave_height_m, 1),
             floors=building.floors if building else 3,
-            roof_type="gable",
+            roof_type="flat",  # Grundriss zeigt keine Dachform
             area_m2=building.area_m2 if building else None,
         )
 
@@ -1776,7 +1786,7 @@ async def generate_materialbewirtschaftung_document(
             building_category=cached.building_category or "Einfamilienhaus",
             construction_year=cached.construction_year,
             area_m2=cached.area_m2,
-            roof_type="satteldach",
+            roof_type="satteldach" if (cached.ridge_height_m and cached.ridge_height_m > cached.eave_height_m) else "flachdach",
             lv95_e=cached.lv95_e,
             lv95_n=cached.lv95_n
         )
@@ -1785,15 +1795,18 @@ async def generate_materialbewirtschaftung_document(
         from app.services.svg_generator import get_svg_generator, BuildingData as SVGBuildingData
         svg_generator = get_svg_generator()
 
+        # Auto-detect roof type
+        svg_roof_type = "gable" if (cached.ridge_height_m and cached.ridge_height_m > cached.eave_height_m) else "flat"
+
         svg_building_data = SVGBuildingData(
             address=cached.address_matched,
             egid=cached.egid,
             length_m=cached.length_m,
             width_m=cached.width_m,
             eave_height_m=cached.eave_height_m,
-            ridge_height_m=cached.ridge_height_m or (cached.eave_height_m + 3.5),
+            ridge_height_m=cached.ridge_height_m or cached.eave_height_m,
             floors=cached.floors or 2,
-            roof_type="gable",
+            roof_type=svg_roof_type,
             area_m2=cached.area_m2,
         )
 
