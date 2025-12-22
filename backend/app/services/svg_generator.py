@@ -507,6 +507,7 @@ class SVGGenerator:
         svg += self._north_arrow(width - 40, height - 50)
 
         # Koordinaten-Info
+        area = building.area_m2 or (building.length_m * building.width_m)
         svg += f'''
   <text x="{width/2}" y="{height - 10}" text-anchor="middle" font-family="Arial" font-size="9" fill="{self.COLORS['text_light']}">
     LV95 (EPSG:2056){f' | EGID: {building.egid}' if building.egid else ''} | Fläche: {area:.0f} m²
