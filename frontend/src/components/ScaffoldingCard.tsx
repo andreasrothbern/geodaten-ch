@@ -5,27 +5,26 @@ import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/u
 import { InteractiveFloorPlan } from './InteractiveFloorPlan'
 import { FacadeSelectionTable } from './FacadeSelectionTable'
 
+export interface ScaffoldingConfig {
+  selectedFacades: number[]
+  workType: 'dacharbeiten' | 'fassadenarbeiten'
+  scaffoldType: 'arbeitsgeruest' | 'schutzgeruest' | 'fanggeruest'
+  scaffoldHeight: number
+  totalLength: number
+  totalArea: number
+}
+
 interface ScaffoldingCardProps {
   data: ScaffoldingData
   apiUrl: string
-  onHeightChange?: (height: number) => void
-  onFetchMeasuredHeight?: () => void
-  fetchingHeight?: boolean
-}
-
-function isFromDatabase(source: string | undefined | null): boolean {
-  return source?.startsWith('database:') ?? false
+  onCalculate?: (config: ScaffoldingConfig) => void
 }
 
 export function ScaffoldingCard({
   data,
   apiUrl,
-  onHeightChange,
-  onFetchMeasuredHeight,
-  fetchingHeight = false
+  onCalculate
 }: ScaffoldingCardProps) {
-  // showAllSides state removed - now using FacadeSelectionTable
-  const [manualHeight, setManualHeight] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
 
   // Work type and scaffold type configuration
@@ -74,18 +73,6 @@ export function ScaffoldingCard({
       preloadAllSvgs(data.address.matched, apiUrl)
     }
   }, [data.address?.matched, apiUrl])
-
-  // Check if measured height can be fetched (not already from database)
-  const canFetchMeasuredHeight = !isFromDatabase(dimensions.height_source) && onFetchMeasuredHeight
-
-  // Filtering now done in FacadeSelectionTable component
-
-  const handleHeightSubmit = () => {
-    const height = parseFloat(manualHeight)
-    if (height > 0 && onHeightChange) {
-      onHeightChange(height)
-    }
-  }
 
   return (
     <div className="card space-y-6">
@@ -186,170 +173,6 @@ export function ScaffoldingCard({
         </div>
       </div>
 
-      {/* Höhenangaben - separate Spalten */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Geschätzte Höhe */}
-        <div className="bg-amber-50 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-amber-600 font-medium">Höhe geschätzt</p>
-              <p className="text-2xl font-bold text-amber-900">
-                {dimensions.height_estimated_m
-                  ? `${dimensions.height_estimated_m.toFixed(1)} m`
-                  : '—'}
-              </p>
-              <p className="text-xs text-amber-600 mt-1">
-                {dimensions.height_estimated_source === 'calculated_from_floors'
-                  ? `Berechnet aus ${dimensions.floors} Geschossen`
-                  : dimensions.height_estimated_source === 'default_by_category'
-                  ? 'Standard (Gebäudekategorie)'
-                  : 'Standard (10m)'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Gemessene Höhe */}
-        <div className={`rounded-lg p-4 ${dimensions.height_measured_m ? 'bg-emerald-50' : 'bg-gray-50'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className={`text-sm font-medium ${dimensions.height_measured_m ? 'text-emerald-600' : 'text-gray-500'}`}>
-                Höhe gemessen (swissBUILDINGS3D)
-              </p>
-              <p className={`text-2xl font-bold ${dimensions.height_measured_m ? 'text-emerald-900' : 'text-gray-400'}`}>
-                {dimensions.height_measured_m
-                  ? `${dimensions.height_measured_m.toFixed(1)} m`
-                  : '—'}
-              </p>
-              {dimensions.height_measured_m ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-xs text-emerald-600">
-                    Photogrammetrisch gemessen
-                  </p>
-                  {data.viewer_3d_url && (
-                    <a
-                      href={data.viewer_3d_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-emerald-700 hover:text-emerald-900 underline"
-                    >
-                      → 3D anzeigen
-                    </a>
-                  )}
-                </div>
-              ) : canFetchMeasuredHeight ? (
-                <button
-                  onClick={onFetchMeasuredHeight}
-                  disabled={fetchingHeight}
-                  className="mt-2 px-3 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {fetchingHeight ? (
-                    <span className="flex items-center gap-1">
-                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Lädt...
-                    </span>
-                  ) : (
-                    '📡 Abrufen'
-                  )}
-                </button>
-              ) : (
-                <p className="text-xs text-gray-400 mt-1">Nicht verfügbar</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Detaillierte Höhen aus swissBUILDINGS3D */}
-      {(dimensions.traufhoehe_m || dimensions.firsthoehe_m || dimensions.gebaeudehoehe_m) && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-4 border border-emerald-200">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-lg">📏</span>
-            <h4 className="font-medium text-emerald-800">Gemessene Höhen (swissBUILDINGS3D)</h4>
-            {data.viewer_3d_url && (
-              <a
-                href={data.viewer_3d_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto text-xs text-emerald-700 hover:text-emerald-900 underline"
-              >
-                → 3D Viewer
-              </a>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {/* Traufhöhe */}
-            <div className="bg-white rounded-lg p-3 text-center border">
-              <p className="text-xs text-gray-500 mb-1">Traufhöhe</p>
-              <p className="text-xl font-bold text-emerald-700">
-                {dimensions.traufhoehe_m ? `${dimensions.traufhoehe_m.toFixed(1)} m` : '—'}
-              </p>
-              <p className="text-xs text-gray-400">
-                {dimensions.heights_estimated ? '~85% geschätzt' : 'Dachtraufe'}
-              </p>
-            </div>
-            {/* Firsthöhe */}
-            <div className="bg-white rounded-lg p-3 text-center border">
-              <p className="text-xs text-gray-500 mb-1">Firsthöhe</p>
-              <p className="text-xl font-bold text-teal-700">
-                {dimensions.firsthoehe_m ? `${dimensions.firsthoehe_m.toFixed(1)} m` : '—'}
-              </p>
-              <p className="text-xs text-gray-400">
-                {dimensions.heights_estimated ? '= Gebäudehöhe' : 'Dachfirst'}
-              </p>
-            </div>
-            {/* Gebäudehöhe */}
-            <div className="bg-white rounded-lg p-3 text-center border">
-              <p className="text-xs text-gray-500 mb-1">Gebäudehöhe</p>
-              <p className="text-xl font-bold text-cyan-700">
-                {dimensions.gebaeudehoehe_m ? `${dimensions.gebaeudehoehe_m.toFixed(1)} m` : '—'}
-              </p>
-              <p className="text-xs text-gray-400">Gesamt</p>
-            </div>
-          </div>
-          <p className="text-xs text-emerald-600 mt-2 text-center">
-            {dimensions.heights_estimated
-              ? 'Trauf-/Firsthöhe geschätzt aus Gesamthöhe'
-              : 'Photogrammetrisch gemessen aus Luftbildern'}
-            {data.height_refreshed && (
-              <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-800 rounded-full">
-                ✓ Automatisch aktualisiert
-              </span>
-            )}
-          </p>
-        </div>
-      )}
-
-      {/* Manuelle Höheneingabe */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <p className="text-sm font-medium text-gray-700 mb-2">
-          Höhe manuell anpassen:
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            step="0.5"
-            min="1"
-            max="200"
-            placeholder="z.B. 12.5"
-            value={manualHeight}
-            onChange={(e) => setManualHeight(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-          />
-          <span className="flex items-center text-gray-500">m</span>
-          <button
-            onClick={handleHeightSubmit}
-            disabled={!manualHeight || parseFloat(manualHeight) <= 0}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-          >
-            Aktualisieren
-          </button>
-        </div>
-      </div>
-
       {/* Arbeitstyp und Gerustart Konfiguration */}
       <div className="bg-blue-50 rounded-lg p-4 space-y-4">
         <h4 className="font-medium text-blue-900">Gerustkonfiguration</h4>
@@ -420,29 +243,6 @@ export function ScaffoldingCard({
               ? `Firsthohe ${(dimensions.firsthoehe_m || dimensions.estimated_height_m || 0).toFixed(1)}m + 1.0m SUVA`
               : `Traufhohe (Unterdach)`}
           </p>
-        </div>
-      </div>
-
-      {/* Gebäudemasse */}
-      <div>
-        <h4 className="font-medium text-gray-700 mb-3">Gebäudemasse</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div className="bg-white border rounded-lg p-3">
-            <p className="text-gray-500">Breite</p>
-            <p className="font-semibold">{building.bounding_box.width_m.toFixed(1)} m</p>
-          </div>
-          <div className="bg-white border rounded-lg p-3">
-            <p className="text-gray-500">Tiefe</p>
-            <p className="font-semibold">{building.bounding_box.depth_m.toFixed(1)} m</p>
-          </div>
-          <div className="bg-white border rounded-lg p-3">
-            <p className="text-gray-500">Geschosse</p>
-            <p className="font-semibold">{dimensions.floors || '—'}</p>
-          </div>
-          <div className="bg-white border rounded-lg p-3">
-            <p className="text-gray-500">EGID</p>
-            <p className="font-semibold">{gwr_data.egid}</p>
-          </div>
         </div>
       </div>
 
@@ -517,6 +317,35 @@ export function ScaffoldingCard({
           </div>
         )}
       </div>
+
+      {/* Berechnung starten */}
+      {selectedFacades.length > 0 && onCalculate && (
+        <div className="border-t pt-4">
+          <button
+            onClick={() => {
+              const totalLength = selectedFacades.reduce((sum, idx) => {
+                const side = sides.find(s => s.index === idx)
+                return sum + (side?.length_m || 0)
+              }, 0)
+              onCalculate({
+                selectedFacades,
+                workType,
+                scaffoldType,
+                scaffoldHeight,
+                totalLength,
+                totalArea: totalLength * scaffoldHeight
+              })
+            }}
+            className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <span>Ausmass berechnen</span>
+            <span>→</span>
+          </button>
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            NPK 114 Berechnung fur {selectedFacades.length} Fassaden ({scaffoldHeight.toFixed(1)}m Hohe)
+          </p>
+        </div>
+      )}
 
       {/* Export-Hinweis */}
       <div className="border-t pt-4 text-sm text-gray-500">

@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { SearchForm } from './components/SearchForm'
-import { BuildingCard } from './components/BuildingCard'
 import { ApiStatus } from './components/ApiStatus'
-import { ScaffoldingCard } from './components/ScaffoldingCard'
+import { GrunddatenCard } from './components/GrunddatenCard'
+import { ScaffoldingCard, type ScaffoldingConfig } from './components/ScaffoldingCard'
 import { AusmassCard } from './components/AusmassCard'
 import { MaterialCard } from './components/MaterialCard'
-import { SchulaufgabenCard } from './components/SchulaufgabenCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useUserPreferences } from './hooks/useUserPreferences'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
-import type { BuildingInfo, LookupResult, ScaffoldingData } from './types'
+import type { LookupResult, ScaffoldingData } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -21,8 +20,9 @@ function App() {
   const [scaffoldingLoading, setScaffoldingLoading] = useState(false)
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
-  const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material' | 'schulaufgaben'>('scaffolding')
-  // Cached data for all tabs (loaded in parallel)
+  const [activeTab, setActiveTab] = useState<'grunddaten' | 'geruestbau' | 'ausmass' | 'material'>('grunddaten')
+  // Scaffolding configuration from Gerüstbau tab
+  const [scaffoldingConfig, setScaffoldingConfig] = useState<ScaffoldingConfig | null>(null)
   const [ausmassData, setAusmassData] = useState<any>(null)
   const [ausmassLoading, setAusmassLoading] = useState(false)
   // Settings panel
@@ -60,33 +60,33 @@ function App() {
     }
   }
 
-  const fetchAusmassData = async (address: string, dachform = 'satteldach', breitenklasse = 'W09') => {
-    setAusmassLoading(true)
-    try {
-      const params = new URLSearchParams({
-        address,
-        system_id: 'blitz70',
-        dachform,
-        breitenklasse
-      })
-      const response = await fetch(`${API_URL}/api/v1/ausmass/komplett?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAusmassData(data)
-      }
-    } catch (err) {
-      console.error('Ausmass fetch error:', err)
-    } finally {
-      setAusmassLoading(false)
-    }
-  }
+  // TODO: Re-enable when needed
+  // const fetchAusmassData = async (address: string, dachform = 'satteldach', breitenklasse = 'W09') => {
+  //   setAusmassLoading(true)
+  //   try {
+  //     const params = new URLSearchParams({
+  //       address,
+  //       system_id: 'blitz70',
+  //       dachform,
+  //       breitenklasse
+  //     })
+  //     const response = await fetch(`${API_URL}/api/v1/ausmass/komplett?${params}`)
+  //     if (response.ok) {
+  //       const data = await response.json()
+  //       setAusmassData(data)
+  //     }
+  //   } catch (err) {
+  //     console.error('Ausmass fetch error:', err)
+  //   } finally {
+  //     setAusmassLoading(false)
+  //   }
+  // }
 
   const handleSearch = async (address: string) => {
     setLoading(true)
     setError(null)
     setResult(null)
     setScaffoldingData(null)
-    setAusmassData(null)
     setCurrentAddress(address)
 
     try {
@@ -102,9 +102,8 @@ function App() {
       const data = await response.json()
       setResult(data)
 
-      // Alle Tab-Daten parallel laden (force_refresh für aktuelle Geometrie-Daten)
+      // Lade Scaffolding-Daten (force_refresh für aktuelle Geometrie-Daten)
       fetchScaffoldingData(address, undefined, true)
-      fetchAusmassData(address)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
     } finally {
@@ -241,82 +240,56 @@ function App() {
         {/* Results */}
         {result && (
           <div className="space-y-6">
-            {/* Address Info */}
-            <div className="card">
-              <h3 className="text-lg font-semibold mb-2">📍 Gefundene Adresse</h3>
-              <p className="text-gray-700">{result.address.matched_address}</p>
-              <div className="mt-2 text-sm text-gray-500">
-                <p>
-                  Koordinaten (LV95): E {result.address.coordinates.lv95_e.toFixed(1)}, 
-                  N {result.address.coordinates.lv95_n.toFixed(1)}
-                </p>
-                <p>Konfidenz: {(result.address.confidence * 100).toFixed(0)}%</p>
-              </div>
-            </div>
-
-            {/* Buildings */}
-            <div>
-              <h3 className="text-lg font-semibold mb-4">
-                🏠 Gebäude ({result.buildings_count})
-              </h3>
-
-              {result.buildings_count === 0 ? (
-                <p className="text-gray-500">
-                  Keine Gebäude an dieser Adresse gefunden.
-                </p>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {result.buildings.map((building: BuildingInfo) => (
-                    <BuildingCard key={building.egid} building={building} />
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Gerüstbau-Daten mit Tabs */}
             {(scaffoldingLoading || scaffoldingData) && (
               <div className="space-y-4">
                 {/* Tab Navigation */}
-                <div className="flex gap-2 border-b pb-2">
+                <div className="flex flex-wrap gap-2 border-b pb-2">
                   <button
-                    onClick={() => setActiveTab('scaffolding')}
+                    onClick={() => setActiveTab('grunddaten')}
                     className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
-                      activeTab === 'scaffolding'
+                      activeTab === 'grunddaten'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    1. Grunddaten
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('geruestbau')}
+                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                      activeTab === 'geruestbau'
                         ? 'bg-red-600 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    🏗️ Gerüstbau
+                    2. Gerustbau
                   </button>
                   <button
                     onClick={() => setActiveTab('ausmass')}
+                    disabled={!scaffoldingConfig}
                     className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
                       activeTab === 'ausmass'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'bg-orange-600 text-white'
+                        : scaffoldingConfig
+                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'bg-gray-50 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    📐 NPK 114 Ausmass
+                    3. Ausmass
                   </button>
                   <button
                     onClick={() => setActiveTab('material')}
+                    disabled={!ausmassData}
                     className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
                       activeTab === 'material'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'bg-purple-600 text-white'
+                        : ausmassData
+                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'bg-gray-50 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    Materialliste
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('schulaufgaben')}
-                    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
-                      activeTab === 'schulaufgaben'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Schulaufgaben
+                    4. Material
                   </button>
                 </div>
 
@@ -329,39 +302,86 @@ function App() {
 
                 {scaffoldingData && !scaffoldingLoading && (
                   <>
-                    {activeTab === 'scaffolding' && (
-                      <ScaffoldingCard
+                    {activeTab === 'grunddaten' && (
+                      <GrunddatenCard
                         data={scaffoldingData}
-                        apiUrl={API_URL}
                         onHeightChange={handleHeightChange}
                         onFetchMeasuredHeight={handleFetchMeasuredHeight}
                         fetchingHeight={fetchingHeight}
                       />
                     )}
 
+                    {activeTab === 'geruestbau' && (
+                      <ScaffoldingCard
+                        data={scaffoldingData}
+                        apiUrl={API_URL}
+                        onCalculate={async (config) => {
+                          setScaffoldingConfig(config)
+                          setAusmassLoading(true)
+                          setActiveTab('ausmass')
+                          try {
+                            // Build selected sides data for calculation
+                            const selectedSides = scaffoldingData.sides
+                              .filter(s => config.selectedFacades.includes(s.index))
+                              .map(s => ({
+                                index: s.index,
+                                length_m: s.length_m,
+                                direction: s.direction
+                              }))
+
+                            const params = new URLSearchParams({
+                              address: currentAddress,
+                              system_id: 'blitz70',
+                              dachform: 'satteldach',
+                              breitenklasse: 'W09',
+                              work_type: config.workType,
+                              scaffold_height: config.scaffoldHeight.toString()
+                            })
+                            const response = await fetch(`${API_URL}/api/v1/ausmass/komplett?${params}`)
+                            if (response.ok) {
+                              const data = await response.json()
+                              // Add config to ausmass data
+                              data.scaffolding_config = config
+                              data.selected_sides = selectedSides
+                              setAusmassData(data)
+                            }
+                          } catch (err) {
+                            console.error('Ausmass fetch error:', err)
+                          } finally {
+                            setAusmassLoading(false)
+                          }
+                        }}
+                      />
+                    )}
+
                     {activeTab === 'ausmass' && (
-                      <AusmassCard
-                        address={currentAddress}
-                        coordinates={scaffoldingData.address?.coordinates}
-                        apiUrl={API_URL}
-                        onExport={(data) => handleExport(data, 'pdf')}
-                        cachedData={ausmassData}
-                        loading={ausmassLoading}
-                        onRefetch={(dachform, breitenklasse) => fetchAusmassData(currentAddress, dachform, breitenklasse)}
-                      />
+                      ausmassLoading ? (
+                        <div className="card text-center py-8">
+                          <p className="text-gray-500">Berechne Ausmass...</p>
+                        </div>
+                      ) : ausmassData ? (
+                        <AusmassCard
+                          data={ausmassData}
+                          onReconfigure={() => setActiveTab('geruestbau')}
+                          onContinue={() => setActiveTab('material')}
+                        />
+                      ) : (
+                        <div className="card text-center py-8">
+                          <p className="text-gray-500">Bitte zuerst Gerust konfigurieren</p>
+                          <button
+                            onClick={() => setActiveTab('geruestbau')}
+                            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                          >
+                            Zur Konfiguration
+                          </button>
+                        </div>
+                      )
                     )}
 
-                    {activeTab === 'material' && scaffoldingData.scaffolding?.estimated_scaffold_area_m2 && (
+                    {activeTab === 'material' && ausmassData && (
                       <MaterialCard
-                        scaffoldAreaM2={scaffoldingData.scaffolding.estimated_scaffold_area_m2}
-                        apiUrl={API_URL}
-                      />
-                    )}
-
-                    {activeTab === 'schulaufgaben' && (
-                      <SchulaufgabenCard
-                        address={currentAddress}
-                        apiUrl={API_URL}
+                        ausmassData={ausmassData}
+                        onBack={() => setActiveTab('ausmass')}
                       />
                     )}
 

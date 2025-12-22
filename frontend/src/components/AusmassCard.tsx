@@ -75,50 +75,21 @@ interface AusmassData {
 }
 
 interface AusmassCardProps {
-  address: string
-  coordinates?: { lv95_e: number; lv95_n: number }
-  apiUrl: string
+  data: AusmassData
+  onReconfigure?: () => void
+  onContinue?: () => void
   onExport?: (data: AusmassData) => void
-  cachedData?: AusmassData | null
-  loading?: boolean
-  onRefetch?: (dachform: string, breitenklasse: string) => void
 }
 
-export function AusmassCard({ onExport, cachedData, loading: externalLoading, onRefetch }: AusmassCardProps) {
-  const [dachform, setDachform] = useState('satteldach')
-  const [breitenklasse, setBreitenklasse] = useState('W09')
+export function AusmassCard({ data, onReconfigure, onContinue, onExport }: AusmassCardProps) {
   const [showDetails, setShowDetails] = useState(false)
-
-  // Use cached data from parent
-  const data = cachedData
-  const loading = externalLoading
-
-  const handleDachformChange = (newDachform: string) => {
-    setDachform(newDachform)
-    if (onRefetch) {
-      onRefetch(newDachform, breitenklasse)
-    }
-  }
-
-  const handleBreitenklasseChange = (newBreitenklasse: string) => {
-    setBreitenklasse(newBreitenklasse)
-    if (onRefetch) {
-      onRefetch(dachform, newBreitenklasse)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="card text-center py-8">
-        <div className="animate-spin w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full mx-auto mb-2"></div>
-        <p className="text-gray-500">Berechne NPK 114 Ausmass...</p>
-      </div>
-    )
-  }
 
   if (!data) return null
 
   const { ausmass, material, feldaufteilung, gebaeude } = data
+
+  // Extract scaffolding config if available
+  const config = (data as any).scaffolding_config
 
   return (
     <div className="card space-y-6">
@@ -126,26 +97,19 @@ export function AusmassCard({ onExport, cachedData, loading: externalLoading, on
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <span>📐</span> NPK 114 Ausmass
         </h3>
-        <div className="flex gap-2">
-          <select
-            value={dachform}
-            onChange={(e) => handleDachformChange(e.target.value)}
-            className="px-2 py-1 text-sm border rounded-lg"
-          >
-            <option value="flach">Flachdach</option>
-            <option value="satteldach">Satteldach</option>
-            <option value="walmdach">Walmdach</option>
-          </select>
-          <select
-            value={breitenklasse}
-            onChange={(e) => handleBreitenklasseChange(e.target.value)}
-            className="px-2 py-1 text-sm border rounded-lg"
-          >
-            <option value="W06">W06 (0.6m)</option>
-            <option value="W09">W09 (0.9m)</option>
-            <option value="W12">W12 (1.2m)</option>
-          </select>
-        </div>
+        {config && (
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <span className="px-2 py-1 bg-gray-100 rounded">
+              {config.selectedFacades.length} Fassaden
+            </span>
+            <span className="px-2 py-1 bg-gray-100 rounded">
+              {config.scaffoldHeight.toFixed(1)}m Hohe
+            </span>
+            <span className={`px-2 py-1 rounded ${config.workType === 'dacharbeiten' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+              {config.workType === 'dacharbeiten' ? 'Dacharbeiten' : 'Fassadenarbeiten'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Hauptkennzahlen */}
@@ -273,17 +237,35 @@ export function AusmassCard({ onExport, cachedData, loading: externalLoading, on
         </div>
       </div>
 
-      {/* Export Button */}
-      {onExport && (
-        <div className="flex justify-end">
+      {/* Navigation Buttons */}
+      <div className="flex items-center justify-between pt-4 border-t">
+        {onReconfigure && (
           <button
-            onClick={() => onExport(data)}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+            onClick={onReconfigure}
+            className="px-4 py-2 text-gray-700 border rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
-            <span>📄</span> Exportieren
+            <span>←</span> Konfiguration anpassen
           </button>
+        )}
+        <div className="flex gap-2">
+          {onExport && (
+            <button
+              onClick={() => onExport(data)}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <span>📄</span> Exportieren
+            </button>
+          )}
+          {onContinue && (
+            <button
+              onClick={onContinue}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              Zur Materialliste <span>→</span>
+            </button>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

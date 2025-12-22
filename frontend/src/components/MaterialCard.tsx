@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface MaterialItem {
   article_number: string
@@ -10,22 +10,27 @@ interface MaterialItem {
   total_weight_kg: number | null
 }
 
-interface MaterialEstimate {
-  system_id: string
-  scaffold_area_m2: number
-  materials: MaterialItem[]
-  summary: {
-    total_pieces: number
-    total_weight_kg: number
-    total_weight_tons: number
-    weight_per_m2_kg: number
+interface AusmassData {
+  material: {
+    system: string
+    liste: MaterialItem[]
+    zusammenfassung: {
+      total_stueck: number
+      total_gewicht_kg: number
+      total_gewicht_tonnen: number
+      gewicht_pro_m2_kg: number
+    }
+  }
+  ausmass: {
+    zusammenfassung: {
+      total_ausmass_m2: number
+    }
   }
 }
 
 interface MaterialCardProps {
-  scaffoldAreaM2: number
-  systemId?: string
-  apiUrl: string
+  ausmassData: AusmassData
+  onBack?: () => void
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -47,61 +52,16 @@ const CATEGORY_NAMES: Record<string, string> = {
   anchor: 'Verankerung'
 }
 
-export function MaterialCard({ scaffoldAreaM2, systemId = 'blitz70', apiUrl }: MaterialCardProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<MaterialEstimate | null>(null)
-  const [selectedSystem, setSelectedSystem] = useState(systemId)
+export function MaterialCard({ ausmassData, onBack }: MaterialCardProps) {
   const [showAllItems, setShowAllItems] = useState(false)
 
-  const fetchMaterial = async () => {
-    if (scaffoldAreaM2 <= 0) return
+  if (!ausmassData?.material) return null
 
-    setLoading(true)
-    setError(null)
-
-    try {
-      const response = await fetch(
-        `${apiUrl}/api/v1/catalog/estimate?system_id=${selectedSystem}&area_m2=${scaffoldAreaM2}`
-      )
-
-      if (!response.ok) {
-        throw new Error('Fehler beim Laden der Materialliste')
-      }
-
-      const result = await response.json()
-      setData(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchMaterial()
-  }, [scaffoldAreaM2, selectedSystem])
-
-  if (loading) {
-    return (
-      <div className="card text-center py-6">
-        <p className="text-gray-500">Lade Materialliste...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="card bg-red-50 border-red-200">
-        <p className="text-red-700">Fehler: {error}</p>
-      </div>
-    )
-  }
-
-  if (!data) return null
+  const { material, ausmass } = ausmassData
+  const scaffoldAreaM2 = ausmass.zusammenfassung.total_ausmass_m2
 
   // Group by category
-  const byCategory = data.materials.reduce((acc, item) => {
+  const byCategory = material.liste.reduce((acc, item) => {
     const cat = item.category || 'other'
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(item)
@@ -117,29 +77,24 @@ export function MaterialCard({ scaffoldAreaM2, systemId = 'blitz70', apiUrl }: M
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <span>📦</span> Materialliste
         </h3>
-        <select
-          value={selectedSystem}
-          onChange={(e) => setSelectedSystem(e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-lg"
-        >
-          <option value="blitz70">Layher Blitz 70</option>
-          <option value="allround">Layher Allround</option>
-        </select>
+        <span className="px-3 py-1.5 text-sm bg-gray-100 rounded-lg">
+          Layher {material.system === 'blitz70' ? 'Blitz 70' : 'Allround'}
+        </span>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-gray-50 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-600">Gerüstfläche</p>
-          <p className="text-xl font-bold">{data.scaffold_area_m2.toFixed(0)} m²</p>
+          <p className="text-sm text-gray-600">Gerustflache</p>
+          <p className="text-xl font-bold">{scaffoldAreaM2.toFixed(0)} m2</p>
         </div>
         <div className="bg-amber-50 rounded-lg p-4 text-center">
           <p className="text-sm text-amber-600">Materialteile</p>
-          <p className="text-xl font-bold text-amber-900">{data.summary.total_pieces.toLocaleString()}</p>
+          <p className="text-xl font-bold text-amber-900">{material.zusammenfassung.total_stueck.toLocaleString()}</p>
         </div>
         <div className="bg-blue-50 rounded-lg p-4 text-center">
           <p className="text-sm text-blue-600">Gewicht</p>
-          <p className="text-xl font-bold text-blue-900">{data.summary.total_weight_tons.toFixed(1)} t</p>
+          <p className="text-xl font-bold text-blue-900">{material.zusammenfassung.total_gewicht_tonnen.toFixed(1)} t</p>
         </div>
       </div>
 
@@ -192,12 +147,24 @@ export function MaterialCard({ scaffoldAreaM2, systemId = 'blitz70', apiUrl }: M
       {/* Weight per m² info */}
       <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
         <p>
-          <strong>Gewicht pro m² Gerüstfläche:</strong> {data.summary.weight_per_m2_kg.toFixed(1)} kg/m²
+          <strong>Gewicht pro m2 Gerustflache:</strong> {material.zusammenfassung.gewicht_pro_m2_kg.toFixed(1)} kg/m2
         </p>
         <p className="text-xs mt-1">
-          Richtwerte basierend auf Layher {selectedSystem === 'blitz70' ? 'Blitz 70' : 'Allround'} Systemgerüst
+          Richtwerte basierend auf Layher {material.system === 'blitz70' ? 'Blitz 70' : 'Allround'} Systemgerust
         </p>
       </div>
+
+      {/* Back Button */}
+      {onBack && (
+        <div className="flex items-center justify-between pt-4 border-t">
+          <button
+            onClick={onBack}
+            className="px-4 py-2 text-gray-700 border rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+          >
+            <span>←</span> Zuruck zum Ausmass
+          </button>
+        </div>
+      )}
     </div>
   )
 }
