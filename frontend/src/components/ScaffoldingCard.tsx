@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import type { ScaffoldingData } from '../types'
 import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/useUserPreferences'
 import { InteractiveFloorPlan } from './InteractiveFloorPlan'
@@ -17,52 +17,33 @@ interface ScaffoldingCardProps {
   data: ScaffoldingData
   apiUrl: string
   onCalculate?: (config: ScaffoldingConfig) => void
+  // Lifted state from App.tsx for persistence across tab switches
+  selectedFacades: number[]
+  onFacadeToggle: (index: number) => void
+  onSelectAll: () => void
+  onDeselectAll: () => void
 }
 
 export function ScaffoldingCard({
   data,
   apiUrl,
-  onCalculate
+  onCalculate,
+  selectedFacades,
+  onFacadeToggle,
+  onSelectAll,
+  onDeselectAll
 }: ScaffoldingCardProps) {
   // Work type and scaffold type configuration
   const { preferences } = useUserPreferences()
   const [workType, setWorkType] = useState<WorkType>(preferences.defaultWorkType)
   const [scaffoldType, setScaffoldType] = useState<ScaffoldType>(preferences.defaultScaffoldType)
 
-  // Facade selection state - initially all facades selected
-  const [selectedFacades, setSelectedFacades] = useState<number[]>([])
-
   const { dimensions, building, gwr_data, sides } = data
-
-  // Initialize selected facades when sides data is loaded
-  useEffect(() => {
-    if (sides && sides.length > 0 && selectedFacades.length === 0) {
-      // Select all facades by default
-      setSelectedFacades(sides.filter(s => s.length_m > 0.5).map(s => s.index))
-    }
-  }, [sides])
 
   // Calculate scaffold height based on work type
   const scaffoldHeight = workType === 'dacharbeiten'
     ? (dimensions.firsthoehe_m || dimensions.estimated_height_m || 0) + 1.0
     : (dimensions.traufhoehe_m || dimensions.estimated_height_m || 0)
-
-  // Facade selection handlers
-  const handleFacadeToggle = useCallback((index: number) => {
-    setSelectedFacades(prev =>
-      prev.includes(index)
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
-    )
-  }, [])
-
-  const handleSelectAllFacades = useCallback(() => {
-    setSelectedFacades(sides.filter(s => s.length_m > 0.5).map(s => s.index))
-  }, [sides])
-
-  const handleDeselectAllFacades = useCallback(() => {
-    setSelectedFacades([])
-  }, [])
 
   return (
     <div className="card space-y-6">
@@ -85,9 +66,9 @@ export function ScaffoldingCard({
             sides={sides}
             polygonCoordinates={data.polygon?.coordinates || []}
             selectedFacades={selectedFacades}
-            onFacadeToggle={handleFacadeToggle}
-            onSelectAll={handleSelectAllFacades}
-            onDeselectAll={handleDeselectAllFacades}
+            onFacadeToggle={onFacadeToggle}
+            onSelectAll={onSelectAll}
+            onDeselectAll={onDeselectAll}
             height={280}
             eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
             floors={dimensions.floors || gwr_data?.floors}
@@ -99,9 +80,9 @@ export function ScaffoldingCard({
         <FacadeSelectionTable
           sides={sides}
           selectedFacades={selectedFacades}
-          onFacadeToggle={handleFacadeToggle}
-          onSelectAll={handleSelectAllFacades}
-          onDeselectAll={handleDeselectAllFacades}
+          onFacadeToggle={onFacadeToggle}
+          onSelectAll={onSelectAll}
+          onDeselectAll={onDeselectAll}
           scaffoldHeight={scaffoldHeight}
           showArea={false}
         />

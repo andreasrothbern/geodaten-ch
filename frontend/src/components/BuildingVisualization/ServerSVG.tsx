@@ -63,6 +63,10 @@ interface ServerSVGProps {
   height?: number
   /** Additional CSS classes */
   className?: string
+  /** Manual eave height (Traufhöhe) to override database value */
+  traufhoehe?: number
+  /** Manual ridge height (Firsthöhe) to override database value */
+  firsthoehe?: number
 }
 
 /**
@@ -75,15 +79,17 @@ export function ServerSVG({
   apiUrl,
   width = 700,
   height = 480,
-  className = ''
+  className = '',
+  traufhoehe,
+  firsthoehe
 }: ServerSVGProps) {
   const [svg, setSvg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const fetchedRef = useRef<string | null>(null)
 
-  // Cache key
-  const cacheKey = `${type}|${address}|${width}|${height}`
+  // Cache key includes manual heights
+  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}`
 
   useEffect(() => {
     if (!address) {
@@ -115,6 +121,13 @@ export function ServerSVG({
           width: width.toString(),
           height: height.toString()
         })
+        // Add manual heights if provided
+        if (traufhoehe && traufhoehe > 0) {
+          params.set('traufhoehe', traufhoehe.toString())
+        }
+        if (firsthoehe && firsthoehe > 0) {
+          params.set('firsthoehe', firsthoehe.toString())
+        }
 
         const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
 

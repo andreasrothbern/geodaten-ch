@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { SearchForm } from './components/SearchForm'
 import { ApiStatus } from './components/ApiStatus'
-import { GrunddatenCard } from './components/GrunddatenCard'
+import { GrunddatenCard, type ManualHeights } from './components/GrunddatenCard'
 import { ScaffoldingCard, type ScaffoldingConfig } from './components/ScaffoldingCard'
 import { AusmassCard } from './components/AusmassCard'
 import { MaterialCard } from './components/MaterialCard'
@@ -26,6 +26,9 @@ function App() {
   const [scaffoldingConfig, setScaffoldingConfig] = useState<ScaffoldingConfig | null>(null)
   const [ausmassData, setAusmassData] = useState<any>(null)
   const [ausmassLoading, setAusmassLoading] = useState(false)
+  // Facade selection state (lifted from ScaffoldingCard for persistence across tab switches)
+  const [selectedFacades, setSelectedFacades] = useState<number[]>([])
+  const [facadesInitialized, setFacadesInitialized] = useState(false)
   // Settings panel
   const [settingsOpen, setSettingsOpen] = useState(false)
   useUserPreferences() // Initialize preferences on app load
@@ -39,12 +42,19 @@ function App() {
     }
   }
 
-  const fetchScaffoldingData = async (address: string, height?: number, refresh?: boolean) => {
+  const fetchScaffoldingData = async (
+    address: string,
+    heights?: ManualHeights,
+    refresh?: boolean
+  ) => {
     setScaffoldingLoading(true)
     try {
       let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
-      if (height) {
-        url += `&height=${height}`
+      if (heights?.traufhoehe_m) {
+        url += `&traufhoehe=${heights.traufhoehe_m}`
+      }
+      if (heights?.firsthoehe_m) {
+        url += `&firsthoehe=${heights.firsthoehe_m}`
       }
       if (refresh) {
         url += `&refresh=true`
@@ -53,6 +63,10 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         setScaffoldingData(data)
+        // Clear SVG cache when heights are manually set
+        if (heights?.traufhoehe_m || heights?.firsthoehe_m) {
+          clearSvgCache()
+        }
       }
     } catch (err) {
       console.error('Scaffolding fetch error:', err)
@@ -89,6 +103,11 @@ function App() {
     setResult(null)
     setScaffoldingData(null)
     setCurrentAddress(address)
+    // Reset facade selection for new address
+    setSelectedFacades([])
+    setFacadesInitialized(false)
+    setScaffoldingConfig(null)
+    setAusmassData(null)
 
     try {
       const response = await fetch(
@@ -112,11 +131,42 @@ function App() {
     }
   }
 
-  const handleHeightChange = (height: number) => {
+  const handleHeightChange = (heights: ManualHeights) => {
     if (currentAddress) {
-      fetchScaffoldingData(currentAddress, height)
+      fetchScaffoldingData(currentAddress, heights, true)
     }
   }
+
+  // Initialize facade selection when scaffolding data loads
+  useEffect(() => {
+    if (scaffoldingData?.sides && scaffoldingData.sides.length > 0 && !facadesInitialized) {
+      // Select all facades > 0.5m by default
+      const allFacadeIndices = scaffoldingData.sides
+        .filter(s => s.length_m > 0.5)
+        .map(s => s.index)
+      setSelectedFacades(allFacadeIndices)
+      setFacadesInitialized(true)
+    }
+  }, [scaffoldingData?.sides, facadesInitialized])
+
+  // Facade selection handlers (lifted from ScaffoldingCard)
+  const handleFacadeToggle = useCallback((index: number) => {
+    setSelectedFacades(prev =>
+      prev.includes(index)
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    )
+  }, [])
+
+  const handleSelectAllFacades = useCallback(() => {
+    if (scaffoldingData?.sides) {
+      setSelectedFacades(scaffoldingData.sides.filter(s => s.length_m > 0.5).map(s => s.index))
+    }
+  }, [scaffoldingData?.sides])
+
+  const handleDeselectAllFacades = useCallback(() => {
+    setSelectedFacades([])
+  }, [])
 
   const handleFetchMeasuredHeight = async () => {
     if (!scaffoldingData?.address?.coordinates || !scaffoldingData?.gwr_data?.egid) {
@@ -250,7 +300,7 @@ function App() {
         {/* Results */}
         {result && (
           <div className="space-y-6">
-            {/* Gerüstbau-Daten mit Tabs */}
+            {/* Gebäudedaten mit Tabs */}
             {(scaffoldingLoading || scaffoldingData) && (
               <div className="space-y-4">
                 {/* Tab Navigation */}
@@ -305,8 +355,8 @@ function App() {
 
                 {/* Tab Content */}
                 {scaffoldingLoading && (
-                  <div className="card text-center py-8">
-                    <p className="text-gray-500">Lade Gerüstbau-Daten...</p>
+                  <div className="card flex justify-center py-12">
+                    <div className="animate-spin w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full"></div>
                   </div>
                 )}
 
@@ -326,6 +376,10 @@ function App() {
                       <ScaffoldingCard
                         data={scaffoldingData}
                         apiUrl={API_URL}
+                        selectedFacades={selectedFacades}
+                        onFacadeToggle={handleFacadeToggle}
+                        onSelectAll={handleSelectAllFacades}
+                        onDeselectAll={handleDeselectAllFacades}
                         onCalculate={async (config) => {
                           setScaffoldingConfig(config)
                           setAusmassLoading(true)
@@ -340,24 +394,106 @@ function App() {
                                 direction: s.direction
                               }))
 
-                            const params = new URLSearchParams({
-                              address: currentAddress,
-                              system_id: 'blitz70',
-                              dachform: 'satteldach',
-                              breitenklasse: 'W09',
-                              work_type: config.workType,
-                              scaffold_height: config.scaffoldHeight.toString()
+                            // NPK 114 constants
+                            const FASSADENABSTAND = 0.30
+                            const GERUEST_BREITE = 0.70 // W09
+                            const LS = FASSADENABSTAND + GERUEST_BREITE // stirnseitig
+                            const HOEHE_ZUSCHLAG = 1.0
+                            const MIN_LAENGE = 2.5
+                            const MIN_HOEHE = 4.0
+
+                            // Calculate ausmass for each selected facade
+                            const fassaden = selectedSides.map((side, i) => {
+                              const laenge = side.length_m
+                              const hoehe = config.scaffoldHeight
+
+                              // NPK 114 formulas
+                              const ausmassLaenge = Math.max(MIN_LAENGE, LS + laenge + LS)
+                              const ausmassHoehe = Math.max(MIN_HOEHE, hoehe + HOEHE_ZUSCHLAG)
+                              const flaeche = ausmassLaenge * ausmassHoehe
+
+                              return {
+                                name: `Fassade ${side.index + 1} (${side.direction || 'N/A'})`,
+                                fassade: {
+                                  laenge_m: laenge,
+                                  hoehe_traufe_m: hoehe,
+                                  ist_giebel: false,
+                                  hoehe_first_m: null,
+                                  giebel_hoehe_m: null
+                                },
+                                ausmass: {
+                                  laenge_m: ausmassLaenge,
+                                  hoehe_m: ausmassHoehe,
+                                  flaeche_m2: flaeche
+                                },
+                                zuschlaege: {
+                                  fassadenabstand_m: FASSADENABSTAND,
+                                  geruest_breite_m: GERUEST_BREITE,
+                                  stirnseitig_m: LS,
+                                  hoehe_m: HOEHE_ZUSCHLAG
+                                }
+                              }
                             })
-                            const response = await fetch(`${API_URL}/api/v1/ausmass/komplett?${params}`)
-                            if (response.ok) {
-                              const data = await response.json()
-                              // Add config to ausmass data
-                              data.scaffolding_config = config
-                              data.selected_sides = selectedSides
-                              setAusmassData(data)
+
+                            // Calculate totals
+                            const fassadenFlaeche = fassaden.reduce((sum, f) => sum + f.ausmass.flaeche_m2, 0)
+                            const anzahlEcken = selectedSides.length
+                            // Eckzuschlag: LS × HA per corner (where adjacent facades meet)
+                            const eckZuschlag = anzahlEcken * LS * (config.scaffoldHeight + HOEHE_ZUSCHLAG)
+                            const totalAusmass = fassadenFlaeche + eckZuschlag
+
+                            // Calculate material estimates
+                            const perimeter = selectedSides.reduce((sum, s) => sum + s.length_m, 0)
+                            const materialEstimates = {
+                              total_stueck: Math.round(totalAusmass * 2.5), // rough estimate
+                              total_gewicht_kg: Math.round(totalAusmass * 45),
+                              total_gewicht_tonnen: Math.round(totalAusmass * 45) / 1000,
+                              gewicht_pro_m2_kg: 45
                             }
+
+                            // Build ausmass data structure
+                            const ausmassResult = {
+                              adresse: {
+                                eingabe: currentAddress,
+                                gefunden: scaffoldingData.address?.matched || currentAddress
+                              },
+                              gebaeude: {
+                                egid: scaffoldingData.gwr_data?.egid || null,
+                                laenge_m: Math.max(...selectedSides.map(s => s.length_m)),
+                                breite_m: Math.min(...selectedSides.map(s => s.length_m)),
+                                hoehe_traufe_m: config.scaffoldHeight,
+                                hoehe_first_m: config.workType === 'dacharbeiten' ? config.scaffoldHeight - 1.0 : null,
+                                dachform: config.workType === 'dacharbeiten' ? 'satteldach' : 'flach'
+                              },
+                              ausmass: {
+                                fassaden,
+                                zusammenfassung: {
+                                  anzahl_fassaden: fassaden.length,
+                                  anzahl_ecken: anzahlEcken,
+                                  fassaden_flaeche_m2: fassadenFlaeche,
+                                  eck_zuschlag_m2: eckZuschlag,
+                                  total_ausmass_m2: totalAusmass
+                                }
+                              },
+                              material: {
+                                system: 'blitz70',
+                                liste: [],
+                                zusammenfassung: materialEstimates
+                              },
+                              feldaufteilung: {
+                                facade_length_m: perimeter,
+                                field_count: Math.ceil(perimeter / 3.07),
+                                fields: [3.07],
+                                total_length_m: perimeter,
+                                gap_m: 0
+                              },
+                              scaffolding_config: config,
+                              selected_sides: selectedSides
+                            }
+
+                            setAusmassData(ausmassResult)
                           } catch (err) {
-                            console.error('Ausmass fetch error:', err)
+                            console.error('Ausmass calculation error:', err)
                           } finally {
                             setAusmassLoading(false)
                           }

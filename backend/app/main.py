@@ -557,7 +557,9 @@ async def get_complete_data(
 async def get_scaffolding_data(
     address: str = Query(..., min_length=5, description="Adresse"),
     egid: Optional[int] = Query(None, description="EGID (falls bekannt)"),
-    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern"),
+    height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern (deprecated, use traufhoehe/firsthoehe)"),
+    traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
     refresh: bool = Query(False, description="Cache ignorieren und neu laden"),
     work_type: str = Query("dacharbeiten", description="Arbeitstyp: dacharbeiten (First+1m) oder fassadenarbeiten (Traufe)"),
     scaffold_type: str = Query("arbeitsgeruest", description="Gerüstart: arbeitsgeruest, schutzgeruest, fanggeruest")
@@ -649,6 +651,8 @@ async def get_scaffolding_data(
                 "lv95_n": geo.coordinates.lv95_n,
             },
             egid=building.egid if building else None,
+            manual_traufhoehe=traufhoehe,
+            manual_firsthoehe=firsthoehe,
         )
 
         # 4b. Auto-Refresh: Höhen aktualisieren wenn unvollständig
@@ -674,6 +678,8 @@ async def get_scaffolding_data(
                             "lv95_n": geo.coordinates.lv95_n,
                         },
                         egid=building.egid if building else None,
+                        manual_traufhoehe=traufhoehe,
+                        manual_firsthoehe=firsthoehe,
                     )
                     scaffolding_data["height_refreshed"] = True
             except Exception as refresh_error:
@@ -1489,7 +1495,9 @@ async def berechne_komplettes_ausmass(
 async def visualize_cross_section(
     address: str,
     width: int = 700,
-    height: int = 480
+    height: int = 480,
+    traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern")
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude.
@@ -1497,6 +1505,8 @@ async def visualize_cross_section(
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
+    - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
+    - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
 
     Returns: SVG-Datei
     """
@@ -1532,7 +1542,7 @@ async def visualize_cross_section(
         else:
             length_m = width_m = 10.0
 
-        # Höhe bestimmen - zuerst aus swissBUILDINGS3D, sonst aus Geschossen
+        # Höhe bestimmen - Priorität: manuell > swissBUILDINGS3D > Geschosse
         eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
         ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
 
@@ -1549,6 +1559,12 @@ async def visualize_cross_section(
                 if measured_height_m and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
                     eave_height_m = measured_height_m * 0.85
                     ridge_height_m = measured_height_m
+
+        # Manuelle Werte überschreiben DB-Werte
+        if traufhoehe and traufhoehe > 0:
+            eave_height_m = traufhoehe
+        if firsthoehe and firsthoehe > 0:
+            ridge_height_m = firsthoehe
 
         # Auto-detect roof type from heights
         roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
@@ -1590,7 +1606,9 @@ async def visualize_cross_section(
 async def visualize_elevation(
     address: str,
     width: int = 700,
-    height: int = 480
+    height: int = 480,
+    traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -1598,6 +1616,8 @@ async def visualize_elevation(
     - **address**: Schweizer Adresse
     - **width**: SVG-Breite in Pixel (default: 700)
     - **height**: SVG-Höhe in Pixel (default: 480)
+    - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
+    - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
 
     Returns: SVG-Datei
     """
@@ -1645,6 +1665,12 @@ async def visualize_elevation(
                 if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
                     eave_height_m = gebaeudehoehe * 0.85
                     ridge_height_m = gebaeudehoehe
+
+        # Manuelle Werte überschreiben DB-Werte
+        if traufhoehe and traufhoehe > 0:
+            eave_height_m = traufhoehe
+        if firsthoehe and firsthoehe > 0:
+            ridge_height_m = firsthoehe
 
         # Auto-detect roof type from heights
         roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"

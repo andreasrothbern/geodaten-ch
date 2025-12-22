@@ -420,9 +420,19 @@ def get_height_details(
     building_category_code: Optional[int],
     manual_height: Optional[float],
     egid: Optional[int],
+    manual_traufhoehe: Optional[float] = None,
+    manual_firsthoehe: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Alle verfügbaren Höheninformationen sammeln.
+
+    Args:
+        floors: Anzahl Geschosse (aus GWR)
+        building_category_code: Gebäudekategorie-Code (aus GWR)
+        manual_height: Manuell eingegebene Gesamthöhe (deprecated)
+        egid: Eidgenössischer Gebäudeidentifikator (für DB-Lookup)
+        manual_traufhoehe: Manuell eingegebene Traufhöhe (überschreibt DB)
+        manual_firsthoehe: Manuell eingegebene Firsthöhe (überschreibt DB)
 
     Returns:
         Dictionary mit geschätzter Höhe, gemessener Höhe und Quellen
@@ -440,6 +450,8 @@ def get_height_details(
         "gebaeudehoehe_m": None,   # Gesamthöhe
         # Flag für fehlende/veraltete Daten
         "needs_height_refresh": False,
+        # Flag für manuelle Werte
+        "manual_override": False,
     }
 
     # 1. Geschätzte Höhe berechnen (immer, wenn möglich)
@@ -515,9 +527,31 @@ def get_height_details(
         except ImportError:
             pass
 
-    # 3. Aktive Höhe bestimmen (Priorität: manuell > gemessen (wenn plausibel) > geschätzt)
+    # 3. Manuelle Traufhöhe/Firsthöhe anwenden (überschreibt DB-Werte)
+    if manual_traufhoehe and manual_traufhoehe > 0:
+        result["traufhoehe_m"] = manual_traufhoehe
+        result["manual_override"] = True
+    if manual_firsthoehe and manual_firsthoehe > 0:
+        result["firsthoehe_m"] = manual_firsthoehe
+        result["manual_override"] = True
+
+    # Falls manuelle Werte gesetzt, aktualisiere auch measured_height_m
+    if result["manual_override"]:
+        # Verwende Firsthöhe als Haupthöhe (oder Traufhöhe falls kein First)
+        if result["firsthoehe_m"]:
+            result["measured_height_m"] = result["firsthoehe_m"]
+            result["measured_source"] = "manual"
+        elif result["traufhoehe_m"]:
+            result["measured_height_m"] = result["traufhoehe_m"]
+            result["measured_source"] = "manual"
+        measured_is_plausible = True  # Manuelle Werte sind immer plausibel
+
+    # 4. Aktive Höhe bestimmen (Priorität: manuell > gemessen (wenn plausibel) > geschätzt)
     if manual_height and manual_height > 0:
         result["active_height_m"] = manual_height
+        result["active_source"] = "manual"
+    elif result["manual_override"] and result["firsthoehe_m"]:
+        result["active_height_m"] = result["firsthoehe_m"]
         result["active_source"] = "manual"
     elif result["measured_height_m"] and measured_is_plausible:
         result["active_height_m"] = result["measured_height_m"]
@@ -536,6 +570,8 @@ def calculate_scaffolding_data(
     manual_height: Optional[float] = None,
     coordinates: Optional[Dict[str, float]] = None,
     egid: Optional[int] = None,
+    manual_traufhoehe: Optional[float] = None,
+    manual_firsthoehe: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Gerüstbau-relevante Daten berechnen
@@ -544,9 +580,11 @@ def calculate_scaffolding_data(
         geometry: Gebäudegeometrie aus WFS
         floors: Anzahl Geschosse (aus GWR)
         building_category_code: Gebäudekategorie (aus GWR)
-        manual_height: Manuell eingegebene Höhe
+        manual_height: Manuell eingegebene Höhe (deprecated)
         coordinates: LV95 Koordinaten für 3D Viewer Link
         egid: EGID aus GWR (hat Priorität über geometry.egid)
+        manual_traufhoehe: Manuell eingegebene Traufhöhe
+        manual_firsthoehe: Manuell eingegebene Firsthöhe
 
     Returns:
         Dictionary mit Gerüstbau-Daten
@@ -560,6 +598,8 @@ def calculate_scaffolding_data(
         building_category_code=building_category_code,
         manual_height=manual_height,
         egid=effective_egid,
+        manual_traufhoehe=manual_traufhoehe,
+        manual_firsthoehe=manual_firsthoehe,
     )
 
     height = height_info["active_height_m"]

@@ -96,16 +96,16 @@ class SVGGenerator:
         svg += '  </g>\n'
         return svg
 
-    def _npk_info_box(self, x: int, y: int, building: BuildingData, ausmass_m2: float) -> str:
-        """NPK 114 Info-Box"""
-        height_ausmass = building.eave_height_m + 1.0
+    def _building_info_box(self, x: int, y: int, building: BuildingData) -> str:
+        """Gebäude Info-Box mit Dimensionen"""
+        ridge_info = f" | First: {building.ridge_height_m:.1f}m" if building.ridge_height_m and building.ridge_height_m > building.eave_height_m else ""
         return f'''
-  <!-- NPK 114 Info -->
+  <!-- Gebäude Info -->
   <g transform="translate({x}, {y})">
     <rect x="0" y="0" width="280" height="50" fill="{self.COLORS['npk_bg']}" stroke="{self.COLORS['npk_border']}" rx="4"/>
-    <text x="10" y="15" font-family="Arial" font-size="10" font-weight="bold" fill="{self.COLORS['npk_text']}">NPK 114 Ausmass:</text>
-    <text x="10" y="30" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Ausmasshöhe: {building.eave_height_m:.1f}m + 1.0m = {height_ausmass:.1f}m</text>
-    <text x="10" y="43" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Geschosse: {building.floors or '—'} | Breitenklasse: {building.width_class} | Fläche: {ausmass_m2:.0f} m²</text>
+    <text x="10" y="15" font-family="Arial" font-size="10" font-weight="bold" fill="{self.COLORS['npk_text']}">Gebäudedaten:</text>
+    <text x="10" y="30" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Traufe: {building.eave_height_m:.1f}m{ridge_info}</text>
+    <text x="10" y="43" font-family="Arial" font-size="9" fill="{self.COLORS['text']}">Geschosse: {building.floors or '—'} | L×B: {building.length_m:.1f}m × {building.width_m:.1f}m</text>
   </g>
 '''
 
@@ -196,9 +196,8 @@ class SVGGenerator:
         ]
         svg += self._legend(width - 155, 55, legend_items)
 
-        # NPK 114 Info
-        ausmass_m2 = (building.width_m + 2) * (building.eave_height_m + 1) * 2
-        svg += self._npk_info_box(margin['left'], height - 65, building, ausmass_m2)
+        # Gebäude Info
+        svg += self._building_info_box(margin['left'], height - 65, building)
 
         # Massstab
         svg += self._scale_bar(width - 140, height - 35, scale, 10)
@@ -432,9 +431,8 @@ class SVGGenerator:
         ]
         svg += self._legend(width - 155, 55, legend_items)
 
-        # NPK 114 Info
-        ausmass_m2 = (building.length_m + 2) * (building.eave_height_m + 1)
-        svg += self._npk_info_box(margin['left'], height - 65, building, ausmass_m2)
+        # Gebäude Info
+        svg += self._building_info_box(margin['left'], height - 65, building)
 
         # Massstab
         svg += self._scale_bar(width - 140, height - 35, scale, 10)
@@ -499,11 +497,8 @@ class SVGGenerator:
         ]
         svg += self._legend(width - 155, 55, legend_items)
 
-        # NPK 114 Info
-        area = building.area_m2 or (building.length_m * building.width_m)
-        perimeter = 2 * (building.length_m + building.width_m)
-        ausmass_m2 = (perimeter + 8) * (building.eave_height_m + 1)  # +8 für Ecken
-        svg += self._npk_info_box(margin['left'], height - 65, building, ausmass_m2)
+        # Gebäude Info
+        svg += self._building_info_box(margin['left'], height - 65, building)
 
         # Massstab
         svg += self._scale_bar(30, height - 35, scale, 10)

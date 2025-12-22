@@ -6,19 +6,24 @@
  * - GWR data (EGID, floors, area, etc.)
  * - Height data (estimated + measured from swissBUILDINGS3D)
  * - Building visualization (cross-section, elevation, floor plan)
- * - Manual height input option
+ * - Manual height input option for Traufe and First
  */
 
 import { useState, useEffect } from 'react'
 import type { ScaffoldingData } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 
+export interface ManualHeights {
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+}
+
 interface GrunddatenCardProps {
   data: ScaffoldingData
   apiUrl: string
   onFetchMeasuredHeight?: () => void
   fetchingHeight?: boolean
-  onHeightChange?: (height: number) => void
+  onHeightChange?: (heights: ManualHeights) => void
 }
 
 export function GrunddatenCard({
@@ -28,15 +33,36 @@ export function GrunddatenCard({
   fetchingHeight = false,
   onHeightChange
 }: GrunddatenCardProps) {
-  const [manualHeight, setManualHeight] = useState<string>('')
+  const [manualTraufe, setManualTraufe] = useState<string>('')
+  const [manualFirst, setManualFirst] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
   const { dimensions, gwr_data, building, address } = data
 
+  // Initialize manual inputs with current values if they exist
+  useEffect(() => {
+    if (dimensions.traufhoehe_m && !manualTraufe) {
+      setManualTraufe(dimensions.traufhoehe_m.toFixed(1))
+    }
+    if (dimensions.firsthoehe_m && !manualFirst) {
+      setManualFirst(dimensions.firsthoehe_m.toFixed(1))
+    }
+  }, [dimensions.traufhoehe_m, dimensions.firsthoehe_m])
+
   const handleManualHeightSubmit = () => {
-    const height = parseFloat(manualHeight)
-    if (!isNaN(height) && height > 0 && onHeightChange) {
-      onHeightChange(height)
-      setManualHeight('')
+    const traufe = parseFloat(manualTraufe)
+    const first = parseFloat(manualFirst)
+
+    if (onHeightChange) {
+      const heights: ManualHeights = {}
+      if (!isNaN(traufe) && traufe > 0) {
+        heights.traufhoehe_m = traufe
+      }
+      if (!isNaN(first) && first > 0) {
+        heights.firsthoehe_m = first
+      }
+      if (Object.keys(heights).length > 0) {
+        onHeightChange(heights)
+      }
     }
   }
 
@@ -140,56 +166,76 @@ export function GrunddatenCard({
             </p>
           </div>
 
-          {/* Measured Heights from swissBUILDINGS3D */}
-          {hasMeasuredHeight ? (
-            <>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-xs text-green-600 mb-1">Traufhohe (gemessen)</p>
-                <p className="text-2xl font-bold text-green-700">
-                  {dimensions.traufhoehe_m?.toFixed(1) || '-'} m
-                </p>
-                <p className="text-xs text-green-500 mt-1">swissBUILDINGS3D</p>
-              </div>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-xs text-green-600 mb-1">Firsthohe (gemessen)</p>
-                <p className="text-2xl font-bold text-green-700">
-                  {dimensions.firsthoehe_m?.toFixed(1) || '-'} m
-                </p>
-                <p className="text-xs text-green-500 mt-1">swissBUILDINGS3D</p>
-              </div>
-            </>
-          ) : (
-            <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <p className="text-amber-700 text-sm">
-                Keine gemessenen Hohen verfugbar. Klicken Sie auf "Hohe aus swissBUILDINGS3D abrufen"
-                oder geben Sie die Hohe manuell ein.
-              </p>
-            </div>
-          )}
+          {/* Traufhöhe */}
+          <div className={`rounded-lg p-4 ${dimensions.traufhoehe_m ? 'bg-green-50 border border-green-200' : 'bg-gray-100'}`}>
+            <p className={`text-xs mb-1 ${dimensions.traufhoehe_m ? 'text-green-600' : 'text-gray-500'}`}>
+              Traufhohe {dimensions.traufhoehe_m ? '(gemessen)' : '(nicht verfugbar)'}
+            </p>
+            <p className={`text-2xl font-bold ${dimensions.traufhoehe_m ? 'text-green-700' : 'text-gray-400'}`}>
+              {dimensions.traufhoehe_m?.toFixed(1) || '-'} m
+            </p>
+            {dimensions.traufhoehe_m && (
+              <p className="text-xs text-green-500 mt-1">swissBUILDINGS3D</p>
+            )}
+          </div>
+
+          {/* Firsthöhe */}
+          <div className={`rounded-lg p-4 ${dimensions.firsthoehe_m ? 'bg-green-50 border border-green-200' : 'bg-gray-100'}`}>
+            <p className={`text-xs mb-1 ${dimensions.firsthoehe_m ? 'text-green-600' : 'text-gray-500'}`}>
+              Firsthohe {dimensions.firsthoehe_m ? '(gemessen)' : '(nicht verfugbar)'}
+            </p>
+            <p className={`text-2xl font-bold ${dimensions.firsthoehe_m ? 'text-green-700' : 'text-gray-400'}`}>
+              {dimensions.firsthoehe_m?.toFixed(1) || '-'} m
+            </p>
+            {dimensions.firsthoehe_m && (
+              <p className="text-xs text-green-500 mt-1">swissBUILDINGS3D</p>
+            )}
+          </div>
         </div>
 
-        {/* Manual Height Input */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-600 mb-2">Manuelle Hoheneingabe (falls keine Daten verfugbar)</p>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              step="0.1"
-              min="1"
-              max="100"
-              value={manualHeight}
-              onChange={(e) => setManualHeight(e.target.value)}
-              placeholder="Hohe in Metern"
-              className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-            <button
-              onClick={handleManualHeightSubmit}
-              disabled={!manualHeight || parseFloat(manualHeight) <= 0}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-            >
-              Ubernehmen
-            </button>
+        {/* Manual Height Input for Traufe and First */}
+        <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-gray-600 font-medium">
+            Manuelle Hoheneingabe (falls Daten falsch oder nicht verfugbar)
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Traufhohe (m)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1"
+                max="100"
+                value={manualTraufe}
+                onChange={(e) => setManualTraufe(e.target.value)}
+                placeholder={dimensions.traufhoehe_m?.toFixed(1) || 'z.B. 8.5'}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Firsthohe (m)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="1"
+                max="100"
+                value={manualFirst}
+                onChange={(e) => setManualFirst(e.target.value)}
+                placeholder={dimensions.firsthoehe_m?.toFixed(1) || 'z.B. 12.0'}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+              />
+            </div>
           </div>
+          <button
+            onClick={handleManualHeightSubmit}
+            disabled={(!manualTraufe || parseFloat(manualTraufe) <= 0) && (!manualFirst || parseFloat(manualFirst) <= 0)}
+            className="w-full md:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors text-sm"
+          >
+            Hohen ubernehmen
+          </button>
+          <p className="text-xs text-gray-400">
+            Hinweis: Manuelle Eingaben uberschreiben die gemessenen Werte fur die Berechnung.
+          </p>
         </div>
 
         {/* Current Active Height */}
@@ -271,7 +317,7 @@ export function GrunddatenCard({
 
               {/* Download Button */}
               <a
-                href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700`}
+                href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700${dimensions.traufhoehe_m ? `&traufhoehe=${dimensions.traufhoehe_m}` : ''}${dimensions.firsthoehe_m ? `&firsthoehe=${dimensions.firsthoehe_m}` : ''}`}
                 download={`${activeVizTab}_${data.address.matched.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -289,6 +335,8 @@ export function GrunddatenCard({
                 apiUrl={apiUrl}
                 width={650}
                 height={activeVizTab === 'floor-plan' ? 450 : 400}
+                traufhoehe={dimensions.traufhoehe_m || undefined}
+                firsthoehe={dimensions.firsthoehe_m || undefined}
               />
             </div>
           </div>
