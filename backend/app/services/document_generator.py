@@ -38,9 +38,18 @@ except ImportError:
     Inches = Pt = Cm = RGBColor = None
     WD_ALIGN_PARAGRAPH = WD_TABLE_ALIGNMENT = WD_STYLE_TYPE = None
 
-# SVG to PNG conversion - optional (requires system libraries)
-CAIROSVG_AVAILABLE = False
+# SVG to PNG conversion - svglib + reportlab (pure Python)
+SVGLIB_AVAILABLE = False
 
+try:
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPM
+    SVGLIB_AVAILABLE = True
+except Exception:
+    pass
+
+# Fallback: cairosvg (requires Cairo C-library)
+CAIROSVG_AVAILABLE = False
 try:
     import cairosvg
     CAIROSVG_AVAILABLE = True
@@ -1099,18 +1108,42 @@ class DocumentGenerator:
     def _svg_to_png(self, svg_content: str) -> Optional[BytesIO]:
         """Konvertiert SVG zu PNG für Word-Embedding.
 
-        Benötigt cairosvg mit Cairo-Systembibliothek.
-        Gibt None zurück wenn nicht verfügbar.
+        Versucht in dieser Reihenfolge:
+        1. svglib + reportlab (pure Python)
+        2. cairosvg (benötigt Cairo C-Library)
         """
         if not svg_content:
             return None
 
+        # Methode 1: svglib + reportlab (pure Python, funktioniert überall)
+        if SVGLIB_AVAILABLE:
+            try:
+                # SVG-String in temporäre Datei schreiben
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False, encoding='utf-8') as f:
+                    f.write(svg_content)
+                    temp_svg_path = f.name
+
+                try:
+                    drawing = svg2rlg(temp_svg_path)
+                    if drawing:
+                        png_buffer = BytesIO()
+                        renderPM.drawToFile(drawing, png_buffer, fmt='PNG', dpi=150)
+                        png_buffer.seek(0)
+                        return png_buffer
+                finally:
+                    os.unlink(temp_svg_path)
+            except Exception as e:
+                print(f"svglib SVG-to-PNG error: {e}")
+
+        # Methode 2: cairosvg (Fallback, braucht Cairo)
         if CAIROSVG_AVAILABLE:
             try:
                 png_bytes = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
                 return BytesIO(png_bytes)
             except Exception as e:
-                print(f"SVG-to-PNG error: {e}")
+                print(f"cairosvg SVG-to-PNG error: {e}")
 
         return None
 
