@@ -636,6 +636,43 @@ async def get_scaffolding_data(
         }
 
         cache.set(cache_key, result, ttl_hours=24)
+
+        # Also populate shared cache for document generation
+        try:
+            from app.services.data_cache import CachedAddressData, set_cached_data
+            import time
+
+            # Get dimensions from scaffolding data
+            dims = scaffolding_data.get("dimensions", {})
+            bounding = scaffolding_data.get("building", {}).get("bounding_box", {})
+
+            shared_data = CachedAddressData(
+                address_input=address,
+                address_matched=geo.matched_address,
+                cached_at=time.time(),
+                lv95_e=geo.coordinates.lv95_e,
+                lv95_n=geo.coordinates.lv95_n,
+                egid=building.egid if building else (geometry.egid if geometry else None),
+                floors=building.floors if building else None,
+                area_m2=building.area_m2 if building else None,
+                building_category=building.building_category if building else None,
+                construction_year=building.construction_year if building else None,
+                length_m=bounding.get("depth_m", 10.0),
+                width_m=bounding.get("width_m", 10.0),
+                eave_height_m=dims.get("traufhoehe_m") or dims.get("estimated_height_m", 8.0),
+                ridge_height_m=dims.get("firsthoehe_m"),
+                perimeter_m=dims.get("perimeter_m", 40.0),
+                traufhoehe_m=dims.get("traufhoehe_m"),
+                firsthoehe_m=dims.get("firsthoehe_m"),
+                gebaeudehoehe_m=dims.get("gebaeudehoehe_m"),
+                sides=scaffolding_data.get("sides", []),
+                polygon_coordinates=scaffolding_data.get("polygon", {}).get("coordinates", []),
+                viewer_3d_url=result.get("viewer_3d_url")
+            )
+            set_cached_data(shared_data)
+        except Exception as cache_err:
+            print(f"Failed to populate shared cache: {cache_err}")
+
         return result
 
     except HTTPException:
