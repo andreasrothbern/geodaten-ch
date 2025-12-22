@@ -167,6 +167,32 @@ npx @railway/cli volume add --mount-path /app/data
 - [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
 - [ ] Custom Domain
 
+## ACHTUNG: Technische Schulden
+
+### Höhendatenbank - Zwei Tabellen (BEREINIGEN!)
+
+Es gibt **zwei** SQLite-Tabellen für Höhendaten in `building_heights.db`:
+
+1. **`building_heights`** (Legacy)
+   - Felder: `egid`, `height_m`, `height_type`, `source`
+   - Einfache Struktur, nur eine Höhe pro Gebäude
+
+2. **`building_heights_detailed`** (Neu)
+   - Felder: `egid`, `traufhoehe_m`, `firsthoehe_m`, `gebaeudehoehe_m`, `dach_max_m`, `dach_min_m`, `terrain_m`, `source`
+   - Detaillierte Struktur für Gerüstbau
+
+**Problem:** Der On-Demand Import schreibt in BEIDE Tabellen, aber nicht immer konsistent. Die Abfrage in `geodienste.py` prüft zuerst `detailed`, dann `legacy` als Fallback.
+
+**TODO:** Eine der Tabellen entfernen und nur noch `building_heights_detailed` verwenden. Die Legacy-Tabelle migrieren oder löschen.
+
+### Debug-Code entfernen
+
+Nach dem Fix vom 22.12.2025 gibt es temporären Debug-Code:
+- `_height_debug` in API Response (`geodienste.py`)
+- `[DEBUG]` Console-Logs im Frontend (`App.tsx`)
+
+Kann entfernt werden sobald das Höhen-Feature stabil läuft.
+
 ## Lokale Entwicklung
 
 ```bash
