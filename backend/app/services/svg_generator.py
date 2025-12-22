@@ -500,8 +500,8 @@ class SVGGenerator:
         # Gebäude Info
         svg += self._building_info_box(margin['left'], height - 65, building)
 
-        # Massstab
-        svg += self._scale_bar(30, height - 35, scale, 10)
+        # Massstab (rechts wie bei Schnitt/Ansicht)
+        svg += self._scale_bar(width - 140, height - 35, scale, 10)
 
         # Nordpfeil
         svg += self._north_arrow(width - 40, height - 50)
