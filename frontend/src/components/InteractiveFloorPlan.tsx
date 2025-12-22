@@ -5,7 +5,7 @@
  * Allows users to select/deselect individual facades for scaffolding calculation.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { ScaffoldingSide } from '../types'
 
 interface InteractiveFloorPlanProps {

@@ -27,7 +27,7 @@ function App() {
   const [ausmassLoading, setAusmassLoading] = useState(false)
   // Settings panel
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const { preferences } = useUserPreferences()
+  useUserPreferences() // Initialize preferences on app load
 
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)

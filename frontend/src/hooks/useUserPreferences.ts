@@ -119,5 +119,4 @@ export function useUserPreferences() {
   }
 }
 
-// Export types for use in other components
-export type { UserPreferences }
+// Types are already exported above (export interface/type)

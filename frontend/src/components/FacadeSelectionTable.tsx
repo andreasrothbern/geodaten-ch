@@ -37,7 +37,7 @@ export function FacadeSelectionTable({
   const selectedArea = selectedLength * scaffoldHeight
 
   const totalLength = relevantSides.reduce((sum, s) => sum + s.length_m, 0)
-  const totalArea = totalLength * scaffoldHeight
+  // totalArea available for future use: totalLength * scaffoldHeight
 
   return (
     <div className="space-y-3">

@@ -22,15 +22,9 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
-  const { preferences, updatePreferences, resetPreferences, DEFAULT_PREFERENCES } = useUserPreferences()
+  const { preferences, updatePreferences, DEFAULT_PREFERENCES } = useUserPreferences()
   const [localPrefs, setLocalPrefs] = useState(preferences)
   const [saved, setSaved] = useState(false)
-
-  // Reset local state when panel opens
-  const handleOpen = () => {
-    setLocalPrefs(preferences)
-    setSaved(false)
-  }
 
   const handleSave = () => {
     updatePreferences(localPrefs)

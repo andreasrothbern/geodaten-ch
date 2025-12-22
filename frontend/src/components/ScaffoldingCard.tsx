@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ScaffoldingData, ScaffoldingSide } from '../types'
+import type { ScaffoldingData } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/useUserPreferences'
 import { InteractiveFloorPlan } from './InteractiveFloorPlan'
@@ -24,7 +24,7 @@ export function ScaffoldingCard({
   onFetchMeasuredHeight,
   fetchingHeight = false
 }: ScaffoldingCardProps) {
-  const [showAllSides, setShowAllSides] = useState(false)
+  // showAllSides state removed - now using FacadeSelectionTable
   const [manualHeight, setManualHeight] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
 
@@ -78,9 +78,7 @@ export function ScaffoldingCard({
   // Check if measured height can be fetched (not already from database)
   const canFetchMeasuredHeight = !isFromDatabase(dimensions.height_source) && onFetchMeasuredHeight
 
-  // Nur relevante Seiten anzeigen (> 1m)
-  const relevantSides = sides.filter((s) => s.length_m > 1)
-  const displaySides = showAllSides ? relevantSides : relevantSides.slice(0, 8)
+  // Filtering now done in FacadeSelectionTable component
 
   const handleHeightSubmit = () => {
     const height = parseFloat(manualHeight)
