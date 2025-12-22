@@ -3,6 +3,9 @@ Claude-basierter SVG Generator Service
 
 Verwendet die Anthropic Claude API, um hochwertige SVG-Visualisierungen
 für Gebäude zu generieren. Die SVGs werden gecached, um API-Kosten zu sparen.
+
+Bei API-Fehlern (kein Guthaben, etc.) wird automatisch auf den
+einfachen SVG-Generator zurückgefallen.
 """
 
 import hashlib
@@ -21,6 +24,9 @@ try:
 except ImportError:
     pass
 
+# Fallback Generator importieren
+from app.services.svg_generator import SVGGenerator, BuildingData as FallbackBuildingData
+
 
 @dataclass
 class BuildingData:
@@ -38,7 +44,7 @@ class BuildingData:
 
 
 class ClaudeSVGGenerator:
-    """Generiert SVGs mittels Claude API"""
+    """Generiert SVGs mittels Claude API mit Fallback auf einfachen Generator"""
 
     # Cache-Datenbank
     CACHE_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'svg_cache.db')
@@ -49,6 +55,22 @@ class ClaudeSVGGenerator:
     def __init__(self):
         self._init_cache()
         self._init_client()
+        self._fallback_generator = SVGGenerator()  # Fallback bei API-Fehler
+
+    def _to_fallback_data(self, building: BuildingData) -> FallbackBuildingData:
+        """Konvertiert BuildingData zu FallbackBuildingData"""
+        return FallbackBuildingData(
+            address=building.address,
+            egid=building.egid,
+            length_m=building.length_m,
+            width_m=building.width_m,
+            eave_height_m=building.eave_height_m,
+            ridge_height_m=building.ridge_height_m,
+            floors=building.floors,
+            roof_type=building.roof_type,
+            area_m2=building.area_m2,
+            width_class=building.width_class,
+        )
 
     def _init_client(self):
         """Initialisiert den Anthropic Client"""
@@ -208,8 +230,12 @@ Antworte NUR mit dem SVG-Code, keine Erklärungen."""
 
         if svg:
             self._cache_svg(cache_key, "cross_section", svg)
+            return svg
 
-        return svg
+        # Fallback auf einfachen Generator
+        print("Claude API fehlgeschlagen - verwende Fallback-Generator für cross_section")
+        fallback_data = self._to_fallback_data(building)
+        return self._fallback_generator.generate_cross_section(fallback_data, width, height)
 
     def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480) -> Optional[str]:
         """Generiert Fassadenansicht-SVG via Claude"""
@@ -271,8 +297,12 @@ Antworte NUR mit dem SVG-Code."""
 
         if svg:
             self._cache_svg(cache_key, "elevation", svg)
+            return svg
 
-        return svg
+        # Fallback auf einfachen Generator
+        print("Claude API fehlgeschlagen - verwende Fallback-Generator für elevation")
+        fallback_data = self._to_fallback_data(building)
+        return self._fallback_generator.generate_elevation(fallback_data, width, height)
 
     def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500) -> Optional[str]:
         """Generiert Grundriss-SVG via Claude"""
@@ -330,8 +360,12 @@ Antworte NUR mit dem SVG-Code."""
 
         if svg:
             self._cache_svg(cache_key, "floor_plan", svg)
+            return svg
 
-        return svg
+        # Fallback auf einfachen Generator
+        print("Claude API fehlgeschlagen - verwende Fallback-Generator für floor_plan")
+        fallback_data = self._to_fallback_data(building)
+        return self._fallback_generator.generate_floor_plan(fallback_data, width, height)
 
     def is_available(self) -> bool:
         """Prüft ob der Service verfügbar ist"""
