@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 
 from app.services.swisstopo import SwisstopoService
 from app.services.cache import CacheService
