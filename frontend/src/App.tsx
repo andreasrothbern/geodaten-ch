@@ -33,6 +33,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   useUserPreferences() // Initialize preferences on app load
 
+  const normalizeAddress = (addr: string) => addr.toLowerCase().trim().replace(/\s+/g, ' ')
+
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)
     if (format === 'csv') {
@@ -98,16 +100,23 @@ function App() {
   // }
 
   const handleSearch = async (address: string) => {
+    // Check if we already have data for this address (use existing state)
+    const isSameAddress = normalizeAddress(address) === normalizeAddress(currentAddress)
+    const hasExistingData = isSameAddress && scaffoldingData !== null
+
     setLoading(true)
     setError(null)
     setResult(null)
-    setScaffoldingData(null)
+
+    // Only reset data if it's a different address
+    if (!isSameAddress) {
+      setScaffoldingData(null)
+      setSelectedFacades([])
+      setFacadesInitialized(false)
+      setScaffoldingConfig(null)
+      setAusmassData(null)
+    }
     setCurrentAddress(address)
-    // Reset facade selection for new address
-    setSelectedFacades([])
-    setFacadesInitialized(false)
-    setScaffoldingConfig(null)
-    setAusmassData(null)
 
     try {
       const response = await fetch(
@@ -122,8 +131,10 @@ function App() {
       const data = await response.json()
       setResult(data)
 
-      // Lade Scaffolding-Daten (force_refresh für aktuelle Geometrie-Daten)
-      fetchScaffoldingData(address, undefined, true)
+      // Lade Scaffolding-Daten nur wenn noch nicht vorhanden
+      if (!hasExistingData) {
+        fetchScaffoldingData(address)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
     } finally {
