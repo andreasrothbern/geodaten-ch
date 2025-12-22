@@ -62,7 +62,39 @@ export function InteractiveFloorPlan({
     }
   }, [address, apiUrl, height])
 
-  // Add click handlers to facade segments after SVG is loaded
+  // Add click handlers to facade segments after SVG is loaded (only once)
+  useEffect(() => {
+    if (!containerRef.current || !svgContent) return
+
+    const container = containerRef.current
+    const segments = container.querySelectorAll('.facade-segment')
+    const handlers: Array<{ element: Element; handler: () => void }> = []
+
+    segments.forEach((segment) => {
+      const indexAttr = segment.getAttribute('data-facade-index')
+      if (indexAttr !== null) {
+        const index = parseInt(indexAttr, 10)
+
+        // Add click handler
+        const handleClick = () => {
+          console.log('Facade clicked:', index)
+          onFacadeToggle(index)
+        }
+
+        segment.addEventListener('click', handleClick)
+        handlers.push({ element: segment, handler: handleClick })
+      }
+    })
+
+    // Cleanup - remove all listeners when effect re-runs or unmounts
+    return () => {
+      handlers.forEach(({ element, handler }) => {
+        element.removeEventListener('click', handler)
+      })
+    }
+  }, [svgContent, onFacadeToggle]) // Note: removed selectedFacades from dependencies
+
+  // Update visual selection state separately (without re-attaching listeners)
   useEffect(() => {
     if (!containerRef.current || !svgContent) return
 
@@ -80,21 +112,9 @@ export function InteractiveFloorPlan({
         } else {
           segment.classList.remove('selected')
         }
-
-        // Add click handler
-        const handleClick = () => {
-          onFacadeToggle(index)
-        }
-
-        segment.addEventListener('click', handleClick)
-
-        // Cleanup
-        return () => {
-          segment.removeEventListener('click', handleClick)
-        }
       }
     })
-  }, [svgContent, selectedFacades, onFacadeToggle])
+  }, [svgContent, selectedFacades])
 
   // Calculate summary stats
   const selectedCount = selectedFacades.length
