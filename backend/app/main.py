@@ -362,6 +362,140 @@ async def lookup_address(
 
 
 # ============================================================================
+# Complete Data Endpoint (All data at once, cached)
+# ============================================================================
+
+@app.get("/api/v1/data/complete",
+         tags=["Daten"])
+async def get_complete_data(
+    address: str = Query(..., min_length=5, description="Adresse"),
+    system_id: str = Query("blitz70", description="Gerüstsystem"),
+    dachform: str = Query("satteldach", description="Dachform"),
+    breitenklasse: str = Query("W09", description="Breitenklasse"),
+    force_refresh: bool = Query(False, description="Cache ignorieren")
+):
+    """
+    Alle Daten für eine Adresse auf einmal abrufen.
+
+    Liefert gecached:
+    - Gebäudedaten (GWR)
+    - Geometrie und Dimensionen
+    - Scaffolding-Daten
+    - NPK 114 Ausmass
+    - Materialliste
+
+    **Verwende diesen Endpoint für effizientes Laden.**
+    Ein Aufruf, alle Daten - kein Neuladen bei Tab-Wechsel.
+    """
+    import math
+    from app.services.data_cache import get_cached_data, set_cached_data, CachedAddressData, fetch_and_cache_complete_data
+    from app.services.npk114_calculator import NPK114Calculator, WidthClass
+    from app.services.layher_catalog import get_catalog_service
+    import time
+
+    try:
+        # Check cache first
+        cached = get_cached_data(address)
+        if cached and not force_refresh:
+            # Build complete response from cache
+            pass
+        else:
+            # Fetch and cache basic data
+            cached = await fetch_and_cache_complete_data(
+                address, swisstopo, geodienste, force_refresh=force_refresh
+            )
+
+        # Now compute ausmass and material (these depend on user inputs)
+        laenge = cached.length_m
+        breite = cached.width_m
+        hoehe_traufe = cached.eave_height_m
+        hoehe_first = cached.ridge_height_m
+
+        # NPK 114 Ausmass
+        wk = WidthClass[breitenklasse]
+        calc = NPK114Calculator(breitenklasse=wk)
+        ausmass = calc.berechne_rechteckiges_gebaeude(
+            laenge_m=laenge,
+            breite_m=breite,
+            hoehe_traufe_m=hoehe_traufe,
+            hoehe_first_m=hoehe_first,
+            dachform=dachform
+        )
+
+        # Material
+        catalog = get_catalog_service()
+        total_flaeche = ausmass.total_ausmass_m2
+        material_liste = catalog.estimate_material_quantities(system_id, total_flaeche)
+        feldaufteilung = catalog.calculate_field_layout(system_id, laenge)
+
+        # Material summary
+        total_stueck = sum(m['quantity_typical'] for m in material_liste)
+        total_gewicht = sum(m['total_weight_kg'] or 0 for m in material_liste)
+
+        # Build complete response
+        return {
+            "address": {
+                "input": address,
+                "matched": cached.address_matched,
+                "coordinates": {
+                    "lv95_e": cached.lv95_e,
+                    "lv95_n": cached.lv95_n
+                }
+            },
+            "building": {
+                "egid": cached.egid,
+                "floors": cached.floors,
+                "area_m2": cached.area_m2,
+                "category": cached.building_category,
+                "construction_year": cached.construction_year
+            },
+            "dimensions": {
+                "length_m": laenge,
+                "width_m": breite,
+                "perimeter_m": cached.perimeter_m,
+                "eave_height_m": hoehe_traufe,
+                "ridge_height_m": hoehe_first,
+                "traufhoehe_m": cached.traufhoehe_m,
+                "firsthoehe_m": cached.firsthoehe_m,
+                "gebaeudehoehe_m": cached.gebaeudehoehe_m
+            },
+            "geometry": {
+                "sides": cached.sides,
+                "polygon_coordinates": cached.polygon_coordinates
+            },
+            "ausmass": ausmass.to_dict(),
+            "material": {
+                "system": system_id,
+                "liste": material_liste,
+                "zusammenfassung": {
+                    "total_stueck": total_stueck,
+                    "total_gewicht_kg": total_gewicht,
+                    "total_gewicht_tonnen": round(total_gewicht / 1000, 2),
+                    "gewicht_pro_m2_kg": round(total_gewicht / total_flaeche, 1) if total_flaeche > 0 else 0
+                }
+            },
+            "feldaufteilung": feldaufteilung,
+            "viewer_3d_url": cached.viewer_3d_url,
+            "parameters": {
+                "dachform": dachform,
+                "breitenklasse": breitenklasse,
+                "system_id": system_id
+            },
+            "cached": not force_refresh,
+            "cached_at": cached.cached_at
+        }
+
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Ungültiger Parameter: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Gerüstbau-Daten (Gebäudegeometrie)
 # ============================================================================
 
