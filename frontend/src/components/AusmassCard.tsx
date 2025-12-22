@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface FassadeAusmass {
   name: string
@@ -79,64 +79,39 @@ interface AusmassCardProps {
   coordinates?: { lv95_e: number; lv95_n: number }
   apiUrl: string
   onExport?: (data: AusmassData) => void
+  cachedData?: AusmassData | null
+  loading?: boolean
+  onRefetch?: (dachform: string, breitenklasse: string) => void
 }
 
-export function AusmassCard({ address, apiUrl, onExport }: AusmassCardProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<AusmassData | null>(null)
+export function AusmassCard({ onExport, cachedData, loading: externalLoading, onRefetch }: AusmassCardProps) {
   const [dachform, setDachform] = useState('satteldach')
   const [breitenklasse, setBreitenklasse] = useState('W09')
-  const [system] = useState('blitz70')
   const [showDetails, setShowDetails] = useState(false)
 
-  const fetchAusmass = async () => {
-    if (!address) return
+  // Use cached data from parent
+  const data = cachedData
+  const loading = externalLoading
 
-    setLoading(true)
-    setError(null)
-
-    try {
-      const params = new URLSearchParams({
-        address,
-        system_id: system,
-        dachform,
-        breitenklasse
-      })
-
-      const response = await fetch(`${apiUrl}/api/v1/ausmass/komplett?${params}`)
-
-      if (!response.ok) {
-        const errData = await response.json()
-        throw new Error(errData.detail || 'Fehler bei Ausmass-Berechnung')
-      }
-
-      const result = await response.json()
-      setData(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
-    } finally {
-      setLoading(false)
+  const handleDachformChange = (newDachform: string) => {
+    setDachform(newDachform)
+    if (onRefetch) {
+      onRefetch(newDachform, breitenklasse)
     }
   }
 
-  useEffect(() => {
-    fetchAusmass()
-  }, [address, dachform, breitenklasse, system])
+  const handleBreitenklasseChange = (newBreitenklasse: string) => {
+    setBreitenklasse(newBreitenklasse)
+    if (onRefetch) {
+      onRefetch(dachform, newBreitenklasse)
+    }
+  }
 
   if (loading) {
     return (
       <div className="card text-center py-8">
         <div className="animate-spin w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full mx-auto mb-2"></div>
         <p className="text-gray-500">Berechne NPK 114 Ausmass...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="card bg-red-50 border-red-200">
-        <p className="text-red-700">Fehler: {error}</p>
       </div>
     )
   }
@@ -154,7 +129,7 @@ export function AusmassCard({ address, apiUrl, onExport }: AusmassCardProps) {
         <div className="flex gap-2">
           <select
             value={dachform}
-            onChange={(e) => setDachform(e.target.value)}
+            onChange={(e) => handleDachformChange(e.target.value)}
             className="px-2 py-1 text-sm border rounded-lg"
           >
             <option value="flach">Flachdach</option>
@@ -163,7 +138,7 @@ export function AusmassCard({ address, apiUrl, onExport }: AusmassCardProps) {
           </select>
           <select
             value={breitenklasse}
-            onChange={(e) => setBreitenklasse(e.target.value)}
+            onChange={(e) => handleBreitenklasseChange(e.target.value)}
             className="px-2 py-1 text-sm border rounded-lg"
           >
             <option value="W06">W06 (0.6m)</option>

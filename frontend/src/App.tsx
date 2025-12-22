@@ -20,6 +20,9 @@ function App() {
   const [currentAddress, setCurrentAddress] = useState<string>('')
   const [fetchingHeight, setFetchingHeight] = useState(false)
   const [activeTab, setActiveTab] = useState<'scaffolding' | 'ausmass' | 'material' | 'schulaufgaben'>('scaffolding')
+  // Cached data for all tabs (loaded in parallel)
+  const [ausmassData, setAusmassData] = useState<any>(null)
+  const [ausmassLoading, setAusmassLoading] = useState(false)
 
   const handleExport = (data: any, format: 'csv' | 'pdf') => {
     const exportData = prepareExportData(data)
@@ -52,11 +55,33 @@ function App() {
     }
   }
 
+  const fetchAusmassData = async (address: string, dachform = 'satteldach', breitenklasse = 'W09') => {
+    setAusmassLoading(true)
+    try {
+      const params = new URLSearchParams({
+        address,
+        system_id: 'blitz70',
+        dachform,
+        breitenklasse
+      })
+      const response = await fetch(`${API_URL}/api/v1/ausmass/komplett?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAusmassData(data)
+      }
+    } catch (err) {
+      console.error('Ausmass fetch error:', err)
+    } finally {
+      setAusmassLoading(false)
+    }
+  }
+
   const handleSearch = async (address: string) => {
     setLoading(true)
     setError(null)
     setResult(null)
     setScaffoldingData(null)
+    setAusmassData(null)
     setCurrentAddress(address)
 
     try {
@@ -72,8 +97,9 @@ function App() {
       const data = await response.json()
       setResult(data)
 
-      // Automatisch Gerüstbau-Daten laden
+      // Alle Tab-Daten parallel laden
       fetchScaffoldingData(address)
+      fetchAusmassData(address)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
     } finally {
@@ -299,6 +325,9 @@ function App() {
                         coordinates={scaffoldingData.address?.coordinates}
                         apiUrl={API_URL}
                         onExport={(data) => handleExport(data, 'pdf')}
+                        cachedData={ausmassData}
+                        loading={ausmassLoading}
+                        onRefetch={(dachform, breitenklasse) => fetchAusmassData(currentAddress, dachform, breitenklasse)}
                       />
                     )}
 
