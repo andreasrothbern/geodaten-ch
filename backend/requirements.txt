@@ -30,10 +30,9 @@ python-docx>=1.1.0
 # Image handling
 Pillow>=10.0.0
 
-# SVG to PNG conversion (für Word-Dokumente)
-# cairosvg>=2.7.0  # Braucht Cairo C-Library
-svglib>=1.5.1
-reportlab>=4.0.0
+# SVG to PNG - nicht verfügbar ohne Cairo
+# cairosvg, svglib, pycairo brauchen alle C-Compiler + Cairo
+# Wir verwenden stattdessen Pillow für direkte PNG-Generierung
 
 # Claude API für SVG-Generierung
 anthropic>=0.39.0
