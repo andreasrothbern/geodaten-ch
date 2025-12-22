@@ -133,13 +133,39 @@ python scripts/import_building_heights.py daten.gml --canton BE
 - Backend: FastAPI Container (acceptable-trust-production.up.railway.app)
 - Frontend: Nginx mit Vite Build (cooperative-commitment-production.up.railway.app)
 
-## Nächste Schritte
+### Railway Volume (WICHTIG für Datenpersistenz)
 
-1. [x] Backend lokal testen
-2. [x] Frontend lokal testen
-3. [x] Railway.app Deployment
-4. [ ] swissBUILDINGS3D Daten für Kanton Bern importieren
-5. [ ] Custom Domain einrichten
+Ein Railway Volume ist konfiguriert unter `/app/data` für persistente SQLite-Datenbanken.
+Ohne Volume gehen on-demand importierte Höhendaten bei jedem Deployment verloren!
+
+**Volume einrichten (falls nicht vorhanden):**
+```bash
+npx @railway/cli login
+cd backend
+npx @railway/cli link
+npx @railway/cli volume add --mount-path /app/data
+```
+
+**Datenpersistenz-Übersicht:**
+
+| Daten | Speicherung | Bei Deployment |
+|-------|-------------|----------------|
+| GWR-Daten (EGID, Geschosse) | Live von swisstopo API | Kein Problem - wird neu abgefragt |
+| Gebäudegeometrie (Polygon) | Live von geodienste.ch | Kein Problem - wird neu abgefragt |
+| **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
+| Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
+
+## Status (Stand: Dezember 2025)
+
+- [x] Backend + Frontend Deployment
+- [x] swissBUILDINGS3D On-Demand Import via STAC API
+- [x] Railway Volume für persistente Daten
+- [x] SVG-Visualisierungen (Schnitt, Ansicht, Grundriss)
+- [x] Fassaden-Auswahl mit interaktivem Grundriss
+- [x] NPK 114 Ausmass-Berechnung
+- [x] Material-Schätzung (Layher Blitz 70)
+- [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
+- [ ] Custom Domain
 
 ## Lokale Entwicklung
 
