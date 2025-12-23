@@ -208,22 +208,19 @@ async def fetch_and_cache_complete_data(
         ridge_height_m = eave_height_m + 3.5
 
     # 6. Build 3D viewer URL
-    # Verwendet LV95-Koordinaten mit hohem Zoom für 3D-Ansicht
+    # Format: camera=lon,lat,elevation,pitch,heading,roll
     viewer_3d_url = None
     if geo:
-        e = geo.coordinates.lv95_e
-        n = geo.coordinates.lv95_n
-        # LV95 Koordinaten mit vollem Format (E: 2xxxxxx, N: 1xxxxxx)
-        if e < 2000000:
-            e += 2000000
-        if n < 1000000:
-            n += 1000000
-        # z=13 ist Maximum laut docs.geo.admin.ch
-        viewer_3d_url = (
-            f"https://map.geo.admin.ch/#/map?lang=de"
-            f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&center={e:.0f},{n:.0f}&z=13&3d=true"
-        )
+        lat = geo.coordinates.wgs84_lat
+        lon = geo.coordinates.wgs84_lon
+        if lat and lon:
+            # WGS84 Koordinaten mit camera-Parameter für 3D
+            viewer_3d_url = (
+                f"https://map.geo.admin.ch/#/map?lang=de"
+                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
+                f"&camera={lon:.6f},{lat:.6f},500,-45,,"
+                f"&3d"
+            )
 
     # Create cached data object
     cached_data = CachedAddressData(
