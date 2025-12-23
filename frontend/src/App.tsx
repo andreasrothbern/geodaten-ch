@@ -345,13 +345,19 @@ function App() {
                   </button>
                   <button
                     onClick={() => setActiveTab('geruestbau')}
+                    disabled={!scaffoldingData?.dimensions?.traufhoehe_m || !scaffoldingData?.dimensions?.firsthoehe_m}
                     className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
                       activeTab === 'geruestbau'
                         ? 'bg-red-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : (scaffoldingData?.dimensions?.traufhoehe_m && scaffoldingData?.dimensions?.firsthoehe_m)
+                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'bg-gray-50 text-gray-400 cursor-not-allowed'
                     }`}
+                    title={(!scaffoldingData?.dimensions?.traufhoehe_m || !scaffoldingData?.dimensions?.firsthoehe_m)
+                      ? 'Bitte zuerst Trauf- und Firsthöhe in Grunddaten setzen'
+                      : undefined}
                   >
-                    2. Gerustbau
+                    2. Gerüstbau
                   </button>
                   <button
                     onClick={() => setActiveTab('ausmass')}
@@ -397,6 +403,7 @@ function App() {
                         onHeightChange={handleHeightChange}
                         onFetchMeasuredHeight={handleFetchMeasuredHeight}
                         fetchingHeight={fetchingHeight}
+                        onProceedToGeruestbau={() => setActiveTab('geruestbau')}
                       />
                     )}
 

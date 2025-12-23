@@ -24,6 +24,7 @@ interface GrunddatenCardProps {
   onFetchMeasuredHeight?: () => void
   fetchingHeight?: boolean
   onHeightChange?: (heights: ManualHeights) => void
+  onProceedToGeruestbau?: () => void
 }
 
 export function GrunddatenCard({
@@ -31,7 +32,8 @@ export function GrunddatenCard({
   apiUrl,
   onFetchMeasuredHeight,
   fetchingHeight = false,
-  onHeightChange
+  onHeightChange,
+  onProceedToGeruestbau
 }: GrunddatenCardProps) {
   const [manualTraufe, setManualTraufe] = useState<string>('')
   const [manualFirst, setManualFirst] = useState<string>('')
@@ -352,6 +354,30 @@ export function GrunddatenCard({
           </p>
         </section>
       )}
+
+      {/* Proceed to Gerüstbau Button */}
+      <section className="pt-4 border-t">
+        {dimensions.traufhoehe_m && dimensions.firsthoehe_m ? (
+          <button
+            onClick={onProceedToGeruestbau}
+            className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2"
+          >
+            <span>Weiter zu Gerüstbau</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        ) : (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+            <p className="text-yellow-800 font-medium">
+              Höhendaten erforderlich
+            </p>
+            <p className="text-yellow-600 text-sm mt-1">
+              Bitte Trauf- und Firsthöhe aus swissBUILDINGS3D abrufen oder manuell eingeben, um fortzufahren.
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
