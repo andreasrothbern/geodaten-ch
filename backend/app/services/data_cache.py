@@ -217,13 +217,12 @@ async def fetch_and_cache_complete_data(
             e += 2000000
         if n < 1000000:
             n += 1000000
-        # URL-Format für map.geo.admin.ch mit 3D Gebäuden
-        # - layers: swissBUILDINGS3D 3D-Modell aktivieren
+        # URL-Format für map.geo.admin.ch
+        # - 3D-Modus zeigt swissBUILDINGS3D automatisch
         # - z=18: Nahansicht für einzelnes Gebäude
         viewer_3d_url = (
             f"https://map.geo.admin.ch/#/map?lang=de"
             f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&layers=ch.swisstopo.swissbuildings3d_3d"
             f"&center={e:.0f},{n:.0f}&z=18&3d=true"
         )
 
