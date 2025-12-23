@@ -563,6 +563,7 @@ function App() {
                     {activeTab === 'material' && ausmassData && (
                       <MaterialCard
                         ausmassData={ausmassData}
+                        apiUrl={API_URL}
                         onBack={() => setActiveTab('ausmass')}
                       />
                     )}

@@ -1110,6 +1110,55 @@ async def estimate_material_quantities(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/v1/catalog/estimate-combined",
+         tags=["Materialkatalog"])
+async def estimate_combined_system(
+    area_m2: float = Query(..., description="Gerüstfläche in m²"),
+    blitz_ratio: float = Query(0.7, description="Anteil Blitz 70 (0.0-1.0), Rest ist Allround")
+):
+    """
+    Materialschätzung für kombiniertes System (Blitz 70 + Allround).
+
+    Für Gebäude mit gemischten Anforderungen:
+    - Blitz 70 für Standardbereiche (wirtschaftlich)
+    - Allround für Verstärkungen, Ecken, höhere Lasten
+
+    **Beispiel:** `/api/v1/catalog/estimate-combined?area_m2=460&blitz_ratio=0.7`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+
+        if not 0 <= blitz_ratio <= 1:
+            raise ValueError("blitz_ratio muss zwischen 0 und 1 liegen")
+
+        return service.estimate_combined_system_quantities(area_m2, blitz_ratio)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/v1/catalog/system-info/{system_id}",
+         tags=["Materialkatalog"])
+async def get_system_info(system_id: str):
+    """
+    Detaillierte Systeminformationen für UI-Anzeige.
+
+    Liefert Beschreibung, Vorteile, Anwendungsgebiete, Lastklasse.
+
+    **Systeme:** blitz70, allround, combined
+
+    **Beispiel:** `/api/v1/catalog/system-info/blitz70`
+    """
+    try:
+        from app.services.layher_catalog import get_catalog_service
+        service = get_catalog_service()
+        return service.get_system_info(system_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
+
+
 @app.get("/api/v1/catalog/field-layout",
          tags=["Materialkatalog"])
 async def calculate_field_layout(
@@ -1165,6 +1214,81 @@ async def calculate_frames_for_height(
         raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Gerüstlift (NPK 114.3xx)
+# ============================================================================
+
+@app.get("/api/v1/lift/types",
+         tags=["Gerüstlift"])
+async def get_lift_types():
+    """
+    Verfügbare Lift-Typen abrufen.
+
+    - **Material**: Einfacher Lift für Material
+    - **Person**: Für Personen zugelassen
+    - **Kombilift**: Material und Personen (nicht gleichzeitig)
+    """
+    from app.services.lift_calculator import get_lift_calculator
+    return get_lift_calculator().get_lift_types()
+
+
+@app.get("/api/v1/lift/widths",
+         tags=["Gerüstlift"])
+async def get_lift_widths():
+    """
+    Verfügbare Lift-Breiten abrufen (Layher-kompatibel).
+    """
+    from app.services.lift_calculator import get_lift_calculator
+    return get_lift_calculator().get_available_widths()
+
+
+@app.post("/api/v1/lift/calculate",
+          tags=["Gerüstlift"])
+async def calculate_lift(
+    lift_type: str = Query(..., description="Lift-Typ: material, person, combined"),
+    height_m: float = Query(..., description="Gerüsthöhe in Metern"),
+    width_m: float = Query(1.35, description="Lift-Breite in Metern"),
+    levels: int = Query(0, description="Anzahl Etagen (0 = automatisch berechnen)")
+):
+    """
+    Lift-Berechnung durchführen.
+
+    Berechnet NPK-Positionen, Fläche und Gewichtsschätzung für einen Gerüstlift.
+
+    **Beispiel:** `/api/v1/lift/calculate?lift_type=material&height_m=12&width_m=1.35`
+    """
+    from app.services.lift_calculator import get_lift_calculator, LiftConfiguration, LiftType
+
+    try:
+        lift_type_enum = LiftType(lift_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ungültiger Lift-Typ: {lift_type}. Erlaubt: material, person, combined"
+        )
+
+    config = LiftConfiguration(
+        lift_type=lift_type_enum,
+        height_m=height_m,
+        width_m=width_m,
+        levels=levels
+    )
+
+    calculator = get_lift_calculator()
+    result = calculator.calculate_lift(config)
+
+    return {
+        "lift_type": result.lift_type.value,
+        "height_m": result.height_m,
+        "width_m": result.width_m,
+        "levels": result.levels,
+        "area_m2": result.area_m2,
+        "npk_positions": result.npk_positions,
+        "weight_estimate_kg": result.weight_estimate_kg,
+        "notes": result.notes
+    }
 
 
 # ============================================================================

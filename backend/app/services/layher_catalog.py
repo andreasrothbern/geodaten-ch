@@ -277,6 +277,151 @@ class LayherCatalogService:
 
         return estimates
 
+    def estimate_combined_system_quantities(
+        self,
+        scaffold_area_m2: float,
+        blitz_ratio: float = 0.7
+    ) -> dict:
+        """
+        Schätze Materialmengen für kombiniertes System (Blitz + Allround).
+
+        Verwendung: Blitz 70 für Standard-Bereiche, Allround für
+        Verstärkungen, komplexe Ecken, oder höhere Lasten.
+
+        Args:
+            scaffold_area_m2: Gerüstfläche in m²
+            blitz_ratio: Anteil Blitz 70 (0.0-1.0), Rest ist Allround
+                        Default 0.7 = 70% Blitz, 30% Allround
+
+        Returns:
+            dict mit separaten Listen pro System und Gesamtübersicht
+        """
+        allround_ratio = 1.0 - blitz_ratio
+
+        blitz_area = scaffold_area_m2 * blitz_ratio
+        allround_area = scaffold_area_m2 * allround_ratio
+
+        # Materialien für beide Systeme berechnen
+        blitz_materials = self.estimate_material_quantities("blitz70", blitz_area) if blitz_area > 0 else []
+        allround_materials = self.estimate_material_quantities("allround", allround_area) if allround_area > 0 else []
+
+        # Gesamtgewichte berechnen
+        blitz_weight = sum(m["total_weight_kg"] or 0 for m in blitz_materials)
+        allround_weight = sum(m["total_weight_kg"] or 0 for m in allround_materials)
+        total_weight = blitz_weight + allround_weight
+
+        blitz_pieces = sum(m["quantity_typical"] for m in blitz_materials)
+        allround_pieces = sum(m["quantity_typical"] for m in allround_materials)
+        total_pieces = blitz_pieces + allround_pieces
+
+        return {
+            "system": "combined",
+            "blitz_ratio": blitz_ratio,
+            "allround_ratio": allround_ratio,
+            "blitz": {
+                "system_id": "blitz70",
+                "area_m2": round(blitz_area, 1),
+                "materials": blitz_materials,
+                "total_pieces": blitz_pieces,
+                "total_weight_kg": round(blitz_weight, 1)
+            },
+            "allround": {
+                "system_id": "allround",
+                "area_m2": round(allround_area, 1),
+                "materials": allround_materials,
+                "total_pieces": allround_pieces,
+                "total_weight_kg": round(allround_weight, 1)
+            },
+            "combined_summary": {
+                "total_area_m2": scaffold_area_m2,
+                "total_pieces": total_pieces,
+                "total_weight_kg": round(total_weight, 1),
+                "total_weight_tonnen": round(total_weight / 1000, 2),
+                "weight_per_m2_kg": round(total_weight / scaffold_area_m2, 1) if scaffold_area_m2 > 0 else 0
+            },
+            "hinweis": (
+                f"Kombination: {int(blitz_ratio*100)}% Blitz 70 ({blitz_area:.0f} m²) + "
+                f"{int(allround_ratio*100)}% Allround ({allround_area:.0f} m²)"
+            )
+        }
+
+    def get_system_info(self, system_id: str) -> dict:
+        """
+        Hole detaillierte System-Informationen für UI-Anzeige.
+
+        Returns:
+            dict mit Charakteristiken, Vorteilen, Anwendungen
+        """
+        systems_info = {
+            "blitz70": {
+                "id": "blitz70",
+                "name": "Layher Blitz 70",
+                "kurz": "Standard-Fassadengerüst",
+                "beschreibung": "Schnellbaugerüst für Standard-Fassadenarbeiten. "
+                               "Einfacher Aufbau durch Fallkopfverriegelung.",
+                "vorteile": [
+                    "Schneller Auf- und Abbau",
+                    "Leichte Bauteile",
+                    "Wirtschaftlich für Wohnbau",
+                    "Bewährtes System"
+                ],
+                "anwendungen": [
+                    "Fassadenarbeiten (Malen, Verputzen)",
+                    "Wärmedämmung",
+                    "Dacharbeiten EFH/MFH",
+                    "Renovationen"
+                ],
+                "lastklasse": "3-4 (200-300 kg/m²)",
+                "max_feldlaenge_m": 3.07,
+                "typisches_gewicht_kg_m2": 28
+            },
+            "allround": {
+                "id": "allround",
+                "name": "Layher Allround",
+                "kurz": "Universalgerüst für hohe Anforderungen",
+                "beschreibung": "Modulgerüst mit Rosettensystem. Flexibel für "
+                               "komplexe Geometrien und hohe Lasten.",
+                "vorteile": [
+                    "Höhere Tragfähigkeit",
+                    "Flexible Winkel (alle 45°)",
+                    "Anpassbar um Hindernisse",
+                    "Für Industriebauten geeignet"
+                ],
+                "anwendungen": [
+                    "Industriegerüste",
+                    "Komplexe Fassaden",
+                    "Traggerüste (Betonarbeiten)",
+                    "Gebäude mit Vorsprüngen/Rohren"
+                ],
+                "lastklasse": "4-6 (300-600 kg/m²)",
+                "max_feldlaenge_m": 3.07,
+                "typisches_gewicht_kg_m2": 35
+            },
+            "combined": {
+                "id": "combined",
+                "name": "Blitz + Allround Kombination",
+                "kurz": "Optimierte Kombination beider Systeme",
+                "beschreibung": "Blitz 70 für Standardbereiche, Allround für "
+                               "Verstärkungen und komplexe Zonen. Kostenoptimiert.",
+                "vorteile": [
+                    "Kosteneffizient",
+                    "Flexibel einsetzbar",
+                    "Beste Eigenschaften beider Systeme",
+                    "Anpassbar an Gebäudegeometrie"
+                ],
+                "anwendungen": [
+                    "Gebäude mit Erkern/Vorsprüngen",
+                    "Teilweise höhere Lasten nötig",
+                    "Kostensensitive Projekte",
+                    "Dach + Fassade kombiniert"
+                ],
+                "lastklasse": "3-6 (je nach Zone)",
+                "max_feldlaenge_m": 3.07,
+                "typisches_gewicht_kg_m2": 30
+            }
+        }
+        return systems_info.get(system_id, systems_info["blitz70"])
+
     def calculate_total_weight(self, material_list: list[dict]) -> dict:
         """
         Berechne Gesamtgewicht einer Materialliste.

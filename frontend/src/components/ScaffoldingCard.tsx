@@ -3,6 +3,18 @@ import type { ScaffoldingData } from '../types'
 import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/useUserPreferences'
 import { InteractiveFloorPlan } from './InteractiveFloorPlan'
 import { FacadeSelectionTable } from './FacadeSelectionTable'
+import { LiftConfiguration } from './LiftConfiguration'
+
+interface LiftCalculation {
+  lift_type: string
+  height_m: number
+  width_m: number
+  levels: number
+  area_m2: number
+  npk_positions: { position: string; name: string; unit: string; quantity: number }[]
+  weight_estimate_kg: number
+  notes: string
+}
 
 export interface ScaffoldingConfig {
   selectedFacades: number[]
@@ -11,6 +23,7 @@ export interface ScaffoldingConfig {
   scaffoldHeight: number
   totalLength: number
   totalArea: number
+  lift?: LiftCalculation | null
 }
 
 interface ScaffoldingCardProps {
@@ -37,6 +50,8 @@ export function ScaffoldingCard({
   const { preferences } = useUserPreferences()
   const [workType, setWorkType] = useState<WorkType>(preferences.defaultWorkType)
   const [scaffoldType, setScaffoldType] = useState<ScaffoldType>(preferences.defaultScaffoldType)
+  const [liftEnabled, setLiftEnabled] = useState(false)
+  const [liftCalculation, setLiftCalculation] = useState<LiftCalculation | null>(null)
 
   const { dimensions, building, gwr_data, sides } = data
 
@@ -196,6 +211,15 @@ export function ScaffoldingCard({
         </div>
       </div>
 
+      {/* Gerüstlift Konfiguration */}
+      <LiftConfiguration
+        apiUrl={apiUrl}
+        scaffoldHeight={scaffoldHeight}
+        enabled={liftEnabled}
+        onToggle={setLiftEnabled}
+        onLiftCalculated={setLiftCalculation}
+      />
+
       {/* Berechnung starten */}
       {selectedFacades.length > 0 && onCalculate && (
         <div className="border-t pt-4">
@@ -211,7 +235,8 @@ export function ScaffoldingCard({
                 scaffoldType,
                 scaffoldHeight,
                 totalLength,
-                totalArea: totalLength * scaffoldHeight
+                totalArea: totalLength * scaffoldHeight,
+                lift: liftEnabled ? liftCalculation : null
               })
             }}
             className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
@@ -221,6 +246,7 @@ export function ScaffoldingCard({
           </button>
           <p className="text-xs text-gray-500 mt-2 text-center">
             NPK 114 Berechnung für {selectedFacades.length} Fassaden ({scaffoldHeight.toFixed(1)}m Höhe)
+            {liftEnabled && liftCalculation && ` + Lift (${liftCalculation.area_m2.toFixed(1)} m²)`}
           </p>
         </div>
       )}
