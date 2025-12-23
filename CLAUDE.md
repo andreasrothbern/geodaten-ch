@@ -223,6 +223,30 @@ Debug-Code aus Backend entfernt:
 - ✅ Debug-Prints aus `height_fetcher.py` entfernt
 - `[DEBUG]` Console-Logs im Frontend (`App.tsx`) können optional entfernt werden
 
+### 3D-Viewer-URL Format (Stand 23.12.2025)
+
+**Entscheidung:** LV95-Format mit `sr=2056` verwenden.
+
+```
+https://map.geo.admin.ch/#/map?lang=de&sr=2056&center={E},{N}&z=13&bgLayer=ch.swisstopo.pixelkarte-farbe&3d
+```
+
+**Getestete Alternativen (funktionieren NICHT zuverlässig):**
+
+| Format | Problem |
+|--------|---------|
+| `camera=lon,lat,height,pitch` | Ungültiges Format laut map.geo.admin.ch |
+| `center=...&z=20&3d=true` | z=20 ungültig (max z=13), `3d=true` statt `3d` |
+| `camera=lon,lat,elevation,pitch,,&3d` | Browser-abhängige Probleme, Koordinaten werden verfälscht |
+
+**Warum LV95 (`sr=2056`):**
+- Zuverlässig in allen Browsern (getestet normal + Inkognito)
+- Offizielle Schweizer Koordinaten (EPSG:2056)
+- Zoom z=13 ist Maximum laut docs.geo.admin.ch
+- `&3d` aktiviert 3D-Modus (nicht `&3d=true`)
+
+**Nachteil:** Keine Kontrolle über Kamera-Winkel (immer Draufsicht). Das `camera`-Format würde schräge Ansichten erlauben, funktioniert aber nicht zuverlässig.
+
 ## Lokale Entwicklung
 
 ```bash
