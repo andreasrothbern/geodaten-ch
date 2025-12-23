@@ -207,21 +207,24 @@ async def fetch_and_cache_complete_data(
     if ridge_height_m is None:
         ridge_height_m = eave_height_m + 3.5
 
-    # 6. Build 3D viewer URL (new format since 2024)
+    # 6. Build 3D viewer URL
     viewer_3d_url = None
     if geo:
-        # LV95 coordinates need 2000000 added to E and 1000000 added to N if < 1000000
+        # LV95 coordinates need full format (E: 2xxxxxx, N: 1xxxxxx)
         e = geo.coordinates.lv95_e
         n = geo.coordinates.lv95_n
         if e < 2000000:
             e += 2000000
         if n < 1000000:
             n += 1000000
-        # 3D view automatically shows buildings - no layers parameter needed
+        # URL-Format für map.geo.admin.ch mit 3D Gebäuden
+        # - layers: swissBUILDINGS3D 3D-Modell aktivieren
+        # - z=18: Nahansicht für einzelnes Gebäude
         viewer_3d_url = (
             f"https://map.geo.admin.ch/#/map?lang=de"
             f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&center={e:.0f},{n:.0f}&z=12&3d=true"
+            f"&layers=ch.swisstopo.swissbuildings3d_3d"
+            f"&center={e:.0f},{n:.0f}&z=18&3d=true"
         )
 
     # Create cached data object

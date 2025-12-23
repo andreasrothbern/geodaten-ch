@@ -361,8 +361,6 @@ def get_building_height_by_coordinates(
         e = e + 2_000_000
         n = n + 1_000_000
 
-    print(f"[DEBUG coord_lookup] Searching at E={e}, N={n}, tolerance={tolerance_m}m")
-
     # Ensure table exists (migration support)
     try:
         init_database()
@@ -372,22 +370,6 @@ def get_building_height_by_coordinates(
     try:
         with sqlite3.connect(HEIGHT_DB_PATH) as conn:
             cursor = conn.cursor()
-
-            # Debug: Check how many records in table and sample
-            cursor.execute("SELECT COUNT(*) FROM building_heights_by_coord")
-            count = cursor.fetchone()[0]
-            print(f"[DEBUG coord_lookup] Table has {count} records")
-
-            if count > 0:
-                # Show a sample of coordinates near our search point
-                cursor.execute("""
-                    SELECT lv95_e, lv95_n, gebaeudehoehe_m
-                    FROM building_heights_by_coord
-                    WHERE lv95_e BETWEEN ? AND ?
-                    LIMIT 5
-                """, (e - 1000, e + 1000))
-                samples = cursor.fetchall()
-                print(f"[DEBUG coord_lookup] Sample coords within ±1000m E: {samples}")
 
             # Suche im Rechteck ±tolerance, sortiert nach Distanz
             cursor.execute("""
@@ -406,7 +388,6 @@ def get_building_height_by_coordinates(
 
             if result:
                 dist_m = (result[10] ** 0.5) if result[10] else 0
-                print(f"[DEBUG coord_lookup] Found building at E={result[8]}, N={result[9]}, distance={dist_m:.1f}m, height={result[3]}m")
                 return {
                     "uuid": result[0],
                     "traufhoehe_m": result[1],
@@ -420,11 +401,10 @@ def get_building_height_by_coordinates(
                     "matched_n": result[9],
                     "distance_m": round(dist_m, 1)
                 }
-            print(f"[DEBUG coord_lookup] No building found within {tolerance_m}m")
             return None
 
     except sqlite3.Error as err:
-        print(f"[DEBUG coord_lookup] SQLite Error: {err}")
+        print(f"SQLite Error in coord lookup: {err}")
         return None
 
 
