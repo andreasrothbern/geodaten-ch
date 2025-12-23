@@ -727,11 +727,11 @@ def calculate_scaffolding_data(
             # LV95 Koordinaten mit vollem Format (E: 2xxxxxx, N: 1xxxxxx)
             e_full = e if e > 2000000 else e + 2000000
             n_full = n if n > 1000000 else n + 1000000
-            # z=20 für Nahansicht auf einzelnes Gebäude
+            # z=13 ist Maximum laut docs.geo.admin.ch
             viewer_3d_url = (
                 f"https://map.geo.admin.ch/#/map?lang=de"
                 f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-                f"&center={e_full:.0f},{n_full:.0f}&z=20&3d=true"
+                f"&center={e_full:.0f},{n_full:.0f}&z=13&3d=true"
             )
 
     return {

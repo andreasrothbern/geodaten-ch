@@ -218,11 +218,11 @@ async def fetch_and_cache_complete_data(
             e += 2000000
         if n < 1000000:
             n += 1000000
-        # z=20 für Nahansicht auf einzelnes Gebäude
+        # z=13 ist Maximum laut docs.geo.admin.ch
         viewer_3d_url = (
             f"https://map.geo.admin.ch/#/map?lang=de"
             f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&center={e:.0f},{n:.0f}&z=20&3d=true"
+            f"&center={e:.0f},{n:.0f}&z=13&3d=true"
         )
 
     # Create cached data object
