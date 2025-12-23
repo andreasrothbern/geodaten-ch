@@ -60,6 +60,32 @@ def init_database():
             CREATE INDEX IF NOT EXISTS idx_egid ON building_heights(egid)
         """)
 
+        # Koordinaten-basierte Höhentabelle (für Gebäude ohne EGID)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS building_heights_by_coord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lv95_e REAL NOT NULL,
+                lv95_n REAL NOT NULL,
+                uuid TEXT,
+                traufhoehe_m REAL,
+                firsthoehe_m REAL,
+                gebaeudehoehe_m REAL,
+                dach_max_m REAL,
+                dach_min_m REAL,
+                terrain_m REAL,
+                source TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Indizes für koordinatenbasierte Suche
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_coord_e ON building_heights_by_coord(lv95_e)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_coord_n ON building_heights_by_coord(lv95_n)
+        """)
+
         # Metadaten-Tabelle
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS import_metadata (
@@ -307,3 +333,92 @@ def log_import(source_file: str, canton: str, records: int, version: str = None)
             VALUES (?, ?, ?, ?)
         """, (source_file, canton, records, version))
         conn.commit()
+
+
+def get_building_height_by_coordinates(
+    e: float,
+    n: float,
+    tolerance_m: float = 25.0
+) -> Optional[dict]:
+    """
+    Gebäudehöhe per Koordinaten suchen (für Gebäude ohne EGID).
+
+    Sucht das nächstgelegene Gebäude innerhalb der Toleranz.
+
+    Args:
+        e: LV95 Easting
+        n: LV95 Northing
+        tolerance_m: Suchradius in Metern (default 25m)
+
+    Returns:
+        Dict mit Höhenwerten oder None wenn nicht gefunden
+    """
+    if not HEIGHT_DB_PATH.exists():
+        return None
+
+    try:
+        with sqlite3.connect(HEIGHT_DB_PATH) as conn:
+            cursor = conn.cursor()
+            # Suche im Rechteck ±tolerance, sortiert nach Distanz
+            cursor.execute("""
+                SELECT uuid, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+                       dach_max_m, dach_min_m, terrain_m, source, lv95_e, lv95_n,
+                       ((lv95_e - ?) * (lv95_e - ?) + (lv95_n - ?) * (lv95_n - ?)) as dist_sq
+                FROM building_heights_by_coord
+                WHERE lv95_e BETWEEN ? AND ?
+                  AND lv95_n BETWEEN ? AND ?
+                ORDER BY dist_sq
+                LIMIT 1
+            """, (e, e, n, n,
+                  e - tolerance_m, e + tolerance_m,
+                  n - tolerance_m, n + tolerance_m))
+            result = cursor.fetchone()
+
+            if result:
+                dist_m = (result[10] ** 0.5) if result[10] else 0
+                return {
+                    "uuid": result[0],
+                    "traufhoehe_m": result[1],
+                    "firsthoehe_m": result[2],
+                    "gebaeudehoehe_m": result[3],
+                    "dach_max_m": result[4],
+                    "dach_min_m": result[5],
+                    "terrain_m": result[6],
+                    "source": f"database_coord:{result[7]}",
+                    "matched_e": result[8],
+                    "matched_n": result[9],
+                    "distance_m": round(dist_m, 1)
+                }
+            return None
+
+    except sqlite3.Error as e:
+        print(f"SQLite Error: {e}")
+        return None
+
+
+def bulk_insert_heights_by_coord(data: list, source: str = "unknown") -> int:
+    """
+    Mehrere koordinatenbasierte Gebäudehöhen einfügen.
+
+    Args:
+        data: Liste von dicts mit {lv95_e, lv95_n, uuid, traufhoehe_m, ...}
+        source: Datenquelle
+
+    Returns:
+        Anzahl eingefügter Datensätze
+    """
+    if not data:
+        return 0
+
+    with sqlite3.connect(HEIGHT_DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT INTO building_heights_by_coord
+            (lv95_e, lv95_n, uuid, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+             dach_max_m, dach_min_m, terrain_m, source)
+            VALUES (:lv95_e, :lv95_n, :uuid, :traufhoehe_m, :firsthoehe_m, :gebaeudehoehe_m,
+                    :dach_max_m, :dach_min_m, :terrain_m, :source)
+        """, [{**d, "source": source} for d in data])
+        conn.commit()
+
+    return len(data)

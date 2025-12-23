@@ -422,9 +422,16 @@ def get_height_details(
     egid: Optional[int],
     manual_traufhoehe: Optional[float] = None,
     manual_firsthoehe: Optional[float] = None,
+    lv95_e: Optional[float] = None,
+    lv95_n: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Alle verfügbaren Höheninformationen sammeln.
+
+    Lookup-Strategie:
+    1. EGID-basiert (building_heights_detailed, dann building_heights)
+    2. Koordinaten-basiert (building_heights_by_coord) - für Gebäude ohne EGID
+    3. Geschätzt aus GWR-Geschossen oder Standard
 
     Args:
         floors: Anzahl Geschosse (aus GWR)
@@ -433,6 +440,8 @@ def get_height_details(
         egid: Eidgenössischer Gebäudeidentifikator (für DB-Lookup)
         manual_traufhoehe: Manuell eingegebene Traufhöhe (überschreibt DB)
         manual_firsthoehe: Manuell eingegebene Firsthöhe (überschreibt DB)
+        lv95_e: LV95 Easting für Koordinaten-Lookup (falls EGID fehlschlägt)
+        lv95_n: LV95 Northing für Koordinaten-Lookup (falls EGID fehlschlägt)
 
     Returns:
         Dictionary mit geschätzter Höhe, gemessener Höhe und Quellen
@@ -484,9 +493,11 @@ def get_height_details(
 
     # 2. Gemessene Höhe aus Datenbank laden (falls verfügbar)
     measured_is_plausible = True
+    height_found_in_db = False
+
     if egid:
         try:
-            from app.services.height_db import get_building_height, get_building_heights_detailed
+            from app.services.height_db import get_building_height, get_building_heights_detailed, get_building_height_by_coordinates
 
             # Zuerst detaillierte Höhen versuchen
             detailed = get_building_heights_detailed(egid)
@@ -510,6 +521,7 @@ def get_height_details(
                 if main_height and main_height >= 2.0:
                     result["measured_height_m"] = main_height
                     result["measured_source"] = detailed.get("source", "database:swissBUILDINGS3D")
+                    height_found_in_db = True
 
                 # Prüfen ob Daten unvollständig sind (nur gebaeudehoehe, keine Trauf/First)
                 has_gebaeudehoehe = detailed.get("gebaeudehoehe_m") is not None
@@ -523,7 +535,7 @@ def get_height_details(
                     result["firsthoehe_m"] = round(gebaeudehoehe, 1)
                     result["heights_estimated"] = True
             else:
-                # Fallback: Legacy-Höhe (detailed war leer oder hatte nur NULL-Werte)
+                # Fallback 1: Legacy-Höhe (detailed war leer oder hatte nur NULL-Werte)
                 db_result = get_building_height(egid)
                 if db_result and db_result[0] >= 2.0:
                     legacy_height = db_result[0]
@@ -535,6 +547,22 @@ def get_height_details(
                     result["firsthoehe_m"] = round(legacy_height, 1)
                     result["heights_estimated"] = True
                     result["legacy_height_used"] = legacy_height
+                    height_found_in_db = True
+
+            # Fallback 2: Koordinaten-basierter Lookup (für Gebäude ohne EGID in swissBUILDINGS3D)
+            if not height_found_in_db and lv95_e and lv95_n:
+                coord_height = get_building_height_by_coordinates(lv95_e, lv95_n, tolerance_m=25.0)
+                if coord_height:
+                    result["traufhoehe_m"] = coord_height.get("traufhoehe_m")
+                    result["firsthoehe_m"] = coord_height.get("firsthoehe_m")
+                    result["gebaeudehoehe_m"] = coord_height.get("gebaeudehoehe_m")
+                    main_height = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
+                    if main_height and main_height >= 2.0:
+                        result["measured_height_m"] = main_height
+                        result["measured_source"] = coord_height.get("source", "database_coord:swissBUILDINGS3D")
+                        result["coord_lookup_used"] = True
+                        result["coord_match_distance_m"] = coord_height.get("distance_m")
+                        height_found_in_db = True
 
             # Plausibilitätsprüfung für measured_height_m
             if result["measured_height_m"] and result["estimated_height_m"]:
@@ -662,6 +690,10 @@ def calculate_scaffolding_data(
     # EGID: Priorität hat der übergebene EGID (aus GWR), dann geometry.egid
     effective_egid = egid if egid is not None else geometry.egid
 
+    # Koordinaten für Fallback-Lookup extrahieren
+    lv95_e = coordinates.get('lv95_e') if coordinates else None
+    lv95_n = coordinates.get('lv95_n') if coordinates else None
+
     # Höhendetails sammeln (geschätzt + gemessen)
     height_info = get_height_details(
         floors=floors,
@@ -670,6 +702,8 @@ def calculate_scaffolding_data(
         egid=effective_egid,
         manual_traufhoehe=manual_traufhoehe,
         manual_firsthoehe=manual_firsthoehe,
+        lv95_e=lv95_e,
+        lv95_n=lv95_n,
     )
 
     height = height_info["active_height_m"]

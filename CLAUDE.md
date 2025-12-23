@@ -110,11 +110,31 @@ GET /api/v1/heights/stats
 
 ### Datenquellen für Höhen (Fallback-Kette)
 
-1. **Manuell eingegeben** - Höchste Priorität
-2. **swissBUILDINGS3D** - Gemessene Höhe aus lokaler DB
-3. **Berechnet aus Geschossen** - GWR-Daten × Geschosshöhe
-4. **Standard nach Kategorie** - EFH: 8m, MFH: 12m
-5. **Allgemeiner Standard** - 10m
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LOOKUP STRATEGIE                         │
+├─────────────────────────────────────────────────────────────┤
+│  1. Manuell eingegeben (Trauf-/Firsthöhe)                   │
+│     ↓ falls nicht gesetzt                                   │
+│  2. EGID-Lookup (building_heights_detailed)                 │
+│     → Trauf-/Firsthöhe aus swissBUILDINGS3D per EGID       │
+│     ↓ falls nicht gefunden                                  │
+│  3. EGID-Legacy (building_heights)                          │
+│     → Gesamthöhe aus swissBUILDINGS3D per EGID             │
+│     ↓ falls nicht gefunden                                  │
+│  4. Koordinaten-Lookup (building_heights_by_coord)          │
+│     → Höhe per LV95-Koordinaten (±25m Toleranz)            │
+│     → Für Gebäude ohne EGID in swissBUILDINGS3D            │
+│     ↓ falls nicht gefunden                                  │
+│  5. Geschätzt aus GWR-Daten                                 │
+│     → Geschosse × Geschosshöhe + Dachhöhe                  │
+│     ↓ falls keine Geschossdaten                             │
+│  6. Standard nach Kategorie                                 │
+│     → EFH: 8m, MFH: 12m, etc.                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Wichtig:** Koordinaten-Lookup (Stufe 4) wurde hinzugefügt, weil swissBUILDINGS3D nicht bei allen Gebäuden eine EGID enthält.
 
 ### swissBUILDINGS3D Import
 
@@ -164,26 +184,37 @@ npx @railway/cli volume add --mount-path /app/data
 - [x] Fassaden-Auswahl mit interaktivem Grundriss
 - [x] NPK 114 Ausmass-Berechnung
 - [x] Material-Schätzung (Layher Blitz 70)
+- [x] Koordinaten-basierter Höhen-Lookup (für Gebäude ohne EGID)
 - [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
 - [ ] Custom Domain
 
 ## ACHTUNG: Technische Schulden
 
-### Höhendatenbank - Zwei Tabellen (BEREINIGEN!)
+### Höhendatenbank - Drei Tabellen
 
-Es gibt **zwei** SQLite-Tabellen für Höhendaten in `building_heights.db`:
+Es gibt **drei** SQLite-Tabellen für Höhendaten in `building_heights.db`:
 
-1. **`building_heights`** (Legacy)
+1. **`building_heights`** (Legacy, EGID-basiert)
    - Felder: `egid`, `height_m`, `height_type`, `source`
    - Einfache Struktur, nur eine Höhe pro Gebäude
+   - **Status:** Wird noch unterstützt als Fallback
 
-2. **`building_heights_detailed`** (Neu)
+2. **`building_heights_detailed`** (EGID-basiert)
    - Felder: `egid`, `traufhoehe_m`, `firsthoehe_m`, `gebaeudehoehe_m`, `dach_max_m`, `dach_min_m`, `terrain_m`, `source`
    - Detaillierte Struktur für Gerüstbau
+   - **Status:** Primäre Tabelle für EGID-Lookups
 
-**Problem:** Der On-Demand Import schreibt in BEIDE Tabellen, aber nicht immer konsistent. Die Abfrage in `geodienste.py` prüft zuerst `detailed`, dann `legacy` als Fallback.
+3. **`building_heights_by_coord`** (Koordinaten-basiert, NEU)
+   - Felder: `lv95_e`, `lv95_n`, `uuid`, `traufhoehe_m`, `firsthoehe_m`, `gebaeudehoehe_m`, ...
+   - Für Gebäude ohne EGID in swissBUILDINGS3D
+   - **Status:** Fallback wenn EGID-Lookup fehlschlägt
 
-**TODO:** Eine der Tabellen entfernen und nur noch `building_heights_detailed` verwenden. Die Legacy-Tabelle migrieren oder löschen.
+**Lookup-Reihenfolge in `geodienste.py`:**
+1. `building_heights_detailed` (per EGID)
+2. `building_heights` (per EGID, Legacy)
+3. `building_heights_by_coord` (per Koordinaten ±25m)
+
+**TODO (optional):** Legacy-Tabelle `building_heights` kann entfernt werden, sobald alle Daten in `_detailed` migriert sind.
 
 ### Debug-Code entfernen
 

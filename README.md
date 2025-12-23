@@ -23,6 +23,37 @@ API und Web-App für Schweizer Geodaten mit Fokus auf Gerüstbau-Berechnungen.
 ### On-Demand abrufbar
 Kantone mit EGID-Support: AG, AI, AR, BE, BL, BS, FR, GL, JU, LU, NE, SG, SH, SO, SZ, TG + Stadt Zürich
 
+## Höhen-Lookup-Strategie
+
+Die Höhenabfrage erfolgt in einer Fallback-Kette:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LOOKUP STRATEGIE                         │
+├─────────────────────────────────────────────────────────────┤
+│  1. EGID-Lookup (building_heights_detailed)                 │
+│     → Trauf-/Firsthöhe aus swissBUILDINGS3D per EGID       │
+│     ↓ falls nicht gefunden                                  │
+│  2. EGID-Legacy (building_heights)                          │
+│     → Gesamthöhe aus swissBUILDINGS3D per EGID             │
+│     ↓ falls nicht gefunden                                  │
+│  3. Koordinaten-Lookup (building_heights_by_coord)          │
+│     → Höhe per LV95-Koordinaten (±25m Toleranz)            │
+│     → Für Gebäude ohne EGID in swissBUILDINGS3D            │
+│     ↓ falls nicht gefunden                                  │
+│  4. Geschätzt aus GWR-Daten                                 │
+│     → Geschosse × Geschosshöhe + Dachhöhe                  │
+│     ↓ falls keine Geschossdaten                             │
+│  5. Standard nach Kategorie                                 │
+│     → EFH: 8m, MFH: 12m, etc.                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Warum Koordinaten-Lookup?**
+- swissBUILDINGS3D enthält nicht bei allen Gebäuden eine EGID
+- Ältere Tiles (vor 2022) haben oft nur UUID, keine EGID
+- Der Koordinaten-Lookup findet das nächstgelegene Gebäude geometrisch
+
 ## Datengenauigkeit
 
 | Messwert | Quelle | Genauigkeit |

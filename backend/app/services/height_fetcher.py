@@ -22,8 +22,10 @@ from app.services.height_db import (
     init_database,
     get_building_height,
     get_building_heights_detailed,
+    get_building_height_by_coordinates,
     bulk_insert_heights,
     bulk_insert_heights_detailed,
+    bulk_insert_heights_by_coord,
     log_import,
     get_db_path
 )
@@ -229,7 +231,7 @@ def download_and_extract_tile(url: str, temp_dir: Path) -> Path:
     raise FileNotFoundError("No GDB or GML found in tile archive")
 
 
-def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
+def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, Any]]:
     """
     Parse a GDB file and extract EGID + height data.
 
@@ -239,7 +241,8 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
     Returns:
         Tuple of:
         - list of (egid, height) tuples (legacy format)
-        - list of dicts with detailed heights (new format)
+        - list of dicts with detailed heights (new format, with EGID)
+        - list of dicts with coordinate-based heights (without EGID)
         - debug_info dict
     """
     try:
@@ -250,13 +253,15 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
 
     heights_legacy = []
     heights_detailed = []
+    heights_by_coord = []  # Für Gebäude ohne EGID
     debug_info = {
         "layers": [],
         "columns": [],
         "total_rows": 0,
         "sample_egids": [],
         "null_egid_count": 0,
-        "null_height_count": 0
+        "null_height_count": 0,
+        "coord_only_count": 0  # Gebäude ohne EGID
     }
 
     try:
@@ -296,15 +301,35 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
 
         for _, row in gdf.iterrows():
             egid = row.get('EGID')
+            uuid = row.get('UUID')  # swissBUILDINGS3D UUID
+            geom = row.get('geometry')
 
-            if egid is None:
+            # Zentroid berechnen für Koordinaten-Lookup
+            centroid_e, centroid_n = None, None
+            if geom is not None:
+                try:
+                    centroid = geom.centroid
+                    centroid_e = centroid.x
+                    centroid_n = centroid.y
+                except Exception:
+                    pass
+
+            has_egid = egid is not None
+            egid_int = None
+
+            if has_egid:
+                try:
+                    egid_int = int(egid)
+                    if egid_int <= 0:
+                        has_egid = False
+                except (ValueError, TypeError):
+                    has_egid = False
+
+            if not has_egid:
                 debug_info["null_egid_count"] += 1
-                continue
+                # Weiter verarbeiten für Koordinaten-Lookup (nicht skippen!)
 
             try:
-                egid_int = int(egid)
-                if egid_int <= 0:
-                    continue
 
                 # Extract all height values from attributes
                 dach_max = row.get('DACH_MAX')
@@ -394,34 +419,52 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, Dict[str, Any]]:
                     debug_info["rejected_low_height_count"] = debug_info.get("rejected_low_height_count", 0) + 1
                     continue
 
-                # Legacy format (single height)
-                heights_legacy.append((egid_int, round(main_height, 2)))
+                # Speichern je nach verfügbaren Identifikatoren
+                if has_egid and egid_int:
+                    # Legacy format (single height)
+                    heights_legacy.append((egid_int, round(main_height, 2)))
 
-                # Detailed format (all heights)
-                heights_detailed.append({
-                    "egid": egid_int,
-                    "traufhoehe_m": traufhoehe,
-                    "firsthoehe_m": firsthoehe,
-                    "gebaeudehoehe_m": round(gebaeudehoehe, 2) if gebaeudehoehe else None,
-                    "dach_max_m": round(dach_max_f, 2) if dach_max_f else None,
-                    "dach_min_m": round(dach_min_f, 2) if dach_min_f else None,
-                    "terrain_m": round(terrain_f, 2) if terrain_f else None
-                })
+                    # Detailed format (all heights)
+                    heights_detailed.append({
+                        "egid": egid_int,
+                        "traufhoehe_m": traufhoehe,
+                        "firsthoehe_m": firsthoehe,
+                        "gebaeudehoehe_m": round(gebaeudehoehe, 2) if gebaeudehoehe else None,
+                        "dach_max_m": round(dach_max_f, 2) if dach_max_f else None,
+                        "dach_min_m": round(dach_min_f, 2) if dach_min_f else None,
+                        "terrain_m": round(terrain_f, 2) if terrain_f else None
+                    })
 
-                # Collect sample EGIDs
-                if len(debug_info["sample_egids"]) < 10:
-                    debug_info["sample_egids"].append(egid_int)
+                    # Collect sample EGIDs
+                    if len(debug_info["sample_egids"]) < 10:
+                        debug_info["sample_egids"].append(egid_int)
+
+                # Koordinaten-basierter Eintrag (für ALLE Gebäude mit Zentroid)
+                if centroid_e is not None and centroid_n is not None:
+                    heights_by_coord.append({
+                        "lv95_e": round(centroid_e, 1),
+                        "lv95_n": round(centroid_n, 1),
+                        "uuid": str(uuid) if uuid else None,
+                        "traufhoehe_m": traufhoehe,
+                        "firsthoehe_m": firsthoehe,
+                        "gebaeudehoehe_m": round(gebaeudehoehe, 2) if gebaeudehoehe else None,
+                        "dach_max_m": round(dach_max_f, 2) if dach_max_f else None,
+                        "dach_min_m": round(dach_min_f, 2) if dach_min_f else None,
+                        "terrain_m": round(terrain_f, 2) if terrain_f else None
+                    })
+                    if not has_egid:
+                        debug_info["coord_only_count"] += 1
 
             except (ValueError, TypeError):
                 pass
 
-        print(f"Found {len(heights_legacy)} valid heights, sample EGIDs: {debug_info['sample_egids']}")
+        print(f"Found {len(heights_legacy)} with EGID, {debug_info['coord_only_count']} coord-only, sample EGIDs: {debug_info['sample_egids']}")
 
     except Exception as e:
         print(f"Error parsing GDB: {e}")
         debug_info["error"] = str(e)
 
-    return heights_legacy, heights_detailed, debug_info
+    return heights_legacy, heights_detailed, heights_by_coord, debug_info
 
 
 async def fetch_height_for_coordinates(
@@ -501,9 +544,9 @@ async def fetch_height_for_coordinates(
         data_path = download_and_extract_tile(tile_info["download_url"], temp_dir)
 
         # Parse
-        heights_legacy, heights_detailed, debug_info = parse_gdb_for_heights(data_path)
+        heights_legacy, heights_detailed, heights_by_coord, debug_info = parse_gdb_for_heights(data_path)
 
-        if not heights_legacy:
+        if not heights_legacy and not heights_by_coord:
             return {
                 "success": False,
                 "status": "no_heights_found",
@@ -513,9 +556,10 @@ async def fetch_height_for_coordinates(
                 "debug": debug_info
             }
 
-        # Import into database (both legacy and detailed)
+        # Import into database (legacy, detailed, and coordinate-based)
         source = f"swissBUILDINGS3D_3.0_ondemand_{tile_info['id']}"
-        bulk_insert_heights(heights_legacy, source)
+        if heights_legacy:
+            bulk_insert_heights(heights_legacy, source)
         if heights_detailed:
             # Debug: Log what we're storing for the requested EGID
             if egid:
@@ -524,6 +568,9 @@ async def fetch_height_for_coordinates(
                         print(f"[DEBUG height_fetcher] Storing for EGID {egid}: trauf={h.get('traufhoehe_m')}, first={h.get('firsthoehe_m')}, gebaeude={h.get('gebaeudehoehe_m')}")
                         break
             bulk_insert_heights_detailed(heights_detailed, source)
+        if heights_by_coord:
+            coord_count = bulk_insert_heights_by_coord(heights_by_coord, source)
+            print(f"Imported {coord_count} coordinate-based heights")
 
         # Log the import
         log_import(
@@ -539,6 +586,7 @@ async def fetch_height_for_coordinates(
             "status": "success",
             "tile_id": tile_info["id"],
             "imported_count": len(heights_legacy),
+            "imported_coord_count": len(heights_by_coord),
             "source": source,
             "debug": debug_info
         }
@@ -559,10 +607,20 @@ async def fetch_height_for_coordinates(
                     result["height_m"] = height[0]
                     result["height_source"] = height[1]
                 else:
-                    result["egid"] = egid
-                    result["height_found"] = False
-                    result["message"] = f"EGID {egid} not found in imported tile"
-                    result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
+                    # EGID nicht gefunden - versuche Koordinaten-Lookup
+                    coord_height = get_building_height_by_coordinates(e, n, tolerance_m=30.0)
+                    if coord_height:
+                        result["egid"] = egid
+                        result["height_m"] = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
+                        result["heights"] = coord_height
+                        result["height_source"] = coord_height.get("source")
+                        result["lookup_method"] = "coordinate_fallback"
+                        result["coord_match_distance_m"] = coord_height.get("distance_m")
+                    else:
+                        result["egid"] = egid
+                        result["height_found"] = False
+                        result["message"] = f"EGID {egid} not found in imported tile (coord lookup also failed)"
+                        result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
 
         return result
 
