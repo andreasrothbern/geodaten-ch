@@ -142,16 +142,33 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
             print(f"No tiles found for bbox {bbox}")
             return None
 
+        # Filter tiles that actually contain the point (not just intersect bbox)
+        def tile_contains_point(feature, point_lon, point_lat):
+            bbox = feature.get("bbox", [])
+            if len(bbox) >= 4:
+                # bbox format: [west, south, east, north]
+                west, south, east, north = bbox[0], bbox[1], bbox[2], bbox[3]
+                return west <= point_lon <= east and south <= point_lat <= north
+            return True  # If no bbox, assume it might contain the point
+
+        # Filter to tiles that actually contain our point
+        containing_features = [f for f in features if tile_contains_point(f, lon, lat)]
+        print(f"Found {len(features)} tiles total, {len(containing_features)} actually contain point ({lon:.4f}, {lat:.4f})")
+
+        if not containing_features:
+            print(f"Warning: No tiles actually contain the point, using all {len(features)} intersecting tiles")
+            containing_features = features
+
         # Sort by datetime descending to get newest tiles first (they have EGID)
         def get_datetime(f):
             dt = f.get("properties", {}).get("datetime", "")
             return dt if dt else "1900-01-01"
 
-        features = sorted(features, key=get_datetime, reverse=True)
-        print(f"Found {len(features)} tiles, sorted by date. First: {features[0].get('id')}")
+        containing_features = sorted(containing_features, key=get_datetime, reverse=True)
+        print(f"After filtering: {len(containing_features)} tiles. First: {containing_features[0].get('id') if containing_features else 'none'}")
 
         # Find the best matching tile (prefer GDB format, newest first)
-        for feature in features:
+        for feature in containing_features:
             assets = feature.get("assets", {})
             feature_id = feature.get("id", "")
 
@@ -159,6 +176,11 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
             if feature_id in ["swissbuildings3d_3_0_2023", "swissbuildings3d_3_0_2024", "swissbuildings3d_3_0_2025"]:
                 print(f"Skipping aggregate dataset: {feature_id}")
                 continue
+
+            # Log tile bbox for debugging
+            bbox = feature.get("bbox", [])
+            if bbox:
+                print(f"Considering tile {feature_id}: bbox=[{bbox[0]:.4f}, {bbox[1]:.4f}, {bbox[2]:.4f}, {bbox[3]:.4f}]")
 
             # Look for GDB asset first
             gdb_asset = None
