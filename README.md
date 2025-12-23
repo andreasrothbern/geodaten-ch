@@ -212,7 +212,7 @@ npx @railway/cli volume add --mount-path /app/data
 | SG     | Marktgasse 11, 9000 St. Gallen    | On-Demand | ✅ |
 | TG     | Freiestrasse 10, 8500 Frauenfeld  | On-Demand | ✅ |
 | BL     | Hauptstrasse 50, 4410 Liestal     | On-Demand | ✅ |
-| SH     | Vordergasse 20, 8200 Schaffhausen | On-Demand | ✅ |
+| SH     | Vordergasse 17, 8200 Schaffhausen | On-Demand | ✅ |
 
 ### 3D Tiles API Test-Koordinaten
 
