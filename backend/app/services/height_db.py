@@ -356,6 +356,12 @@ def get_building_height_by_coordinates(
     if not HEIGHT_DB_PATH.exists():
         return None
 
+    # Ensure table exists (migration support)
+    try:
+        init_database()
+    except Exception:
+        pass
+
     try:
         with sqlite3.connect(HEIGHT_DB_PATH) as conn:
             cursor = conn.cursor()

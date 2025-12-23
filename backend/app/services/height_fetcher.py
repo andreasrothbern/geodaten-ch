@@ -492,9 +492,8 @@ async def fetch_height_for_coordinates(
     # Convert LV03 to LV95 if needed
     e, n = ensure_lv95(e, n)
 
-    # Initialize database if needed
-    if not get_db_path().exists():
-        init_database()
+    # Initialize database (creates tables if they don't exist)
+    init_database()
 
     # Check if we already have COMPLETE detailed heights
     if egid:
