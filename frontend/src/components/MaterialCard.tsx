@@ -11,6 +11,17 @@ interface MaterialItem {
   total_weight_kg: number | null
 }
 
+interface LiftData {
+  lift_type: string
+  height_m: number
+  width_m: number
+  levels: number
+  area_m2: number
+  npk_positions: { position: string; name: string; unit: string; quantity: number; includes?: string }[]
+  weight_estimate_kg: number
+  notes: string
+}
+
 interface AusmassData {
   material?: {
     system: string
@@ -26,6 +37,9 @@ interface AusmassData {
     zusammenfassung: {
       total_ausmass_m2: number
     }
+  }
+  scaffolding_config?: {
+    lift?: LiftData | null
   }
 }
 
@@ -457,6 +471,73 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
         >
           {showAllItems ? 'Weniger anzeigen' : `Alle ${categories.length} Kategorien anzeigen`}
         </button>
+      )}
+
+      {/* Lift Section */}
+      {ausmassData.scaffolding_config?.lift && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="bg-indigo-50 px-4 py-3 font-medium flex items-center gap-2">
+            <span className="text-xl">🛗</span>
+            <span className="text-indigo-900">Gerüstlift</span>
+            <span className="ml-auto text-sm text-indigo-600">
+              {ausmassData.scaffolding_config.lift.area_m2.toFixed(1)} m² | {ausmassData.scaffolding_config.lift.weight_estimate_kg.toFixed(0)} kg
+            </span>
+          </div>
+          <div className="p-4 space-y-3">
+            {/* Lift Summary */}
+            <div className="grid grid-cols-4 gap-2 text-center text-sm">
+              <div className="bg-indigo-50 rounded p-2">
+                <p className="text-xs text-indigo-600">Typ</p>
+                <p className="font-medium text-indigo-900">
+                  {ausmassData.scaffolding_config.lift.lift_type === 'material' ? 'Material' :
+                   ausmassData.scaffolding_config.lift.lift_type === 'person' ? 'Person' : 'Kombi'}
+                </p>
+              </div>
+              <div className="bg-indigo-50 rounded p-2">
+                <p className="text-xs text-indigo-600">Höhe</p>
+                <p className="font-medium text-indigo-900">{ausmassData.scaffolding_config.lift.height_m.toFixed(1)}m</p>
+              </div>
+              <div className="bg-indigo-50 rounded p-2">
+                <p className="text-xs text-indigo-600">Breite</p>
+                <p className="font-medium text-indigo-900">{ausmassData.scaffolding_config.lift.width_m}m</p>
+              </div>
+              <div className="bg-indigo-50 rounded p-2">
+                <p className="text-xs text-indigo-600">Etagen</p>
+                <p className="font-medium text-indigo-900">{ausmassData.scaffolding_config.lift.levels}</p>
+              </div>
+            </div>
+
+            {/* NPK Positions */}
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th className="px-4 py-2 text-left">NPK-Pos.</th>
+                  <th className="px-4 py-2 text-left">Bezeichnung</th>
+                  <th className="px-4 py-2 text-right">Menge</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ausmassData.scaffolding_config.lift.npk_positions.map((pos, i) => (
+                  <tr key={i} className="border-t hover:bg-gray-50">
+                    <td className="px-4 py-2 font-mono text-xs text-indigo-700">{pos.position}</td>
+                    <td className="px-4 py-2">
+                      {pos.name}
+                      {pos.includes && <span className="text-xs text-gray-500 block">{pos.includes}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono">{pos.quantity} {pos.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Notes */}
+            {ausmassData.scaffolding_config.lift.notes && ausmassData.scaffolding_config.lift.notes !== 'Standardkonfiguration' && (
+              <p className="text-xs text-indigo-600 bg-indigo-50 p-2 rounded">
+                <strong>Hinweis:</strong> {ausmassData.scaffolding_config.lift.notes}
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Weight per m² info */}
