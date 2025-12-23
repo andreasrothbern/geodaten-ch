@@ -210,21 +210,31 @@ async def fetch_and_cache_complete_data(
     # 6. Build 3D viewer URL
     viewer_3d_url = None
     if geo:
-        # LV95 coordinates need full format (E: 2xxxxxx, N: 1xxxxxx)
-        e = geo.coordinates.lv95_e
-        n = geo.coordinates.lv95_n
-        if e < 2000000:
-            e += 2000000
-        if n < 1000000:
-            n += 1000000
-        # URL-Format für map.geo.admin.ch
-        # - 3D-Modus zeigt swissBUILDINGS3D automatisch
-        # - z=18: Nahansicht für einzelnes Gebäude
-        viewer_3d_url = (
-            f"https://map.geo.admin.ch/#/map?lang=de"
-            f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-            f"&center={e:.0f},{n:.0f}&z=18&3d=true"
-        )
+        lat = geo.coordinates.wgs84_lat
+        lon = geo.coordinates.wgs84_lon
+        if lat and lon:
+            # 3D-URL mit camera Parameter (lon, lat, höhe_m, neigung)
+            # - Höhe 200m über Grund für gute Übersicht
+            # - Neigung -45° für schräge Ansicht auf Gebäude
+            viewer_3d_url = (
+                f"https://map.geo.admin.ch/#/map?lang=de"
+                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
+                f"&camera={lon:.6f},{lat:.6f},200,-45"
+                f"&3d=true"
+            )
+        else:
+            # Fallback: LV95 Koordinaten
+            e = geo.coordinates.lv95_e
+            n = geo.coordinates.lv95_n
+            if e < 2000000:
+                e += 2000000
+            if n < 1000000:
+                n += 1000000
+            viewer_3d_url = (
+                f"https://map.geo.admin.ch/#/map?lang=de"
+                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
+                f"&center={e:.0f},{n:.0f}&z=19&3d=true"
+            )
 
     # Create cached data object
     cached_data = CachedAddressData(

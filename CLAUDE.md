@@ -216,13 +216,12 @@ Es gibt **drei** SQLite-Tabellen für Höhendaten in `building_heights.db`:
 
 **TODO (optional):** Legacy-Tabelle `building_heights` kann entfernt werden, sobald alle Daten in `_detailed` migriert sind.
 
-### Debug-Code entfernen
+### Debug-Code (Stand 23.12.2025)
 
-Nach dem Fix vom 22.12.2025 gibt es temporären Debug-Code:
-- `_height_debug` in API Response (`geodienste.py`)
-- `[DEBUG]` Console-Logs im Frontend (`App.tsx`)
-
-Kann entfernt werden sobald das Höhen-Feature stabil läuft.
+Debug-Code aus Backend entfernt:
+- ✅ `_height_debug` aus API Response entfernt (`geodienste.py`)
+- ✅ Debug-Prints aus `height_fetcher.py` entfernt
+- `[DEBUG]` Console-Logs im Frontend (`App.tsx`) können optional entfernt werden
 
 ## Lokale Entwicklung
 

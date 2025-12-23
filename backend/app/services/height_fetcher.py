@@ -117,8 +117,6 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
     lon = (2.6779094 + 4.728982 * y + 0.791484 * y * x + 0.1306 * y * x * x - 0.0436 * y * y * y) * 100 / 36
     lat = (16.9023892 + 3.238272 * x - 0.270978 * y * y - 0.002528 * x * x - 0.0447 * y * y * x - 0.0140 * x * x * x) * 100 / 36
 
-    print(f"Converted LV95 ({e}, {n}) to WGS84 ({lon:.4f}, {lat:.4f})")
-
     # Use a small bbox around the point
     bbox = f"{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}"
 
@@ -139,7 +137,6 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
         features = data.get("features", [])
 
         if not features:
-            print(f"No tiles found for bbox {bbox}")
             return None
 
         # Filter tiles that actually contain the point (not just intersect bbox)
@@ -153,10 +150,9 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
 
         # Filter to tiles that actually contain our point
         containing_features = [f for f in features if tile_contains_point(f, lon, lat)]
-        print(f"Found {len(features)} tiles total, {len(containing_features)} actually contain point ({lon:.4f}, {lat:.4f})")
 
         if not containing_features:
-            print(f"Warning: No tiles actually contain the point, using all {len(features)} intersecting tiles")
+            # Fallback to all intersecting tiles if none actually contain the point
             containing_features = features
 
         # Sort by datetime descending to get newest tiles first (they have EGID)
@@ -165,7 +161,6 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
             return dt if dt else "1900-01-01"
 
         containing_features = sorted(containing_features, key=get_datetime, reverse=True)
-        print(f"After filtering: {len(containing_features)} tiles. First: {containing_features[0].get('id') if containing_features else 'none'}")
 
         # Find the best matching tile (prefer GDB format, newest first)
         for feature in containing_features:
@@ -174,13 +169,7 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
 
             # Skip aggregate datasets (they don't have spatial tiles)
             if feature_id in ["swissbuildings3d_3_0_2023", "swissbuildings3d_3_0_2024", "swissbuildings3d_3_0_2025"]:
-                print(f"Skipping aggregate dataset: {feature_id}")
                 continue
-
-            # Log tile bbox for debugging
-            bbox = feature.get("bbox", [])
-            if bbox:
-                print(f"Considering tile {feature_id}: bbox=[{bbox[0]:.4f}, {bbox[1]:.4f}, {bbox[2]:.4f}, {bbox[3]:.4f}]")
 
             # Look for GDB asset first
             gdb_asset = None
@@ -191,7 +180,6 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
                     break
 
             if gdb_asset:
-                print(f"Selected tile: {feature_id}, URL: {gdb_asset.get('href')}")
                 return {
                     "id": feature.get("id"),
                     "download_url": gdb_asset.get("href"),
@@ -290,7 +278,6 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, A
         # List available layers
         layers = fiona.listlayers(gdb_path)
         debug_info["layers"] = layers
-        print(f"GDB layers: {layers}")
 
         # Try to find the right layer
         target_layer = None
@@ -309,17 +296,12 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, A
             target_layer = layers[0]
 
         if not target_layer:
-            print("No suitable layer found in GDB")
             return heights_legacy, heights_detailed, debug_info
-
-        print(f"Using layer: {target_layer}")
 
         # Read WITH geometry to calculate heights from 3D coordinates if needed
         gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
         debug_info["columns"] = list(gdf.columns)
         debug_info["total_rows"] = len(gdf)
-        print(f"Columns: {list(gdf.columns)}")
-        print(f"Total rows: {len(gdf)}")
 
         for _, row in gdf.iterrows():
             egid = row.get('EGID')
@@ -480,10 +462,7 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, A
             except (ValueError, TypeError):
                 pass
 
-        print(f"Found {len(heights_legacy)} with EGID, {debug_info['coord_only_count']} coord-only, sample EGIDs: {debug_info['sample_egids']}")
-
     except Exception as e:
-        print(f"Error parsing GDB: {e}")
         debug_info["error"] = str(e)
 
     return heights_legacy, heights_detailed, heights_by_coord, debug_info
@@ -538,13 +517,10 @@ async def fetch_height_for_coordinates(
                     "imported_count": 0
                 }
             # Incomplete data - continue to fetch fresh data
-            print(f"EGID {egid} has incomplete heights, refreshing from swissBUILDINGS3D")
+            pass  # Incomplete heights, will refresh from swissBUILDINGS3D
         else:
-            # No detailed heights, check legacy
-            existing = get_building_height(egid)
-            if existing:
-                # Legacy data exists but we want detailed - continue to refresh
-                print(f"EGID {egid} has only legacy height, refreshing for detailed data")
+            # No detailed heights, check legacy - will refresh anyway for detailed data
+            pass
 
     # Find the tile for these coordinates
     tile_info = await find_tile_for_coordinates(e, n)
@@ -582,16 +558,9 @@ async def fetch_height_for_coordinates(
         if heights_legacy:
             bulk_insert_heights(heights_legacy, source)
         if heights_detailed:
-            # Debug: Log what we're storing for the requested EGID
-            if egid:
-                for h in heights_detailed:
-                    if h.get("egid") == egid:
-                        print(f"[DEBUG height_fetcher] Storing for EGID {egid}: trauf={h.get('traufhoehe_m')}, first={h.get('firsthoehe_m')}, gebaeude={h.get('gebaeudehoehe_m')}")
-                        break
             bulk_insert_heights_detailed(heights_detailed, source)
         if heights_by_coord:
-            coord_count = bulk_insert_heights_by_coord(heights_by_coord, source)
-            print(f"Imported {coord_count} coordinate-based heights")
+            bulk_insert_heights_by_coord(heights_by_coord, source)
 
         # Log the import
         log_import(
