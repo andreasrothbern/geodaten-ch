@@ -346,8 +346,8 @@ def get_building_height_by_coordinates(
     Sucht das nächstgelegene Gebäude innerhalb der Toleranz.
 
     Args:
-        e: LV95 Easting
-        n: LV95 Northing
+        e: Easting (LV03 oder LV95)
+        n: Northing (LV03 oder LV95)
         tolerance_m: Suchradius in Metern (default 25m)
 
     Returns:
@@ -355,6 +355,11 @@ def get_building_height_by_coordinates(
     """
     if not HEIGHT_DB_PATH.exists():
         return None
+
+    # Convert LV03 to LV95 if needed (DB stores LV95)
+    if e < 1_000_000:
+        e = e + 2_000_000
+        n = n + 1_000_000
 
     # Ensure table exists (migration support)
     try:
