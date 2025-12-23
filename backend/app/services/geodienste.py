@@ -718,20 +718,19 @@ def calculate_scaffolding_data(
     main_sides = [s for s in geometry.sides if s['length_m'] > 3.0]
 
     # 3D Viewer Link generieren
-    # Format: camera=lon,lat,elevation,pitch,heading,roll
-    # - elevation: Kamerahöhe in Metern (500m für gute Übersicht)
-    # - pitch: -90 = senkrecht nach unten, -45 = schräg
+    # LV95-Format (sr=2056) ist zuverlässiger als camera-Parameter
     viewer_3d_url = None
     if coordinates:
-        lat = coordinates.get('wgs84_lat')
-        lon = coordinates.get('wgs84_lon')
-        if lat and lon:
-            # WGS84 Koordinaten mit camera-Parameter für 3D
+        e = coordinates.get('lv95_e')
+        n = coordinates.get('lv95_n')
+        if e and n:
+            # LV95 mit vollem Format (E: 2xxxxxx, N: 1xxxxxx)
+            e_full = e if e > 2000000 else e + 2000000
+            n_full = n if n > 1000000 else n + 1000000
             viewer_3d_url = (
                 f"https://map.geo.admin.ch/#/map?lang=de"
-                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-                f"&camera={lon:.6f},{lat:.6f},500,-45,,"
-                f"&3d"
+                f"&sr=2056&center={e_full:.0f},{n_full:.0f}&z=13"
+                f"&bgLayer=ch.swisstopo.pixelkarte-farbe&3d"
             )
 
     return {
