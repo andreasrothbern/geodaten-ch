@@ -718,30 +718,20 @@ def calculate_scaffolding_data(
     main_sides = [s for s in geometry.sides if s['length_m'] > 3.0]
 
     # 3D Viewer Link generieren
+    # Verwendet LV95-Koordinaten mit hohem Zoom für 3D-Ansicht
     viewer_3d_url = None
     if coordinates:
         e = coordinates.get('lv95_e')
         n = coordinates.get('lv95_n')
-        lat = coordinates.get('wgs84_lat')
-        lon = coordinates.get('wgs84_lon')
-        if lat and lon:
-            # 3D-URL mit camera Parameter (lon, lat, höhe_m, neigung)
-            # - Höhe 200m über Grund für gute Übersicht
-            # - Neigung -45° für schräge Ansicht auf Gebäude
-            viewer_3d_url = (
-                f"https://map.geo.admin.ch/#/map?lang=de"
-                f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-                f"&camera={lon:.6f},{lat:.6f},200,-45"
-                f"&3d=true"
-            )
-        elif e and n:
-            # Fallback: LV95 Koordinaten für 2D-Ansicht
+        if e and n:
+            # LV95 Koordinaten mit vollem Format (E: 2xxxxxx, N: 1xxxxxx)
             e_full = e if e > 2000000 else e + 2000000
             n_full = n if n > 1000000 else n + 1000000
+            # z=20 für Nahansicht auf einzelnes Gebäude
             viewer_3d_url = (
                 f"https://map.geo.admin.ch/#/map?lang=de"
                 f"&bgLayer=ch.swisstopo.pixelkarte-farbe"
-                f"&center={e_full:.0f},{n_full:.0f}&z=19&3d=true"
+                f"&center={e_full:.0f},{n_full:.0f}&z=20&3d=true"
             )
 
     return {
