@@ -566,14 +566,23 @@ def get_height_details(
                         implausible_reason = f"{result['traufhoehe_m']:.1f}m < {min_height_by_floors:.0f}m ({floors} Geschosse × 2m)"
 
             if is_implausible:
-                print(f"[WARNUNG] Unplausible Traufhöhe: {implausible_reason}")
+                # Nur Traufhöhe verwerfen, Firsthöhe kann plausibel sein!
                 result["traufhoehe_m_original"] = result["traufhoehe_m"]
                 result["traufhoehe_m"] = None
-                result["firsthoehe_m_original"] = result.get("firsthoehe_m")
-                result["firsthoehe_m"] = None
-                result["height_data_implausible"] = True
                 result["implausible_reason"] = implausible_reason
-                measured_is_plausible = False
+
+                # Wenn Firsthöhe plausibel ist, daraus Traufhöhe schätzen
+                first = result.get("firsthoehe_m") or result.get("gebaeudehoehe_m")
+                if first and first >= 5.0:
+                    # Firsthöhe ist plausibel - Traufhöhe auf 85% schätzen
+                    result["traufhoehe_m"] = round(first * 0.85, 1)
+                    result["firsthoehe_m"] = round(first, 1)
+                    result["heights_estimated"] = True
+                else:
+                    # Auch Firsthöhe unplausibel - alles verwerfen
+                    result["firsthoehe_m"] = None
+                    result["height_data_implausible"] = True
+                    measured_is_plausible = False
         except ImportError:
             pass
 
