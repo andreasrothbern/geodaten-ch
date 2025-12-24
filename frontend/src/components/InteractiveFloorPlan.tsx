@@ -51,6 +51,7 @@ export function InteractiveFloorPlan({
       setError(null)
       try {
         // Sende die gleichen Daten, die auch die Tabelle verwendet
+        // compact: true für grössere Darstellung (ohne Info-Boxen)
         const response = await fetch(`${apiUrl}/api/v1/visualize/floor-plan`, {
           method: 'POST',
           headers: {
@@ -63,7 +64,8 @@ export function InteractiveFloorPlan({
             height: height,
             eave_height_m: eaveHeightM,
             floors: floors,
-            area_m2: areaM2
+            area_m2: areaM2,
+            compact: true  // Compact mode: mehr Platz für Polygon, keine Gebäudedaten-Box
           })
         })
         if (!response.ok) {

@@ -112,6 +112,17 @@ class SVGGenerator:
   </g>
 '''
 
+    def _compact_legend(self, x: int, y: int) -> str:
+        """Kompakte Legende für Fassaden-Auswahl (nur Klick-Hinweis)"""
+        return f'''
+  <!-- Kompakte Legende -->
+  <g transform="translate({x}, {y})">
+    <rect x="0" y="0" width="90" height="30" fill="{self.COLORS['legend_bg']}" stroke="{self.COLORS['legend_border']}" rx="3" opacity="0.9"/>
+    <text x="45" y="12" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS['text_light']}">Fassade anklicken</text>
+    <text x="45" y="23" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS['text_light']}">zum Auswählen</text>
+  </g>
+'''
+
     def _scale_bar(self, x: int, y: int, scale: float, meters: int = 10) -> str:
         """Massstab"""
         bar_width = meters * scale
@@ -443,12 +454,21 @@ class SVGGenerator:
         svg += self._svg_footer()
         return svg
 
-    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500) -> str:
+    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, compact: bool = False) -> str:
         """
         Generiert sauberen technischen Grundriss.
         Verwendet echte Polygon-Daten falls vorhanden.
+
+        Args:
+            compact: Wenn True, minimale Darstellung für Fassaden-Auswahl
+                     (kein Titel, keine Info-Box, kleine Legende)
         """
-        margin = {'top': 60, 'right': 160, 'bottom': 80, 'left': 50}
+        # Margins anpassen: compact = mehr Platz für Polygon
+        if compact:
+            margin = {'top': 20, 'right': 100, 'bottom': 40, 'left': 20}
+        else:
+            margin = {'top': 60, 'right': 160, 'bottom': 80, 'left': 50}
+
         draw_width = width - margin['left'] - margin['right']
         draw_height = height - margin['top'] - margin['bottom']
 
@@ -462,7 +482,9 @@ class SVGGenerator:
             poly_height = building.width_m
 
         building_with_scaffold = max(poly_width, poly_height) + 6
-        scale = min(draw_width, draw_height) / building_with_scaffold * 0.85
+        # Compact mode: mehr Skalierung (0.92 statt 0.85)
+        scale_factor = 0.92 if compact else 0.85
+        scale = min(draw_width, draw_height) / building_with_scaffold * scale_factor
 
         # Zentrieren
         center_x = margin['left'] + draw_width / 2
@@ -475,10 +497,11 @@ class SVGGenerator:
 
         # Anzahl Seiten für Titel
         num_sides = len(building.sides) if building.sides else 4
-        shape_info = f" ({num_sides} Seiten)" if num_sides != 4 else ""
 
-        # Titel
-        svg += f'''
+        # Titel nur im Normal-Modus
+        if not compact:
+            shape_info = f" ({num_sides} Seiten)" if num_sides != 4 else ""
+            svg += f'''
   <text x="{width/2}" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">
     Grundriss mit Gerüstposition{shape_info}
   </text>
@@ -490,33 +513,41 @@ class SVGGenerator:
         # Gebäude zeichnen - Polygon wenn vorhanden, sonst Rechteck
         if building.polygon_coordinates and len(building.polygon_coordinates) >= 3:
             svg += self._draw_polygon_floor_plan(
-                building, scale, center_x, center_y, width, height, margin
+                building, scale, center_x, center_y, width, height, margin, compact
             )
         else:
             svg += self._draw_rectangle_floor_plan(
                 building, scale, center_x, center_y, width, height, margin
             )
 
-        # Legende
-        legend_items = [
-            {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
-            {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
-        ]
-        svg += self._legend(width - 155, 55, legend_items)
+        # Legende - compact: kleine Version rechts oben
+        if compact:
+            svg += self._compact_legend(width - 95, 5)
+        else:
+            legend_items = [
+                {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
+                {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
+                {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
+            ]
+            svg += self._legend(width - 155, 55, legend_items)
 
-        # Gebäude Info
-        svg += self._building_info_box(margin['left'], height - 65, building)
+        # Gebäude Info - nur im Normal-Modus
+        if not compact:
+            svg += self._building_info_box(margin['left'], height - 65, building)
 
-        # Massstab (rechts wie bei Schnitt/Ansicht)
-        svg += self._scale_bar(width - 140, height - 35, scale, 10)
+        # Massstab
+        if compact:
+            svg += self._scale_bar(20, height - 15, scale, 10)
+        else:
+            svg += self._scale_bar(width - 140, height - 35, scale, 10)
 
         # Nordpfeil
-        svg += self._north_arrow(width - 40, height - 50)
+        svg += self._north_arrow(width - 25, height - 25)
 
-        # Koordinaten-Info
-        area = building.area_m2 or (building.length_m * building.width_m)
-        svg += f'''
+        # Koordinaten-Info - nur im Normal-Modus
+        if not compact:
+            area = building.area_m2 or (building.length_m * building.width_m)
+            svg += f'''
   <text x="{width/2}" y="{height - 10}" text-anchor="middle" font-family="Arial" font-size="9" fill="{self.COLORS['text_light']}">
     LV95 (EPSG:2056){f' | EGID: {building.egid}' if building.egid else ''} | Fläche: {area:.0f} m²
   </text>
@@ -527,8 +558,13 @@ class SVGGenerator:
 
     def _draw_polygon_floor_plan(self, building: BuildingData, scale: float,
                                    center_x: float, center_y: float,
-                                   width: int, height: int, margin: dict) -> str:
-        """Zeichnet Grundriss mit echtem Polygon."""
+                                   width: int, height: int, margin: dict,
+                                   compact: bool = False) -> str:
+        """Zeichnet Grundriss mit echtem Polygon.
+
+        Args:
+            compact: Im Compact-Modus kleinere Labels, keine Richtungsangabe
+        """
         svg = ""
         coords = building.polygon_coordinates
         sides = building.sides or []
@@ -617,8 +653,15 @@ class SVGGenerator:
 
         # Seiten-Beschriftungen
         svg += '  <!-- Fassaden-Beschriftungen -->\n'
+
+        # Compact: kleinere Labels, weniger Offset
+        min_length_for_label = 1.0 if compact else 0.5
+        font_size_main = 8 if compact else 9
+        font_size_sub = 7 if compact else 8
+        label_offset_factor = 1.0 if compact else 1.5
+
         for i, side in enumerate(sides):
-            if side.get('length_m', 0) < 0.5:  # Sehr kurze Seiten überspringen
+            if side.get('length_m', 0) < min_length_for_label:
                 continue
 
             # Mittelpunkt der Seite berechnen
@@ -645,14 +688,18 @@ class SVGGenerator:
             if seg_len > 0:
                 nx = -dy / seg_len  # Normal (nach aussen)
                 ny = dx / seg_len
-                label_x = svg_mid[0] + nx * scale * 1.5
-                label_y = svg_mid[1] - ny * scale * 1.5
+                label_x = svg_mid[0] + nx * scale * label_offset_factor
+                label_y = svg_mid[1] - ny * scale * label_offset_factor
             else:
                 label_x, label_y = svg_mid
 
-            # Index-Nummer an jeder Fassade (0-basiert intern, 1-basiert angezeigt)
-            svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}] {direction}</text>\n'
-            svg += f'  <text x="{label_x:.1f}" y="{label_y + 10:.1f}" text-anchor="middle" font-family="Arial" font-size="8" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
+            # Compact: nur Index, Normal: Index + Richtung
+            if compact:
+                svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_main}" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}]</text>\n'
+                svg += f'  <text x="{label_x:.1f}" y="{label_y + 9:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
+            else:
+                svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_main}" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}] {direction}</text>\n'
+                svg += f'  <text x="{label_x:.1f}" y="{label_y + 10:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
 
         # Verankerungspunkte an allen Polygon-Ecken
         svg += '  <!-- Verankerungspunkte -->\n'
