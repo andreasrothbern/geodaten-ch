@@ -928,6 +928,23 @@ def calculate_scaffolding_data(
     # Hauptseiten identifizieren (längste Seiten)
     main_sides = [s for s in geometry.sides if s['length_m'] > 3.0]
 
+    # Höhen zu jeder Fassade hinzufügen (initial: globale Höhe)
+    # Später können diese pro Fassade unterschiedlich sein (Höhenzonen)
+    traufhoehe = height_info.get("traufhoehe_m")
+    firsthoehe = height_info.get("firsthoehe_m")
+
+    sides_with_heights = []
+    for side in geometry.sides:
+        side_with_height = side.copy()
+        side_with_height["traufhoehe_m"] = traufhoehe
+        side_with_height["firsthoehe_m"] = firsthoehe
+        # Berechne Fassadenfläche für diese Seite
+        if traufhoehe:
+            side_with_height["facade_area_m2"] = round(side["length_m"] * traufhoehe, 1)
+        else:
+            side_with_height["facade_area_m2"] = None
+        sides_with_heights.append(side_with_height)
+
     # 3D Viewer Link generieren
     # LV95-Format (sr=2056) ist zuverlässiger als camera-Parameter
     viewer_3d_url = None
@@ -974,7 +991,7 @@ def calculate_scaffolding_data(
             "number_of_sides": len(geometry.sides),
             "main_sides_count": len(main_sides),
         },
-        "sides": geometry.sides,  # Geometrische Reihenfolge beibehalten für SVG-Konsistenz
+        "sides": sides_with_heights,  # Mit Höhenangaben pro Fassade
         "polygon": {
             "coordinates": geometry.polygon,
             "coordinate_system": "LV95 (EPSG:2056)",

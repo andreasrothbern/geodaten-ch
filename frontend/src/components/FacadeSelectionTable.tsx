@@ -83,6 +83,7 @@ export function FacadeSelectionTable({
               </th>
               <th className="px-3 py-2 text-left">Nr.</th>
               <th className="px-3 py-2 text-right">Lange</th>
+              <th className="px-3 py-2 text-right">Hohe</th>
               <th className="px-3 py-2 text-center">Richtung</th>
               {showArea && <th className="px-3 py-2 text-right">Flache</th>}
             </tr>
@@ -90,7 +91,8 @@ export function FacadeSelectionTable({
           <tbody>
             {relevantSides.map((side) => {
               const isSelected = selectedFacades.includes(side.index)
-              const area = side.length_m * scaffoldHeight
+              // Nutze facade_area_m2 von API (basiert auf traufhoehe_m), Fallback auf scaffoldHeight
+              const area = side.facade_area_m2 ?? (side.length_m * scaffoldHeight)
 
               return (
                 <tr
@@ -117,6 +119,9 @@ export function FacadeSelectionTable({
                   <td className="px-3 py-2 text-right font-mono">
                     {side.length_m.toFixed(2)} m
                   </td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-500">
+                    {side.traufhoehe_m ? `${side.traufhoehe_m.toFixed(1)} m` : '-'}
+                  </td>
                   <td className="px-3 py-2 text-center">
                     <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">
                       {side.direction}
@@ -139,6 +144,9 @@ export function FacadeSelectionTable({
               </td>
               <td className="px-3 py-2 text-right font-mono text-red-600">
                 {selectedLength.toFixed(1)} m
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-gray-400 text-xs">
+                (global)
               </td>
               <td className="px-3 py-2 text-center text-gray-500">
                 von {totalLength.toFixed(1)} m

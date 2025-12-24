@@ -62,6 +62,10 @@ export interface ScaffoldingSide {
   length_m: number
   direction: string
   angle_deg: number
+  // Höhen pro Fassade (initial: globale Höhe, später: individuelle Höhenzonen)
+  traufhoehe_m: number | null
+  firsthoehe_m: number | null
+  facade_area_m2: number | null
 }
 
 export interface ScaffoldingData {
