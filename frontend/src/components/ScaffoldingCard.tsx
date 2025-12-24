@@ -117,6 +117,7 @@ export function ScaffoldingCard({
             floors={dimensions.floors || gwr_data?.floors}
             areaM2={building?.footprint_area_m2}
             professional={professionalMode}
+            zones={buildingContext?.zones}
           />
 
           {/* Polygon Simplification Slider */}

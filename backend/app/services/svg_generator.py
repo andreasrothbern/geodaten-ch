@@ -37,6 +37,22 @@ class BuildingData:
     # Bounding Box dimensions (from polygon) for correct scaling
     bbox_width_m: Optional[float] = None
     bbox_depth_m: Optional[float] = None
+    # Gebäude-Zonen für farbcodierte Darstellung
+    zones: Optional[List[Dict[str, Any]]] = None
+
+
+# Farben für Zonen-Typen
+ZONE_COLORS = {
+    'hauptgebaeude': {'fill': '#e3f2fd', 'stroke': '#1976d2', 'label': 'Hauptgebäude'},
+    'anbau': {'fill': '#e8f5e9', 'stroke': '#388e3c', 'label': 'Anbau'},
+    'turm': {'fill': '#f3e5f5', 'stroke': '#7b1fa2', 'label': 'Turm'},
+    'kuppel': {'fill': '#fff8e1', 'stroke': '#ffa000', 'label': 'Kuppel'},
+    'arkade': {'fill': '#fff3e0', 'stroke': '#e65100', 'label': 'Arkade'},
+    'vordach': {'fill': '#eceff1', 'stroke': '#546e7a', 'label': 'Vordach'},
+    'treppenhaus': {'fill': '#fce4ec', 'stroke': '#c2185b', 'label': 'Treppenhaus'},
+    'garage': {'fill': '#efebe9', 'stroke': '#5d4037', 'label': 'Garage'},
+    'unknown': {'fill': '#f5f5f5', 'stroke': '#9e9e9e', 'label': 'Unbekannt'},
+}
 
 
 class SVGGenerator:
@@ -872,6 +888,76 @@ class SVGGenerator:
            fill="{building_fill}" stroke="none"/>
 '''
 
+        # Zonen-Overlays zeichnen (falls vorhanden)
+        zones = building.zones or []
+        if zones:
+            svg += '  <!-- Gebäude-Zonen -->\n'
+            for zone in zones:
+                zone_type = zone.get('type', 'unknown')
+                zone_name = zone.get('name', 'Zone')
+                zone_indices = zone.get('polygon_point_indices', [])
+                beruesten = zone.get('beruesten', True)
+                zone_color = ZONE_COLORS.get(zone_type, ZONE_COLORS['unknown'])
+
+                # Zone nur zeichnen wenn Indizes vorhanden und Zone eingerüstet wird
+                if zone_indices and len(zone_indices) >= 3:
+                    # Sub-Polygon aus Indizes erstellen
+                    zone_coords = [coords[idx] for idx in zone_indices if idx < len(coords)]
+                    if len(zone_coords) >= 3:
+                        zone_svg_points = [to_svg(c[0], c[1]) for c in zone_coords]
+                        zone_points_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in zone_svg_points])
+
+                        # Zone-Polygon mit Farbe
+                        fill_color = zone_color['fill'] if beruesten else '#f5f5f5'
+                        stroke_color = zone_color['stroke'] if beruesten else '#bdbdbd'
+                        opacity = '0.7' if beruesten else '0.4'
+
+                        svg += f'''  <polygon points="{zone_points_str}"
+           fill="{fill_color}" fill-opacity="{opacity}"
+           stroke="{stroke_color}" stroke-width="2" stroke-dasharray="5,3"/>
+'''
+                        # Zone-Label im Zentrum
+                        zone_center_x = sum(p[0] for p in zone_svg_points) / len(zone_svg_points)
+                        zone_center_y = sum(p[1] for p in zone_svg_points) / len(zone_svg_points)
+                        height_m = zone.get('gebaeudehoehe_m', 0)
+
+                        svg += f'''  <text x="{zone_center_x:.1f}" y="{zone_center_y:.1f}"
+        font-size="10" font-weight="bold" fill="{stroke_color}"
+        text-anchor="middle" dominant-baseline="middle">{zone_name}</text>
+  <text x="{zone_center_x:.1f}" y="{zone_center_y + 12:.1f}"
+        font-size="8" fill="{stroke_color}"
+        text-anchor="middle">{height_m:.1f}m</text>
+'''
+
+        # Direction-to-Index Mapping für Fassaden erstellen
+        direction_to_indices: Dict[str, List[int]] = {}
+        for i, side in enumerate(sides):
+            direction = side.get('direction', '')
+            side_index = side.get('index', i)
+            if direction:
+                if direction not in direction_to_indices:
+                    direction_to_indices[direction] = []
+                direction_to_indices[direction].append(side_index)
+
+        # Facade-to-Zone Mapping erstellen
+        facade_to_zone: Dict[int, Dict[str, Any]] = {}
+        for zone in zones:
+            zone_type = zone.get('type', 'unknown')
+            zone_name = zone.get('name', 'Zone')
+            zone_color = ZONE_COLORS.get(zone_type, ZONE_COLORS['unknown'])
+            beruesten = zone.get('beruesten', True)
+            # fassaden_ids enthält Richtungsstrings wie ['N', 'E', 'S']
+            fassaden_ids = zone.get('fassaden_ids', [])
+            for direction in fassaden_ids:
+                # Alle Fassaden mit dieser Richtung der Zone zuordnen
+                for idx in direction_to_indices.get(direction, []):
+                    facade_to_zone[idx] = {
+                        'type': zone_type,
+                        'name': zone_name,
+                        'color': zone_color,
+                        'beruesten': beruesten
+                    }
+
         # Klickbare Fassaden-Segmente (einzeln für Interaktivität)
         svg += '  <!-- Klickbare Fassaden-Segmente -->\n'
         svg += '''  <style>
@@ -895,13 +981,22 @@ class SVGGenerator:
             direction = side.get('direction', '')
             side_index = side.get('index', i)  # Index aus side-Objekt für Konsistenz
 
+            # Zone-basierte Farbe ermitteln
+            zone_info = facade_to_zone.get(side_index)
+            if zone_info:
+                stroke_color = zone_info['color']['stroke']
+                stroke_width = 4 if zone_info['beruesten'] else 2
+            else:
+                stroke_color = self.COLORS['building_stroke']
+                stroke_width = 3
+
             # Fassaden-Segment als klickbare Linie
             svg += f'''  <line x1="{svg_start[0]:.1f}" y1="{svg_start[1]:.1f}" x2="{svg_end[0]:.1f}" y2="{svg_end[1]:.1f}"
         class="facade-segment"
         data-facade-index="{side_index}"
         data-facade-length="{length:.2f}"
         data-facade-direction="{direction}"
-        stroke="{self.COLORS['building_stroke']}" stroke-width="3" stroke-linecap="round"/>
+        stroke="{stroke_color}" stroke-width="{stroke_width}" stroke-linecap="round"/>
 '''
 
         # Seiten-Beschriftungen

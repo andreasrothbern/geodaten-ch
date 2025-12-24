@@ -403,10 +403,27 @@ class BuildingContextService:
 
 Analysiere das Gebäude und teile es in Höhenzonen auf.
 
-### Schritt 1: Komplexität bewerten
-- Ist das Polygon annähernd rechteckig? → wahrscheinlich 1 Zone
-- Hat es Einbuchtungen, L-Form, U-Form? → mehrere Zonen möglich
-- Ist die Gebäudekategorie speziell (Kirche, öffentlich)? → Türme/Kuppeln möglich
+### Schritt 1: Form analysieren und Zonen erkennen
+
+**Einfache Gebäude (1 Zone):**
+- Rechteckig oder leicht unregelmässig
+- Keine signifikanten Höhenunterschiede zu erwarten
+
+**L-förmige Gebäude (2 Zonen):**
+- Erkennbar an zwei länglichen Abschnitten im 90°-Winkel
+- Hauptflügel (Zone 1) und Seitenflügel/Anbau (Zone 2)
+- Höhe: Anbau oft 1-2 Geschosse niedriger
+
+**U-förmige Gebäude (3 Zonen):**
+- Erkennbar an drei Flügeln um einen Innenhof
+- Mittelbau (Zone 1) und zwei Seitenflügel (Zone 2, 3)
+
+**Gebäude mit Türmen/Erkern:**
+- Vorstehende Eckelemente als separate Zone
+- Typisch bei älteren Gebäuden, Kirchen, öffentlichen Bauten
+
+**T-förmige Gebäude (2 Zonen):**
+- Hauptriegel und querstehendes Element
 
 ### Schritt 2: Zonen identifizieren
 Für jede Zone bestimme:
@@ -469,11 +486,28 @@ Antworte NUR mit validem JSON (kein Markdown, keine Erklärung):
 ## Wichtige Regeln
 
 1. Bei einfachen rechteckigen Gebäuden: NUR 1 Zone erstellen
-2. Erfinde KEINE Höhen ohne Grundlage - nutze die globale Höhe als Basis
-3. Bei Unsicherheit: Weniger Zonen sind besser als falsche Zonen
+2. Bei L-/U-/T-Form: Erstelle separate Zonen für jeden Gebäudeteil
+3. Erfinde KEINE Höhen ohne Grundlage - nutze die globale Höhe als Basis
 4. `polygon_point_indices` müssen gültige Indizes sein (0 bis {num_vertices - 1})
 5. Jeder Polygon-Punkt sollte zu genau einer Zone gehören
 6. `fassaden_ids` basieren auf der Ausrichtung: N, NE, E, SE, S, SW, W, NW
+7. Bei mehreren Zonen: Jede Richtung nur EINER Zone zuordnen
+
+### Beispiel: L-förmiges Gebäude mit 8 Ecken
+
+```
+     N
+     │
+ ┌───┴───┐
+ │ Zone1 │  ← Hauptflügel (Punkte 0-3)
+ │       ├─────┐
+ └───────┤Zone2│  ← Anbau (Punkte 4-7)
+         └─────┘
+```
+
+Ergebnis:
+- Zone 1: polygon_point_indices=[0,1,2,3], fassaden_ids=["N", "W"]
+- Zone 2: polygon_point_indices=[4,5,6,7], fassaden_ids=["S", "E"]
 """
 
     def _parse_claude_response(
