@@ -1074,20 +1074,22 @@ async def get_load_classes():
          tags=["Materialkatalog"])
 async def estimate_material_quantities(
     system_id: str = Query("blitz70", description="Gerüstsystem: blitz70 oder allround"),
-    area_m2: float = Query(..., description="Gerüstfläche in m²")
+    area_m2: float = Query(..., description="Gerüstfläche in m²"),
+    short_field_ratio: float = Query(0.33, description="Anteil kurze Felder (2.57m): 0=nur 3.07m, 0.33=Standard, 1=nur 2.57m")
 ):
     """
     Materialmenge basierend auf Gerüstfläche schätzen.
 
     Verwendet Richtwerte pro 100m² Gerüstfläche.
+    Der `short_field_ratio` Parameter steuert das Verhältnis von 2.57m zu 3.07m Elementen.
 
-    **Beispiel:** `/api/v1/catalog/estimate?system_id=blitz70&area_m2=460`
+    **Beispiel:** `/api/v1/catalog/estimate?system_id=blitz70&area_m2=460&short_field_ratio=0.5`
     """
     try:
         from app.services.layher_catalog import get_catalog_service
         service = get_catalog_service()
 
-        estimates = service.estimate_material_quantities(system_id, area_m2)
+        estimates = service.estimate_material_quantities(system_id, area_m2, short_field_ratio)
 
         # Gesamtgewicht berechnen
         total_weight = sum(e["total_weight_kg"] or 0 for e in estimates)
@@ -1096,6 +1098,7 @@ async def estimate_material_quantities(
         return {
             "system_id": system_id,
             "scaffold_area_m2": area_m2,
+            "short_field_ratio": short_field_ratio,
             "materials": estimates,
             "summary": {
                 "total_pieces": total_pieces,
@@ -1114,7 +1117,8 @@ async def estimate_material_quantities(
          tags=["Materialkatalog"])
 async def estimate_combined_system(
     area_m2: float = Query(..., description="Gerüstfläche in m²"),
-    blitz_ratio: float = Query(0.7, description="Anteil Blitz 70 (0.0-1.0), Rest ist Allround")
+    blitz_ratio: float = Query(0.7, description="Anteil Blitz 70 (0.0-1.0), Rest ist Allround"),
+    short_field_ratio: float = Query(0.33, description="Anteil kurze Felder (2.57m): 0=nur 3.07m, 0.33=Standard, 1=nur 2.57m")
 ):
     """
     Materialschätzung für kombiniertes System (Blitz 70 + Allround).
@@ -1123,7 +1127,7 @@ async def estimate_combined_system(
     - Blitz 70 für Standardbereiche (wirtschaftlich)
     - Allround für Verstärkungen, Ecken, höhere Lasten
 
-    **Beispiel:** `/api/v1/catalog/estimate-combined?area_m2=460&blitz_ratio=0.7`
+    **Beispiel:** `/api/v1/catalog/estimate-combined?area_m2=460&blitz_ratio=0.7&short_field_ratio=0.5`
     """
     try:
         from app.services.layher_catalog import get_catalog_service
@@ -1131,8 +1135,10 @@ async def estimate_combined_system(
 
         if not 0 <= blitz_ratio <= 1:
             raise ValueError("blitz_ratio muss zwischen 0 und 1 liegen")
+        if not 0 <= short_field_ratio <= 1:
+            raise ValueError("short_field_ratio muss zwischen 0 und 1 liegen")
 
-        return service.estimate_combined_system_quantities(area_m2, blitz_ratio)
+        return service.estimate_combined_system_quantities(area_m2, blitz_ratio, short_field_ratio)
     except FileNotFoundError:
         raise HTTPException(status_code=503, detail="Materialkatalog nicht verfügbar")
     except ValueError as e:

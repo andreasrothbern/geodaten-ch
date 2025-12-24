@@ -130,6 +130,7 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
   const [materialData, setMaterialData] = useState<MaterialItem[] | null>(null)
   const [combinedData, setCombinedData] = useState<CombinedMaterialData | null>(null)
   const [blitzRatio, setBlitzRatio] = useState(0.7)
+  const [shortFieldRatio, setShortFieldRatio] = useState(0.33) // 2.57m vs 3.07m ratio
   const [summary, setSummary] = useState<{
     total_stueck: number
     total_gewicht_kg: number
@@ -149,7 +150,7 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
       try {
         if (selectedSystem === 'combined') {
           const response = await fetch(
-            `${apiUrl}/api/v1/catalog/estimate-combined?area_m2=${scaffoldAreaM2}&blitz_ratio=${blitzRatio}`
+            `${apiUrl}/api/v1/catalog/estimate-combined?area_m2=${scaffoldAreaM2}&blitz_ratio=${blitzRatio}&short_field_ratio=${shortFieldRatio}`
           )
           if (response.ok) {
             const data: CombinedMaterialData = await response.json()
@@ -164,7 +165,7 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
           }
         } else {
           const response = await fetch(
-            `${apiUrl}/api/v1/catalog/estimate?system_id=${selectedSystem}&area_m2=${scaffoldAreaM2}`
+            `${apiUrl}/api/v1/catalog/estimate?system_id=${selectedSystem}&area_m2=${scaffoldAreaM2}&short_field_ratio=${shortFieldRatio}`
           )
           if (response.ok) {
             const data = await response.json()
@@ -186,7 +187,7 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
     }
 
     fetchMaterials()
-  }, [selectedSystem, blitzRatio, scaffoldAreaM2, apiUrl])
+  }, [selectedSystem, blitzRatio, shortFieldRatio, scaffoldAreaM2, apiUrl])
 
   // Fetch system info when system changes
   useEffect(() => {
@@ -374,6 +375,32 @@ export function MaterialCard({ ausmassData, apiUrl, onBack }: MaterialCardProps)
           )}
         </div>
       )}
+
+      {/* Field Length Ratio Slider (2.57m vs 3.07m) */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-blue-800">Feldlängen-Präferenz</span>
+          <span className="text-sm text-blue-600">
+            {Math.round((1 - shortFieldRatio) * 100)}% lang (3.07m) / {Math.round(shortFieldRatio * 100)}% kurz (2.57m)
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={shortFieldRatio * 100}
+          onChange={(e) => setShortFieldRatio(Number(e.target.value) / 100)}
+          className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer"
+        />
+        <div className="flex justify-between text-xs text-blue-500 mt-1">
+          <span>nur 3.07m</span>
+          <span>Standard</span>
+          <span>nur 2.57m</span>
+        </div>
+        <p className="text-xs text-blue-600 mt-2">
+          Mehr kurze Felder (2.57m) = flexibler bei Ecken, aber mehr Teile und Übergänge
+        </p>
+      </div>
 
       {/* Loading State */}
       {loading && (

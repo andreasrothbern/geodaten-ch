@@ -243,13 +243,22 @@ class LayherCatalogService:
 
         return frames
 
-    def estimate_material_quantities(self, system_id: str, scaffold_area_m2: float) -> list[dict]:
+    def estimate_material_quantities(
+        self,
+        system_id: str,
+        scaffold_area_m2: float,
+        short_field_ratio: float = 0.33
+    ) -> list[dict]:
         """
         Schätze Materialmengen basierend auf Richtwerten.
 
         Args:
             system_id: System-ID (blitz70 oder allround)
             scaffold_area_m2: Gerüstfläche in m²
+            short_field_ratio: Anteil kurzer Feldlängen (2.57m) vs lang (3.07m)
+                              0.0 = nur 3.07m Elemente
+                              0.33 = Standard-Mix (ca. 1/3 kurz, 2/3 lang)
+                              1.0 = nur 2.57m Elemente
 
         Returns:
             Liste mit geschätzten Mengen pro Material
@@ -257,21 +266,70 @@ class LayherCatalogService:
         reference_values = self.get_reference_values(system_id)
         factor = scaffold_area_m2 / 100  # Richtwerte sind pro 100m²
 
+        # Feldlängen-Anpassungsfaktoren
+        # Bei mehr kurzen Feldern braucht man:
+        # - Mehr kurze Elemente (2.57m)
+        # - Weniger lange Elemente (3.07m)
+        # - Etwas mehr Rahmen (mehr Feldübergänge)
+        # Konversionsfaktor: 3.07/2.57 ≈ 1.19 (mehr kurze Teile für gleiche Länge)
+
+        # Referenz-Verhältnis aus Richtwerten: ca. 2:1 (lang:kurz)
+        # Das entspricht short_field_ratio ≈ 0.33
+        base_short_ratio = 0.33
+
         estimates = []
         for ref in reference_values:
-            qty_min = int(ref["quantity_per_100m2_min"] * factor)
-            qty_max = int(ref["quantity_per_100m2_max"] * factor)
-            qty_typical = int(ref["quantity_per_100m2_typical"] * factor)
+            qty_min = ref["quantity_per_100m2_min"] * factor
+            qty_max = ref["quantity_per_100m2_max"] * factor
+            qty_typical = ref["quantity_per_100m2_typical"] * factor
+
+            article = ref["article_number"]
+            name = ref.get("material_name", "")
+
+            # Anpassung für Feldlängen-abhängige Elemente
+            # Erkenne 3.07m und 2.57m Elemente an Artikelnummer oder Name
+            is_long_element = "307" in article or "3.07" in name
+            is_short_element = "257" in article or "2.57" in name
+
+            if is_long_element:
+                # Lange Elemente: reduzieren wenn mehr kurze gewünscht
+                # Bei ratio=0: Faktor=1.5 (mehr lange)
+                # Bei ratio=0.33: Faktor=1.0 (Standard)
+                # Bei ratio=1.0: Faktor=0 (keine langen)
+                adjustment = 1.0 + (base_short_ratio - short_field_ratio) * 1.5
+                adjustment = max(0, adjustment)
+                qty_min *= adjustment
+                qty_max *= adjustment
+                qty_typical *= adjustment
+
+            elif is_short_element:
+                # Kurze Elemente: erhöhen wenn mehr kurze gewünscht
+                # Konversionsfaktor 1.19 berücksichtigen (mehr Teile für gleiche Abdeckung)
+                # Bei ratio=0: Faktor=0.5 (weniger kurze)
+                # Bei ratio=0.33: Faktor=1.0 (Standard)
+                # Bei ratio=1.0: Faktor=2.0 (viel mehr kurze)
+                adjustment = 1.0 + (short_field_ratio - base_short_ratio) * 1.5 * 1.19
+                adjustment = max(0, adjustment)
+                qty_min *= adjustment
+                qty_max *= adjustment
+                qty_typical *= adjustment
+
+            # Rahmen: leichte Erhöhung bei mehr kurzen Feldern (mehr Übergänge)
+            elif ref.get("category_id") == "frame":
+                frame_adjustment = 1.0 + (short_field_ratio - base_short_ratio) * 0.15
+                qty_min *= frame_adjustment
+                qty_max *= frame_adjustment
+                qty_typical *= frame_adjustment
 
             estimates.append({
-                "article_number": ref["article_number"],
-                "name": ref["material_name"],
+                "article_number": article,
+                "name": name,
                 "category": ref["category_name"],
-                "quantity_min": qty_min,
-                "quantity_max": qty_max,
-                "quantity_typical": qty_typical,
+                "quantity_min": int(qty_min),
+                "quantity_max": int(qty_max),
+                "quantity_typical": int(qty_typical),
                 "weight_per_piece_kg": ref["weight_kg"],
-                "total_weight_kg": round(qty_typical * ref["weight_kg"], 1) if ref["weight_kg"] else None,
+                "total_weight_kg": round(int(qty_typical) * ref["weight_kg"], 1) if ref["weight_kg"] else None,
                 "notes": ref.get("notes")
             })
 
@@ -280,7 +338,8 @@ class LayherCatalogService:
     def estimate_combined_system_quantities(
         self,
         scaffold_area_m2: float,
-        blitz_ratio: float = 0.7
+        blitz_ratio: float = 0.7,
+        short_field_ratio: float = 0.33
     ) -> dict:
         """
         Schätze Materialmengen für kombiniertes System (Blitz + Allround).
@@ -292,6 +351,8 @@ class LayherCatalogService:
             scaffold_area_m2: Gerüstfläche in m²
             blitz_ratio: Anteil Blitz 70 (0.0-1.0), Rest ist Allround
                         Default 0.7 = 70% Blitz, 30% Allround
+            short_field_ratio: Anteil kurzer Feldlängen (2.57m vs 3.07m)
+                              Default 0.33 = Standard-Mix
 
         Returns:
             dict mit separaten Listen pro System und Gesamtübersicht
@@ -301,9 +362,9 @@ class LayherCatalogService:
         blitz_area = scaffold_area_m2 * blitz_ratio
         allround_area = scaffold_area_m2 * allround_ratio
 
-        # Materialien für beide Systeme berechnen
-        blitz_materials = self.estimate_material_quantities("blitz70", blitz_area) if blitz_area > 0 else []
-        allround_materials = self.estimate_material_quantities("allround", allround_area) if allround_area > 0 else []
+        # Materialien für beide Systeme berechnen (mit Feldlängen-Präferenz)
+        blitz_materials = self.estimate_material_quantities("blitz70", blitz_area, short_field_ratio) if blitz_area > 0 else []
+        allround_materials = self.estimate_material_quantities("allround", allround_area, short_field_ratio) if allround_area > 0 else []
 
         # Gesamtgewichte berechnen
         blitz_weight = sum(m["total_weight_kg"] or 0 for m in blitz_materials)
