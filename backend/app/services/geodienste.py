@@ -510,6 +510,21 @@ class GeodiensteService:
 
         return abs(area) / 2.0
 
+    def _calculate_perimeter(self, polygon: List[Tuple[float, float]]) -> float:
+        """Umfang eines Polygons berechnen"""
+        n = len(polygon)
+        if n < 2:
+            return 0.0
+
+        perimeter = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            dx = polygon[j][0] - polygon[i][0]
+            dy = polygon[j][1] - polygon[i][1]
+            perimeter += math.sqrt(dx * dx + dy * dy)
+
+        return perimeter
+
     def _angle_to_direction(self, angle: float) -> str:
         """Winkel in Himmelsrichtung umwandeln"""
         # Normalisieren auf 0-360
