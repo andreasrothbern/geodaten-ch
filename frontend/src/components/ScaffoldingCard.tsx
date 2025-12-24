@@ -52,6 +52,7 @@ export function ScaffoldingCard({
   const [scaffoldType, setScaffoldType] = useState<ScaffoldType>(preferences.defaultScaffoldType)
   const [liftEnabled, setLiftEnabled] = useState(false)
   const [liftCalculation, setLiftCalculation] = useState<LiftCalculation | null>(null)
+  const [professionalMode, setProfessionalMode] = useState(false)
 
   const { dimensions, building, gwr_data, sides } = data
 
@@ -74,7 +75,21 @@ export function ScaffoldingCard({
 
         {/* Interactive Floor Plan */}
         <div className="border rounded-lg p-4 bg-white">
-          <h5 className="text-sm font-medium text-gray-600 mb-3">Grundriss - Klicken zum Auswählen</h5>
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="text-sm font-medium text-gray-600">Grundriss - Klicken zum Auswählen</h5>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs text-gray-500">Professional</span>
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={professionalMode}
+                  onChange={(e) => setProfessionalMode(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+              </div>
+            </label>
+          </div>
           <InteractiveFloorPlan
             address={data.address?.matched || ''}
             apiUrl={apiUrl}
@@ -84,10 +99,12 @@ export function ScaffoldingCard({
             onFacadeToggle={onFacadeToggle}
             onSelectAll={onSelectAll}
             onDeselectAll={onDeselectAll}
-            height={280}
+            height={professionalMode ? 900 : 280}
             eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
             floors={dimensions.floors || gwr_data?.floors}
             areaM2={building?.footprint_area_m2}
+            professional={professionalMode}
+            projectName={data.address?.matched}
           />
         </div>
 

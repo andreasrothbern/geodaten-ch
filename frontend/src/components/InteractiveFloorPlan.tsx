@@ -22,6 +22,10 @@ interface InteractiveFloorPlanProps {
   eaveHeightM?: number | null
   floors?: number | null
   areaM2?: number | null
+  // Professional Mode: hochwertige Zeichnung mit Titelblock, Schraffur, Massstab
+  professional?: boolean
+  projectName?: string
+  authorName?: string
 }
 
 export function InteractiveFloorPlan({
@@ -36,7 +40,10 @@ export function InteractiveFloorPlan({
   height = 300,
   eaveHeightM,
   floors,
-  areaM2
+  areaM2,
+  professional = false,
+  projectName,
+  authorName
 }: InteractiveFloorPlanProps) {
   const [svgContent, setSvgContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -61,11 +68,15 @@ export function InteractiveFloorPlan({
             address,
             sides: sides,
             polygon_coordinates: polygonCoordinates,
-            height: height,
+            width: professional ? 1200 : 600,  // Professional: 1200px Breite
+            height: professional ? 900 : height,  // Professional: 900px Höhe
             eave_height_m: eaveHeightM,
             floors: floors,
             area_m2: areaM2,
-            compact: true  // Compact mode: mehr Platz für Polygon, keine Gebäudedaten-Box
+            compact: !professional,  // Compact mode nur wenn nicht professional
+            professional: professional,
+            project_name: projectName || address,
+            author_name: authorName || 'Lawil Gerüstbau AG'
           })
         })
         if (!response.ok) {
@@ -83,7 +94,7 @@ export function InteractiveFloorPlan({
     if (address && sides.length > 0 && polygonCoordinates.length > 0) {
       fetchSvg()
     }
-  }, [address, apiUrl, sides, polygonCoordinates, height, eaveHeightM, floors, areaM2])
+  }, [address, apiUrl, sides, polygonCoordinates, height, eaveHeightM, floors, areaM2, professional, projectName, authorName])
 
   // Add click handlers to facade segments after SVG is loaded (only once)
   useEffect(() => {
@@ -226,10 +237,17 @@ export function InteractiveFloorPlan({
         </div>
       </div>
 
+      {/* Professional Mode Hinweis */}
+      {professional && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
+          Professional Mode aktiv - 1200×900px mit Titelblock, Schraffur und Massstab
+        </div>
+      )}
+
       {/* SVG Container with zoom */}
       <div
         className="bg-white border rounded-lg overflow-auto"
-        style={{ maxHeight: Math.max(height * 1.5, 450) }}
+        style={{ maxHeight: professional ? 950 : Math.max(height * 1.5, 450) }}
       >
         <div
           ref={containerRef}
