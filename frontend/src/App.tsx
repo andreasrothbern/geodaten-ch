@@ -31,7 +31,18 @@ function App() {
   const [facadesInitialized, setFacadesInitialized] = useState(false)
   // Settings panel
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // URL parameter for initial address
+  const [initialAddress, setInitialAddress] = useState<string>('')
   useUserPreferences() // Initialize preferences on app load
+
+  // Read address from URL parameter on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const addressParam = params.get('address')
+    if (addressParam) {
+      setInitialAddress(addressParam)
+    }
+  }, [])
 
   const normalizeAddress = (addr: string) => addr.toLowerCase().trim().replace(/\s+/g, ' ')
 
@@ -163,6 +174,13 @@ function App() {
       setFacadesInitialized(true)
     }
   }, [scaffoldingData?.sides, facadesInitialized])
+
+  // Auto-search when address is provided via URL parameter
+  useEffect(() => {
+    if (initialAddress && !currentAddress) {
+      handleSearch(initialAddress)
+    }
+  }, [initialAddress]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Facade selection handlers (lifted from ScaffoldingCard)
   const handleFacadeToggle = useCallback((index: number) => {
@@ -315,7 +333,7 @@ function App() {
         {/* Search Form */}
         <div className="card mb-8">
           <h2 className="text-xl font-semibold mb-4">Adresse suchen</h2>
-          <SearchForm onSearch={handleSearch} loading={loading} />
+          <SearchForm onSearch={handleSearch} loading={loading} defaultAddress={initialAddress} />
         </div>
 
         {/* Error */}

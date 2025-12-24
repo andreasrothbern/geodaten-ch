@@ -1,12 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface SearchFormProps {
   onSearch: (address: string) => void
   loading: boolean
+  defaultAddress?: string
 }
 
-export function SearchForm({ onSearch, loading }: SearchFormProps) {
-  const [address, setAddress] = useState('')
+export function SearchForm({ onSearch, loading, defaultAddress }: SearchFormProps) {
+  const [address, setAddress] = useState(defaultAddress || '')
+
+  // Update address when defaultAddress changes (e.g., from URL parameter)
+  useEffect(() => {
+    if (defaultAddress) {
+      setAddress(defaultAddress)
+    }
+  }, [defaultAddress])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
