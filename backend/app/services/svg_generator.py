@@ -74,6 +74,31 @@ class SVGGenerator:
   <title>{title}</title>
 '''
 
+    def _svg_header_professional(self, width: int, height: int, title: str) -> str:
+        """SVG-Header mit Patterns für professionelle Zeichnungen"""
+        return f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+  <title>{title}</title>
+  <defs>
+    <!-- Schraffur für Gebäude -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <!-- Gerüst-Füllung -->
+    <pattern id="scaffold-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
+      <rect width="10" height="10" fill="rgba(0, 102, 204, 0.1)"/>
+      <path d="M0,5 h10 M5,0 v10" stroke="rgba(0, 102, 204, 0.3)" stroke-width="0.5"/>
+    </pattern>
+    <!-- Pfeile für Masslinien -->
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-start" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+      <path d="M9,0 L9,6 L0,3 z" fill="#333"/>
+    </marker>
+  </defs>
+'''
+
     def _svg_footer(self) -> str:
         return '</svg>'
 
@@ -1006,6 +1031,330 @@ class SVGGenerator:
 '''
 
         return svg
+
+    # ========================================================================
+    # PROFESSIONAL MODE - Hochwertige SVGs für Ausdrucke
+    # ========================================================================
+
+    def generate_professional_floor_plan(
+        self,
+        building: BuildingData,
+        project_name: str = "",
+        project_address: str = "",
+        author_name: str = "",
+        author_role: str = "",
+        width: int = 1200,
+        height: int = 900
+    ) -> str:
+        """
+        Generiert professionellen Grundriss im Stil der Claude.ai-Vorlagen.
+
+        - Grosses Format (1200×900)
+        - Schraffur-Pattern für Gebäude
+        - Gerüst mit Ständerpunkten
+        - Professioneller Titelblock + Fusszeile
+        - Detaillierte Legende
+        - Nordpfeil und Massstab
+        """
+        margin = {'top': 100, 'right': 250, 'bottom': 90, 'left': 80}
+        draw_width = width - margin['left'] - margin['right']
+        draw_height = height - margin['top'] - margin['bottom']
+
+        # Dimensionen
+        if building.bbox_width_m and building.bbox_depth_m:
+            poly_width = building.bbox_width_m
+            poly_height = building.bbox_depth_m
+        else:
+            poly_width = building.length_m
+            poly_height = building.width_m
+
+        # Skalierung mit Gerüst-Offset (3m pro Seite)
+        scaffold_offset_m = 3.0
+        total_width = poly_width + 2 * scaffold_offset_m
+        total_height = poly_height + 2 * scaffold_offset_m
+
+        scale = min(draw_width / total_width, draw_height / total_height) * 0.85
+
+        # Zentrieren
+        center_x = margin['left'] + draw_width / 2
+        center_y = margin['top'] + draw_height / 2
+
+        # Massstab berechnen (für Anzeige)
+        meters_per_100px = 100 / scale
+        if meters_per_100px < 5:
+            scale_text = "1:50"
+        elif meters_per_100px < 10:
+            scale_text = "1:100"
+        elif meters_per_100px < 25:
+            scale_text = "1:200"
+        else:
+            scale_text = f"1:{int(meters_per_100px * 10)}"
+
+        # SVG starten
+        svg = self._svg_header_professional(width, height, f"Grundriss Gerüst - {building.address}")
+
+        # Hintergrund
+        svg += f'  <rect width="{width}" height="{height}" fill="white"/>\n'
+
+        # Titelblock
+        svg += self._professional_title_block(
+            x=20, y=20, width=width - 40,
+            title=f"GRUNDRISS GERÜST - {building.address.upper()[:50]}",
+            subtitle=project_name or "Fassadengerüst",
+            scale=scale_text,
+            system="Layher Blitz 70"
+        )
+
+        # Zeichenbereich
+        svg += self._draw_professional_floor_plan_content(
+            building, scale, center_x, center_y, scaffold_offset_m
+        )
+
+        # Legende
+        svg += self._professional_legend(width - 230, margin['top'] + 20)
+
+        # Nordpfeil
+        svg += self._north_arrow(60, height - 150, size=50)
+
+        # Massstab
+        svg += self._scale_bar(margin['left'], height - 110, scale, 20)
+
+        # Fusszeile
+        svg += self._professional_footer(
+            x=20, y=height - 80, width=width - 40,
+            project_name=project_name or "Gerüstprojekt",
+            project_address=project_address or building.address,
+            author_name=author_name,
+            author_role=author_role,
+            document_id="Grundriss"
+        )
+
+        svg += self._svg_footer()
+        return svg
+
+    def _draw_professional_floor_plan_content(
+        self,
+        building: BuildingData,
+        scale: float,
+        center_x: float,
+        center_y: float,
+        scaffold_offset_m: float
+    ) -> str:
+        """Zeichnet den Inhalt des professionellen Grundrisses."""
+        svg = ""
+        coords = building.polygon_coordinates
+        sides = building.sides or []
+
+        if not coords or len(coords) < 3:
+            # Fallback auf Rechteck
+            return self._draw_professional_rectangle_floor_plan(
+                building, scale, center_x, center_y, scaffold_offset_m
+            )
+
+        # Koordinaten zentrieren
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        center_geo_x = (min_x + max_x) / 2
+        center_geo_y = (min_y + max_y) / 2
+
+        def to_svg(gx, gy):
+            sx = center_x + (gx - center_geo_x) * scale
+            sy = center_y - (gy - center_geo_y) * scale
+            return sx, sy
+
+        # SVG-Punkte
+        svg_points = [to_svg(c[0], c[1]) for c in coords]
+        points_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_points])
+
+        # Bounding Box für Gerüst
+        svg_xs = [p[0] for p in svg_points]
+        svg_ys = [p[1] for p in svg_points]
+        scaffold_px = scaffold_offset_m * scale
+
+        bbox_min_x = min(svg_xs) - scaffold_px
+        bbox_max_x = max(svg_xs) + scaffold_px
+        bbox_min_y = min(svg_ys) - scaffold_px
+        bbox_max_y = max(svg_ys) + scaffold_px
+
+        # Gerüst-Zone (blau, mit Pattern)
+        svg += f'''
+  <!-- Gerüst-Zone -->
+  <rect x="{bbox_min_x}" y="{bbox_min_y}"
+        width="{bbox_max_x - bbox_min_x}" height="{bbox_max_y - bbox_min_y}"
+        fill="url(#scaffold-pattern)" stroke="#0066CC" stroke-width="1.5" rx="2"/>
+'''
+
+        # Gebäude-Polygon (mit Schraffur)
+        svg += f'''
+  <!-- Gebäude -->
+  <polygon points="{points_str}"
+           fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+'''
+
+        # Ständerpositionen (alle 2.5-3m entlang des Gerüsts)
+        svg += '  <!-- Ständerpositionen -->\n'
+        field_length_m = 2.57  # Layher Blitz Standard
+        for i, side in enumerate(sides):
+            if side['length_m'] < 1.0:
+                continue
+
+            start_geo = (side['start']['x'], side['start']['y'])
+            end_geo = (side['end']['x'], side['end']['y'])
+
+            # Normalen-Vektor für Offset nach aussen
+            dx = end_geo[0] - start_geo[0]
+            dy = end_geo[1] - start_geo[1]
+            length = (dx**2 + dy**2)**0.5
+            if length < 0.1:
+                continue
+
+            # Normalisieren und um 90° drehen (nach aussen)
+            nx = -dy / length
+            ny = dx / length
+
+            # Offset nach aussen (1m vom Gebäude)
+            offset_m = 1.0
+            start_offset = (start_geo[0] + nx * offset_m, start_geo[1] + ny * offset_m)
+            end_offset = (end_geo[0] + nx * offset_m, end_geo[1] + ny * offset_m)
+
+            # Ständer entlang der Linie
+            num_fields = max(1, int(side['length_m'] / field_length_m))
+            for j in range(num_fields + 1):
+                t = j / max(1, num_fields)
+                px = start_offset[0] + t * (end_offset[0] - start_offset[0])
+                py = start_offset[1] + t * (end_offset[1] - start_offset[1])
+                sx, sy = to_svg(px, py)
+                svg += f'  <circle cx="{sx:.1f}" cy="{sy:.1f}" r="4" fill="#0066CC"/>\n'
+
+        # Verankerungspunkte (rot, an den Ecken)
+        svg += '  <!-- Verankerungen -->\n'
+        for i, (sx, sy) in enumerate(svg_points):
+            # Versetzt nach aussen
+            if i < len(svg_points) - 1:
+                next_p = svg_points[i + 1]
+            else:
+                next_p = svg_points[0]
+            if i > 0:
+                prev_p = svg_points[i - 1]
+            else:
+                prev_p = svg_points[-1]
+
+            # Richtung nach aussen (Durchschnitt der beiden Normalen)
+            dx1 = sx - prev_p[0]
+            dy1 = sy - prev_p[1]
+            dx2 = next_p[0] - sx
+            dy2 = next_p[1] - sy
+
+            # Vereinfacht: Offset diagonal
+            offset_px = 15
+            svg += f'  <line x1="{sx:.1f}" y1="{sy:.1f}" x2="{sx + offset_px:.1f}" y2="{sy:.1f}" stroke="#CC0000" stroke-width="2"/>\n'
+
+        # Fassaden-Labels
+        svg += '  <!-- Fassaden-Labels -->\n'
+        for i, side in enumerate(sides):
+            if side['length_m'] < 2.0:
+                continue
+
+            mid_geo_x = (side['start']['x'] + side['end']['x']) / 2
+            mid_geo_y = (side['start']['y'] + side['end']['y']) / 2
+            mx, my = to_svg(mid_geo_x, mid_geo_y)
+
+            # Label mit Richtung
+            direction = side.get('direction', '')
+            label = f"F{i+1}: {side['length_m']:.1f}m ({direction})"
+
+            svg += f'  <text x="{mx:.1f}" y="{my:.1f}" text-anchor="middle" font-family="Arial" font-size="10" fill="#333">{label}</text>\n'
+
+        return svg
+
+    def _draw_professional_rectangle_floor_plan(
+        self,
+        building: BuildingData,
+        scale: float,
+        center_x: float,
+        center_y: float,
+        scaffold_offset_m: float
+    ) -> str:
+        """Fallback: Rechteckiger Grundriss für Gebäude ohne Polygon."""
+        svg = ""
+
+        building_w = building.length_m * scale
+        building_h = building.width_m * scale
+        scaffold_px = scaffold_offset_m * scale
+
+        bx = center_x - building_w / 2
+        by = center_y - building_h / 2
+
+        # Gerüst-Zone
+        svg += f'''
+  <!-- Gerüst-Zone -->
+  <rect x="{bx - scaffold_px}" y="{by - scaffold_px}"
+        width="{building_w + 2*scaffold_px}" height="{building_h + 2*scaffold_px}"
+        fill="url(#scaffold-pattern)" stroke="#0066CC" stroke-width="1.5" rx="2"/>
+'''
+
+        # Gebäude
+        svg += f'''
+  <!-- Gebäude -->
+  <rect x="{bx}" y="{by}" width="{building_w}" height="{building_h}"
+        fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+'''
+
+        # Ständer entlang der Kanten
+        svg += '  <!-- Ständerpositionen -->\n'
+        field_length_px = 2.57 * scale
+        offset = scaffold_px * 0.4
+
+        # Oben
+        for x in range(int(bx - offset), int(bx + building_w + offset), int(field_length_px)):
+            svg += f'  <circle cx="{x}" cy="{by - offset}" r="4" fill="#0066CC"/>\n'
+        # Unten
+        for x in range(int(bx - offset), int(bx + building_w + offset), int(field_length_px)):
+            svg += f'  <circle cx="{x}" cy="{by + building_h + offset}" r="4" fill="#0066CC"/>\n'
+        # Links
+        for y in range(int(by - offset), int(by + building_h + offset), int(field_length_px)):
+            svg += f'  <circle cx="{bx - offset}" cy="{y}" r="4" fill="#0066CC"/>\n'
+        # Rechts
+        for y in range(int(by - offset), int(by + building_h + offset), int(field_length_px)):
+            svg += f'  <circle cx="{bx + building_w + offset}" cy="{y}" r="4" fill="#0066CC"/>\n'
+
+        # Masse
+        svg += f'''
+  <!-- Masse -->
+  <text x="{center_x}" y="{by - scaffold_px - 10}" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">{building.length_m:.1f} m</text>
+  <text x="{bx - scaffold_px - 10}" y="{center_y}" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" transform="rotate(-90, {bx - scaffold_px - 10}, {center_y})">{building.width_m:.1f} m</text>
+'''
+
+        return svg
+
+    def _professional_legend(self, x: int, y: int) -> str:
+        """Professionelle Legende mit allen Elementen."""
+        return f'''
+  <!-- Legende -->
+  <rect x="{x}" y="{y}" width="200" height="180" fill="#f9f9f9" stroke="#333" stroke-width="1"/>
+  <text x="{x + 10}" y="{y + 20}" font-family="Arial" font-size="12" font-weight="bold">Legende</text>
+
+  <rect x="{x + 10}" y="{y + 32}" width="20" height="12" fill="url(#hatch)" stroke="#333"/>
+  <text x="{x + 35}" y="{y + 42}" font-family="Arial" font-size="10">Gebäude</text>
+
+  <rect x="{x + 10}" y="{y + 50}" width="20" height="12" fill="url(#scaffold-pattern)" stroke="#0066CC"/>
+  <text x="{x + 35}" y="{y + 60}" font-family="Arial" font-size="10">Gerüst (Belag)</text>
+
+  <circle cx="{x + 20}" cy="{y + 78}" r="4" fill="#0066CC"/>
+  <text x="{x + 35}" y="{y + 82}" font-family="Arial" font-size="10">Ständer</text>
+
+  <line x1="{x + 10}" y1="{y + 98}" x2="{x + 30}" y2="{y + 98}" stroke="#CC0000" stroke-width="2"/>
+  <text x="{x + 35}" y="{y + 102}" font-family="Arial" font-size="10">Verankerung</text>
+
+  <rect x="{x + 10}" y="{y + 112}" width="20" height="12" fill="#FFCC00" stroke="#333"/>
+  <text x="{x + 35}" y="{y + 122}" font-family="Arial" font-size="10">Zugang</text>
+
+  <text x="{x + 10}" y="{y + 145}" font-family="Arial" font-size="9" fill="#666">LF = 0.30 m | LG = 0.70 m</text>
+  <text x="{x + 10}" y="{y + 160}" font-family="Arial" font-size="9" fill="#666">Breitenklasse: W09 (0.90 m)</text>
+  <text x="{x + 10}" y="{y + 175}" font-family="Arial" font-size="9" fill="#666">Lastklasse: 3 (200 kg/m²)</text>
+'''
 
 
 # Singleton
