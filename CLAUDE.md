@@ -147,6 +147,118 @@ cd backend
 python scripts/import_building_heights.py daten.gml --canton BE
 ```
 
+## Douglas-Peucker Polygon-Vereinfachung
+
+Die App verwendet den Douglas-Peucker Algorithmus zur Reduktion der Fassadensegmente.
+Implementiert in `backend/app/services/geodienste.py`.
+
+### Aktuelle Parameter
+
+```python
+# In geodienste.py (GeodiensteService Klasse)
+SIMPLIFY_EPSILON = 0.3          # Meter - Toleranz für Punktreduktion
+COLLINEAR_ANGLE_TOLERANCE = 8.0  # Grad - für kollineare Segmente
+MIN_SIDE_LENGTH = 1.0            # Meter - minimale Seitenlänge
+```
+
+### Empfehlungen nach Gebäudegrösse
+
+| Gebäudetyp | EPSILON | ANGLE_TOL | Bemerkung |
+|------------|---------|-----------|-----------|
+| EFH (10×12m) | 0.3–0.5 | 5–8° | Wenig Vereinfachung nötig |
+| MFH/Gewerbe | 0.5–1.0 | 8–10° | Standard |
+| Grossprojekt (>50m) | 1.0–2.0 | 8–12° | Starke Vereinfachung |
+
+### Algorithmus-Ablauf
+
+1. **Douglas-Peucker**: Finde Punkt mit max. Abstand zur Verbindungslinie. Wenn > EPSILON → rekursiv teilen
+2. **Kollineare Punkte entfernen**: Punkte mit Winkel ≈ 180° (Toleranz ANGLE_TOL) werden entfernt
+3. **Kurze Segmente zusammenfassen**: Segmente < MIN_SIDE_LENGTH werden vereint
+
+## NPK 114 Konstanten
+
+Ausmass-Berechnung gemäss NPK 114 D/2012. Implementiert in `backend/app/services/npk114_calculator.py`.
+
+```python
+# Zuschläge
+FASSADENABSTAND_LF = 0.30        # m - Abstand Gebäude zu Gerüst
+GERUESTGANGBREITE_LG = 0.70      # m - für W09
+STIRNSEITIGER_ABSCHLUSS_LS = 1.00 # m - beidseitig (= LF + LG)
+HOEHENZUSCHLAG = 1.00            # m - über Arbeitshöhe
+
+# Mindestmasse
+MIN_AUSMASSLAENGE = 2.5          # m
+MIN_AUSMASSHOEHE = 4.0           # m
+
+# Formeln
+# LA = LS + L + LS (beidseitiger Abschluss)
+# HA = H + Höhenzuschlag
+# A = LA × HA
+# Giebel: H_mittel = H_Traufe + (H_Giebel × 0.5)
+```
+
+## Layher Blitz 70 System
+
+Material-Schätzung implementiert in `backend/app/services/layher_catalog.py`.
+
+### Feldlängen (m)
+`3.07, 2.57, 2.07, 1.57, 1.09, 0.73`
+
+### Rahmenhöhen (m)
+`2.00, 1.50, 1.00, 0.50`
+
+### Richtwerte
+| Parameter | Wert |
+|-----------|------|
+| Gewicht | 18–22 kg/m² Gerüstfläche |
+| Lastklasse | 3 (200 kg/m²) |
+| Breitenklasse | W09 (0.90 m) |
+| Verankerung | alle 4 m horizontal, alle 4 m vertikal |
+
+### Feldlängen-Verhältnis (Slider in UI)
+
+Der Slider steuert das Verhältnis zwischen 2.57m und 3.07m Feldern:
+- **0%**: Nur 2.57m Felder (mehr Flexibilität, mehr Teile)
+- **100%**: Nur 3.07m Felder (weniger Teile, weniger Flexibilität)
+- **Standard: 50%**: Ausgewogenes Verhältnis
+
+## Höhenzonen bei komplexen Gebäuden
+
+⚠️ **Problem**: SwissBuildings3D liefert oft nur einen globalen Höhenwert, der nicht repräsentativ ist.
+
+**Beispiel Bundeshaus Bern:**
+- SwissBuildings3D Traufhöhe: 14.5m → Dies ist der Arkaden-Wert!
+- Tatsächliche Parlamentsfassade: 22–25m Traufe
+
+### Empfohlene Strategie
+
+1. **Z-Koordinaten der Polygonpunkte nutzen** (falls verfügbar)
+2. **Lokale Höhen pro Fassade** statt globaler Höhe
+3. **Fallback-Werte nach Gebäudeteil**:
+
+| Gebäudeteil | Traufhöhe | Gerüsthöhe |
+|-------------|-----------|------------|
+| Standard (West/Ost) | 18.0 m | 19.0 m |
+| Hauptfassaden | 25.0 m | 26.0 m |
+| Türme | – | 36.0 m |
+| Kuppeln | – | Spezialgerüst |
+
+## Neue Features (Stand 24.12.2025)
+
+### URL-Parameter für Adresse
+
+Die App kann mit vorausgefüllter Adresse aufgerufen werden:
+```
+https://[app-url]/?address=Bundesplatz%203,%203011%20Bern
+```
+
+### Compact-Modus für Grundriss-SVG
+
+Im Gerüstbau-Tab wird das SVG im Compact-Modus gerendert:
+- Keine "Gebäudedaten"-Box
+- Kleinere Margins → mehr Platz für Polygon
+- Kompaktere Fassaden-Labels
+
 ## Deployment
 
 **Plattform:** Railway.app
@@ -175,7 +287,7 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: Dezember 2025)
+## Status (Stand: 24.12.2025)
 
 - [x] Backend + Frontend Deployment
 - [x] swissBUILDINGS3D On-Demand Import via STAC API
@@ -185,7 +297,11 @@ npx @railway/cli volume add --mount-path /app/data
 - [x] NPK 114 Ausmass-Berechnung
 - [x] Material-Schätzung (Layher Blitz 70)
 - [x] Koordinaten-basierter Höhen-Lookup (für Gebäude ohne EGID)
+- [x] Douglas-Peucker Polygon-Vereinfachung
+- [x] URL-Parameter für Adresse (?address=...)
+- [x] Compact-Modus für Grundriss-SVG
 - [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
+- [ ] Lokale Höhen pro Fassade (Höhenzonen)
 - [ ] Custom Domain
 
 ## ACHTUNG: Technische Schulden
