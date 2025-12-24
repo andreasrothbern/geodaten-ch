@@ -112,6 +112,190 @@ class SVGGenerator:
   </g>
 '''
 
+    def _professional_title_block(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        title: str,
+        subtitle: str = "",
+        scale: str = "",
+        system: str = "Layher Blitz 70"
+    ) -> str:
+        """
+        Professioneller Titelblock für technische Zeichnungen.
+
+        Args:
+            x, y: Position (oben links)
+            width: Breite des Blocks
+            title: Haupttitel (z.B. "GRUNDRISS GERÜST")
+            subtitle: Untertitel (z.B. Adresse)
+            scale: Massstab (z.B. "1:100")
+            system: Gerüstsystem (z.B. "Layher Blitz 70")
+        """
+        height = 70
+
+        # Untertitel zusammenbauen
+        info_parts = []
+        if system:
+            info_parts.append(f"Fassadengerüst {system}")
+        if scale:
+            info_parts.append(f"Massstab ca. {scale}")
+        info_line = " | ".join(info_parts)
+
+        return f'''
+  <!-- Titelblock -->
+  <g id="title-block">
+    <rect x="{x}" y="{y}" width="{width}" height="{height}" fill="none" stroke="#333" stroke-width="1"/>
+    <text x="{x + width/2}" y="{y + 30}" font-family="Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" fill="#1a365d">{title}</text>
+    <text x="{x + width/2}" y="{y + 50}" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#4a5568">{subtitle}</text>
+    <text x="{x + width/2}" y="{y + 65}" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#718096">{info_line}</text>
+  </g>
+'''
+
+    def _professional_footer(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        project_name: str = "",
+        project_address: str = "",
+        company_name: str = "Lawil Gerüstbau AG",
+        company_address: str = "Murtenstrasse 30, 3202 Frauenkappelen",
+        author_name: str = "",
+        author_role: str = "",
+        date: str = "",
+        document_id: str = ""
+    ) -> str:
+        """
+        Professionelle Fusszeile mit Projekt-, Firmen- und Verfasserdaten.
+
+        Aufgeteilt in 4 Spalten:
+        - Projekt: Name und Adresse
+        - Gerüstbauer: Firma und Adresse
+        - Verfasser: Name und Funktion
+        - Datum und Dokumentnummer
+        """
+        from datetime import datetime
+
+        height = 60
+        col_width = width / 4
+
+        # Standardwerte
+        if not date:
+            date = datetime.now().strftime("%B %Y")
+
+        svg = f'''
+  <!-- Fusszeile -->
+  <g id="footer">
+    <rect x="{x}" y="{y}" width="{width}" height="{height}" fill="none" stroke="#333" stroke-width="1"/>
+    <line x1="{x + col_width}" y1="{y}" x2="{x + col_width}" y2="{y + height}" stroke="#333" stroke-width="0.5"/>
+    <line x1="{x + col_width*2}" y1="{y}" x2="{x + col_width*2}" y2="{y + height}" stroke="#333" stroke-width="0.5"/>
+    <line x1="{x + col_width*3}" y1="{y}" x2="{x + col_width*3}" y2="{y + height}" stroke="#333" stroke-width="0.5"/>
+
+    <!-- Spalte 1: Projekt -->
+    <text x="{x + 10}" y="{y + 18}" font-family="Arial" font-size="10" font-weight="bold" fill="#333">Projekt:</text>
+    <text x="{x + 10}" y="{y + 33}" font-family="Arial" font-size="10" fill="#333">{project_name}</text>
+    <text x="{x + 10}" y="{y + 48}" font-family="Arial" font-size="9" fill="#666">{project_address}</text>
+
+    <!-- Spalte 2: Gerüstbauer -->
+    <text x="{x + col_width + 10}" y="{y + 18}" font-family="Arial" font-size="10" font-weight="bold" fill="#333">Gerüstbauer:</text>
+    <text x="{x + col_width + 10}" y="{y + 33}" font-family="Arial" font-size="10" fill="#333">{company_name}</text>
+    <text x="{x + col_width + 10}" y="{y + 48}" font-family="Arial" font-size="9" fill="#666">{company_address}</text>
+
+    <!-- Spalte 3: Verfasser -->
+    <text x="{x + col_width*2 + 10}" y="{y + 18}" font-family="Arial" font-size="10" font-weight="bold" fill="#333">Verfasser:</text>
+    <text x="{x + col_width*2 + 10}" y="{y + 33}" font-family="Arial" font-size="10" fill="#333">{author_name}</text>
+    <text x="{x + col_width*2 + 10}" y="{y + 48}" font-family="Arial" font-size="9" fill="#666">{author_role}</text>
+
+    <!-- Spalte 4: Datum -->
+    <text x="{x + col_width*3 + 10}" y="{y + 18}" font-family="Arial" font-size="10" font-weight="bold" fill="#333">Datum:</text>
+    <text x="{x + col_width*3 + 10}" y="{y + 33}" font-family="Arial" font-size="10" fill="#333">{date}</text>
+    <text x="{x + width - 10}" y="{y + 48}" font-family="Arial" font-size="12" font-weight="bold" text-anchor="end" fill="#1a365d">{document_id}</text>
+  </g>
+'''
+        return svg
+
+    def _north_arrow(self, x: int, y: int, size: int = 40) -> str:
+        """
+        Nordpfeil für Grundrisse.
+
+        Args:
+            x, y: Position
+            size: Grösse des Pfeils
+        """
+        return f'''
+  <!-- Nordpfeil -->
+  <g transform="translate({x}, {y})">
+    <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold" fill="#333">N</text>
+    <line x1="7" y1="10" x2="7" y2="{size}" stroke="#333" stroke-width="2"/>
+    <polygon points="7,{size} 3,{size-8} 11,{size-8}" fill="#333"/>
+  </g>
+'''
+
+    def _height_scale(
+        self,
+        x: int,
+        y: int,
+        max_height_m: float,
+        scale_px_per_m: float,
+        interval_m: float = 2.0
+    ) -> str:
+        """
+        Höhenkoten-Skala für Ansichten und Schnitte.
+
+        Args:
+            x, y: Position (unten links der Skala)
+            max_height_m: Maximale Höhe in Metern
+            scale_px_per_m: Pixel pro Meter
+            interval_m: Intervall der Markierungen (default 2m)
+        """
+        svg = f'''
+  <!-- Höhenskala -->
+  <g id="height-scale">
+    <line x1="{x}" y1="{y}" x2="{x}" y2="{y - max_height_m * scale_px_per_m}" stroke="#333" stroke-width="1"/>
+'''
+        # Markierungen
+        current_height = 0
+        while current_height <= max_height_m:
+            mark_y = y - current_height * scale_px_per_m
+            svg += f'    <line x1="{x-5}" y1="{mark_y}" x2="{x}" y2="{mark_y}" stroke="#333" stroke-width="1"/>\n'
+            svg += f'    <text x="{x-8}" y="{mark_y + 3}" font-family="Arial" font-size="8" text-anchor="end" fill="#333">{current_height:.0f}m</text>\n'
+            current_height += interval_m
+
+        svg += '  </g>\n'
+        return svg
+
+    def _layer_labels(
+        self,
+        x: int,
+        y_ground: int,
+        layer_height_m: float,
+        num_layers: int,
+        scale_px_per_m: float
+    ) -> str:
+        """
+        Lagenbeschriftung für Gerüst-Ansichten.
+
+        Args:
+            x: X-Position für Labels
+            y_ground: Y-Position des Bodens
+            layer_height_m: Höhe pro Lage in Metern
+            num_layers: Anzahl Lagen
+            scale_px_per_m: Pixel pro Meter
+        """
+        svg = '''
+  <!-- Lagenbeschriftung -->
+  <g id="layer-labels">
+'''
+        for i in range(num_layers):
+            layer_num = i + 1
+            layer_y = y_ground - (i * layer_height_m + layer_height_m / 2) * scale_px_per_m
+            svg += f'    <text x="{x}" y="{layer_y}" font-family="Arial" font-size="9" fill="#0066cc">{layer_num}. Lage</text>\n'
+
+        svg += '  </g>\n'
+        return svg
+
     def _compact_legend(self, x: int, y: int) -> str:
         """Kompakte Legende für Fassaden-Auswahl (nur Klick-Hinweis)"""
         return f'''
