@@ -449,9 +449,16 @@ class SVGGenerator:
         draw_width = width - margin['left'] - margin['right']
         draw_height = height - margin['top'] - margin['bottom']
 
-        # Dimensionen
-        poly_width = building.length_m
-        poly_height = building.width_m
+        # Dimensionen - aus Polygon berechnen wenn vorhanden
+        if building.polygon_coordinates and len(building.polygon_coordinates) >= 3:
+            # Echte Polygon-Dimensionen für korrekte Skalierung
+            xs = [c[0] for c in building.polygon_coordinates]
+            ys = [c[1] for c in building.polygon_coordinates]
+            poly_width = max(xs) - min(xs)  # Breite in Metern (LV95)
+            poly_height = max(ys) - min(ys)  # Höhe in Metern (LV95)
+        else:
+            poly_width = building.length_m
+            poly_height = building.width_m
 
         building_with_scaffold = max(poly_width, poly_height) + 6
         scale = min(draw_width, draw_height) / building_with_scaffold * 0.85
