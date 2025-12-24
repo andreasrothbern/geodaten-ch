@@ -7,6 +7,10 @@ Primäre Datenquelle: swisstopo / geo.admin.ch
 """
 
 import os
+from dotenv import load_dotenv
+
+# .env Datei laden (für lokale Entwicklung)
+load_dotenv()
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -1016,10 +1020,21 @@ async def analyze_building_context(
 
         polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon]
 
+        # Höhendaten aus DB oder Schätzung holen
+        from app.services.geodienste import get_height_details
+        height_info = get_height_details(
+            floors=building.floors,
+            building_category_code=building.building_category_code,
+            manual_height=None,
+            egid=int(egid),
+            lv95_e=building.coordinates.lv95_e,
+            lv95_n=building.coordinates.lv95_n
+        )
+
         height_data = {
-            "traufhoehe_m": geometry.height_info.get("traufhoehe_m") if geometry.height_info else None,
-            "firsthoehe_m": geometry.height_info.get("firsthoehe_m") if geometry.height_info else None,
-            "gebaeudehoehe_m": geometry.height_info.get("gebaeudehoehe_m") if geometry.height_info else None,
+            "traufhoehe_m": height_info.get("traufhoehe_m"),
+            "firsthoehe_m": height_info.get("firsthoehe_m"),
+            "gebaeudehoehe_m": height_info.get("gebaeudehoehe_m") or height_info.get("active_height_m") or geometry.estimated_height_m,
         }
 
         gwr_data = {
