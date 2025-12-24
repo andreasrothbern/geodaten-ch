@@ -1873,6 +1873,15 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
         length_m = side_lengths[0] if side_lengths else 10.0
         width_m = side_lengths[1] if len(side_lengths) > 1 else length_m
 
+        # Bounding Box aus Polygon berechnen für korrekte Skalierung
+        bbox_width = None
+        bbox_depth = None
+        if polygon_coords and len(polygon_coords) >= 3:
+            xs = [p[0] for p in polygon_coords]
+            ys = [p[1] for p in polygon_coords]
+            bbox_width = max(xs) - min(xs)
+            bbox_depth = max(ys) - min(ys)
+
         building_data = BuildingData(
             address=request.address,
             egid=None,
@@ -1884,6 +1893,8 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
             area_m2=request.area_m2,
             polygon_coordinates=polygon_coords,
             sides=sides_data,
+            bbox_width_m=round(bbox_width, 1) if bbox_width else None,
+            bbox_depth_m=round(bbox_depth, 1) if bbox_depth else None,
         )
 
         generator = get_svg_generator()
@@ -1940,6 +1951,10 @@ async def visualize_floor_plan_get(
         polygon_coords = None
         sides_data = None
 
+        # Bounding Box Dimensionen für korrekte Skalierung
+        bbox_width = None
+        bbox_depth = None
+
         if geometry and geometry.sides:
             side_lengths = sorted([s['length_m'] for s in geometry.sides], reverse=True)
             length_m = side_lengths[0]
@@ -1948,6 +1963,10 @@ async def visualize_floor_plan_get(
             if hasattr(geometry, 'polygon') and geometry.polygon:
                 polygon_coords = [[p[0], p[1]] for p in geometry.polygon]
             sides_data = geometry.sides
+            # Bounding Box aus Geometry (korrekte Skalierung)
+            if hasattr(geometry, 'width_m') and hasattr(geometry, 'depth_m'):
+                bbox_width = geometry.width_m
+                bbox_depth = geometry.depth_m
         elif building and building.area_m2:
             side = math.sqrt(building.area_m2)
             length_m = width_m = round(side, 1)
@@ -1987,6 +2006,8 @@ async def visualize_floor_plan_get(
             area_m2=building.area_m2 if building else None,
             polygon_coordinates=polygon_coords,
             sides=sides_data,
+            bbox_width_m=round(bbox_width, 1) if bbox_width else None,
+            bbox_depth_m=round(bbox_depth, 1) if bbox_depth else None,
         )
 
         generator = get_svg_generator()

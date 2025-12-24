@@ -37,7 +37,7 @@ export function GrunddatenCard({
 }: GrunddatenCardProps) {
   const [manualTraufe, setManualTraufe] = useState<string>('')
   const [manualFirst, setManualFirst] = useState<string>('')
-  const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
+  const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('floor-plan')
   const { dimensions, gwr_data, building, address } = data
 
   // Initialize manual inputs with current values if they exist
@@ -299,9 +299,9 @@ export function GrunddatenCard({
             <div className="flex items-center justify-between border-b px-4 py-2">
               <div className="flex gap-1">
                 {[
+                  { id: 'floor-plan' as const, label: 'Grundriss', icon: '📋' },
                   { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
-                  { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' },
-                  { id: 'floor-plan' as const, label: 'Grundriss', icon: '📋' }
+                  { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' }
                 ].map(tab => (
                   <button
                     key={tab.id}

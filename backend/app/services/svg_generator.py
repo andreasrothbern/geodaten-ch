@@ -34,6 +34,9 @@ class BuildingData:
     # Polygon data for irregular buildings
     polygon_coordinates: Optional[List[List[float]]] = None  # [[x,y], [x,y], ...]
     sides: Optional[List[Dict[str, Any]]] = None  # [{length_m, direction, ...}, ...]
+    # Bounding Box dimensions (from polygon) for correct scaling
+    bbox_width_m: Optional[float] = None
+    bbox_depth_m: Optional[float] = None
 
 
 class SVGGenerator:
@@ -449,13 +452,11 @@ class SVGGenerator:
         draw_width = width - margin['left'] - margin['right']
         draw_height = height - margin['top'] - margin['bottom']
 
-        # Dimensionen - aus Polygon berechnen wenn vorhanden
-        if building.polygon_coordinates and len(building.polygon_coordinates) >= 3:
-            # Echte Polygon-Dimensionen für korrekte Skalierung
-            xs = [c[0] for c in building.polygon_coordinates]
-            ys = [c[1] for c in building.polygon_coordinates]
-            poly_width = max(xs) - min(xs)  # Breite in Metern (LV95)
-            poly_height = max(ys) - min(ys)  # Höhe in Metern (LV95)
+        # Dimensionen - Bounding Box wenn vorhanden, sonst Seitenlängen
+        if building.bbox_width_m and building.bbox_depth_m:
+            # Verwende Bounding Box Dimensionen für korrekte Skalierung
+            poly_width = building.bbox_width_m
+            poly_height = building.bbox_depth_m
         else:
             poly_width = building.length_m
             poly_height = building.width_m

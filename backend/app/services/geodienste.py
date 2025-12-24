@@ -47,11 +47,158 @@ FLOOR_HEIGHTS_BY_CATEGORY = {
 }
 
 
+def simplify_polygon_douglas_peucker(
+    polygon: List[Tuple[float, float]],
+    epsilon: float = 0.5
+) -> List[Tuple[float, float]]:
+    """
+    Douglas-Peucker Algorithmus zur Polygon-Vereinfachung.
+
+    Reduziert die Anzahl der Punkte, behält aber die Form bei.
+
+    Args:
+        polygon: Liste von (x, y) Koordinaten
+        epsilon: Toleranz in Metern (grösser = weniger Punkte)
+
+    Returns:
+        Vereinfachtes Polygon
+    """
+    if len(polygon) < 3:
+        return polygon
+
+    def perpendicular_distance(point, line_start, line_end):
+        """Senkrechter Abstand eines Punktes zu einer Linie"""
+        if line_start == line_end:
+            return math.sqrt((point[0] - line_start[0])**2 + (point[1] - line_start[1])**2)
+
+        # Linienvektor
+        dx = line_end[0] - line_start[0]
+        dy = line_end[1] - line_start[1]
+        line_length = math.sqrt(dx*dx + dy*dy)
+
+        if line_length == 0:
+            return math.sqrt((point[0] - line_start[0])**2 + (point[1] - line_start[1])**2)
+
+        # Normalisierter Vektor
+        dx /= line_length
+        dy /= line_length
+
+        # Projektion des Punktes auf die Linie
+        t = (point[0] - line_start[0]) * dx + (point[1] - line_start[1]) * dy
+
+        # Nächster Punkt auf der Linie
+        nearest_x = line_start[0] + t * dx
+        nearest_y = line_start[1] + t * dy
+
+        return math.sqrt((point[0] - nearest_x)**2 + (point[1] - nearest_y)**2)
+
+    def simplify_recursive(points, start, end, epsilon):
+        """Rekursive Vereinfachung"""
+        if end - start < 2:
+            return [points[start]]
+
+        # Finde den Punkt mit maximaler Distanz zur Linie start-end
+        max_dist = 0
+        max_index = start
+
+        for i in range(start + 1, end):
+            dist = perpendicular_distance(points[i], points[start], points[end])
+            if dist > max_dist:
+                max_dist = dist
+                max_index = i
+
+        # Wenn maximale Distanz grösser als Epsilon, teile und vereinfache rekursiv
+        if max_dist > epsilon:
+            left = simplify_recursive(points, start, max_index, epsilon)
+            right = simplify_recursive(points, max_index, end, epsilon)
+            return left + right
+        else:
+            return [points[start]]
+
+    # Polygon schliessen wenn nötig
+    closed = polygon[-1] == polygon[0]
+    if closed:
+        polygon = polygon[:-1]
+
+    # Vereinfachen
+    simplified = simplify_recursive(polygon, 0, len(polygon) - 1, epsilon)
+    simplified.append(polygon[-1])  # Letzten Punkt hinzufügen
+
+    # Polygon wieder schliessen wenn es vorher geschlossen war
+    if closed and simplified[0] != simplified[-1]:
+        simplified.append(simplified[0])
+
+    return simplified
+
+
+def merge_collinear_segments(
+    polygon: List[Tuple[float, float]],
+    angle_tolerance_deg: float = 10.0,
+    min_length_m: float = 1.0
+) -> List[Tuple[float, float]]:
+    """
+    Verschmilzt fast parallele (kollineare) Segmente zu einem.
+
+    Entfernt Punkte zwischen Segmenten, die fast die gleiche Richtung haben.
+
+    Args:
+        polygon: Liste von (x, y) Koordinaten
+        angle_tolerance_deg: Maximale Winkelabweichung für Verschmelzung
+        min_length_m: Minimale Segmentlänge
+
+    Returns:
+        Vereinfachtes Polygon mit weniger Segmenten
+    """
+    if len(polygon) < 4:
+        return polygon
+
+    def segment_angle(p1, p2):
+        """Winkel eines Segments in Grad"""
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        return math.degrees(math.atan2(dy, dx))
+
+    def angle_difference(a1, a2):
+        """Winkeldifferenz (0-180)"""
+        diff = abs(a1 - a2) % 360
+        return min(diff, 360 - diff)
+
+    # Prüfen ob geschlossen
+    closed = polygon[-1] == polygon[0]
+    if closed:
+        polygon = polygon[:-1]
+
+    result = [polygon[0]]
+    current_angle = segment_angle(polygon[0], polygon[1])
+
+    for i in range(1, len(polygon) - 1):
+        next_angle = segment_angle(polygon[i], polygon[i + 1])
+
+        if angle_difference(current_angle, next_angle) > angle_tolerance_deg:
+            # Signifikante Richtungsänderung -> Punkt behalten
+            result.append(polygon[i])
+            current_angle = next_angle
+
+    # Letzten Punkt hinzufügen
+    result.append(polygon[-1])
+
+    # Polygon wieder schliessen wenn es vorher geschlossen war
+    if closed and result[0] != result[-1]:
+        result.append(result[0])
+
+    return result
+
+
 class GeodiensteService:
     """Service für geodienste.ch WFS Zugriff"""
 
     WFS_BASE_URL = "https://geodienste.ch/db/av_0/deu"
     LAYER_BODENBEDECKUNG = "ms:LCSF"  # Bodenbedeckung (enthält Gebäude)
+
+    # Vereinfachungs-Parameter
+    SIMPLIFY_EPSILON = 0.3  # Meter Toleranz für Douglas-Peucker
+    COLLINEAR_ANGLE_TOLERANCE = 8.0  # Grad Toleranz für Segment-Verschmelzung
+    MIN_SIDE_LENGTH = 1.0  # Minimale Seitenlänge in Metern
 
     def __init__(self):
         self.timeout = httpx.Timeout(20.0, connect=5.0)
@@ -236,11 +383,14 @@ class GeodiensteService:
 
     def _calculate_geometry(self, building: Dict) -> BuildingGeometry:
         """Geometrie-Berechnungen durchführen"""
-        polygon = building.get('polygon', [])
+        original_polygon = building.get('polygon', [])
 
-        # Bounding Box
-        xs = [p[0] for p in polygon]
-        ys = [p[1] for p in polygon]
+        if not original_polygon:
+            return None
+
+        # Bounding Box (aus Original-Polygon für korrekte Dimensionen)
+        xs = [p[0] for p in original_polygon]
+        ys = [p[1] for p in original_polygon]
         bbox = {
             'min_x': min(xs),
             'max_x': max(xs),
@@ -252,15 +402,47 @@ class GeodiensteService:
         width = bbox['max_x'] - bbox['min_x']
         depth = bbox['max_y'] - bbox['min_y']
 
-        # Seitenlängen berechnen
+        # Fläche berechnen (aus Original-Polygon)
+        area = self._calculate_polygon_area(original_polygon)
+
+        # Polygon vereinfachen für Fassaden-Berechnung
+        # 1. Douglas-Peucker Vereinfachung
+        simplified = simplify_polygon_douglas_peucker(
+            original_polygon,
+            epsilon=self.SIMPLIFY_EPSILON
+        )
+
+        # 2. Kollineare Segmente verschmelzen
+        simplified = merge_collinear_segments(
+            simplified,
+            angle_tolerance_deg=self.COLLINEAR_ANGLE_TOLERANCE
+        )
+
+        # Log für Debugging
+        original_count = len(original_polygon)
+        simplified_count = len(simplified)
+        if original_count > 20:
+            print(f"Polygon vereinfacht: {original_count} -> {simplified_count} Punkte")
+
+        # Verwende vereinfachtes Polygon für Seiten-Berechnung
+        polygon = simplified
+
+        # Seitenlängen berechnen (aus vereinfachtem Polygon)
         sides = []
         perimeter = 0.0
 
-        for i in range(len(polygon)):
-            p1 = polygon[i]
-            p2 = polygon[(i + 1) % len(polygon)]
+        # Polygon schliessen für Berechnung
+        closed_polygon = polygon if polygon[-1] == polygon[0] else polygon + [polygon[0]]
+
+        for i in range(len(closed_polygon) - 1):
+            p1 = closed_polygon[i]
+            p2 = closed_polygon[i + 1]
 
             length = math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
+            # Kurze Segmente überspringen (< 0.5m)
+            if length < 0.5:
+                continue
 
             # Richtung berechnen (für Orientierung)
             dx = p2[0] - p1[0]
@@ -271,7 +453,7 @@ class GeodiensteService:
             direction = self._angle_to_direction(angle)
 
             sides.append({
-                'index': i,  # 0-basiert für Konsistenz mit SVG und Frontend
+                'index': len(sides),  # Fortlaufende Nummerierung
                 'start': {'x': p1[0], 'y': p1[1]},
                 'end': {'x': p2[0], 'y': p2[1]},
                 'length_m': round(length, 2),
@@ -281,15 +463,12 @@ class GeodiensteService:
 
             perimeter += length
 
-        # Fläche berechnen (Shoelace-Formel)
-        area = self._calculate_polygon_area(polygon)
-
         # EGID extrahieren
         egid = building.get('gwr_egid')
 
         return BuildingGeometry(
             egid=egid,
-            polygon=polygon,
+            polygon=simplified,  # Vereinfachtes Polygon für SVG
             bounding_box=bbox,
             perimeter_m=round(perimeter, 2),
             area_m2=round(area, 2),
