@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850">
+  <defs>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a365d"/>
+      <stop offset="100%" style="stop-color:#2c5282"/>
+    </linearGradient>
+    <linearGradient id="warningGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFDD00"/>
+      <stop offset="100%" style="stop-color:#FFB800"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Hintergrund und Rahmen -->
+  <rect width="600" height="850" fill="white"/>
+  <rect x="15" y="15" width="570" height="820" fill="none" stroke="#1a365d" stroke-width="3"/>
+  <rect x="20" y="20" width="560" height="810" fill="none" stroke="#1a365d" stroke-width="1"/>
+  
+  <!-- ==================== HEADER ==================== -->
+  <rect x="20" y="20" width="560" height="80" fill="url(#headerGrad)"/>
+  <text x="300" y="55" font-family="Arial, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="white">GERÜSTKARTE</text>
+  <text x="300" y="80" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#E2E8F0">Kennzeichnung gemäss BauAV Art. 18 / SUVA Richtlinie</text>
+  
+  <!-- ==================== WARNSYMBOL ==================== -->
+  <g transform="translate(300, 140)">
+    <polygon points="0,-45 52,40 -52,40" fill="url(#warningGrad)" stroke="#333" stroke-width="2"/>
+    <polygon points="0,-35 42,32 -42,32" fill="none" stroke="#333" stroke-width="1"/>
+    <text x="0" y="25" font-family="Arial" font-size="50" font-weight="bold" text-anchor="middle" fill="#333">!</text>
+  </g>
+  
+  <!-- ==================== FIRMENANGABEN ==================== -->
+  <rect x="30" y="200" width="540" height="55" fill="#F7FAFC" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="40" y="220" font-family="Arial" font-size="10" fill="#718096">Gerüstersteller (Firma):</text>
+  <text x="40" y="242" font-family="Arial" font-size="16" font-weight="bold" fill="#1a365d">Lawil Gerüstbau AG</text>
+  <text x="350" y="242" font-family="Arial" font-size="11" fill="#4A5568">Tel: 031 921 XX XX</text>
+  
+  <!-- ==================== BAUSTELLE ==================== -->
+  <line x1="30" y1="265" x2="570" y2="265" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="40" y="285" font-family="Arial" font-size="10" fill="#718096">Baustelle / Objekt:</text>
+  <text x="40" y="308" font-family="Arial" font-size="15" font-weight="bold" fill="#1a365d">Bundeshaus Bern (Parlamentsgebäude)</text>
+  <text x="40" y="328" font-family="Arial" font-size="12" fill="#4A5568">Bundesplatz 3, 3003 Bern</text>
+  <text x="40" y="345" font-family="Arial" font-size="10" fill="#718096">Bauherr: Schweizerische Eidgenossenschaft</text>
+  
+  <!-- ==================== TECHNISCHE DATEN ==================== -->
+  <line x1="30" y1="360" x2="570" y2="360" stroke="#CBD5E0" stroke-width="1"/>
+  <line x1="300" y1="360" x2="300" y2="560" stroke="#CBD5E0" stroke-width="1"/>
+  
+  <!-- Linke Spalte -->
+  <text x="40" y="385" font-family="Arial" font-size="10" fill="#718096">Gerüstart:</text>
+  <text x="40" y="405" font-family="Arial" font-size="13" font-weight="bold" fill="#2D3748">Fassadengerüst</text>
+  
+  <text x="40" y="430" font-family="Arial" font-size="10" fill="#718096">Gerüstsystem:</text>
+  <text x="40" y="450" font-family="Arial" font-size="13" font-weight="bold" fill="#2D3748">Layher Blitz 70 Stahl</text>
+  
+  <text x="40" y="475" font-family="Arial" font-size="10" fill="#718096">Gerüsthöhe max.:</text>
+  <text x="40" y="495" font-family="Arial" font-size="13" font-weight="bold" fill="#2D3748">26.0 m (Fassade) / 64 m (Kuppel*)</text>
+  
+  <text x="40" y="520" font-family="Arial" font-size="10" fill="#718096">Gerüstfläche total:</text>
+  <text x="40" y="540" font-family="Arial" font-size="13" font-weight="bold" fill="#2D3748">ca. 8'500 m²</text>
+  
+  <!-- Rechte Spalte - Lastklasse -->
+  <text x="315" y="385" font-family="Arial" font-size="10" fill="#718096">Lastklasse (EN 12811):</text>
+  <rect x="315" y="395" width="70" height="35" fill="#38A169" rx="5"/>
+  <text x="350" y="420" font-family="Arial" font-size="22" font-weight="bold" text-anchor="middle" fill="white">3</text>
+  <text x="395" y="420" font-family="Arial" font-size="12" fill="#2D3748">(200 kg/m²)</text>
+  
+  <!-- Breitenklasse -->
+  <text x="315" y="455" font-family="Arial" font-size="10" fill="#718096">Breitenklasse:</text>
+  <rect x="315" y="465" width="70" height="35" fill="#3182CE" rx="5"/>
+  <text x="350" y="490" font-family="Arial" font-size="18" font-weight="bold" text-anchor="middle" fill="white">W09</text>
+  <text x="395" y="490" font-family="Arial" font-size="12" fill="#2D3748">(0.90 m)</text>
+  
+  <!-- Bekleidung -->
+  <text x="315" y="525" font-family="Arial" font-size="10" fill="#718096">Bekleidung:</text>
+  <text x="315" y="545" font-family="Arial" font-size="13" font-weight="bold" fill="#2D3748">Keine / Nach Bedarf</text>
+  
+  <!-- ==================== ZUGÄNGE ==================== -->
+  <line x1="30" y1="565" x2="570" y2="565" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="40" y="585" font-family="Arial" font-size="10" fill="#718096">Zugänge (Art und Lage):</text>
+  <text x="40" y="605" font-family="Arial" font-size="11" fill="#2D3748">• 4× Innenleitern mit Durchstiegsböden</text>
+  <text x="40" y="622" font-family="Arial" font-size="11" fill="#2D3748">• Position: West, Nord (Portikus), Süd, Ost</text>
+  
+  <!-- ==================== NUTZUNGSBESCHRÄNKUNGEN ==================== -->
+  <rect x="30" y="640" width="540" height="90" fill="#FFF5F5" stroke="#FC8181" stroke-width="1"/>
+  <text x="40" y="660" font-family="Arial" font-size="11" font-weight="bold" fill="#C53030">Besondere Nutzungsbeschränkungen:</text>
+  <text x="40" y="680" font-family="Arial" font-size="10" fill="#2D3748">• Denkmalgeschütztes Gebäude - keine Bohranker in Sandstein!</text>
+  <text x="40" y="695" font-family="Arial" font-size="10" fill="#2D3748">• Verankerung nur an freigegebenen Punkten (siehe Plan)</text>
+  <text x="40" y="710" font-family="Arial" font-size="10" fill="#2D3748">• *Kuppelgerüst = Spezialgerüst, separate Freigabe erforderlich</text>
+  <text x="40" y="725" font-family="Arial" font-size="10" fill="#2D3748">• Aufbau- und Verwendungsanleitung (AuV) beachten!</text>
+  
+  <!-- ==================== FREIGABE ==================== -->
+  <rect x="30" y="740" width="540" height="80" fill="#F0FFF4" stroke="#68D391" stroke-width="1"/>
+  <text x="300" y="762" font-family="Arial" font-size="13" font-weight="bold" text-anchor="middle" fill="#276749">✓ GERÜST GEPRÜFT UND FREIGEGEBEN</text>
+  
+  <text x="40" y="785" font-family="Arial" font-size="9" fill="#718096">Datum der Freigabe:</text>
+  <line x1="130" y1="785" x2="230" y2="785" stroke="#2D3748" stroke-width="0.5"/>
+  
+  <text x="250" y="785" font-family="Arial" font-size="9" fill="#718096">Prüfer (Name):</text>
+  <line x1="320" y1="785" x2="450" y2="785" stroke="#2D3748" stroke-width="0.5"/>
+  
+  <text x="40" y="810" font-family="Arial" font-size="9" fill="#718096">Unterschrift:</text>
+  <rect x="100" y="793" width="100" height="25" fill="none" stroke="#2D3748" stroke-width="0.5"/>
+  
+  <text x="250" y="810" font-family="Arial" font-size="9" fill="#718096">Stempel:</text>
+  <rect x="300" y="793" width="100" height="25" fill="none" stroke="#2D3748" stroke-width="0.5"/>
+  
+  <!-- Blattnummer -->
+  <text x="540" y="810" font-family="Arial" font-size="11" font-weight="bold" text-anchor="end" fill="#1a365d">Anhang D</text>
+</svg>

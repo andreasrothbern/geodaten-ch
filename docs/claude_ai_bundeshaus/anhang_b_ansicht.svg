@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-start" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+      <path d="M9,0 L9,6 L0,3 z" fill="#333"/>
+    </marker>
+    <!-- Kupfer-Gradient für Kuppel -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="50%" style="stop-color:#5A9A87"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Hintergrund -->
+  <rect width="1200" height="800" fill="white"/>
+  
+  <!-- Titelblock -->
+  <rect x="20" y="20" width="1160" height="70" fill="none" stroke="#333" stroke-width="1"/>
+  <text x="600" y="50" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#1a365d">ANSICHT NORD - BUNDESHAUS BERN</text>
+  <text x="600" y="75" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#4a5568">Fassadenansicht Bundesplatz | Parlamentsgebäude mit Kuppel | Massstab ca. 1:300</text>
+  
+  <!-- Basis Y-Koordinate (Bodenlinie) -->
+  <!-- Y=620 ist Terrain, Gebäude wächst nach oben (kleinere Y-Werte) -->
+  
+  <!-- ==================== TERRAIN ==================== -->
+  <rect x="50" y="620" width="1100" height="25" fill="url(#ground)"/>
+  <line x1="50" y1="620" x2="1150" y2="620" stroke="#333" stroke-width="2"/>
+  <text x="600" y="660" font-family="Arial" font-size="11" text-anchor="middle" fill="#666">OK Terrain ±0.00 (Bundesplatz)</text>
+  
+  <!-- ==================== GEBÄUDE ==================== -->
+  <g id="building">
+    
+    <!-- Bundeshaus West (links) - Höhe ca. 18m Traufe, 22m First -->
+    <polygon points="
+      80,620
+      80,440
+      100,420
+      180,420
+      200,440
+      200,620
+    " fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    <text x="140" y="530" font-family="Arial" font-size="9" text-anchor="middle" fill="#555">BH West</text>
+    
+    <!-- Arkade West -->
+    <rect x="200" y="540" width="60" height="80" fill="#E8E8E8" stroke="#333" stroke-width="1"/>
+    <path d="M 200,540 Q 230,520 260,540" fill="none" stroke="#333" stroke-width="1.5"/>
+    <text x="230" y="590" font-family="Arial" font-size="8" text-anchor="middle" fill="#666">Arkade</text>
+    
+    <!-- Parlamentsgebäude - Hauptfassade -->
+    <!-- Seitenrisalit links -->
+    <rect x="260" y="380" width="80" height="240" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Hauptfassade links vom Portikus -->
+    <rect x="340" y="340" width="120" height="280" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Portikus (Säulenvorhalle) -->
+    <rect x="460" y="300" width="180" height="320" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    <!-- Säulen -->
+    <line x1="480" y1="620" x2="480" y2="350" stroke="#333" stroke-width="4"/>
+    <line x1="510" y1="620" x2="510" y2="350" stroke="#333" stroke-width="4"/>
+    <line x1="540" y1="620" x2="540" y2="350" stroke="#333" stroke-width="4"/>
+    <line x1="560" y1="620" x2="560" y2="350" stroke="#333" stroke-width="4"/>
+    <line x1="590" y1="620" x2="590" y2="350" stroke="#333" stroke-width="4"/>
+    <line x1="620" y1="620" x2="620" y2="350" stroke="#333" stroke-width="4"/>
+    <!-- Giebel über Portikus -->
+    <polygon points="460,300 550,260 640,300" fill="#D8D8D8" stroke="#333" stroke-width="2"/>
+    <text x="550" y="290" font-family="Arial" font-size="9" text-anchor="middle" fill="#555">Portikus</text>
+    
+    <!-- Hauptfassade rechts vom Portikus -->
+    <rect x="640" y="340" width="120" height="280" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Seitenrisalit rechts -->
+    <rect x="760" y="380" width="80" height="240" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Dachbereich hinter Portikus (Attika) -->
+    <rect x="340" y="300" width="420" height="40" fill="#C8C8C8" stroke="#333" stroke-width="1"/>
+    
+    <!-- ==================== KUPPEL ==================== -->
+    <!-- Tambour (quadratischer Unterbau) -->
+    <rect x="480" y="200" width="140" height="100" fill="#D0D0D0" stroke="#333" stroke-width="2"/>
+    <!-- Fenster im Tambour (22 Stück symbolisch) -->
+    <g fill="#87CEEB" stroke="#333" stroke-width="0.5">
+      <rect x="490" y="220" width="12" height="60"/>
+      <rect x="510" y="220" width="12" height="60"/>
+      <rect x="530" y="220" width="12" height="60"/>
+      <rect x="550" y="220" width="12" height="60"/>
+      <rect x="570" y="220" width="12" height="60"/>
+      <rect x="590" y="220" width="12" height="60"/>
+    </g>
+    
+    <!-- Kuppel selbst -->
+    <ellipse cx="550" cy="200" rx="70" ry="50" fill="url(#copper)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Laterne oben -->
+    <rect x="535" y="140" width="30" height="30" fill="#D0D0D0" stroke="#333" stroke-width="1"/>
+    <polygon points="535,140 550,120 565,140" fill="url(#copper)" stroke="#333" stroke-width="1"/>
+    
+    <!-- Schweizerkreuz auf Spitze -->
+    <line x1="550" y1="120" x2="550" y2="105" stroke="#333" stroke-width="2"/>
+    <rect x="545" y="100" width="10" height="10" fill="#FFD700" stroke="#333" stroke-width="0.5"/>
+    
+    <!-- Arkade Ost -->
+    <rect x="840" y="540" width="60" height="80" fill="#E8E8E8" stroke="#333" stroke-width="1"/>
+    <path d="M 840,540 Q 870,520 900,540" fill="none" stroke="#333" stroke-width="1.5"/>
+    
+    <!-- Bundeshaus Ost (rechts) -->
+    <polygon points="
+      900,620
+      900,440
+      920,420
+      1000,420
+      1020,440
+      1020,620
+    " fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    <text x="960" y="530" font-family="Arial" font-size="9" text-anchor="middle" fill="#555">BH Ost</text>
+  </g>
+  
+  <!-- ==================== GERÜST ==================== -->
+  <g id="scaffold">
+    <!-- Gerüst links (BH West) -->
+    <g stroke="#0066CC" stroke-width="1.5" fill="none">
+      <!-- Ständer -->
+      <line x1="60" y1="620" x2="60" y2="400"/>
+      <line x1="75" y1="620" x2="75" y2="400"/>
+      <!-- Horizontale Riegel -->
+      <line x1="55" y1="420" x2="80" y2="420"/>
+      <line x1="55" y1="460" x2="80" y2="460"/>
+      <line x1="55" y1="500" x2="80" y2="500"/>
+      <line x1="55" y1="540" x2="80" y2="540"/>
+      <line x1="55" y1="580" x2="80" y2="580"/>
+      <!-- Beläge -->
+      <rect x="55" y="417" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="55" y="457" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="55" y="497" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="55" y="537" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="55" y="577" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+    </g>
+    
+    <!-- Gerüst Parlament (höher) -->
+    <g stroke="#0066CC" stroke-width="1.5" fill="none">
+      <!-- Ständer links -->
+      <line x1="245" y1="620" x2="245" y2="240"/>
+      <line x1="260" y1="620" x2="260" y2="280"/>
+      <!-- Ständer rechts -->
+      <line x1="840" y1="620" x2="840" y2="280"/>
+      <line x1="855" y1="620" x2="855" y2="240"/>
+      
+      <!-- Horizontale Riegel (13 Lagen à 2m = 26m) -->
+      <!-- Links -->
+      <line x1="240" y1="280" x2="265" y2="280"/>
+      <line x1="240" y1="320" x2="265" y2="320"/>
+      <line x1="240" y1="360" x2="265" y2="360"/>
+      <line x1="240" y1="400" x2="265" y2="400"/>
+      <line x1="240" y1="440" x2="265" y2="440"/>
+      <line x1="240" y1="480" x2="265" y2="480"/>
+      <line x1="240" y1="520" x2="265" y2="520"/>
+      <line x1="240" y1="560" x2="265" y2="560"/>
+      <line x1="240" y1="600" x2="265" y2="600"/>
+      
+      <!-- Rechts -->
+      <line x1="835" y1="280" x2="860" y2="280"/>
+      <line x1="835" y1="320" x2="860" y2="320"/>
+      <line x1="835" y1="360" x2="860" y2="360"/>
+      <line x1="835" y1="400" x2="860" y2="400"/>
+      <line x1="835" y1="440" x2="860" y2="440"/>
+      <line x1="835" y1="480" x2="860" y2="480"/>
+      <line x1="835" y1="520" x2="860" y2="520"/>
+      <line x1="835" y1="560" x2="860" y2="560"/>
+      <line x1="835" y1="600" x2="860" y2="600"/>
+    </g>
+    
+    <!-- Gerüst rechts (BH Ost) -->
+    <g stroke="#0066CC" stroke-width="1.5" fill="none">
+      <line x1="1025" y1="620" x2="1025" y2="400"/>
+      <line x1="1040" y1="620" x2="1040" y2="400"/>
+      <line x1="1020" y1="420" x2="1045" y2="420"/>
+      <line x1="1020" y1="460" x2="1045" y2="460"/>
+      <line x1="1020" y1="500" x2="1045" y2="500"/>
+      <line x1="1020" y1="540" x2="1045" y2="540"/>
+      <line x1="1020" y1="580" x2="1045" y2="580"/>
+      <rect x="1020" y="417" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="1020" y="457" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="1020" y="497" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="1020" y="537" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+      <rect x="1020" y="577" width="30" height="4" fill="#8B4513" stroke="#333" stroke-width="0.5"/>
+    </g>
+  </g>
+  
+  <!-- ==================== VERANKERUNGEN ==================== -->
+  <g stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3">
+    <!-- Links -->
+    <line x1="80" y1="440" x2="60" y2="440"/>
+    <line x1="80" y1="520" x2="60" y2="520"/>
+    <!-- Parlament links -->
+    <line x1="260" y1="320" x2="245" y2="320"/>
+    <line x1="260" y1="400" x2="245" y2="400"/>
+    <line x1="260" y1="480" x2="245" y2="480"/>
+    <line x1="260" y1="560" x2="245" y2="560"/>
+    <!-- Parlament rechts -->
+    <line x1="840" y1="320" x2="855" y2="320"/>
+    <line x1="840" y1="400" x2="855" y2="400"/>
+    <line x1="840" y1="480" x2="855" y2="480"/>
+    <line x1="840" y1="560" x2="855" y2="560"/>
+    <!-- Rechts -->
+    <line x1="1020" y1="440" x2="1040" y2="440"/>
+    <line x1="1020" y1="520" x2="1040" y2="520"/>
+  </g>
+  
+  <!-- ==================== HÖHENKOTEN ==================== -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <!-- Linke Skala -->
+    <line x1="30" y1="620" x2="30" y2="100" stroke="#333" stroke-width="0.5"/>
+    
+    <line x1="25" y1="620" x2="35" y2="620" stroke="#333"/>
+    <text x="22" y="623" text-anchor="end">±0.00</text>
+    
+    <line x1="25" y1="540" x2="35" y2="540" stroke="#333"/>
+    <text x="22" y="543" text-anchor="end">+10.0</text>
+    
+    <line x1="25" y1="460" x2="35" y2="460" stroke="#333"/>
+    <text x="22" y="463" text-anchor="end">+20.0</text>
+    
+    <line x1="25" y1="420" x2="35" y2="420" stroke="#333"/>
+    <text x="22" y="423" text-anchor="end" fill="#0066CC">+25.0</text>
+    <text x="22" y="410" text-anchor="end" font-size="7" fill="#666">(Traufe Parl.)</text>
+    
+    <line x1="25" y1="380" x2="35" y2="380" stroke="#333"/>
+    <text x="22" y="383" text-anchor="end">+30.0</text>
+    
+    <line x1="25" y1="300" x2="35" y2="300" stroke="#333"/>
+    <text x="22" y="303" text-anchor="end">+40.0</text>
+    
+    <line x1="25" y1="220" x2="35" y2="220" stroke="#333"/>
+    <text x="22" y="223" text-anchor="end">+50.0</text>
+    
+    <line x1="25" y1="140" x2="35" y2="140" stroke="#333"/>
+    <text x="22" y="143" text-anchor="end">+60.0</text>
+    
+    <line x1="25" y1="100" x2="35" y2="100" stroke="#333"/>
+    <text x="22" y="103" text-anchor="end" fill="#CC0000" font-weight="bold">+64.0</text>
+    <text x="22" y="115" text-anchor="end" font-size="7" fill="#666">(Kuppel)</text>
+    
+    <!-- Höhenmarker rechts -->
+    <line x1="1100" y1="440" x2="1120" y2="440" stroke="#333"/>
+    <text x="1125" y="443">+18.0 m (Traufe BH West/Ost)</text>
+    
+    <line x1="1100" y1="280" x2="1120" y2="280" stroke="#333"/>
+    <text x="1125" y="283">+26.0 m (HA Parlament)</text>
+  </g>
+  
+  <!-- ==================== LAGENBESCHRIFTUNG ==================== -->
+  <g font-family="Arial" font-size="8" fill="#0066CC">
+    <text x="870" y="603">1. Lage</text>
+    <text x="870" y="563">2. Lage</text>
+    <text x="870" y="523">3. Lage</text>
+    <text x="870" y="483">4. Lage</text>
+    <text x="870" y="443">5. Lage</text>
+    <text x="870" y="403">6. Lage</text>
+    <text x="870" y="363">7. Lage</text>
+    <text x="870" y="323">8. Lage</text>
+    <text x="870" y="283">9. Lage</text>
+  </g>
+  
+  <!-- ==================== LEGENDE ==================== -->
+  <rect x="950" y="100" width="200" height="150" fill="#f9f9f9" stroke="#333" stroke-width="1"/>
+  <text x="960" y="120" font-family="Arial" font-size="11" font-weight="bold">Legende</text>
+  
+  <rect x="960" y="130" width="20" height="12" fill="url(#hatch)" stroke="#333"/>
+  <text x="985" y="140" font-family="Arial" font-size="9">Gebäude (Sandstein)</text>
+  
+  <line x1="960" y1="155" x2="980" y2="155" stroke="#0066CC" stroke-width="2"/>
+  <text x="985" y="158" font-family="Arial" font-size="9">Gerüstrahmen</text>
+  
+  <rect x="960" y="165" width="20" height="5" fill="#8B4513" stroke="#333"/>
+  <text x="985" y="173" font-family="Arial" font-size="9">Belag</text>
+  
+  <line x1="960" y1="188" x2="980" y2="188" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="985" y="192" font-family="Arial" font-size="9">Verankerung</text>
+  
+  <ellipse cx="970" cy="210" rx="10" ry="7" fill="url(#copper)" stroke="#333"/>
+  <text x="985" y="213" font-family="Arial" font-size="9">Kupferkuppel</text>
+  
+  <text x="960" y="240" font-family="Arial" font-size="8" fill="#666">Gerüsthöhe max: 26.0 m</text>
+  
+  <!-- ==================== FUSSZEILE ==================== -->
+  <rect x="20" y="720" width="1160" height="60" fill="none" stroke="#333" stroke-width="1"/>
+  <line x1="400" y1="720" x2="400" y2="780" stroke="#333" stroke-width="0.5"/>
+  <line x1="700" y1="720" x2="700" y2="780" stroke="#333" stroke-width="0.5"/>
+  <line x1="950" y1="720" x2="950" y2="780" stroke="#333" stroke-width="0.5"/>
+  
+  <text x="30" y="740" font-family="Arial" font-size="10" font-weight="bold">Projekt:</text>
+  <text x="30" y="755" font-family="Arial" font-size="10">Fassadensanierung Bundeshaus Bern</text>
+  <text x="30" y="770" font-family="Arial" font-size="9" fill="#666">Ansicht Bundesplatz (Nord)</text>
+  
+  <text x="410" y="740" font-family="Arial" font-size="10" font-weight="bold">Gerüstbauer:</text>
+  <text x="410" y="755" font-family="Arial" font-size="10">Lawil Gerüstbau AG</text>
+  <text x="410" y="770" font-family="Arial" font-size="9" fill="#666">Frauenkappelen</text>
+  
+  <text x="710" y="740" font-family="Arial" font-size="10" font-weight="bold">Verfasser:</text>
+  <text x="710" y="755" font-family="Arial" font-size="10">Andreas Lion Roth</text>
+  <text x="710" y="770" font-family="Arial" font-size="9" fill="#666">GL 2025 Polybau</text>
+  
+  <text x="960" y="740" font-family="Arial" font-size="10" font-weight="bold">Datum:</text>
+  <text x="960" y="755" font-family="Arial" font-size="10">Dezember 2025</text>
+  <text x="1130" y="770" font-family="Arial" font-size="12" font-weight="bold" text-anchor="end">Anhang B</text>
+</svg>

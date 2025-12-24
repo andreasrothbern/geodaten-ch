@@ -453,6 +453,17 @@ class SVGGenerator:
             cy = ground_y - h * scale
             svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
 
+        # Lagenbeschriftung (2m pro Lage) - links vom linken Gerüst
+        layer_height_m = 2.0
+        num_layers = int(ridge_h / layer_height_m) + 1
+        svg += self._layer_labels(
+            x=scaffold_left_x - 8,
+            y_ground=ground_y,
+            layer_height_m=layer_height_m,
+            num_layers=min(num_layers, 15),
+            scale_px_per_m=scale
+        )
+
         # Höhenkoten - durchgehende gestrichelte Linien
         line_start = scaffold_left_x - 20
         line_end = width - margin['right'] + 40
@@ -588,6 +599,17 @@ class SVGGenerator:
             anchor_y = ground_y - eave_h * ratio * scale
             svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{anchor_y}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
             svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{anchor_y}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
+
+        # Lagenbeschriftung (2m pro Lage)
+        layer_height_m = 2.0
+        num_layers = int(ridge_h / layer_height_m) + 1
+        svg += self._layer_labels(
+            x=scaffold_left_x - 5,
+            y_ground=ground_y,
+            layer_height_m=layer_height_m,
+            num_layers=min(num_layers, 15),  # Max 15 Lagen anzeigen
+            scale_px_per_m=scale
+        )
 
         # Höhenkoten rechts
         kote_x = width - margin['right'] + 10
