@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import type { ScaffoldingData } from '../types'
+import type { ScaffoldingData, BuildingContext } from '../types'
 import { useUserPreferences, type WorkType, type ScaffoldType } from '../hooks/useUserPreferences'
 import { InteractiveFloorPlan } from './InteractiveFloorPlan'
 import { FacadeSelectionTable } from './FacadeSelectionTable'
 import { LiftConfiguration } from './LiftConfiguration'
+import { ZoneEditor } from './ZoneEditor'
 
 interface LiftCalculation {
   lift_type: string
@@ -58,6 +59,8 @@ export function ScaffoldingCard({
   const [liftEnabled, setLiftEnabled] = useState(false)
   const [liftCalculation, setLiftCalculation] = useState<LiftCalculation | null>(null)
   const [professionalMode, setProfessionalMode] = useState(false)
+  const [buildingContext, setBuildingContext] = useState<BuildingContext | null>(null)
+  const [showZoneEditor, setShowZoneEditor] = useState(false)
 
   const { dimensions, building, gwr_data, sides } = data
 
@@ -277,6 +280,28 @@ export function ScaffoldingCard({
           </p>
         </div>
       </div>
+
+      {/* Gebäude-Zonen Editor */}
+      {gwr_data?.egid && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowZoneEditor(!showZoneEditor)}
+            className="flex items-center gap-2 text-sm text-amber-700 hover:text-amber-900"
+          >
+            <span>{showZoneEditor ? '▼' : '▶'}</span>
+            <span>🏗️ Gebäude-Zonen {buildingContext ? `(${buildingContext.zones.length})` : ''}</span>
+            {buildingContext?.complexity === 'complex' && (
+              <span className="text-xs bg-amber-200 px-1.5 py-0.5 rounded">komplex</span>
+            )}
+          </button>
+          {showZoneEditor && (
+            <ZoneEditor
+              egid={gwr_data.egid}
+              onContextChange={setBuildingContext}
+            />
+          )}
+        </div>
+      )}
 
       {/* Gerüstlift Konfiguration */}
       <LiftConfiguration
