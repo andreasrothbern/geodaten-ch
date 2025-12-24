@@ -1848,6 +1848,8 @@ class FloorPlanRequest(BaseModel):
     area_m2: Optional[float] = None
     width: int = 600
     height: int = 500
+    # Compact mode für Fassaden-Auswahl (weniger Elemente, mehr Platz für Polygon)
+    compact: bool = False
 
 
 @app.post("/api/v1/visualize/floor-plan",
@@ -1898,7 +1900,12 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
         )
 
         generator = get_svg_generator()
-        svg = generator.generate_floor_plan(building_data, request.width, request.height)
+        svg = generator.generate_floor_plan(
+            building_data,
+            request.width,
+            request.height,
+            compact=request.compact
+        )
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
