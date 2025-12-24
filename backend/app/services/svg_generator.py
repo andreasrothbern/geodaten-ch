@@ -946,13 +946,21 @@ class SVGGenerator:
             else:
                 label_x, label_y = svg_mid
 
-            # Compact: nur Index, Normal: Index + Richtung
+            # Höhe aus Side-Daten (pro Fassade)
+            traufhoehe = side.get('traufhoehe_m')
+            height_str = f"H:{traufhoehe:.1f}m" if traufhoehe else ""
+
+            # Compact: nur Index + Länge + Höhe, Normal: Index + Richtung + Länge + Höhe
             if compact:
                 svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_main}" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}]</text>\n'
                 svg += f'  <text x="{label_x:.1f}" y="{label_y + 9:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
+                if height_str:
+                    svg += f'  <text x="{label_x:.1f}" y="{label_y + 17:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["dimension"]}">{height_str}</text>\n'
             else:
                 svg += f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_main}" font-weight="bold" fill="{self.COLORS["text"]}" data-label-for="{side_index}">[{side_index+1}] {direction}</text>\n'
                 svg += f'  <text x="{label_x:.1f}" y="{label_y + 10:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["text_light"]}">{length:.1f}m</text>\n'
+                if height_str:
+                    svg += f'  <text x="{label_x:.1f}" y="{label_y + 19:.1f}" text-anchor="middle" font-family="Arial" font-size="{font_size_sub}" fill="{self.COLORS["dimension"]}">{height_str}</text>\n'
 
         # Verankerungspunkte an allen Polygon-Ecken
         svg += '  <!-- Verankerungspunkte -->\n'
