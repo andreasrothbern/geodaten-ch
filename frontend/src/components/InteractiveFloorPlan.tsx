@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
-import type { ScaffoldingSide, BuildingZone } from '../types'
+import type { ScaffoldingSide, BuildingZone, AccessPoint } from '../types'
 
 interface InteractiveFloorPlanProps {
   address: string
@@ -28,6 +28,8 @@ interface InteractiveFloorPlanProps {
   authorName?: string
   // Gebäude-Zonen für farbcodierte Darstellung
   zones?: BuildingZone[]
+  // Zugänge (Treppen)
+  zugaenge?: AccessPoint[]
 }
 
 export function InteractiveFloorPlan({
@@ -46,7 +48,8 @@ export function InteractiveFloorPlan({
   professional = false,
   projectName,
   authorName,
-  zones
+  zones,
+  zugaenge
 }: InteractiveFloorPlanProps) {
   const [svgContent, setSvgContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -78,7 +81,8 @@ export function InteractiveFloorPlan({
             area_m2: areaM2,
             compact: true,  // Immer compact für Gerüstbau-Tab
             professional: professional,  // Schraffur-Patterns wenn aktiviert
-            zones: zones  // Gebäude-Zonen für farbcodierte Darstellung
+            zones: zones,  // Gebäude-Zonen für farbcodierte Darstellung
+            zugaenge: zugaenge  // Zugänge (Treppen)
           })
         })
         if (!response.ok) {
@@ -96,7 +100,7 @@ export function InteractiveFloorPlan({
     if (address && sides.length > 0 && polygonCoordinates.length > 0) {
       fetchSvg()
     }
-  }, [address, apiUrl, sides, polygonCoordinates, height, eaveHeightM, floors, areaM2, professional, projectName, authorName, zones])
+  }, [address, apiUrl, sides, polygonCoordinates, height, eaveHeightM, floors, areaM2, professional, projectName, authorName, zones, zugaenge])
 
   // Add click handlers to facade segments after SVG is loaded (only once)
   useEffect(() => {

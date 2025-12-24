@@ -118,6 +118,7 @@ export function ScaffoldingCard({
             areaM2={building?.footprint_area_m2}
             professional={professionalMode}
             zones={buildingContext?.zones}
+            zugaenge={buildingContext?.zugaenge}
           />
 
           {/* Polygon Simplification Slider */}

@@ -20,6 +20,7 @@ from app.models.building_context import (
     BuildingContext, BuildingZone, ZoneType,
     ComplexityLevel, ContextSource
 )
+from app.services.access_calculator import calculate_access_points
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,32 @@ class BuildingContextService:
         area_m2 = gwr_data.get('garea') if gwr_data else None
         complexity = self.detect_complexity(polygon, gwr_data, area_m2)
 
+        # Zugänge automatisch berechnen
+        zugaenge = []
+        zugaenge_hinweise = []
+        try:
+            # Fassaden für access_calculator formatieren
+            access_fassaden = [
+                {'id': f['richtung'], 'laenge_m': f['laenge']}
+                for f in fassaden
+            ]
+            access_result = calculate_access_points(access_fassaden)
+            zugaenge = [
+                {
+                    'id': z.id,
+                    'fassade_id': z.fassade_id,
+                    'position_percent': z.position_percent,
+                    'grund': z.grund or 'Automatisch berechnet'
+                }
+                for z in access_result.zugaenge
+            ]
+            if not access_result.suva_konform:
+                zugaenge_hinweise.append(
+                    f"Fluchtweg {access_result.max_fluchtweg_m:.1f}m > 50m (SUVA)"
+                )
+        except Exception as e:
+            logger.warning(f"Access calculation failed: {e}")
+
         context = BuildingContext(
             egid=egid,
             adresse=adresse,
@@ -260,6 +287,8 @@ class BuildingContextService:
             has_towers=False,
             has_annexes=False,
             has_special_features=False,
+            zugaenge=zugaenge,
+            zugaenge_hinweise=zugaenge_hinweise,
             source=ContextSource.AUTO,
             confidence=1.0,
             validated_by_user=False,
@@ -480,8 +509,45 @@ Antworte NUR mit validem JSON (kein Markdown, keine Erklärung):
   "has_annexes": false,
   "has_special_features": false,
   "overall_confidence": 0.9,
-  "reasoning": "Kurze Begründung der Analyse"
+  "reasoning": "Kurze Begründung der Analyse",
+
+  "zugaenge": [
+    {{
+      "id": "Z1",
+      "fassade_id": "W",
+      "position_percent": 0.5,
+      "grund": "Stirnseite West"
+    }},
+    {{
+      "id": "Z2",
+      "fassade_id": "E",
+      "position_percent": 0.5,
+      "grund": "Stirnseite Ost"
+    }}
+  ],
+  "zugaenge_hinweise": []
 }}
+
+## Aufgabe 2: Zugänge empfehlen
+
+Basierend auf der Gebäudestruktur, empfehle Positionen für Gerüst-Zugänge (Treppen).
+
+### SUVA-Vorschriften (Schweiz)
+- **Max. 50m Fluchtweg** zum nächsten Abstieg
+- **Mindestens 2 Zugänge** pro Gerüst
+- Anzahl = max(2, ceil(Umfang / 50))
+
+### Platzierungs-Regeln
+1. An Gebäudeecken bevorzugt (mehr Platz)
+2. An Stirnseiten bei rechteckigen Gebäuden
+3. Ein Zugang pro Flügel bei L/U-Form
+4. Nicht vor Haupteingängen bei öffentlichen Gebäuden
+
+### Zugang-Felder
+- `id`: "Z1", "Z2", etc.
+- `fassade_id`: Fassaden-Richtung ("N", "E", "S", "W")
+- `position_percent`: 0.0 (Start) bis 1.0 (Ende) auf der Fassade
+- `grund`: Begründung für die Position
 
 ## Wichtige Regeln
 
@@ -561,6 +627,8 @@ Ergebnis:
                 has_towers=data.get('has_towers', False),
                 has_annexes=data.get('has_annexes', False),
                 has_special_features=data.get('has_special_features', False),
+                zugaenge=data.get('zugaenge', []),
+                zugaenge_hinweise=data.get('zugaenge_hinweise', []),
                 source=ContextSource.CLAUDE,
                 confidence=data.get('overall_confidence', 0.8),
                 validated_by_user=False,

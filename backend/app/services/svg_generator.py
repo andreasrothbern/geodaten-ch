@@ -39,6 +39,8 @@ class BuildingData:
     bbox_depth_m: Optional[float] = None
     # Gebäude-Zonen für farbcodierte Darstellung
     zones: Optional[List[Dict[str, Any]]] = None
+    # Zugänge (Treppen) - Liste von {id, fassade_id, position_percent, grund}
+    zugaenge: Optional[List[Dict[str, Any]]] = None
 
 
 # Farben für Zonen-Typen
@@ -1160,6 +1162,68 @@ class SVGGenerator:
                     svg += f'''  <g class="anchor-point intermediate">
     <circle cx="{svg_pos[0]:.1f}" cy="{svg_pos[1]:.1f}" r="4" fill="{self.COLORS["anchor"]}" stroke="#3b82f6" stroke-width="1"/>
     <line x1="{svg_pos[0] - 2:.1f}" y1="{svg_pos[1]:.1f}" x2="{svg_pos[0] + 2:.1f}" y2="{svg_pos[1]:.1f}" stroke="white" stroke-width="1"/>
+  </g>
+'''
+
+        # Zugänge (Treppen) zeichnen
+        zugaenge = building.zugaenge or []
+        if zugaenge:
+            svg += '  <!-- Gerüst-Zugänge -->\n'
+
+            # Direction-to-Facade Mapping
+            direction_to_facade: Dict[str, Dict[str, Any]] = {}
+            for i, side in enumerate(sides):
+                direction = side.get('direction', '')
+                if direction and direction not in direction_to_facade:
+                    # Speichere erste Fassade dieser Richtung
+                    if i < len(coords) - 1:
+                        start = coords[i]
+                        end = coords[i + 1]
+                    else:
+                        start = coords[i]
+                        end = coords[0]
+                    direction_to_facade[direction] = {
+                        'start': start,
+                        'end': end,
+                        'length': side.get('length_m', 0)
+                    }
+
+            for zugang in zugaenge:
+                zugang_id = zugang.get('id', 'Z?')
+                fassade_id = zugang.get('fassade_id', '')
+                position_percent = zugang.get('position_percent', 0.5)
+
+                facade_data = direction_to_facade.get(fassade_id)
+                if not facade_data:
+                    continue
+
+                start = facade_data['start']
+                end = facade_data['end']
+
+                # Position auf der Fassade berechnen
+                pos_x = start[0] + (end[0] - start[0]) * position_percent
+                pos_y = start[1] + (end[1] - start[1]) * position_percent
+
+                # Normale für Offset nach aussen
+                dx = end[0] - start[0]
+                dy = end[1] - start[1]
+                length = (dx**2 + dy**2)**0.5
+                if length > 0:
+                    nx = -dy / length
+                    ny = dx / length
+                    # Zugang leicht nach aussen versetzen
+                    pos_x += nx * 0.8
+                    pos_y += ny * 0.8
+
+                svg_pos = to_svg(pos_x, pos_y)
+
+                # Zugang als gelbes Rechteck mit Beschriftung
+                svg += f'''  <g class="zugang" id="zugang-{zugang_id}">
+    <rect x="{svg_pos[0] - 8:.1f}" y="{svg_pos[1] - 12:.1f}" width="16" height="24"
+          fill="#FFC107" stroke="#F57F17" stroke-width="1.5" rx="2"/>
+    <text x="{svg_pos[0]:.1f}" y="{svg_pos[1] + 3:.1f}"
+          font-family="Arial" font-size="9" font-weight="bold"
+          text-anchor="middle" fill="#333">{zugang_id}</text>
   </g>
 '''
 

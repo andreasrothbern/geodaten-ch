@@ -189,6 +189,13 @@ export interface BuildingZone {
   notes?: string
 }
 
+export interface AccessPoint {
+  id: string
+  fassade_id: string
+  position_percent: number
+  grund?: string
+}
+
 export interface BuildingContext {
   egid: string
   adresse?: string
@@ -202,6 +209,8 @@ export interface BuildingContext {
   has_special_features: boolean
   terrain_slope_percent?: number
   terrain_aspect?: string
+  zugaenge: AccessPoint[]
+  zugaenge_hinweise: string[]
   source: ContextSource
   confidence: number
   validated_by_user: boolean

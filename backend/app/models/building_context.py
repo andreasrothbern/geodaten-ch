@@ -154,6 +154,16 @@ class BuildingContext(BaseModel):
         description="Gefälle-Richtung: 'N', 'NE', etc."
     )
 
+    # Zugänge (Treppen)
+    zugaenge: list[dict] = Field(
+        default_factory=list,
+        description="Gerüst-Zugänge mit id, fassade_id, position_percent, grund"
+    )
+    zugaenge_hinweise: list[str] = Field(
+        default_factory=list,
+        description="Hinweise zu den Zugängen"
+    )
+
     # Quelle und Qualität
     source: ContextSource = Field(
         default=ContextSource.AUTO,

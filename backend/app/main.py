@@ -2140,6 +2140,10 @@ class FloorPlanRequest(BaseModel):
     project_name: Optional[str] = None
     author_name: Optional[str] = None
     author_role: Optional[str] = None
+    # Gebäude-Zonen für farbcodierte Darstellung
+    zones: Optional[List[Dict[str, Any]]] = None
+    # Zugänge (Treppen) für Gerüst
+    zugaenge: Optional[List[Dict[str, Any]]] = None
 
 
 @app.post("/api/v1/visualize/floor-plan",
@@ -2187,6 +2191,8 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
             sides=sides_data,
             bbox_width_m=round(bbox_width, 1) if bbox_width else None,
             bbox_depth_m=round(bbox_depth, 1) if bbox_depth else None,
+            zones=request.zones,
+            zugaenge=request.zugaenge,
         )
 
         generator = get_svg_generator()
