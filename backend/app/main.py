@@ -1633,7 +1633,8 @@ async def visualize_cross_section(
     width: int = 700,
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
-    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern")
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
+    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns")
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude.
@@ -1720,7 +1721,7 @@ async def visualize_cross_section(
 
         # SVG generieren
         generator = get_svg_generator()
-        svg = generator.generate_cross_section(building_data, width, height)
+        svg = generator.generate_cross_section(building_data, width, height, professional=professional)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
@@ -1744,7 +1745,8 @@ async def visualize_elevation(
     width: int = 700,
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
-    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern")
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
+    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -1824,7 +1826,7 @@ async def visualize_elevation(
         )
 
         generator = get_svg_generator()
-        svg = generator.generate_elevation(building_data, width, height)
+        svg = generator.generate_elevation(building_data, width, height, professional=professional)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")

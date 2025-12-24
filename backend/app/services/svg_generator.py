@@ -345,10 +345,13 @@ class SVGGenerator:
   </g>
 '''
 
-    def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480) -> str:
+    def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480, professional: bool = False) -> str:
         """
         Generiert saubere technische Schnittansicht.
         Minimalistisch ohne dekorative Elemente.
+
+        Args:
+            professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
         margin = {'top': 60, 'right': 130, 'bottom': 80, 'left': 60}
         draw_width = width - margin['left'] - margin['right']
@@ -369,7 +372,11 @@ class SVGGenerator:
         ground_y = margin['top'] + draw_height
         scaffold_width = 15
 
-        svg = self._svg_header(width, height, f"Gebäudeschnitt - {building.address}")
+        # SVG Header - mit oder ohne Patterns
+        if professional:
+            svg = self._svg_header_professional(width, height, f"Gebäudeschnitt - {building.address}")
+        else:
+            svg = self._svg_header(width, height, f"Gebäudeschnitt - {building.address}")
 
         # Hintergrund
         svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
@@ -398,7 +405,7 @@ class SVGGenerator:
 
         # Gebäude zeichnen
         svg += self._draw_simple_cross_section(
-            building, scale, ground_y, margin, width, height, scaffold_width, draw_width, eave_h, ridge_h
+            building, scale, ground_y, margin, width, height, scaffold_width, draw_width, eave_h, ridge_h, professional
         )
 
         # Legende
@@ -420,9 +427,13 @@ class SVGGenerator:
 
     def _draw_simple_cross_section(self, building: BuildingData, scale: float, ground_y: float,
                                     margin: dict, width: int, height: int, scaffold_width: float,
-                                    draw_width: float, eave_h: float, ridge_h: float) -> str:
+                                    draw_width: float, eave_h: float, ridge_h: float, professional: bool = False) -> str:
         """Zeichnet sauberen technischen Gebäudeschnitt."""
         svg = ""
+
+        # Füllfarben für Gebäude und Gerüst
+        building_fill = "url(#hatch)" if professional else "#e0e0e0"
+        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
 
         building_x = margin['left'] + (draw_width - building.width_m * scale) / 2
         building_width_px = building.width_m * scale
@@ -435,7 +446,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst links -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
         # Verankerungen
         for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
@@ -446,7 +457,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
-        fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+        fill="{building_fill}" stroke="#333" stroke-width="2"/>
 '''
 
         # Dach
@@ -462,7 +473,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst rechts -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
 '''
         for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
             cy = ground_y - h * scale
@@ -517,10 +528,13 @@ class SVGGenerator:
 
         return svg
 
-    def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480) -> str:
+    def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480, professional: bool = False) -> str:
         """
         Generiert saubere technische Fassadenansicht.
         Minimalistisch ohne dekorative Elemente.
+
+        Args:
+            professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
         margin = {'top': 60, 'right': 130, 'bottom': 80, 'left': 60}
         draw_width = width - margin['left'] - margin['right']
@@ -544,7 +558,15 @@ class SVGGenerator:
         ridge_height_px = ridge_h * scale
         scaffold_width = 15
 
-        svg = self._svg_header(width, height, f"Fassadenansicht - {building.address}")
+        # Füllfarben für Gebäude und Gerüst
+        building_fill = "url(#hatch)" if professional else "#e0e0e0"
+        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
+
+        # SVG Header - mit oder ohne Patterns
+        if professional:
+            svg = self._svg_header_professional(width, height, f"Fassadenansicht - {building.address}")
+        else:
+            svg = self._svg_header(width, height, f"Fassadenansicht - {building.address}")
 
         # Hintergrund
         svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
@@ -577,14 +599,14 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst links -->
   <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
 '''
 
         # Gebäude - einfacher Umriss mit Schraffur
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
-        fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+        fill="{building_fill}" stroke="#333" stroke-width="2"/>
 '''
 
         # Dach
@@ -606,7 +628,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gerüst rechts -->
   <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
 '''
 
         # Verankerungspunkte (3 Stück pro Seite)
@@ -675,7 +697,7 @@ class SVGGenerator:
         svg += self._svg_footer()
         return svg
 
-    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, compact: bool = False) -> str:
+    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, compact: bool = False, professional: bool = False) -> str:
         """
         Generiert sauberen technischen Grundriss.
         Verwendet echte Polygon-Daten falls vorhanden.
@@ -683,6 +705,7 @@ class SVGGenerator:
         Args:
             compact: Wenn True, minimale Darstellung für Fassaden-Auswahl
                      (kein Titel, keine Info-Box, kleine Legende)
+            professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
         # Margins anpassen: compact = mehr Platz für Polygon
         if compact:
@@ -711,7 +734,11 @@ class SVGGenerator:
         center_x = margin['left'] + draw_width / 2
         center_y = margin['top'] + draw_height / 2
 
-        svg = self._svg_header(width, height, f"Grundriss - {building.address}")
+        # SVG Header - mit oder ohne Patterns
+        if professional:
+            svg = self._svg_header_professional(width, height, f"Grundriss - {building.address}")
+        else:
+            svg = self._svg_header(width, height, f"Grundriss - {building.address}")
 
         # Hintergrund
         svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'

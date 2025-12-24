@@ -67,6 +67,8 @@ interface ServerSVGProps {
   traufhoehe?: number
   /** Manual ridge height (Firsthöhe) to override database value */
   firsthoehe?: number
+  /** Professional mode with hatch patterns */
+  professional?: boolean
 }
 
 /**
@@ -81,15 +83,16 @@ export function ServerSVG({
   height = 480,
   className = '',
   traufhoehe,
-  firsthoehe
+  firsthoehe,
+  professional = false
 }: ServerSVGProps) {
   const [svg, setSvg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const fetchedRef = useRef<string | null>(null)
 
-  // Cache key includes manual heights
-  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}`
+  // Cache key includes manual heights and professional mode
+  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${professional}`
 
   useEffect(() => {
     if (!address) {
@@ -127,6 +130,10 @@ export function ServerSVG({
         }
         if (firsthoehe && firsthoehe > 0) {
           params.set('firsthoehe', firsthoehe.toString())
+        }
+        // Add professional mode
+        if (professional) {
+          params.set('professional', 'true')
         }
 
         const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
@@ -204,6 +211,7 @@ interface VisualizationTabsProps {
 
 export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
   const [activeTab, setActiveTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
+  const [professional, setProfessional] = useState(false)
 
   const tabs = [
     { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
@@ -213,22 +221,37 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
 
   return (
     <div className="space-y-4">
-      {/* Tab Navigation */}
-      <div className="flex gap-2 border-b pb-2">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-t-lg font-medium transition-colors flex items-center gap-2 ${
-              activeTab === tab.id
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <span>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
+      {/* Tab Navigation + Professional Toggle */}
+      <div className="flex items-center justify-between border-b pb-2">
+        <div className="flex gap-2">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 rounded-t-lg font-medium transition-colors flex items-center gap-2 ${
+                activeTab === tab.id
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {/* Professional Toggle */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <span className="text-xs text-gray-500">Professional</span>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={professional}
+              onChange={(e) => setProfessional(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+          </div>
+        </label>
       </div>
 
       {/* SVG Content */}
@@ -238,12 +261,13 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
         apiUrl={apiUrl}
         width={700}
         height={activeTab === 'floor-plan' ? 500 : 480}
+        professional={professional}
       />
 
       {/* Download Button */}
       <div className="flex justify-end">
         <a
-          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700`}
+          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${professional ? '&professional=true' : ''}`}
           download={`${activeTab}_${address.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
           target="_blank"
           rel="noopener noreferrer"
