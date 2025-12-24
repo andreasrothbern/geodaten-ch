@@ -562,7 +562,8 @@ async def get_scaffolding_data(
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
     refresh: bool = Query(False, description="Cache ignorieren und neu laden"),
     work_type: str = Query("dacharbeiten", description="Arbeitstyp: dacharbeiten (First+1m) oder fassadenarbeiten (Traufe)"),
-    scaffold_type: str = Query("arbeitsgeruest", description="Gerüstart: arbeitsgeruest, schutzgeruest, fanggeruest")
+    scaffold_type: str = Query("arbeitsgeruest", description="Gerüstart: arbeitsgeruest, schutzgeruest, fanggeruest"),
+    simplify_epsilon: Optional[float] = Query(None, ge=0.1, le=3.0, description="Douglas-Peucker Vereinfachung (0.1-3.0m). Auto: EFH=0.3, MFH=0.8, Gross=1.5")
 ):
     """
     Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
@@ -631,7 +632,8 @@ async def get_scaffolding_data(
             x=geo.coordinates.lv95_e,
             y=geo.coordinates.lv95_n,
             tolerance=50,
-            egid=egid or (building.egid if building else None)
+            egid=egid or (building.egid if building else None),
+            simplify_epsilon=simplify_epsilon
         )
 
         if not geometry:
@@ -1909,25 +1911,15 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
 
         generator = get_svg_generator()
 
-        if request.professional:
-            # Professional Mode: Grosses Format mit Titelblock und Fusszeile
-            svg = generator.generate_professional_floor_plan(
-                building_data,
-                project_name=request.project_name or "",
-                project_address=request.address,
-                author_name=request.author_name or "",
-                author_role=request.author_role or "",
-                width=1200,
-                height=900
-            )
-        else:
-            # Standard Mode
-            svg = generator.generate_floor_plan(
-                building_data,
-                request.width,
-                request.height,
-                compact=request.compact
-            )
+        # Professional Mode: gleiche Darstellung, aber mit Schraffur-Patterns
+        # Kein Titelblock/Fusszeile - optimiert für mobile Darstellung
+        svg = generator.generate_floor_plan(
+            building_data,
+            request.width,
+            request.height,
+            compact=request.compact,
+            professional=request.professional
+        )
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")

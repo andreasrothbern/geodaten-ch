@@ -68,15 +68,13 @@ export function InteractiveFloorPlan({
             address,
             sides: sides,
             polygon_coordinates: polygonCoordinates,
-            width: professional ? 1200 : 600,  // Professional: 1200px Breite
-            height: professional ? 900 : height,  // Professional: 900px Höhe
+            width: 600,
+            height: height,
             eave_height_m: eaveHeightM,
             floors: floors,
             area_m2: areaM2,
-            compact: !professional,  // Compact mode nur wenn nicht professional
-            professional: professional,
-            project_name: projectName || address,
-            author_name: authorName || 'Lawil Gerüstbau AG'
+            compact: true,  // Immer compact für Gerüstbau-Tab
+            professional: professional  // Schraffur-Patterns wenn aktiviert
           })
         })
         if (!response.ok) {
@@ -240,14 +238,14 @@ export function InteractiveFloorPlan({
       {/* Professional Mode Hinweis */}
       {professional && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
-          Professional Mode aktiv - 1200×900px mit Titelblock, Schraffur und Massstab
+          Professional Mode aktiv - Schraffur-Patterns für Gebäude und Gerüst
         </div>
       )}
 
       {/* SVG Container with zoom */}
       <div
         className="bg-white border rounded-lg overflow-auto"
-        style={{ maxHeight: professional ? 950 : Math.max(height * 1.5, 450) }}
+        style={{ maxHeight: Math.max(height * 1.5, 450) }}
       >
         <div
           ref={containerRef}

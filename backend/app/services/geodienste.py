@@ -208,7 +208,8 @@ class GeodiensteService:
         x: float,
         y: float,
         tolerance: int = 50,
-        egid: Optional[int] = None
+        egid: Optional[int] = None,
+        simplify_epsilon: Optional[float] = None
     ) -> Optional[BuildingGeometry]:
         """
         Gebäudegeometrie per Koordinate oder EGID abrufen
@@ -218,6 +219,7 @@ class GeodiensteService:
             y: LV95 Nord-Koordinate (oder LV03)
             tolerance: Suchradius in Metern
             egid: Optional EGID zum Filtern
+            simplify_epsilon: Douglas-Peucker Toleranz in Metern (default: dynamisch basierend auf Umfang)
 
         Returns:
             BuildingGeometry mit Polygon und berechneten Massen
@@ -266,8 +268,8 @@ class GeodiensteService:
                 if not best_building or not best_building.get("polygon"):
                     return None
 
-                # Geometrie berechnen
-                return self._calculate_geometry(best_building)
+                # Geometrie berechnen mit optionalem epsilon
+                return self._calculate_geometry(best_building, simplify_epsilon)
 
         except Exception as e:
             print(f"WFS Error: {e}")
@@ -381,7 +383,7 @@ class GeodiensteService:
 
         return min(buildings, key=centroid_distance)
 
-    def _calculate_geometry(self, building: Dict) -> BuildingGeometry:
+    def _calculate_geometry(self, building: Dict, simplify_epsilon: Optional[float] = None) -> BuildingGeometry:
         """Geometrie-Berechnungen durchführen"""
         original_polygon = building.get('polygon', [])
 
@@ -405,11 +407,26 @@ class GeodiensteService:
         # Fläche berechnen (aus Original-Polygon)
         area = self._calculate_polygon_area(original_polygon)
 
+        # Umfang für dynamische Epsilon-Berechnung
+        perimeter = self._calculate_perimeter(original_polygon)
+
+        # Epsilon bestimmen: Parameter > Dynamisch > Default
+        if simplify_epsilon is not None:
+            epsilon = simplify_epsilon
+        else:
+            # Dynamische Anpassung basierend auf Gebäudegrösse
+            if perimeter > 200:  # Grossprojekte
+                epsilon = 1.5
+            elif perimeter > 50:  # MFH
+                epsilon = 0.8
+            else:  # EFH
+                epsilon = self.SIMPLIFY_EPSILON  # 0.3
+
         # Polygon vereinfachen für Fassaden-Berechnung
         # 1. Douglas-Peucker Vereinfachung
         simplified = simplify_polygon_douglas_peucker(
             original_polygon,
-            epsilon=self.SIMPLIFY_EPSILON
+            epsilon=epsilon
         )
 
         # 2. Kollineare Segmente verschmelzen

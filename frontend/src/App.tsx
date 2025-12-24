@@ -29,6 +29,8 @@ function App() {
   // Facade selection state (lifted from ScaffoldingCard for persistence across tab switches)
   const [selectedFacades, setSelectedFacades] = useState<number[]>([])
   const [facadesInitialized, setFacadesInitialized] = useState(false)
+  // Polygon simplification (Douglas-Peucker epsilon)
+  const [simplifyEpsilon, setSimplifyEpsilon] = useState<number | null>(null)
   // Settings panel
   const [settingsOpen, setSettingsOpen] = useState(false)
   // URL parameter for initial address
@@ -58,9 +60,10 @@ function App() {
   const fetchScaffoldingData = async (
     address: string,
     heights?: ManualHeights,
-    refresh?: boolean
+    refresh?: boolean,
+    epsilon?: number | null
   ) => {
-    console.log(`[DEBUG fetchScaffoldingData] Called with address="${address}", refresh=${refresh}`)
+    console.log(`[DEBUG fetchScaffoldingData] Called with address="${address}", refresh=${refresh}, epsilon=${epsilon}`)
     setScaffoldingLoading(true)
     try {
       let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
@@ -72,6 +75,9 @@ function App() {
       }
       if (refresh) {
         url += `&refresh=true`
+      }
+      if (epsilon !== null && epsilon !== undefined) {
+        url += `&simplify_epsilon=${epsilon}`
       }
       console.log(`[DEBUG fetchScaffoldingData] Fetching URL: ${url}`)
       const response = await fetch(url)
@@ -159,7 +165,16 @@ function App() {
 
   const handleHeightChange = (heights: ManualHeights) => {
     if (currentAddress) {
-      fetchScaffoldingData(currentAddress, heights, true)
+      fetchScaffoldingData(currentAddress, heights, true, simplifyEpsilon)
+    }
+  }
+
+  const handleEpsilonChange = (epsilon: number | null) => {
+    setSimplifyEpsilon(epsilon)
+    // Reset facade initialization to recalculate with new polygon
+    setFacadesInitialized(false)
+    if (currentAddress) {
+      fetchScaffoldingData(currentAddress, undefined, true, epsilon)
     }
   }
 
@@ -433,6 +448,8 @@ function App() {
                         onFacadeToggle={handleFacadeToggle}
                         onSelectAll={handleSelectAllFacades}
                         onDeselectAll={handleDeselectAllFacades}
+                        simplifyEpsilon={simplifyEpsilon}
+                        onEpsilonChange={handleEpsilonChange}
                         onCalculate={async (config) => {
                           setScaffoldingConfig(config)
                           setAusmassLoading(true)

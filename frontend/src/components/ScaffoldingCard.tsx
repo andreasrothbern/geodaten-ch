@@ -35,6 +35,9 @@ interface ScaffoldingCardProps {
   onFacadeToggle: (index: number) => void
   onSelectAll: () => void
   onDeselectAll: () => void
+  // Polygon simplification control
+  simplifyEpsilon: number | null
+  onEpsilonChange: (epsilon: number | null) => void
 }
 
 export function ScaffoldingCard({
@@ -44,7 +47,9 @@ export function ScaffoldingCard({
   selectedFacades,
   onFacadeToggle,
   onSelectAll,
-  onDeselectAll
+  onDeselectAll,
+  simplifyEpsilon,
+  onEpsilonChange
 }: ScaffoldingCardProps) {
   // Work type and scaffold type configuration
   const { preferences } = useUserPreferences()
@@ -60,6 +65,11 @@ export function ScaffoldingCard({
   const scaffoldHeight = workType === 'dacharbeiten'
     ? (dimensions.firsthoehe_m || dimensions.estimated_height_m || 0) + 1.0
     : (dimensions.traufhoehe_m || dimensions.estimated_height_m || 0)
+
+  // Calculate perimeter and recommended epsilon
+  const perimeter = sides.reduce((sum, s) => sum + s.length_m, 0)
+  const recommendedEpsilon = perimeter > 200 ? 1.5 : perimeter > 50 ? 0.8 : 0.3
+  const epsilonLabel = perimeter > 200 ? 'Grossprojekt' : perimeter > 50 ? 'MFH' : 'EFH'
 
   return (
     <div className="card space-y-6">
@@ -99,13 +109,53 @@ export function ScaffoldingCard({
             onFacadeToggle={onFacadeToggle}
             onSelectAll={onSelectAll}
             onDeselectAll={onDeselectAll}
-            height={professionalMode ? 900 : 280}
+            height={280}
             eaveHeightM={dimensions.traufhoehe_m || dimensions.estimated_height_m}
             floors={dimensions.floors || gwr_data?.floors}
             areaM2={building?.footprint_area_m2}
             professional={professionalMode}
-            projectName={data.address?.matched}
           />
+
+          {/* Polygon Simplification Slider */}
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-600">Polygon-Vereinfachung</span>
+              <span className="text-xs text-gray-500">
+                Umfang: {perimeter.toFixed(0)}m ({epsilonLabel})
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.1"
+                value={simplifyEpsilon ?? recommendedEpsilon}
+                onChange={(e) => onEpsilonChange(parseFloat(e.target.value))}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-600"
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono font-medium text-gray-700 w-12 text-right">
+                  {(simplifyEpsilon ?? recommendedEpsilon).toFixed(1)}m
+                </span>
+                {simplifyEpsilon !== null && (
+                  <button
+                    onClick={() => onEpsilonChange(null)}
+                    className="text-xs px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-600"
+                    title="Auto-Wert verwenden"
+                  >
+                    Auto
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {simplifyEpsilon === null
+                ? `Auto: ${recommendedEpsilon.toFixed(1)}m (${epsilonLabel})`
+                : `Manuell gesetzt (Auto waere ${recommendedEpsilon.toFixed(1)}m)`}
+              {' '}- Douglas-Peucker Toleranz
+            </p>
+          </div>
         </div>
 
         {/* Facade Selection Table */}
