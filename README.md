@@ -163,6 +163,40 @@ npm install
 npm run dev
 ```
 
+## SVG-Visualisierung
+
+Die App generiert technische SVG-Zeichnungen:
+- **Grundriss**: Gebäudepolygon mit Gerüstzone, Fassaden-Labels, Verankerungspunkte
+- **Ansicht**: Fassadenansicht mit Höhenkoten, Gerüstlagen, Dachform
+- **Schnitt**: Querschnitt durch Gebäude mit Gerüst beidseitig
+
+### Aktueller Stand vs. Ziel
+
+| Feature | Aktuell | Ziel (professionell) |
+|---------|---------|----------------------|
+| Gebäudegeometrie | 1 Polygon | Mehrere Zonen |
+| Höhendaten | 1 globale Höhe | Pro Fassade |
+| Gerüstzonen | Bounding Box | Pro Fassade |
+| Ständerpositionen | ❌ | Alle 2.5-3m |
+| Verankerungen | Nur Ecken | Alle 4m h/v |
+| Zugänge | ❌ | Markierungen |
+| Titelblock/Fusszeile | ✅ Optional | ✅ |
+
+**Referenz-SVGs:** `lawil/claude_ai_bundeshaus/` enthält handgefertigte Beispiele (Bundeshaus Bern)
+
+### SVG API-Endpunkte
+
+```
+GET  /api/v1/visualize/cross-section?address=...   # Schnittansicht
+GET  /api/v1/visualize/elevation?address=...       # Fassadenansicht
+POST /api/v1/visualize/floor-plan                  # Grundriss (mit Polygon-Daten)
+```
+
+**Parameter:**
+- `width`, `height`: SVG-Grösse (Default: 700x480)
+- `professional`: Mit Schraffur-Patterns (true/false)
+- `compact`: Minimale Darstellung für Fassaden-Auswahl
+
 ## Geplante Erweiterungen
 
 ### SUVA Gerüst-Kategorien
@@ -175,6 +209,16 @@ Für präzise Gerüstplanung nach SUVA-Normen:
 | Malerarbeiten | Fassadenfläche pro Seite | Vorhanden |
 | Dachuntersicht | Traufhöhe, Dachüberstand | Geplant |
 | Dacharbeiten | Dachhöhe, Neigung, First | Geplant |
+
+### SVG-Verbesserungen (Priorität)
+
+| Feature | Beschreibung | Status |
+|---------|--------------|--------|
+| Höhenzonen-UI | Manuelle Höhe pro Fassade | Geplant |
+| Ständerpositionen | Punkte alle 2.5-3m (Feldlänge) | Geplant |
+| Verankerungsraster | Linien alle 4m horizontal/vertikal | Geplant |
+| Zugangsmarkierungen | Gelbe Rechtecke mit Z1-Z4 Label | Geplant |
+| Gerüst-Details (Ansicht) | Ständer, Riegel, Beläge separat | Geplant |
 
 ### 3D Tiles Integration
 

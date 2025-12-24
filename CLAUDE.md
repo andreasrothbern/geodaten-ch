@@ -243,6 +243,64 @@ Der Slider steuert das Verhältnis zwischen 2.57m und 3.07m Feldern:
 | Türme | – | 36.0 m |
 | Kuppeln | – | Spezialgerüst |
 
+## SVG-Visualisierung: Aktuell vs. Ziel
+
+**Referenz:** `lawil/claude_ai_bundeshaus/` - Von Claude.ai handgefertigte SVGs für Bundeshaus
+
+### Vergleichstabelle
+
+| Feature | App (aktuell) | Claude.ai Ziel | Status |
+|---------|---------------|----------------|--------|
+| **Gebäudegeometrie** | 1 Polygon aus geodienste.ch | Mehrere Polygone pro Gebäudeteil | ❌ |
+| **Höhendaten** | 1 globale Höhe (SwissBuildings3D) | Höhenzonen pro Gebäudeteil | ❌ |
+| **Höhe pro Fassade** | ✅ Implementiert (traufhoehe_m) | Individuelle Höhen | ✅ Basis |
+| **Semantische Elemente** | Keine | Kuppel, Türme, Arkaden, Ehrenhof | ❌ |
+| **Gerüstzonen** | Rechteck um ganzes Polygon | Separate Zonen pro Fassade/Höhe | ❌ |
+| **Ständerpositionen** | Keine | Punkte alle 2.5-3m (Feldlänge) | ❌ |
+| **Verankerungen** | Nur an Polygon-Ecken | Entlang Fassade alle 4m h/v | ⚠️ Teilweise |
+| **Zugänge (Z1-Z4)** | Keine | Gelbe Markierungen | ❌ |
+| **Masslinien** | Nur Umfang/Fläche | Mit Pfeilen, Beschriftung | ⚠️ Einfach |
+| **Lagenbeschriftung** | Nur in Schnitt | In Ansicht nummeriert | ⚠️ Teilweise |
+| **Gebäudebeschriftung** | Nur Adresse | Zonen-Namen (BH West, etc.) | ❌ |
+| **Dachform (Ansicht)** | Einfaches Dreieck/Rechteck | Giebel, Kuppel, Laterne | ❌ |
+| **Material-Details** | Keine | Säulen, Beläge, Kupfer-Gradient | ❌ |
+| **Titelblock** | Optional (professional mode) | Vollständig | ✅ Vorhanden |
+| **Fusszeile** | Optional (professional mode) | Vollständig | ✅ Vorhanden |
+| **Legende** | Einfach | Detailliert mit allen Elementen | ⚠️ Einfach |
+| **Nordpfeil** | ✅ Vorhanden | ✅ | ✅ |
+| **Massstab** | ✅ Vorhanden | ✅ | ✅ |
+
+### Was fehlt für professionelle Grafik
+
+**Daten-Ebene (Backend):**
+1. **Höhenzonen-Erkennung**: Welche Fassaden bilden eine Zone?
+2. **Gebäudeteil-Klassifikation**: Hauptbau, Seitenflügel, Turm, Kuppel
+3. **Ständer-Berechnung**: Position alle 2.5-3m basierend auf Feldlängen
+4. **Verankerungs-Raster**: Alle 4m horizontal und vertikal
+
+**Grafik-Ebene (SVG Generator):**
+1. **Mehrere Gerüstzonen** statt einer Bounding Box
+2. **Ständer-Punkte** entlang der Gerüstkante
+3. **Verankerungs-Linien** von Fassade nach aussen
+4. **Zugangs-Markierungen** (gelbe Rechtecke)
+5. **Detaillierte Ansicht**: Ständer, Riegel, Beläge als separate Linien
+
+### Dateien zum Vergleich
+
+```
+lawil/
+├── claude_ai_bundeshaus/           # Handgefertigte Referenz-SVGs
+│   ├── anhang_a_grundriss.svg      # Grundriss mit Höhenzonen
+│   ├── anhang_b_ansicht.svg        # Ansicht mit Kuppel, Säulen
+│   ├── anhang_c_schnitt.svg        # Schnitt durch Parlament
+│   ├── anhang_d_gerustkarte.svg    # Feldaufteilung
+│   └── PROJEKT_KONTEXT.md          # Projektdokumentation
+│
+└── geodaten-ch/                    # App-generierte SVGs
+    └── backend/app/services/
+        └── svg_generator.py        # Automatische Generierung
+```
+
 ## Neue Features (Stand 24.12.2025)
 
 ### URL-Parameter für Adresse
