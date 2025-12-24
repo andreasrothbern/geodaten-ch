@@ -108,6 +108,79 @@ GET /api/v1/scaffolding/by-egid/2242547
 GET /api/v1/heights/stats
 ```
 
+## Building Context System (NEU)
+
+Ermöglicht die Analyse komplexer Gebäude mit mehreren Höhenzonen.
+
+### API-Endpunkte
+
+```python
+# Kontext abrufen (mit optionaler Auto-Erstellung)
+GET /api/v1/building/context/{egid}?create_if_missing=true&analyze_if_complex=true
+
+# Claude-Analyse für komplexes Gebäude triggern
+POST /api/v1/building/context/{egid}/analyze
+Body: {"include_orthofoto": false, "force_reanalyze": false}
+
+# Kontext manuell aktualisieren
+PUT /api/v1/building/context/{egid}
+Body: {"zones": [...], "validated": true}
+
+# Kontext löschen (Reset)
+DELETE /api/v1/building/context/{egid}
+```
+
+### Zonen-Typen
+
+| Typ | Beschreibung | Beispiel |
+|-----|--------------|----------|
+| `hauptgebaeude` | Hauptbaukörper | Wohnhaus, Bürogebäude |
+| `anbau` | Seitenflügel, Erweiterungen | Westflügel, Neubau |
+| `turm` | Türme, Treppenhäuser | Kirchturm, Treppenturm |
+| `kuppel` | Kuppeln | Bundeshaus-Kuppel |
+| `arkade` | Arkaden, Laubengänge | Bundeshaus-Arkaden |
+| `vordach` | Vordächer, Überdachungen | Eingangsbereich |
+| `treppenhaus` | Aussenliegende Treppenhäuser | Fluchttreppe |
+| `garage` | Garagen, Carports | Tiefgaragen-Aufbau |
+
+### Komplexitäts-Erkennung
+
+Das System erkennt automatisch die Gebäudekomplexität:
+
+```python
+# Einfach (auto-context, 1 Zone)
+- Polygon ≤6 Ecken
+- Fläche <300m²
+- Konvexe Form
+- Kategorie: Wohnen
+
+# Komplex (Claude-Analyse, mehrere Zonen)
+- Polygon >12 Ecken
+- Fläche >1000m²
+- Konkave Form (Einbuchtungen)
+- Kategorie: Öffentlich, Kirche, Industrie
+```
+
+### Datenbankstruktur
+
+```sql
+-- building_contexts.db
+CREATE TABLE building_contexts (
+    egid TEXT PRIMARY KEY,
+    context_json TEXT,           -- BuildingContext als JSON
+    source TEXT,                 -- 'auto', 'claude', 'manual'
+    confidence REAL,
+    validated INTEGER DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT
+);
+```
+
+### Kosten (Claude API)
+- Pro Analyse: ~$0.01-0.02
+- Mit Orthofoto: ~$0.05-0.10
+- Caching: Einmal analysiert = gespeichert
+
 ### Datenquellen für Höhen (Fallback-Kette)
 
 ```
@@ -347,6 +420,7 @@ npx @railway/cli volume add --mount-path /app/data
 
 ## Status (Stand: 24.12.2025)
 
+### Fertig ✅
 - [x] Backend + Frontend Deployment
 - [x] swissBUILDINGS3D On-Demand Import via STAC API
 - [x] Railway Volume für persistente Daten
@@ -358,8 +432,23 @@ npx @railway/cli volume add --mount-path /app/data
 - [x] Douglas-Peucker Polygon-Vereinfachung
 - [x] URL-Parameter für Adresse (?address=...)
 - [x] Compact-Modus für Grundriss-SVG
+- [x] **Building Context System** (POC - poc_bundeshaus_mvp Branch)
+  - Pydantic Models (BuildingZone, BuildingContext)
+  - SQLite Speicherung (building_contexts.db)
+  - Komplexitäts-Erkennung (simple/moderate/complex)
+  - Auto-Context für einfache Gebäude
+  - Claude API Integration für komplexe Gebäude
+  - API Endpoints (GET/POST/PUT/DELETE)
+  - Frontend TypeScript Types
+
+### In Arbeit 🔨
 - [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
-- [ ] Lokale Höhen pro Fassade (Höhenzonen)
+- [ ] Frontend Zonen-Editor
+- [ ] SVG-Generator mit Zonen-Unterstützung
+
+### Geplant 🔜
+- [ ] swissALTI3D (Terrain) Integration
+- [ ] DXF-Export
 - [ ] Custom Domain
 
 ## ACHTUNG: Technische Schulden

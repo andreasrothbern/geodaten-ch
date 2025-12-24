@@ -842,6 +842,271 @@ async def get_scaffolding_by_egid(
 
 
 # ============================================================================
+# Building Context System (Höhenzonen für komplexe Gebäude)
+# ============================================================================
+
+from app.models.building_context import (
+    BuildingContext, BuildingContextCreate, BuildingContextResponse,
+    AnalyzeRequest, AnalyzeResponse, ComplexityLevel
+)
+from app.services.building_context import get_building_context_service
+
+
+@app.get("/api/v1/building/context/{egid}",
+         response_model=BuildingContextResponse,
+         tags=["Building Context"])
+async def get_building_context(
+    egid: str,
+    create_if_missing: bool = Query(False, description="Automatisch erstellen wenn nicht vorhanden"),
+    analyze_if_complex: bool = Query(False, description="Claude-Analyse triggern wenn komplex")
+):
+    """
+    Gebäude-Kontext abrufen.
+
+    Der Kontext enthält Höhenzonen und Gebäudeteil-Informationen
+    für komplexe Gebäude.
+
+    **Beispiel:** `/api/v1/building/context/1234567`
+    """
+    service = get_building_context_service()
+
+    # Existierenden Kontext suchen
+    context = service.get_context(egid)
+
+    if context:
+        return BuildingContextResponse(
+            status="found",
+            context=context,
+            needs_validation=not context.validated_by_user
+        )
+
+    if not create_if_missing:
+        return BuildingContextResponse(
+            status="not_found",
+            needs_validation=False,
+            message=f"Kein Kontext für EGID {egid} gefunden"
+        )
+
+    # Gebäudedaten laden für Auto-Context
+    try:
+        building = await swisstopo.get_building_by_egid(int(egid), include_geometry=True)
+        if not building or not building.coordinates:
+            return BuildingContextResponse(
+                status="error",
+                message=f"Gebäude mit EGID {egid} nicht gefunden"
+            )
+
+        geometry = await geodienste.get_building_geometry(
+            x=building.coordinates.lv95_e,
+            y=building.coordinates.lv95_n,
+            tolerance=50,
+            egid=int(egid)
+        )
+
+        if not geometry or not geometry.polygon:
+            return BuildingContextResponse(
+                status="error",
+                message="Gebäudegeometrie nicht verfügbar"
+            )
+
+        # Polygon zu Liste von dicts konvertieren
+        polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon]
+
+        # Höhendaten aus Geometry
+        height_data = {
+            "traufhoehe_m": geometry.height_info.get("traufhoehe_m") if geometry.height_info else None,
+            "firsthoehe_m": geometry.height_info.get("firsthoehe_m") if geometry.height_info else None,
+            "gebaeudehoehe_m": geometry.height_info.get("gebaeudehoehe_m") if geometry.height_info else None,
+        }
+
+        # GWR-Daten
+        gwr_data = {
+            "gkat": building.building_category_code,
+            "gastw": building.floors,
+            "gbauj": building.construction_year,
+            "garea": building.area_m2,
+        }
+
+        # Komplexität prüfen
+        complexity = service.detect_complexity(polygon, gwr_data, building.area_m2)
+
+        # Kontext erstellen
+        if complexity == ComplexityLevel.COMPLEX and analyze_if_complex:
+            # Claude-Analyse für komplexe Gebäude
+            context = await service.analyze_with_claude(
+                egid=egid,
+                adresse=building.address,
+                polygon=polygon,
+                height_data=height_data,
+                gwr_data=gwr_data
+            )
+        else:
+            # Auto-Context für einfache/moderate Gebäude
+            context = service.create_auto_context(
+                egid=egid,
+                adresse=building.address,
+                polygon=polygon,
+                height_data=height_data,
+                gwr_data=gwr_data
+            )
+
+        # Speichern
+        service.save_context(context)
+
+        return BuildingContextResponse(
+            status="created",
+            context=context,
+            needs_validation=context.source.value == "claude"
+        )
+
+    except Exception as e:
+        return BuildingContextResponse(
+            status="error",
+            message=str(e)
+        )
+
+
+@app.post("/api/v1/building/context/{egid}/analyze",
+          response_model=AnalyzeResponse,
+          tags=["Building Context"])
+async def analyze_building_context(
+    egid: str,
+    request: AnalyzeRequest
+):
+    """
+    Claude-Analyse für komplexes Gebäude triggern.
+
+    Analysiert das Gebäudepolygon und identifiziert Höhenzonen,
+    Türme, Anbauten und andere Sonderelemente.
+
+    **Kosten:** ~$0.01-0.02 pro Analyse
+    """
+    service = get_building_context_service()
+
+    # Prüfen ob bereits analysiert
+    existing = service.get_context(egid)
+    if existing and not request.force_reanalyze:
+        return AnalyzeResponse(
+            status="already_exists",
+            context=existing,
+            message="Kontext existiert bereits. force_reanalyze=true zum Überschreiben."
+        )
+
+    try:
+        # Gebäudedaten laden
+        building = await swisstopo.get_building_by_egid(int(egid), include_geometry=True)
+        if not building or not building.coordinates:
+            return AnalyzeResponse(
+                status="error",
+                message=f"Gebäude mit EGID {egid} nicht gefunden"
+            )
+
+        geometry = await geodienste.get_building_geometry(
+            x=building.coordinates.lv95_e,
+            y=building.coordinates.lv95_n,
+            tolerance=50,
+            egid=int(egid)
+        )
+
+        if not geometry or not geometry.polygon:
+            return AnalyzeResponse(
+                status="error",
+                message="Gebäudegeometrie nicht verfügbar"
+            )
+
+        polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon]
+
+        height_data = {
+            "traufhoehe_m": geometry.height_info.get("traufhoehe_m") if geometry.height_info else None,
+            "firsthoehe_m": geometry.height_info.get("firsthoehe_m") if geometry.height_info else None,
+            "gebaeudehoehe_m": geometry.height_info.get("gebaeudehoehe_m") if geometry.height_info else None,
+        }
+
+        gwr_data = {
+            "gkat": building.building_category_code,
+            "gastw": building.floors,
+            "gbauj": building.construction_year,
+            "garea": building.area_m2,
+        }
+
+        # Claude-Analyse
+        context = await service.analyze_with_claude(
+            egid=egid,
+            adresse=building.address,
+            polygon=polygon,
+            height_data=height_data,
+            gwr_data=gwr_data,
+            include_orthofoto=request.include_orthofoto
+        )
+
+        # Speichern
+        service.save_context(context)
+
+        return AnalyzeResponse(
+            status="success",
+            context=context,
+            cost_estimate_usd=0.02
+        )
+
+    except Exception as e:
+        return AnalyzeResponse(
+            status="error",
+            message=str(e)
+        )
+
+
+@app.put("/api/v1/building/context/{egid}",
+         response_model=BuildingContextResponse,
+         tags=["Building Context"])
+async def update_building_context(
+    egid: str,
+    request: BuildingContextCreate
+):
+    """
+    Gebäude-Kontext manuell aktualisieren.
+
+    Erlaubt manuelle Korrekturen an den Höhenzonen.
+    """
+    service = get_building_context_service()
+
+    existing = service.get_context(egid)
+    if not existing:
+        return BuildingContextResponse(
+            status="not_found",
+            message=f"Kein Kontext für EGID {egid} gefunden"
+        )
+
+    # Update mit neuen Zonen
+    existing.zones = request.zones
+    existing.validated_by_user = request.validated
+    existing.source = existing.source  # Behalte ursprüngliche Quelle
+
+    service.save_context(existing)
+
+    return BuildingContextResponse(
+        status="found",
+        context=existing,
+        needs_validation=False
+    )
+
+
+@app.delete("/api/v1/building/context/{egid}",
+            tags=["Building Context"])
+async def delete_building_context(egid: str):
+    """
+    Gebäude-Kontext löschen (Reset).
+    """
+    service = get_building_context_service()
+
+    deleted = service.delete_context(egid)
+
+    if deleted:
+        return {"status": "deleted", "egid": egid}
+    else:
+        return {"status": "not_found", "egid": egid}
+
+
+# ============================================================================
 # Höhendatenbank
 # ============================================================================
 

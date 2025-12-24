@@ -197,6 +197,46 @@ POST /api/v1/visualize/floor-plan                  # Grundriss (mit Polygon-Date
 - `professional`: Mit Schraffur-Patterns (true/false)
 - `compact`: Minimale Darstellung für Fassaden-Auswahl
 
+## Building Context System (NEU)
+
+Für komplexe Gebäude mit mehreren Höhenzonen (z.B. Bundeshaus).
+
+### Problem
+- swissBUILDINGS3D liefert nur 1 globale Höhe pro Gebäude
+- Beispiel Bundeshaus: 14.5m (Arkaden) statt 25m (Parlament), 36m (Türme)
+
+### Lösung
+Das Building Context System erkennt automatisch:
+- **Einfache Gebäude** (≤6 Ecken, <300m²) → Auto-Context mit 1 Zone
+- **Komplexe Gebäude** → Claude-Analyse mit mehreren Höhenzonen
+
+### API-Endpunkte
+```
+GET  /api/v1/building/context/{egid}           # Kontext abrufen
+POST /api/v1/building/context/{egid}/analyze   # Claude-Analyse
+PUT  /api/v1/building/context/{egid}           # Manuell bearbeiten
+DELETE /api/v1/building/context/{egid}         # Zurücksetzen
+```
+
+### Zonen-Typen
+- `hauptgebaeude` - Hauptbaukörper
+- `anbau` - Anbauten, Seitenflügel
+- `turm` - Türme, Treppenhäuser
+- `kuppel` - Kuppeln
+- `arkade` - Arkaden, Laubengänge
+- `vordach` - Vordächer
+- `garage` - Garagen
+
+### Komplexitäts-Erkennung
+| Kriterium | Einfach | Komplex |
+|-----------|---------|---------|
+| Polygon-Ecken | ≤6 | >12 |
+| Grundfläche | <300m² | >1000m² |
+| Gebäudekategorie | Wohnen | Öffentlich, Kirche |
+| Polygon-Form | Konvex | Konkav (Einbuchtungen) |
+
+---
+
 ## Geplante Erweiterungen
 
 ### SUVA Gerüst-Kategorien

@@ -154,3 +154,72 @@ export interface FacadeSelection {
   direction: string
   area_m2: number
 }
+
+// Building Context Types (Höhenzonen für komplexe Gebäude)
+export type ZoneType =
+  | 'hauptgebaeude'
+  | 'anbau'
+  | 'turm'
+  | 'kuppel'
+  | 'arkade'
+  | 'vordach'
+  | 'treppenhaus'
+  | 'garage'
+  | 'unknown'
+
+export type ComplexityLevel = 'simple' | 'moderate' | 'complex'
+export type ContextSource = 'auto' | 'claude' | 'manual'
+
+export interface BuildingZone {
+  id: string
+  name: string
+  type: ZoneType
+  polygon_point_indices?: number[]
+  sub_polygon?: [number, number][]
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  gebaeudehoehe_m: number
+  terrain_hoehe_m?: number
+  terrain_min_m?: number
+  terrain_max_m?: number
+  fassaden_ids: string[]
+  beruesten: boolean
+  sonderkonstruktion: boolean
+  confidence: number
+  notes?: string
+}
+
+export interface BuildingContext {
+  egid: string
+  adresse?: string
+  zones: BuildingZone[]
+  zone_adjacency?: Record<string, string[]>
+  complexity: ComplexityLevel
+  has_height_variations: boolean
+  has_setbacks: boolean
+  has_towers: boolean
+  has_annexes: boolean
+  has_special_features: boolean
+  terrain_slope_percent?: number
+  terrain_aspect?: string
+  source: ContextSource
+  confidence: number
+  validated_by_user: boolean
+  reasoning?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BuildingContextResponse {
+  status: 'found' | 'created' | 'not_found' | 'error'
+  context?: BuildingContext
+  needs_validation: boolean
+  message?: string
+}
+
+export interface AnalyzeResponse {
+  status: 'success' | 'error' | 'already_exists'
+  context?: BuildingContext
+  cost_estimate_usd?: number
+  message?: string
+}
