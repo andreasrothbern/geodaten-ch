@@ -345,16 +345,6 @@ class SVGGenerator:
   </g>
 '''
 
-    def _north_arrow(self, x: int, y: int) -> str:
-        """Nordpfeil"""
-        return f'''
-  <!-- Nordpfeil -->
-  <g transform="translate({x}, {y})">
-    <polygon points="0,-15 5,5 0,0 -5,5" fill="#333"/>
-    <text x="0" y="15" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">N</text>
-  </g>
-'''
-
     def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480) -> str:
         """
         Generiert saubere technische Schnittansicht.
