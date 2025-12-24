@@ -761,11 +761,11 @@ class SVGGenerator:
         # Gebäude zeichnen - Polygon wenn vorhanden, sonst Rechteck
         if building.polygon_coordinates and len(building.polygon_coordinates) >= 3:
             svg += self._draw_polygon_floor_plan(
-                building, scale, center_x, center_y, width, height, margin, compact
+                building, scale, center_x, center_y, width, height, margin, compact, professional
             )
         else:
             svg += self._draw_rectangle_floor_plan(
-                building, scale, center_x, center_y, width, height, margin
+                building, scale, center_x, center_y, width, height, margin, professional
             )
 
         # Legende - compact: kleine Version rechts oben
@@ -807,18 +807,23 @@ class SVGGenerator:
     def _draw_polygon_floor_plan(self, building: BuildingData, scale: float,
                                    center_x: float, center_y: float,
                                    width: int, height: int, margin: dict,
-                                   compact: bool = False) -> str:
+                                   compact: bool = False, professional: bool = False) -> str:
         """Zeichnet Grundriss mit echtem Polygon.
 
         Args:
             compact: Im Compact-Modus kleinere Labels, keine Richtungsangabe
+            professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
         svg = ""
         coords = building.polygon_coordinates
         sides = building.sides or []
 
+        # Füllfarben für Gebäude und Gerüst
+        building_fill = "url(#hatch)" if professional else "#e0e0e0"
+        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
+
         if not coords or len(coords) < 3:
-            return self._draw_rectangle_floor_plan(building, scale, center_x, center_y, width, height, margin)
+            return self._draw_rectangle_floor_plan(building, scale, center_x, center_y, width, height, margin, professional)
 
         # Koordinaten in Meter umrechnen (von LV95)
         # LV95 Koordinaten sind in Metern, wir müssen sie zentrieren
@@ -857,14 +862,14 @@ class SVGGenerator:
   <!-- Gerüst-Zone -->
   <rect x="{bbox_min_x}" y="{bbox_min_y}"
         width="{bbox_max_x - bbox_min_x}" height="{bbox_max_y - bbox_min_y}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
 '''
 
         # Innerer Bereich (Gebäude-Polygon - Hintergrund)
         svg += f'''
   <!-- Gebäude-Polygon Hintergrund -->
   <polygon points="{points_str}"
-           fill="#e0e0e0" stroke="none"/>
+           fill="{building_fill}" stroke="none"/>
 '''
 
         # Klickbare Fassaden-Segmente (einzeln für Interaktivität)
@@ -966,9 +971,13 @@ class SVGGenerator:
 
     def _draw_rectangle_floor_plan(self, building: BuildingData, scale: float,
                                     center_x: float, center_y: float,
-                                    width: int, height: int, margin: dict) -> str:
+                                    width: int, height: int, margin: dict, professional: bool = False) -> str:
         """Zeichnet rechteckigen Grundriss (Fallback)."""
         svg = ""
+
+        # Füllfarben für Gebäude und Gerüst
+        building_fill = "url(#hatch)" if professional else "#e0e0e0"
+        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
 
         building_width_px = building.length_m * scale
         building_height_px = building.width_m * scale
@@ -983,7 +992,7 @@ class SVGGenerator:
   <!-- Gerüst umlaufend -->
   <rect x="{building_x - scaffold_offset - scaffold_width}" y="{building_y - scaffold_offset - scaffold_width}"
         width="{building_width_px + 2*scaffold_offset + 2*scaffold_width}" height="{building_height_px + 2*scaffold_offset + 2*scaffold_width}"
-        fill="#fff3cd" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
+        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5" rx="2"/>
 '''
 
         # Innerer Ausschnitt
@@ -997,7 +1006,7 @@ class SVGGenerator:
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{building_y}" width="{building_width_px}" height="{building_height_px}"
-        fill="#e0e0e0" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
+        fill="{building_fill}" stroke="{self.COLORS['building_stroke']}" stroke-width="2"/>
 '''
 
         # Fassaden-Beschriftungen

@@ -1949,7 +1949,8 @@ async def visualize_floor_plan_get(
     width: int = 600,
     height: int = 500,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe (nicht verwendet für Grundriss)"),
-    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe (nicht verwendet für Grundriss)")
+    firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe (nicht verwendet für Grundriss)"),
+    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns")
 ):
     """
     DEPRECATED: Verwende POST mit sides/polygon Daten für konsistente Ergebnisse.
@@ -2040,7 +2041,7 @@ async def visualize_floor_plan_get(
         )
 
         generator = get_svg_generator()
-        svg = generator.generate_floor_plan(building_data, width, height)
+        svg = generator.generate_floor_plan(building_data, width, height, professional=professional)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")
