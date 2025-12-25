@@ -192,6 +192,7 @@ def generate_cross_section_with_zones(
         return cached
 
     logger.info(f"Generiere Cross-Section für: {address}")
+    logger.info(f"Zonen-Input: {zones}")
 
     # Zonen-Text aufbereiten
     zones_text = ""
@@ -310,6 +311,7 @@ def generate_elevation_with_zones(
         return cached
 
     logger.info(f"Generiere Elevation für: {address}")
+    logger.info(f"Zonen-Input: {zones}")
 
     # Zonen-Text aufbereiten
     zones_text = ""
