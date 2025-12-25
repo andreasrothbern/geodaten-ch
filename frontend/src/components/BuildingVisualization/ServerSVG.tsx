@@ -234,6 +234,7 @@ export function ServerSVG({
   return (
     <div
       className={`rounded-lg overflow-hidden border ${className}`}
+      style={{ width, height, minHeight: height }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   )
