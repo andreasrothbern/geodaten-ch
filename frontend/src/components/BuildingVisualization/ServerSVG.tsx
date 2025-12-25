@@ -91,8 +91,9 @@ export function ServerSVG({
   const [error, setError] = useState<string | null>(null)
   const fetchedRef = useRef<string | null>(null)
 
-  // Cache key includes manual heights and professional mode
-  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${professional}`
+  // Cache key includes manual heights, professional mode, and claude
+  const useClaude = type === 'cross-section' || type === 'elevation'
+  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${professional}|${useClaude}`
 
   useEffect(() => {
     if (!address) {
@@ -134,6 +135,10 @@ export function ServerSVG({
         // Add professional mode
         if (professional) {
           params.set('professional', 'true')
+        }
+        // Use Claude API for cross-section and elevation
+        if (type === 'cross-section' || type === 'elevation') {
+          params.set('use_claude', 'true')
         }
 
         const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
@@ -267,7 +272,7 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
       {/* Download Button */}
       <div className="flex justify-end">
         <a
-          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${professional ? '&professional=true' : ''}`}
+          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${professional ? '&professional=true' : ''}${(activeTab === 'cross-section' || activeTab === 'elevation') ? '&use_claude=true' : ''}`}
           download={`${activeTab}_${address.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
           target="_blank"
           rel="noopener noreferrer"
