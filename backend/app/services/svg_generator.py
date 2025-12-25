@@ -93,7 +93,7 @@ class SVGGenerator:
 '''
 
     def _svg_header_professional(self, width: int, height: int, title: str) -> str:
-        """SVG-Header mit Patterns für professionelle Zeichnungen"""
+        """SVG-Header mit Patterns für professionelle Zeichnungen (Claude.ai Qualität)"""
         return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <title>{title}</title>
@@ -102,10 +102,20 @@ class SVGGenerator:
     <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
       <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
     </pattern>
-    <!-- Gerüst-Füllung -->
+    <!-- Dichtere Schraffur für Schnittflächen -->
+    <pattern id="hatch-cut" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#333" stroke-width="0.8"/>
+    </pattern>
+    <!-- Terrain-Muster -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="15">
+      <path d="M0,15 L10,0 M10,15 L20,0" stroke="#666" stroke-width="0.5"/>
+      <circle cx="5" cy="10" r="1.5" fill="#888"/>
+      <circle cx="15" cy="5" r="1" fill="#888"/>
+    </pattern>
+    <!-- Gerüst-Füllung (hellblau transparent) -->
     <pattern id="scaffold-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
-      <rect width="10" height="10" fill="rgba(0, 102, 204, 0.1)"/>
-      <path d="M0,5 h10 M5,0 v10" stroke="rgba(0, 102, 204, 0.3)" stroke-width="0.5"/>
+      <rect width="10" height="10" fill="rgba(0, 102, 204, 0.05)"/>
+      <path d="M0,5 h10 M5,0 v10" stroke="rgba(0, 102, 204, 0.2)" stroke-width="0.5"/>
     </pattern>
     <!-- Pfeile für Masslinien -->
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
@@ -114,6 +124,11 @@ class SVGGenerator:
     <marker id="arrow-start" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
       <path d="M9,0 L9,6 L0,3 z" fill="#333"/>
     </marker>
+    <!-- Kupfer-Gradient für spezielle Elemente -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
   </defs>
 '''
 
@@ -121,23 +136,27 @@ class SVGGenerator:
         return '</svg>'
 
     def _legend(self, x: int, y: int, items: List[dict], width: int = 140) -> str:
-        """Generiert Legende mit einfachen Farben"""
-        height = 25 + len(items) * 20
+        """Generiert Legende mit verschiedenen Symbol-Typen"""
+        height = 25 + len(items) * 18
         svg = f'''
   <!-- Legende -->
   <g transform="translate({x}, {y})">
     <rect x="0" y="0" width="{width}" height="{height}" fill="{self.COLORS['legend_bg']}" stroke="{self.COLORS['legend_border']}" rx="4"/>
-    <text x="10" y="18" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="{self.COLORS['text']}">Legende</text>
+    <text x="8" y="15" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="{self.COLORS['text']}">Legende</text>
 '''
         for i, item in enumerate(items):
-            item_y = 30 + i * 20
+            item_y = 25 + i * 18
             if item['type'] == 'circle':
-                svg += f'    <circle cx="20" cy="{item_y + 6}" r="4" fill="{item["fill"]}"/>\n'
+                svg += f'    <circle cx="18" cy="{item_y + 5}" r="4" fill="{item["fill"]}"/>\n'
+            elif item['type'] == 'line':
+                # Linie für Gerüst-Elemente
+                line_color = item.get('color', '#0066CC')
+                svg += f'    <line x1="8" y1="{item_y + 5}" x2="28" y2="{item_y + 5}" stroke="{line_color}" stroke-width="2"/>\n'
             else:
-                # Alle anderen (rect, pattern) als einfache Rechtecke
+                # Rechteck (rect, pattern)
                 fill_color = item.get('fill', item.get('color', '#e0e0e0'))
-                svg += f'    <rect x="10" y="{item_y}" width="20" height="12" fill="{fill_color}" stroke="{item.get("stroke", "#333")}"/>\n'
-            svg += f'    <text x="35" y="{item_y + 10}" font-family="Arial" font-size="9" fill="{self.COLORS["text"]}">{item["label"]}</text>\n'
+                svg += f'    <rect x="8" y="{item_y}" width="20" height="10" fill="{fill_color}" stroke="{item.get("stroke", "#333")}"/>\n'
+            svg += f'    <text x="33" y="{item_y + 8}" font-family="Arial" font-size="8" fill="{self.COLORS["text"]}">{item["label"]}</text>\n'
 
         svg += '  </g>\n'
         return svg
@@ -365,80 +384,64 @@ class SVGGenerator:
 
     def generate_cross_section(self, building: BuildingData, width: int = 700, height: int = 480, professional: bool = False) -> str:
         """
-        Generiert saubere technische Schnittansicht.
-        Minimalistisch ohne dekorative Elemente.
+        Generiert professionelle technische Schnittansicht (Claude.ai Qualität).
+
+        Features:
+        - Terrain mit Pattern
+        - Detailliertes Gerüst mit Ständern, Riegeln, Belägen
+        - Geschossdecken mit Beschriftung
+        - Verankerungen mit Linien
+        - Nur Grafik (kein Titelblock/Fusszeile)
 
         Args:
             professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
-        margin = {'top': 60, 'right': 130, 'bottom': 80, 'left': 60}
+        margin = {'top': 30, 'right': 100, 'bottom': 50, 'left': 50}
         draw_width = width - margin['left'] - margin['right']
         draw_height = height - margin['top'] - margin['bottom']
 
         # Höhen
         eave_h = building.eave_height_m
         ridge_h = building.ridge_height_m or eave_h
-        max_height = max(eave_h, ridge_h)
+        scaffold_height_m = ridge_h + 2
 
         # Skalierung
-        building_width_with_scaffold = building.width_m + 8
+        building_width_with_scaffold = building.width_m + 6
         scale_x = draw_width / building_width_with_scaffold
-        scale_y = draw_height / (max_height + 5)
+        scale_y = draw_height / (scaffold_height_m + 3)
         scale = min(scale_x, scale_y)
 
         # Positionen
         ground_y = margin['top'] + draw_height
         scaffold_width = 15
 
-        # SVG Header - mit oder ohne Patterns
+        # SVG Header
         if professional:
             svg = self._svg_header_professional(width, height, f"Gebäudeschnitt - {building.address}")
         else:
             svg = self._svg_header(width, height, f"Gebäudeschnitt - {building.address}")
 
-        # Hintergrund
-        svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
+        # Hintergrund (weiss statt grau)
+        svg += f'  <rect width="{width}" height="{height}" fill="white"/>\n'
 
-        # Titel
-        svg += f'''
-  <text x="{width/2}" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">
-    Gebäudeschnitt (Querschnitt)
-  </text>
-  <text x="{width/2}" y="42" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">
-    {building.address}
-  </text>
-'''
-
-        # Höhenraster
-        grid_step = 5 if max_height <= 20 else 10
-        for h in range(grid_step, int(max_height) + grid_step, grid_step):
-            y_pos = ground_y - h * scale
-            if y_pos > margin['top']:
-                svg += f'  <line x1="{margin["left"]}" y1="{y_pos}" x2="{width - margin["right"]}" y2="{y_pos}" stroke="#e0e0e0" stroke-width="0.5"/>\n'
-                svg += f'  <text x="{margin["left"] - 5}" y="{y_pos + 3}" text-anchor="end" font-family="Arial" font-size="8" fill="#999">{h}m</text>\n'
-
-        # Bodenlinie
-        svg += f'  <line x1="{margin["left"] - 20}" y1="{ground_y}" x2="{width - margin["right"] + 20}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
-        svg += f'  <text x="{margin["left"] - 5}" y="{ground_y + 4}" text-anchor="end" font-family="Arial" font-size="8" fill="#333">0m</text>\n'
-
-        # Gebäude zeichnen
+        # Gebäude zeichnen (enthält jetzt Terrain, Gerüst, Höhenkoten, etc.)
         svg += self._draw_simple_cross_section(
             building, scale, ground_y, margin, width, height, scaffold_width, draw_width, eave_h, ridge_h, professional
         )
 
-        # Legende
+        # Kompakte Legende
+        plank_color = "#8B4513"
+        scaffold_color = "#0066CC"
         legend_items = [
-            {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
-            {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
+            {'type': 'rect', 'fill': '#d0d0d0', 'stroke': '#333', 'label': 'Schnittfl.'},
+            {'type': 'line', 'color': scaffold_color, 'label': 'Gerüst'},
+            {'type': 'rect', 'fill': plank_color, 'stroke': '#333', 'label': 'Belag'},
+            {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Anker'},
         ]
-        svg += self._legend(width - 155, 55, legend_items)
+        svg += self._legend(width - 95, 10, legend_items, width=85)
 
-        # Gebäude Info
-        svg += self._building_info_box(margin['left'], height - 65, building)
-
-        # Massstab
-        svg += self._scale_bar(width - 140, height - 35, scale, 10)
+        # Massstab (unten links)
+        svg += self._scale_bar(margin['left'], height - 20, scale, 5)
 
         svg += self._svg_footer()
         return svg
@@ -446,60 +449,176 @@ class SVGGenerator:
     def _draw_simple_cross_section(self, building: BuildingData, scale: float, ground_y: float,
                                     margin: dict, width: int, height: int, scaffold_width: float,
                                     draw_width: float, eave_h: float, ridge_h: float, professional: bool = False) -> str:
-        """Zeichnet sauberen technischen Gebäudeschnitt."""
+        """
+        Zeichnet professionellen technischen Gebäudeschnitt (Claude.ai Qualität).
+
+        Features:
+        - Terrain-Pattern für Untergrund
+        - Detailliertes Gerüst mit Ständern, Riegeln, Belägen
+        - Geschossdecken mit Beschriftung
+        - Verankerungen mit Linien zum Gebäude
+        - Höhenskala links
+        """
         svg = ""
 
-        # Füllfarben für Gebäude und Gerüst
-        building_fill = "url(#hatch)" if professional else "#e0e0e0"
-        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
+        # Füllfarben
+        wall_fill = "url(#hatch-cut)" if professional else "#d0d0d0"
+        building_interior = "#ffffff"
+        plank_color = "#8B4513"  # Braun für Beläge
+        scaffold_color = "#0066CC"  # Blau für Gerüst
 
         building_x = margin['left'] + (draw_width - building.width_m * scale) / 2
         building_width_px = building.width_m * scale
         eave_height_px = eave_h * scale
         ridge_height_px = ridge_h * scale
-        scaffold_height_px = ridge_height_px + 20
+        scaffold_height_m = ridge_h + 2  # 2m über First
+        scaffold_height_px = scaffold_height_m * scale
 
-        # Gerüst links
-        scaffold_left_x = building_x - scaffold_width - 15
-        svg += f'''
-  <!-- Gerüst links -->
-  <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
-'''
-        # Verankerungen
-        for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
-            cy = ground_y - h * scale
-            svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+        # Gerüst-Breite in Pixel (ca. 1m = scale)
+        scaffold_gang_width_px = 0.7 * scale  # W09 = 0.7m Gangbreite
+        wall_thickness_px = max(8, 0.3 * scale)  # Wandstärke 30cm
 
-        # Gebäude - einfacher Umriss mit Schraffur
-        svg += f'''
-  <!-- Gebäude -->
-  <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
-        fill="{building_fill}" stroke="#333" stroke-width="2"/>
+        # === TERRAIN ===
+        if professional:
+            svg += f'''
+  <!-- Terrain mit Pattern -->
+  <rect x="{margin['left'] - 30}" y="{ground_y}" width="{draw_width + 60}" height="25" fill="url(#ground)"/>
 '''
+        svg += f'  <line x1="{margin["left"] - 30}" y1="{ground_y}" x2="{width - margin["right"] + 30}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
+
+        # === GEBÄUDE SCHNITT ===
+        svg += '  <!-- Gebäude Schnitt -->\n'
+        svg += '  <g id="building-section">\n'
+
+        # Aussenwand links (Schnittfläche)
+        wall_left_x = building_x
+        svg += f'''    <rect x="{wall_left_x}" y="{ground_y - eave_height_px}" width="{wall_thickness_px}" height="{eave_height_px}"
+          fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>
+'''
+
+        # Aussenwand rechts (Schnittfläche)
+        wall_right_x = building_x + building_width_px - wall_thickness_px
+        svg += f'''    <rect x="{wall_right_x}" y="{ground_y - eave_height_px}" width="{wall_thickness_px}" height="{eave_height_px}"
+          fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>
+'''
+
+        # Innenraum (leer/weiss)
+        interior_x = wall_left_x + wall_thickness_px
+        interior_width = building_width_px - 2 * wall_thickness_px
+        svg += f'''    <rect x="{interior_x}" y="{ground_y - eave_height_px}" width="{interior_width}" height="{eave_height_px}"
+          fill="{building_interior}" stroke="none"/>
+'''
+
+        # Geschossdecken (gestrichelt)
+        floor_height_m = 3.0 if building.floors <= 3 else 2.8
+        svg += '    <!-- Geschossdecken -->\n'
+        for floor in range(1, building.floors):
+            floor_h = floor * floor_height_m
+            if floor_h < eave_h:
+                floor_y = ground_y - floor_h * scale
+                svg += f'    <line x1="{interior_x}" y1="{floor_y}" x2="{interior_x + interior_width}" y2="{floor_y}" stroke="#333" stroke-width="0.5" stroke-dasharray="8,4"/>\n'
+                # Geschoss-Label
+                label_y = floor_y + floor_height_m * scale / 2 + 4
+                floor_name = "EG" if floor == 1 else f"{floor-1}. OG"
+                svg += f'    <text x="{building_x + building_width_px/2}" y="{label_y}" text-anchor="middle" font-family="Arial" font-size="8" fill="#666">{floor_name}</text>\n'
 
         # Dach
         if ridge_h > eave_h:
-            svg += f'''
-  <!-- Dach -->
-  <polygon points="{building_x},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px},{ground_y - eave_height_px}"
-           fill="#8b7355" stroke="#333" stroke-width="2"/>
+            # Attika/Dachaufbau
+            attic_height_px = (ridge_h - eave_h) * 0.3 * scale
+            svg += f'''    <!-- Dach-Bereich -->
+    <polygon points="{building_x - 5},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + 5},{ground_y - eave_height_px}"
+             fill="#C8C8C8" stroke="#333" stroke-width="1.5"/>
 '''
+        svg += '  </g>\n'
 
-        # Gerüst rechts
+        # === GERÜST LINKS ===
+        scaffold_left_x = building_x - scaffold_gang_width_px - 15
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_left_x + scaffold_gang_width_px,
+            x_outer=scaffold_left_x,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="left"
+        )
+
+        # Verankerungen links (Linien + Punkte)
+        anchor_spacing_m = 4.0  # Alle 4m vertikal
+        svg += '  <!-- Verankerungen links -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            # Linie von Gerüst zu Wand
+            svg += f'    <line x1="{building_x}" y1="{cy}" x2="{scaffold_left_x + scaffold_gang_width_px}" y2="{cy}"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
+        svg += f'  <g fill="{self.COLORS["anchor"]}">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <circle cx="{scaffold_left_x + scaffold_gang_width_px}" cy="{cy}" r="4"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
+
+        # === GERÜST RECHTS ===
         scaffold_right_x = building_x + building_width_px + 15
-        svg += f'''
-  <!-- Gerüst rechts -->
-  <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="2"/>
-'''
-        for h in [eave_h * 0.3, eave_h * 0.6, eave_h * 0.9]:
-            cy = ground_y - h * scale
-            svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{cy}" r="4" fill="{self.COLORS["anchor"]}"/>\n'
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_right_x,
+            x_outer=scaffold_right_x + scaffold_gang_width_px,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="right"
+        )
 
-        # Lagenbeschriftung (2m pro Lage) - links vom linken Gerüst
+        # Verankerungen rechts
+        svg += '  <!-- Verankerungen rechts -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <line x1="{building_x + building_width_px}" y1="{cy}" x2="{scaffold_right_x}" y2="{cy}"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
+        svg += f'  <g fill="{self.COLORS["anchor"]}">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <circle cx="{scaffold_right_x}" cy="{cy}" r="4"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
+
+        # === HÖHENSKALA LINKS ===
+        scale_x = margin['left'] - 25
+        svg += f'''
+  <!-- Höhenskala -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <line x1="{scale_x}" y1="{ground_y}" x2="{scale_x}" y2="{ground_y - scaffold_height_px - 10}" stroke="#333" stroke-width="0.5"/>
+'''
+        # Höhenmarken alle 5m (oder alle 2m bei niedrigen Gebäuden)
+        step_m = 2.0 if ridge_h <= 12 else 5.0
+        h = 0
+        while h <= scaffold_height_m:
+            y = ground_y - h * scale
+            svg += f'    <line x1="{scale_x - 4}" y1="{y}" x2="{scale_x + 4}" y2="{y}" stroke="#333"/>\n'
+            if h == 0:
+                svg += f'    <text x="{scale_x - 8}" y="{y + 3}" text-anchor="end">±0.00</text>\n'
+            else:
+                color = "#0066cc" if h == eave_h else ("#cc0000" if h == ridge_h else "#333")
+                weight = "bold" if h in [eave_h, ridge_h] else "normal"
+                svg += f'    <text x="{scale_x - 8}" y="{y + 3}" text-anchor="end" fill="{color}" font-weight="{weight}">+{h:.1f}</text>\n'
+            h += step_m
+        svg += '  </g>\n'
+
+        # === LAGENBESCHRIFTUNG ===
         layer_height_m = 2.0
-        num_layers = int(ridge_h / layer_height_m) + 1
+        num_layers = int(scaffold_height_m / layer_height_m)
         svg += self._layer_labels(
             x=scaffold_left_x - 8,
             y_ground=ground_y,
@@ -508,64 +627,126 @@ class SVGGenerator:
             scale_px_per_m=scale
         )
 
-        # Höhenkoten - durchgehende gestrichelte Linien
-        line_start = scaffold_left_x - 20
-        line_end = width - margin['right'] + 40
+        # === HÖHENKOTEN RECHTS ===
+        kote_x = width - margin['right'] + 10
         svg += f'''
-  <!-- Höhenkoten -->
-  <g font-family="Arial" font-size="10">
-    <!-- Terrain -->
-    <line x1="{line_start}" y1="{ground_y}" x2="{line_end}" y2="{ground_y}" stroke="#333" stroke-width="1"/>
-    <text x="{line_end + 5}" y="{ground_y + 4}">±0.00</text>
+  <!-- Höhenkoten rechts -->
+  <g font-family="Arial" font-size="9">
+    <line x1="{kote_x}" y1="{ground_y}" x2="{kote_x + 20}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
+    <text x="{kote_x + 25}" y="{ground_y + 3}">±0.00</text>
 
-    <!-- Traufe -->
-    <line x1="{line_start}" y1="{ground_y - eave_height_px}" x2="{line_end}" y2="{ground_y - eave_height_px}"
-          stroke="#0066cc" stroke-width="0.75" stroke-dasharray="6,3"/>
-    <text x="{line_end + 5}" y="{ground_y - eave_height_px + 4}" fill="#0066cc">+{eave_h:.1f} m (Traufe)</text>
+    <line x1="{kote_x}" y1="{ground_y - eave_height_px}" x2="{kote_x + 20}" y2="{ground_y - eave_height_px}"
+          stroke="#0066cc" stroke-width="0.5" stroke-dasharray="4,2"/>
+    <text x="{kote_x + 25}" y="{ground_y - eave_height_px + 3}" fill="#0066cc">+{eave_h:.1f}m Traufe</text>
 '''
         if ridge_h > eave_h:
             svg += f'''
-    <!-- First -->
-    <line x1="{line_start}" y1="{ground_y - ridge_height_px}" x2="{line_end}" y2="{ground_y - ridge_height_px}"
-          stroke="#cc0000" stroke-width="0.75" stroke-dasharray="6,3"/>
-    <text x="{line_end + 5}" y="{ground_y - ridge_height_px + 4}" fill="#cc0000" font-weight="bold">+{ridge_h:.1f} m (First)</text>
+    <line x1="{kote_x}" y1="{ground_y - ridge_height_px}" x2="{kote_x + 20}" y2="{ground_y - ridge_height_px}"
+          stroke="#cc0000" stroke-width="0.5" stroke-dasharray="4,2"/>
+    <text x="{kote_x + 25}" y="{ground_y - ridge_height_px + 3}" fill="#cc0000" font-weight="bold">+{ridge_h:.1f}m First</text>
 '''
         svg += '  </g>\n'
 
-        # Breitenmass
-        dim_y = ground_y + 25
+        # === BREITENMASS ===
+        dim_y = ground_y + 30
         svg += f'''
   <!-- Breitenmass -->
-  <g stroke="#333" stroke-width="1" font-family="Arial" font-size="11">
-    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"/>
-    <line x1="{building_x}" y1="{dim_y - 5}" x2="{building_x}" y2="{dim_y + 5}"/>
-    <line x1="{building_x + building_width_px}" y1="{dim_y - 5}" x2="{building_x + building_width_px}" y2="{dim_y + 5}"/>
-    <text x="{building_x + building_width_px/2}" y="{dim_y + 18}" text-anchor="middle" font-weight="bold">{building.width_m:.1f} m</text>
+  <g stroke="#333" stroke-width="1" font-family="Arial" font-size="10">
+    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+    <text x="{building_x + building_width_px/2}" y="{dim_y + 15}" text-anchor="middle" font-weight="bold">{building.width_m:.1f} m</text>
   </g>
 '''
 
         return svg
 
+    def _draw_detailed_scaffold(self, x_inner: float, x_outer: float, y_ground: float,
+                                 height_m: float, scale: float, scaffold_color: str,
+                                 plank_color: str, side: str = "left") -> str:
+        """
+        Zeichnet detailliertes Gerüst mit Ständern, Riegeln, Belägen.
+
+        Args:
+            x_inner: X-Position der inneren Ständer (gebäudeseitig)
+            x_outer: X-Position der äusseren Ständer
+            y_ground: Y-Position Bodenlinie
+            height_m: Gerüsthöhe in Metern
+            scale: Pixel pro Meter
+            scaffold_color: Farbe für Gerüstrahmen
+            plank_color: Farbe für Beläge
+            side: "left" oder "right" für Diagonalen-Richtung
+        """
+        svg = f'  <!-- Gerüst {side} -->\n'
+        svg += f'  <g id="scaffold-{side}" stroke="{scaffold_color}" stroke-width="1.5">\n'
+
+        height_px = height_m * scale
+        layer_height_m = 2.0
+        layer_height_px = layer_height_m * scale
+
+        # Ständer (vertikal)
+        svg += f'    <!-- Ständer -->\n'
+        svg += f'    <line x1="{x_inner}" y1="{y_ground}" x2="{x_inner}" y2="{y_ground - height_px}"/>\n'
+        svg += f'    <line x1="{x_outer}" y1="{y_ground}" x2="{x_outer}" y2="{y_ground - height_px}"/>\n'
+
+        # Riegel (horizontal) und Beläge
+        svg += f'    <!-- Riegel und Beläge -->\n'
+        y = y_ground
+        layer = 0
+        while y > y_ground - height_px + layer_height_px:
+            y -= layer_height_px
+            layer += 1
+            # Riegel
+            svg += f'    <line x1="{min(x_inner, x_outer) - 2}" y1="{y}" x2="{max(x_inner, x_outer) + 2}" y2="{y}"/>\n'
+            # Belag (braunes Rechteck)
+            plank_x = min(x_inner, x_outer) - 2
+            plank_width = abs(x_outer - x_inner) + 4
+            svg += f'    <rect x="{plank_x}" y="{y - 3}" width="{plank_width}" height="3" fill="{plank_color}" stroke="#333" stroke-width="0.5"/>\n'
+
+        svg += '  </g>\n'
+
+        # Diagonalen
+        svg += f'  <!-- Diagonalen {side} -->\n'
+        svg += f'  <g stroke="{scaffold_color}" stroke-width="1">\n'
+        if side == "left":
+            # Diagonal von unten-aussen nach oben-innen
+            svg += f'    <line x1="{x_outer}" y1="{y_ground}" x2="{x_inner}" y2="{y_ground - layer_height_px * 2}"/>\n'
+            if height_m > 6:
+                svg += f'    <line x1="{x_inner}" y1="{y_ground - layer_height_px * 2}" x2="{x_outer}" y2="{y_ground - layer_height_px * 4}"/>\n'
+        else:
+            svg += f'    <line x1="{x_inner}" y1="{y_ground}" x2="{x_outer}" y2="{y_ground - layer_height_px * 2}"/>\n'
+            if height_m > 6:
+                svg += f'    <line x1="{x_outer}" y1="{y_ground - layer_height_px * 2}" x2="{x_inner}" y2="{y_ground - layer_height_px * 4}"/>\n'
+        svg += '  </g>\n'
+
+        return svg
+
     def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480, professional: bool = False) -> str:
         """
-        Generiert saubere technische Fassadenansicht.
-        Minimalistisch ohne dekorative Elemente.
+        Generiert professionelle technische Fassadenansicht (Claude.ai Qualität).
+
+        Features:
+        - Terrain mit Pattern
+        - Detailliertes Gerüst mit Ständern, Riegeln, Belägen
+        - Gebäude mit Schraffur
+        - Verankerungen als Linien + Punkte
+        - Höhenskala links
+        - Lagenbeschriftung rechts
 
         Args:
             professional: Wenn True, werden Schraffur-Patterns verwendet.
         """
-        margin = {'top': 60, 'right': 130, 'bottom': 80, 'left': 60}
+        margin = {'top': 40, 'right': 110, 'bottom': 60, 'left': 50}
         draw_width = width - margin['left'] - margin['right']
         draw_height = height - margin['top'] - margin['bottom']
 
         # Höhen
         eave_h = building.eave_height_m
         ridge_h = building.ridge_height_m or eave_h
-        max_height = max(eave_h, ridge_h)
+        scaffold_height_m = ridge_h + 2  # 2m über First
 
         # Skalierung
         scale_x = draw_width / (building.length_m + 8)
-        scale_y = draw_height / (max_height + 5)
+        scale_y = draw_height / (scaffold_height_m + 3)
         scale = min(scale_x, scale_y)
 
         # Positionen
@@ -574,53 +755,79 @@ class SVGGenerator:
         building_width_px = building.length_m * scale
         eave_height_px = eave_h * scale
         ridge_height_px = ridge_h * scale
-        scaffold_width = 15
+        scaffold_height_px = scaffold_height_m * scale
 
-        # Füllfarben für Gebäude und Gerüst
+        # Gerüst-Breite
+        scaffold_gang_width_px = 0.7 * scale  # W09 = 0.7m
+
+        # Füllfarben
         building_fill = "url(#hatch)" if professional else "#e0e0e0"
-        scaffold_fill = "url(#scaffold-pattern)" if professional else "#fff3cd"
+        plank_color = "#8B4513"
+        scaffold_color = "#0066CC"
 
-        # SVG Header - mit oder ohne Patterns
+        # SVG Header
         if professional:
             svg = self._svg_header_professional(width, height, f"Fassadenansicht - {building.address}")
         else:
             svg = self._svg_header(width, height, f"Fassadenansicht - {building.address}")
 
         # Hintergrund
-        svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
+        svg += f'  <rect width="{width}" height="{height}" fill="white"/>\n'
 
-        # Titel
-        svg += f'''
-  <text x="{width/2}" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">
-    Fassadenansicht (Traufseite)
-  </text>
-  <text x="{width/2}" y="42" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">
-    {building.address}
-  </text>
+        # === TERRAIN ===
+        if professional:
+            svg += f'''
+  <!-- Terrain -->
+  <rect x="{margin['left'] - 20}" y="{ground_y}" width="{draw_width + 40}" height="20" fill="url(#ground)"/>
 '''
-
-        # Höhenraster
-        grid_step = 5 if max_height <= 20 else 10
-        for h in range(grid_step, int(max_height) + grid_step, grid_step):
-            y_pos = ground_y - h * scale
-            if y_pos > margin['top']:
-                svg += f'  <line x1="{margin["left"]}" y1="{y_pos}" x2="{width - margin["right"]}" y2="{y_pos}" stroke="#e0e0e0" stroke-width="0.5"/>\n'
-                svg += f'  <text x="{margin["left"] - 5}" y="{y_pos + 3}" text-anchor="end" font-family="Arial" font-size="8" fill="#999">{h}m</text>\n'
-
-        # Bodenlinie
         svg += f'  <line x1="{margin["left"] - 20}" y1="{ground_y}" x2="{width - margin["right"] + 20}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
-        svg += f'  <text x="{margin["left"] - 5}" y="{ground_y + 4}" text-anchor="end" font-family="Arial" font-size="8" fill="#333">0m</text>\n'
 
-        # Gerüst links
-        scaffold_left_x = building_x - scaffold_width - 12
-        scaffold_height_px = ridge_height_px + 15
+        # === HÖHENSKALA LINKS ===
+        scale_x = margin['left'] - 20
         svg += f'''
-  <!-- Gerüst links -->
-  <rect x="{scaffold_left_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
+  <!-- Höhenskala -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <line x1="{scale_x}" y1="{ground_y}" x2="{scale_x}" y2="{ground_y - scaffold_height_px - 10}" stroke="#333" stroke-width="0.5"/>
 '''
+        step_m = 2.0 if ridge_h <= 12 else 5.0
+        h = 0
+        while h <= scaffold_height_m:
+            y = ground_y - h * scale
+            svg += f'    <line x1="{scale_x - 3}" y1="{y}" x2="{scale_x + 3}" y2="{y}" stroke="#333"/>\n'
+            if h == 0:
+                svg += f'    <text x="{scale_x - 6}" y="{y + 3}" text-anchor="end">±0.00</text>\n'
+            else:
+                color = "#0066cc" if abs(h - eave_h) < 0.1 else ("#cc0000" if abs(h - ridge_h) < 0.1 else "#333")
+                weight = "bold" if abs(h - eave_h) < 0.1 or abs(h - ridge_h) < 0.1 else "normal"
+                svg += f'    <text x="{scale_x - 6}" y="{y + 3}" text-anchor="end" fill="{color}" font-weight="{weight}">+{h:.0f}</text>\n'
+            h += step_m
+        svg += '  </g>\n'
 
-        # Gebäude - einfacher Umriss mit Schraffur
+        # === GERÜST LINKS ===
+        scaffold_left_x = building_x - scaffold_gang_width_px - 12
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_left_x + scaffold_gang_width_px,
+            x_outer=scaffold_left_x,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="left"
+        )
+
+        # Verankerungen links
+        anchor_spacing_m = 4.0
+        svg += '  <!-- Verankerungen links -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2" stroke-dasharray="5,3">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <line x1="{building_x}" y1="{cy}" x2="{scaffold_left_x + scaffold_gang_width_px}" y2="{cy}"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
+
+        # === GEBÄUDE ===
         svg += f'''
   <!-- Gebäude -->
   <rect x="{building_x}" y="{ground_y - eave_height_px}" width="{building_width_px}" height="{eave_height_px}"
@@ -629,9 +836,10 @@ class SVGGenerator:
 
         # Dach
         if ridge_h > eave_h and building.roof_type in ['gable', None]:
+            dach_uberstand = 8
             svg += f'''
   <!-- Dach -->
-  <polygon points="{building_x - 8},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + 8},{ground_y - eave_height_px}"
+  <polygon points="{building_x - dach_uberstand},{ground_y - eave_height_px} {building_x + building_width_px/2},{ground_y - ridge_height_px} {building_x + building_width_px + dach_uberstand},{ground_y - eave_height_px}"
            fill="#8b7355" stroke="#333" stroke-width="2"/>
 '''
         elif building.roof_type == 'flat':
@@ -641,76 +849,84 @@ class SVGGenerator:
         fill="#888" stroke="#333" stroke-width="1"/>
 '''
 
-        # Gerüst rechts
+        # === GERÜST RECHTS ===
         scaffold_right_x = building_x + building_width_px + 12
-        svg += f'''
-  <!-- Gerüst rechts -->
-  <rect x="{scaffold_right_x}" y="{ground_y - scaffold_height_px}" width="{scaffold_width}" height="{scaffold_height_px}"
-        fill="{scaffold_fill}" stroke="{self.COLORS['scaffold_stroke']}" stroke-width="1.5"/>
-'''
-
-        # Verankerungspunkte (3 Stück pro Seite)
-        for ratio in [0.25, 0.5, 0.75]:
-            anchor_y = ground_y - eave_h * ratio * scale
-            svg += f'  <circle cx="{scaffold_left_x + scaffold_width/2}" cy="{anchor_y}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
-            svg += f'  <circle cx="{scaffold_right_x + scaffold_width/2}" cy="{anchor_y}" r="3" fill="{self.COLORS["anchor"]}"/>\n'
-
-        # Lagenbeschriftung (2m pro Lage)
-        layer_height_m = 2.0
-        num_layers = int(ridge_h / layer_height_m) + 1
-        svg += self._layer_labels(
-            x=scaffold_left_x - 5,
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_right_x,
+            x_outer=scaffold_right_x + scaffold_gang_width_px,
             y_ground=ground_y,
-            layer_height_m=layer_height_m,
-            num_layers=min(num_layers, 15),  # Max 15 Lagen anzeigen
-            scale_px_per_m=scale
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="right"
         )
 
-        # Höhenkoten rechts
-        kote_x = width - margin['right'] + 10
-        svg += f'''
-  <!-- Höhenkoten -->
-  <g font-family="Arial" font-size="9">
-    <line x1="{kote_x}" y1="{ground_y}" x2="{kote_x + 25}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
-    <text x="{kote_x + 30}" y="{ground_y + 3}">±0.00</text>
+        # Verankerungen rechts
+        svg += '  <!-- Verankerungen rechts -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2" stroke-dasharray="5,3">\n'
+        anchor_h = anchor_spacing_m
+        while anchor_h < eave_h:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <line x1="{building_x + building_width_px}" y1="{cy}" x2="{scaffold_right_x}" y2="{cy}"/>\n'
+            anchor_h += anchor_spacing_m
+        svg += '  </g>\n'
 
-    <line x1="{kote_x}" y1="{ground_y - eave_height_px}" x2="{kote_x + 25}" y2="{ground_y - eave_height_px}"
-          stroke="#0066cc" stroke-width="0.5" stroke-dasharray="3,2"/>
-    <text x="{kote_x + 30}" y="{ground_y - eave_height_px + 3}" fill="#0066cc">+{eave_h:.1f}m Traufe</text>
+        # === LAGENBESCHRIFTUNG RECHTS ===
+        layer_x = scaffold_right_x + scaffold_gang_width_px + 8
+        svg += f'  <!-- Lagenbeschriftung -->\n'
+        svg += f'  <g font-family="Arial" font-size="8" fill="{scaffold_color}">\n'
+        layer_height_m = 2.0
+        layer = 1
+        y = ground_y - layer_height_m * scale
+        while y > ground_y - scaffold_height_px + layer_height_m * scale / 2:
+            svg += f'    <text x="{layer_x}" y="{y + 3}">{layer}. Lage</text>\n'
+            layer += 1
+            y -= layer_height_m * scale
+        svg += '  </g>\n'
+
+        # === HÖHENKOTEN RECHTS ===
+        kote_x = width - margin['right'] + 5
+        svg += f'''
+  <!-- Höhenkoten rechts -->
+  <g font-family="Arial" font-size="9">
+    <line x1="{kote_x}" y1="{ground_y}" x2="{kote_x + 15}" y2="{ground_y}" stroke="#333" stroke-width="0.5"/>
+    <text x="{kote_x + 20}" y="{ground_y + 3}">±0.00</text>
+
+    <line x1="{kote_x}" y1="{ground_y - eave_height_px}" x2="{kote_x + 15}" y2="{ground_y - eave_height_px}"
+          stroke="#0066cc" stroke-width="0.5" stroke-dasharray="4,2"/>
+    <text x="{kote_x + 20}" y="{ground_y - eave_height_px + 3}" fill="#0066cc">+{eave_h:.1f}m</text>
 '''
         if ridge_h > eave_h:
             svg += f'''
-    <line x1="{kote_x}" y1="{ground_y - ridge_height_px}" x2="{kote_x + 25}" y2="{ground_y - ridge_height_px}"
-          stroke="#cc0000" stroke-width="0.5" stroke-dasharray="3,2"/>
-    <text x="{kote_x + 30}" y="{ground_y - ridge_height_px + 3}" fill="#cc0000" font-weight="bold">+{ridge_h:.1f}m First</text>
+    <line x1="{kote_x}" y1="{ground_y - ridge_height_px}" x2="{kote_x + 15}" y2="{ground_y - ridge_height_px}"
+          stroke="#cc0000" stroke-width="0.5" stroke-dasharray="4,2"/>
+    <text x="{kote_x + 20}" y="{ground_y - ridge_height_px + 3}" fill="#cc0000" font-weight="bold">+{ridge_h:.1f}m</text>
 '''
         svg += '  </g>\n'
 
-        # Breitenmass unten
+        # === BREITENMASS ===
         dim_y = ground_y + 25
         svg += f'''
   <!-- Breitenmass -->
-  <g stroke="#333" stroke-width="1">
-    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"/>
-    <line x1="{building_x}" y1="{dim_y - 5}" x2="{building_x}" y2="{dim_y + 5}"/>
-    <line x1="{building_x + building_width_px}" y1="{dim_y - 5}" x2="{building_x + building_width_px}" y2="{dim_y + 5}"/>
+  <g stroke="#333" stroke-width="1" font-family="Arial" font-size="10">
+    <line x1="{building_x}" y1="{dim_y}" x2="{building_x + building_width_px}" y2="{dim_y}"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+    <text x="{building_x + building_width_px/2}" y="{dim_y + 15}" text-anchor="middle" font-weight="bold">{building.length_m:.1f} m</text>
   </g>
-  <text x="{building_x + building_width_px/2}" y="{dim_y + 15}" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">{building.length_m:.1f} m</text>
 '''
 
-        # Legende
+        # === LEGENDE (kompakt) ===
         legend_items = [
             {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
-            {'type': 'rect', 'fill': '#fff3cd', 'stroke': self.COLORS['scaffold_stroke'], 'label': f'Gerüst {building.width_class}'},
-            {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Verankerung'},
+            {'type': 'line', 'color': scaffold_color, 'label': 'Gerüst'},
+            {'type': 'rect', 'fill': plank_color, 'stroke': '#333', 'label': 'Belag'},
+            {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Anker'},
         ]
-        svg += self._legend(width - 155, 55, legend_items)
+        svg += self._legend(width - 100, 10, legend_items, width=90)
 
-        # Gebäude Info
-        svg += self._building_info_box(margin['left'], height - 65, building)
-
-        # Massstab
-        svg += self._scale_bar(width - 140, height - 35, scale, 10)
+        # Massstab (unten links)
+        svg += self._scale_bar(margin['left'], height - 20, scale, 5)
 
         svg += self._svg_footer()
         return svg
