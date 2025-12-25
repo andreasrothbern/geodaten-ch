@@ -400,6 +400,28 @@ class BuildingContextService:
         firsthoehe = height_data.get('firsthoehe_m', 'nicht verfügbar')
         gebaeudehoehe = height_data.get('gebaeudehoehe_m', 'nicht verfügbar')
 
+        # Höhendifferenz berechnen für spezielle Hinweise
+        height_diff_warning = ""
+        try:
+            trauf_val = float(traufhoehe) if traufhoehe != 'nicht verfügbar' else None
+            first_val = float(firsthoehe) if firsthoehe != 'nicht verfügbar' else None
+            if trauf_val and first_val:
+                height_diff = first_val - trauf_val
+                if height_diff > 15:
+                    height_diff_warning = f"""
+KRITISCH: EXTREME HÖHENDIFFERENZ ({height_diff:.1f}m)
+
+Traufhöhe ({trauf_val:.1f}m) zu Firsthöhe ({first_val:.1f}m) = {height_diff:.1f}m Differenz.
+Das ist KEIN normales Satteldach! Du MUSST mindestens 2-3 Zonen erstellen:
+- Zone 'Arkaden/Erdgeschoss': traufhoehe_m={trauf_val:.1f}
+- Zone 'Hauptfassade': traufhoehe_m={trauf_val * 1.6:.1f} (geschätzt)  
+- Zone 'Kuppel/Turm': Sonderkonstruktion=true, gebaeudehoehe_m={first_val:.1f}
+
+IGNORIERE NICHT diese Höhendifferenz!
+"""
+        except (TypeError, ValueError):
+            pass
+
         return f"""Du analysierst ein Schweizer Gebäude für die Gerüstplanung.
 
 ## Eingabedaten
@@ -419,7 +441,7 @@ class BuildingContextService:
 - Globale Traufhöhe: {traufhoehe} m (swissBUILDINGS3D)
 - Globale Firsthöhe: {firsthoehe} m
 - Globale Gebäudehöhe: {gebaeudehoehe} m
-
+{height_diff_warning}
 ### Gebäude-Metadaten (GWR)
 - EGID: {egid}
 - Adresse: {adresse or 'nicht verfügbar'}
