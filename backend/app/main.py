@@ -2007,7 +2007,7 @@ async def visualize_cross_section(
 
                 # Komplexität prüfen
                 gwr_data = {
-                    'gkat': building.category if building else None,
+                    'gkat': building.building_category_code if building else None,
                     'garea': building.area_m2 if building else None,
                 }
                 complexity = context_service.detect_complexity(polygon, gwr_data, building.area_m2 if building else None)
@@ -2178,7 +2178,7 @@ async def visualize_elevation(
 
                 # Komplexität prüfen
                 gwr_data = {
-                    'gkat': building.category if building else None,
+                    'gkat': building.building_category_code if building else None,
                     'garea': building.area_m2 if building else None,
                 }
                 complexity = context_service.detect_complexity(polygon, gwr_data, building.area_m2 if building else None)
