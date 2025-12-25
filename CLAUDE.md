@@ -320,43 +320,46 @@ Der Slider steuert das Verhältnis zwischen 2.57m und 3.07m Feldern:
 
 **Referenz:** `lawil/claude_ai_bundeshaus/` - Von Claude.ai handgefertigte SVGs für Bundeshaus
 
-### Vergleichstabelle
+### Vergleichstabelle (Stand 25.12.2025)
 
 | Feature | App (aktuell) | Claude.ai Ziel | Status |
 |---------|---------------|----------------|--------|
-| **Gebäudegeometrie** | 1 Polygon aus geodienste.ch | Mehrere Polygone pro Gebäudeteil | ❌ |
-| **Höhendaten** | 1 globale Höhe (SwissBuildings3D) | Höhenzonen pro Gebäudeteil | ❌ |
-| **Höhe pro Fassade** | ✅ Implementiert (traufhoehe_m) | Individuelle Höhen | ✅ Basis |
-| **Semantische Elemente** | Keine | Kuppel, Türme, Arkaden, Ehrenhof | ❌ |
-| **Gerüstzonen** | Rechteck um ganzes Polygon | Separate Zonen pro Fassade/Höhe | ❌ |
-| **Ständerpositionen** | Keine | Punkte alle 2.5-3m (Feldlänge) | ❌ |
-| **Verankerungen** | Nur an Polygon-Ecken | Entlang Fassade alle 4m h/v | ⚠️ Teilweise |
-| **Zugänge (Z1-Z4)** | Keine | Gelbe Markierungen | ❌ |
-| **Masslinien** | Nur Umfang/Fläche | Mit Pfeilen, Beschriftung | ⚠️ Einfach |
-| **Lagenbeschriftung** | Nur in Schnitt | In Ansicht nummeriert | ⚠️ Teilweise |
-| **Gebäudebeschriftung** | Nur Adresse | Zonen-Namen (BH West, etc.) | ❌ |
+| **Gebäudegeometrie** | 1 Polygon aus geodienste.ch | Mehrere Polygone pro Gebäudeteil | ⚠️ Zonen erkannt |
+| **Höhendaten** | Mehrere Zonen (Claude-Analyse) | Höhenzonen pro Gebäudeteil | ✅ |
+| **Höhe pro Fassade** | ✅ Implementiert (traufhoehe_m) | Individuelle Höhen | ✅ |
+| **Semantische Elemente** | Arkade, Hauptfassade, Kuppel | Kuppel, Türme, Arkaden, Ehrenhof | ✅ Basis |
+| **Gerüstzonen** | Farbcodiert im Grundriss | Separate Zonen pro Fassade/Höhe | ✅ |
+| **Ständerpositionen** | Rote Punkte alle 2.57m | Punkte alle 2.5-3m (Feldlänge) | ✅ |
+| **Verankerungen** | Ecken + alle 4m dazwischen | Entlang Fassade alle 4m h/v | ✅ |
+| **Zugänge (Z1-Zn)** | Gelbe Rechtecke (SUVA-konform) | Gelbe Markierungen | ✅ |
+| **Masslinien** | Nur Umfang/Fläche | Mit Pfeilen, Beschriftung | ⚠️ |
+| **Lagenbeschriftung** | Nur in Schnitt | In Ansicht nummeriert | ⚠️ |
+| **Gebäudebeschriftung** | Zonen-Namen im Grundriss | Zonen-Namen (BH West, etc.) | ✅ |
 | **Dachform (Ansicht)** | Einfaches Dreieck/Rechteck | Giebel, Kuppel, Laterne | ❌ |
 | **Material-Details** | Keine | Säulen, Beläge, Kupfer-Gradient | ❌ |
-| **Titelblock** | Optional (professional mode) | Vollständig | ✅ Vorhanden |
-| **Fusszeile** | Optional (professional mode) | Vollständig | ✅ Vorhanden |
-| **Legende** | Einfach | Detailliert mit allen Elementen | ⚠️ Einfach |
+| **Titelblock** | Professional mode | Vollständig | ✅ |
+| **Fusszeile** | Professional mode | Vollständig | ✅ |
+| **Legende** | Einfach | Detailliert mit allen Elementen | ⚠️ |
 | **Nordpfeil** | ✅ Vorhanden | ✅ | ✅ |
 | **Massstab** | ✅ Vorhanden | ✅ | ✅ |
+| **Schraffur-Pattern** | Professional mode | Gebäude schraffiert | ✅ |
 
-### Was fehlt für professionelle Grafik
+### Was fehlt für professionelle Grafik (Claude.ai Niveau)
 
-**Daten-Ebene (Backend):**
-1. **Höhenzonen-Erkennung**: Welche Fassaden bilden eine Zone?
-2. **Gebäudeteil-Klassifikation**: Hauptbau, Seitenflügel, Turm, Kuppel
-3. **Ständer-Berechnung**: Position alle 2.5-3m basierend auf Feldlängen
-4. **Verankerungs-Raster**: Alle 4m horizontal und vertikal
+**Implementiert ✅:**
+1. ~~Höhenzonen-Erkennung~~ → Claude-Analyse bei Höhendifferenz >15m
+2. ~~Gebäudeteil-Klassifikation~~ → Arkade, Hauptfassade, Kuppel
+3. ~~Ständer-Berechnung~~ → Alle 2.57m (Layher Blitz 70)
+4. ~~Verankerungs-Raster~~ → Ecken + alle 4m
+5. ~~Ständer-Punkte~~ → Rote Punkte im SVG
+6. ~~Zugangs-Markierungen~~ → Gelbe Rechtecke (Z1, Z2, etc.)
 
-**Grafik-Ebene (SVG Generator):**
-1. **Mehrere Gerüstzonen** statt einer Bounding Box
-2. **Ständer-Punkte** entlang der Gerüstkante
-3. **Verankerungs-Linien** von Fassade nach aussen
-4. **Zugangs-Markierungen** (gelbe Rechtecke)
-5. **Detaillierte Ansicht**: Ständer, Riegel, Beläge als separate Linien
+**Noch offen ❌:**
+1. **Innenhöfe/Ehrenhof** als Ausschnitt im Polygon markieren
+2. **Masslinien mit Pfeilen** statt nur Text-Labels
+3. **Separate Gebäudepolygone** bei U/L-Form (aktuell: 1 Polygon mit Zonen)
+4. **Ansicht-SVG**: Kuppel, Giebel, Säulen-Details
+5. **Detaillierte Legende** mit allen Symbolen
 
 ### Dateien zum Vergleich
 
@@ -418,7 +421,7 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: 24.12.2025)
+## Status (Stand: 25.12.2025)
 
 ### Fertig ✅
 - [x] Backend + Frontend Deployment
@@ -440,16 +443,27 @@ npx @railway/cli volume add --mount-path /app/data
   - Claude API Integration für komplexe Gebäude
   - API Endpoints (GET/POST/PUT/DELETE)
   - Frontend TypeScript Types
+  - **Mehrzonenerkennung** bei extremer Höhendifferenz (>15m)
+  - **Frontend Zonen-Editor** mit Bearbeitung
+- [x] **Gerüstbau-SVG Features** (poc_bundeshaus_mvp Branch)
+  - Ständerpositionen (alle 2.57m, Layher Blitz 70)
+  - Verankerungen (Ecken + alle 4m)
+  - Zugänge (Z1-Zn) nach SUVA-Vorschriften (max 50m)
+  - Zonen-Farbcodierung im Grundriss
+  - Professional-Mode mit Schraffur
 
 ### In Arbeit 🔨
-- [ ] Gerüstkonfiguration → Berechnung (Arbeitstyp, Gerüstart, Breitenklasse)
-- [ ] Frontend Zonen-Editor
-- [ ] SVG-Generator mit Zonen-Unterstützung
+- [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
+  - Separate Gebäudeteile statt 1 Polygon
+  - Ehrenhof/Innenhöfe markieren
+  - Masslinien mit Pfeilen
+  - Detaillierte Legende
 
 ### Geplant 🔜
 - [ ] swissALTI3D (Terrain) Integration
 - [ ] DXF-Export
 - [ ] Custom Domain
+- [ ] Tests: Zonen-Erkennung (L/U-Form, Anbauten)
 
 ## ACHTUNG: Technische Schulden
 
