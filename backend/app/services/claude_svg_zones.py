@@ -1,13 +1,24 @@
 """
 Claude API SVG Generator für Zone-basierte Gebäudeschnitte.
 
-Basiert auf dem getesteten Prompt aus test_claude_svg_generation.py.
-Kann parallel zum bestehenden svg_claude_generator.py verwendet werden.
+Features:
+- Timeout: 90 Sekunden für Claude API
+- Caching: SQLite-basiert, SVGs werden nach Generierung gespeichert
+- Logging: Detaillierte Logs für Debugging
 """
 
 import hashlib
+import json
+import logging
 import os
+import sqlite3
+import time
+from pathlib import Path
 from typing import Optional
+
+# Logging konfigurieren
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Anthropic SDK
 ANTHROPIC_AVAILABLE = False
@@ -17,16 +28,80 @@ try:
     import anthropic
     ANTHROPIC_AVAILABLE = True
 except ImportError:
-    pass
+    logger.warning("Anthropic SDK nicht installiert")
+
+# Cache-Datenbank Pfad
+CACHE_DB_PATH = Path(__file__).parent.parent / "data" / "claude_svg_cache.db"
+
+
+def _init_cache_db():
+    """Initialisiert die Cache-Datenbank"""
+    CACHE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(CACHE_DB_PATH))
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS svg_cache (
+            cache_key TEXT PRIMARY KEY,
+            svg_type TEXT,
+            egid TEXT,
+            address TEXT,
+            svg_content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info(f"Cache DB initialisiert: {CACHE_DB_PATH}")
+
+
+def _get_cached_svg(cache_key: str) -> Optional[str]:
+    """Holt SVG aus Cache"""
+    try:
+        conn = sqlite3.connect(str(CACHE_DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("SELECT svg_content FROM svg_cache WHERE cache_key = ?", (cache_key,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            logger.info(f"Cache HIT: {cache_key[:50]}...")
+            return row[0]
+        logger.info(f"Cache MISS: {cache_key[:50]}...")
+        return None
+    except Exception as e:
+        logger.error(f"Cache read error: {e}")
+        return None
+
+
+def _save_to_cache(cache_key: str, svg_type: str, egid: Optional[str], address: str, svg_content: str):
+    """Speichert SVG im Cache"""
+    try:
+        conn = sqlite3.connect(str(CACHE_DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO svg_cache (cache_key, svg_type, egid, address, svg_content)
+            VALUES (?, ?, ?, ?, ?)
+        """, (cache_key, svg_type, egid, address, svg_content))
+        conn.commit()
+        conn.close()
+        logger.info(f"Cache SAVE: {cache_key[:50]}... ({len(svg_content)} chars)")
+    except Exception as e:
+        logger.error(f"Cache save error: {e}")
 
 
 def _init_client():
-    """Initialisiert den Anthropic Client"""
+    """Initialisiert den Anthropic Client mit Timeout"""
     global anthropic_client
     if ANTHROPIC_AVAILABLE and anthropic_client is None:
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if api_key:
-            anthropic_client = anthropic.Anthropic(api_key=api_key)
+            # Timeout auf 90 Sekunden setzen
+            anthropic_client = anthropic.Anthropic(
+                api_key=api_key,
+                timeout=90.0  # 90 Sekunden Timeout
+            )
+            logger.info("Anthropic Client initialisiert (timeout=90s)")
+        else:
+            logger.warning("ANTHROPIC_API_KEY nicht gesetzt")
 
 
 def _call_claude(prompt: str, max_tokens: int = 8000) -> Optional[str]:
@@ -34,8 +109,11 @@ def _call_claude(prompt: str, max_tokens: int = 8000) -> Optional[str]:
     _init_client()
 
     if not ANTHROPIC_AVAILABLE or anthropic_client is None:
-        print("Anthropic SDK not available or no API key")
+        logger.error("Anthropic SDK not available or no API key")
         return None
+
+    start_time = time.time()
+    logger.info(f"Claude API Call gestartet (max_tokens={max_tokens})...")
 
     try:
         message = anthropic_client.messages.create(
@@ -46,19 +124,47 @@ def _call_claude(prompt: str, max_tokens: int = 8000) -> Optional[str]:
             ]
         )
 
+        elapsed = time.time() - start_time
         response_text = message.content[0].text
+        logger.info(f"Claude API Response: {len(response_text)} chars in {elapsed:.1f}s")
+        logger.info(f"Tokens: input={message.usage.input_tokens}, output={message.usage.output_tokens}")
 
         # SVG aus der Antwort extrahieren
         if '<svg' in response_text and '</svg>' in response_text:
             start = response_text.find('<svg')
             end = response_text.find('</svg>') + 6
-            return response_text[start:end]
+            svg = response_text[start:end]
+            logger.info(f"SVG extrahiert: {len(svg)} chars")
+            return svg
 
+        logger.warning("Kein SVG in Claude Response gefunden")
+        logger.debug(f"Response preview: {response_text[:500]}...")
         return None
 
+    except anthropic.APITimeoutError as e:
+        elapsed = time.time() - start_time
+        logger.error(f"Claude API TIMEOUT nach {elapsed:.1f}s: {e}")
+        return None
+    except anthropic.APIError as e:
+        elapsed = time.time() - start_time
+        logger.error(f"Claude API ERROR nach {elapsed:.1f}s: {e}")
+        return None
     except Exception as e:
-        print(f"Claude API error: {e}")
+        elapsed = time.time() - start_time
+        logger.error(f"Claude API EXCEPTION nach {elapsed:.1f}s: {e}")
         return None
+
+
+def _generate_cache_key(svg_type: str, address: str, egid: Optional[int], zones: list) -> str:
+    """Generiert einen eindeutigen Cache-Key"""
+    data = {
+        "type": svg_type,
+        "address": address,
+        "egid": egid,
+        "zones": zones
+    }
+    json_str = json.dumps(data, sort_keys=True)
+    return hashlib.md5(json_str.encode()).hexdigest()
 
 
 def generate_cross_section_with_zones(
@@ -72,20 +178,20 @@ def generate_cross_section_with_zones(
 ) -> Optional[str]:
     """
     Generiert professionellen Gebäudeschnitt mit Höhenzonen via Claude API.
-
-    Args:
-        address: Gebäudeadresse
-        egid: Eidg. Gebäudeidentifikator
-        width_m: Schnittbreite in Metern
-        floors: Anzahl Geschosse
-        zones: Liste von Zone-Dictionaries mit keys: name, type, building_height_m, first_height_m, description, special_scaffold
-        svg_width: SVG-Breite in Pixel
-        svg_height: SVG-Höhe in Pixel
-
-    Returns:
-        SVG-String oder None bei Fehler
+    Mit Caching - generierte SVGs werden gespeichert.
     """
-    import json
+    # Cache initialisieren
+    _init_cache_db()
+
+    # Cache-Key generieren
+    cache_key = _generate_cache_key("cross-section", address, egid, zones)
+
+    # Aus Cache laden
+    cached = _get_cached_svg(cache_key)
+    if cached:
+        return cached
+
+    logger.info(f"Generiere Cross-Section für: {address}")
 
     # Zonen-Text aufbereiten
     zones_text = ""
@@ -171,6 +277,11 @@ Gib NUR das SVG aus, keine Erklärungen.
 """
 
     svg = _call_claude(prompt)
+
+    # Im Cache speichern
+    if svg:
+        _save_to_cache(cache_key, "cross-section", str(egid) if egid else None, address, svg)
+
     return svg
 
 
@@ -185,19 +296,21 @@ def generate_elevation_with_zones(
 ) -> Optional[str]:
     """
     Generiert professionelle Fassadenansicht mit Höhenzonen via Claude API.
-
-    Args:
-        address: Gebäudeadresse
-        egid: Eidg. Gebäudeidentifikator
-        width_m: Fassadenbreite in Metern
-        floors: Anzahl Geschosse
-        zones: Liste von Zone-Dictionaries
-        svg_width: SVG-Breite in Pixel
-        svg_height: SVG-Höhe in Pixel
-
-    Returns:
-        SVG-String oder None bei Fehler
+    Mit Caching - generierte SVGs werden gespeichert.
     """
+    # Cache initialisieren
+    _init_cache_db()
+
+    # Cache-Key generieren
+    cache_key = _generate_cache_key("elevation", address, egid, zones)
+
+    # Aus Cache laden
+    cached = _get_cached_svg(cache_key)
+    if cached:
+        return cached
+
+    logger.info(f"Generiere Elevation für: {address}")
+
     # Zonen-Text aufbereiten
     zones_text = ""
     max_height = 0
@@ -285,6 +398,11 @@ Gib NUR das SVG aus, keine Erklärungen.
 """
 
     svg = _call_claude(prompt)
+
+    # Im Cache speichern
+    if svg:
+        _save_to_cache(cache_key, "elevation", str(egid) if egid else None, address, svg)
+
     return svg
 
 
@@ -292,3 +410,24 @@ def is_available() -> bool:
     """Prüft ob Claude API verfügbar ist"""
     _init_client()
     return ANTHROPIC_AVAILABLE and anthropic_client is not None
+
+
+def clear_cache(egid: Optional[str] = None, address: Optional[str] = None):
+    """Löscht Cache-Einträge"""
+    try:
+        conn = sqlite3.connect(str(CACHE_DB_PATH))
+        cursor = conn.cursor()
+        if egid:
+            cursor.execute("DELETE FROM svg_cache WHERE egid = ?", (egid,))
+        elif address:
+            cursor.execute("DELETE FROM svg_cache WHERE address = ?", (address,))
+        else:
+            cursor.execute("DELETE FROM svg_cache")
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        logger.info(f"Cache cleared: {deleted} entries")
+        return deleted
+    except Exception as e:
+        logger.error(f"Cache clear error: {e}")
+        return 0
