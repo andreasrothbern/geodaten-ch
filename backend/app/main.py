@@ -2002,8 +2002,8 @@ async def visualize_cross_section(
             if not context:
                 # Polygon für Komplexitäts-Check vorbereiten
                 polygon = []
-                if geometry and geometry.polygon_coordinates:
-                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon_coordinates]
+                if geometry and geometry.polygon:
+                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon]
 
                 # Komplexität prüfen
                 gwr_data = {
@@ -2173,8 +2173,8 @@ async def visualize_elevation(
             if not context:
                 # Polygon für Komplexitäts-Check vorbereiten
                 polygon = []
-                if geometry and geometry.polygon_coordinates:
-                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon_coordinates]
+                if geometry and geometry.polygon:
+                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon]
 
                 # Komplexität prüfen
                 gwr_data = {
