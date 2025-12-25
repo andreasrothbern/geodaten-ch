@@ -86,12 +86,102 @@ GET https://api3.geo.admin.ch/rest/services/api/MapServer/identify
 - `dplz4`, `ggdename` - PLZ, Ort
 - `gdekt` - Kanton
 - `gbauj` - Baujahr
-- `gkat` - Gebäudekategorie (1020=EFH, 1030=MFH)
+- `gkat` - Gebäudekategorie (siehe Tabelle unten)
 - `gastw` - Anzahl Geschosse
 - `ganzwhg` - Anzahl Wohnungen
 - `garea` - Gebäudefläche m²
 - `gwaerzh1` - Heizungsart
 - `genh1` - Energieträger Heizung
+
+### GKAT Gebäudekategorien (Komplexitäts-Erkennung)
+
+| Code | Bezeichnung | Komplexität |
+|------|-------------|-------------|
+| **1010** | Provisorische Unterkunft | SIMPLE |
+| **1020** | Einfamilienhaus (EFH) | SIMPLE |
+| **1030** | Mehrfamilienhaus (MFH) | SIMPLE |
+| **1040** | Wohngebäude mit Nebennutzung | MODERATE |
+| **1060** | Gebäude für Bildung/Kultur | COMPLEX |
+| **1080** | Gebäude für Gesundheit | COMPLEX |
+| **1110** | Kirchen, religiöse Gebäude | COMPLEX |
+| **1130** | Museen, Bibliotheken | COMPLEX |
+| **1212** | Industriegebäude | COMPLEX |
+
+**Verwendung:** Der Prompt-Selektor nutzt `gkat` als eines von mehreren Kriterien zur Komplexitäts-Erkennung.
+
+## SVG Prompt-Selektor System (NEU v2.0)
+
+Automatische Unterscheidung zwischen einfachen und komplexen Gebäuden für die Claude API SVG-Generierung.
+
+### Problem (vor v2.0)
+
+Claude fügte fälschlicherweise Kuppeln zu einfachen Wohnhäusern hinzu, weil der Prompt alle möglichen Zone-Typen erwähnte.
+
+### Lösung: Separate Prompts
+
+| Gebäudetyp | Prompt | Erlaubte Elemente |
+|------------|--------|-------------------|
+| **SIMPLE** | `simple_building_prompt.py` | Rechteck + Satteldach, KEINE Kuppeln/Türme/Arkaden |
+| **COMPLEX** | `complex_building_prompt.py` | Alle Elemente, aber NUR wenn in Zonen-Daten vorhanden |
+
+### Komplexitäts-Erkennung (`prompt_selector.py`)
+
+```python
+# Kriterien für COMPLEX
+COMPLEX_ZONE_TYPES = {'kuppel', 'turm', 'arkade', 'treppenhaus'}
+COMPLEX_GKAT_CODES = {1040, 1060, 1080, 1110, 1130, 1212}
+COMPLEX_POLYGON_POINTS = 12  # > 12 Punkte
+COMPLEX_AREA_M2 = 1000       # > 1000 m²
+COMPLEX_HEIGHT_DIFF = 5      # > 5m zwischen Zonen
+
+# Kriterien für MODERATE
+MODERATE_ZONE_TYPES = {'anbau', 'garage', 'vordach'}
+MODERATE_POLYGON_POINTS = 6  # > 6 Punkte
+MODERATE_AREA_M2 = 500       # > 500 m²
+```
+
+### Entscheidungslogik
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  KOMPLEXITÄTS-ERKENNUNG                     │
+├─────────────────────────────────────────────────────────────┤
+│  1. Zone-Typen prüfen                                       │
+│     → kuppel/turm/arkade vorhanden? → COMPLEX               │
+│     → anbau/garage/vordach vorhanden? → MODERATE            │
+│                                                             │
+│  2. Höhendifferenz zwischen Zonen                           │
+│     → > 5m Unterschied? → COMPLEX                           │
+│                                                             │
+│  3. GKAT-Code prüfen                                        │
+│     → 1060/1080/1110/1130/1212? → COMPLEX                   │
+│                                                             │
+│  4. Polygon-Komplexität                                     │
+│     → > 12 Punkte? → COMPLEX                                │
+│     → > 6 Punkte? → MODERATE                                │
+│                                                             │
+│  5. Grundfläche                                             │
+│     → > 1000 m²? → COMPLEX                                  │
+│     → > 500 m²? → MODERATE                                  │
+│                                                             │
+│  6. Default                                                 │
+│     → SIMPLE (normales Wohngebäude)                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Dateien
+
+```
+backend/app/services/svg_prompts/
+├── __init__.py                    # Modul-Export
+├── prompt_selector.py             # Komplexitäts-Erkennung
+├── simple_building_prompt.py      # Für EFH/MFH (KEINE Kuppeln!)
+└── complex_building_prompt.py     # Für öffentliche Gebäude
+```
+
+### Cache-Invalidierung
+
+Der Cache-Key enthält jetzt eine Version (`v: "2.0"`), sodass alte SVGs mit Kuppeln automatisch neu generiert werden.
 
 ## Gerüstbau-Features
 
