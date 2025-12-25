@@ -510,9 +510,10 @@ class SVGGenerator:
 '''
 
         # Geschossdecken (gestrichelt)
-        floor_height_m = 3.0 if building.floors <= 3 else 2.8
+        num_floors = building.floors or 3  # Default 3 Geschosse wenn nicht bekannt
+        floor_height_m = 3.0 if num_floors <= 3 else 2.8
         svg += '    <!-- Geschossdecken -->\n'
-        for floor in range(1, building.floors):
+        for floor in range(1, num_floors):
             floor_h = floor * floor_height_m
             if floor_h < eave_h:
                 floor_y = ground_y - floor_h * scale
