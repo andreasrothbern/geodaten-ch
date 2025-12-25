@@ -39,6 +39,10 @@ export async function preloadAllSvgs(
         width: width.toString(),
         height: height.toString()
       })
+      // Use Claude API for cross-section and elevation
+      if (type === 'cross-section' || type === 'elevation') {
+        params.set('use_claude', 'true')
+      }
       const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
       if (response.ok) {
         const svgText = await response.text()
