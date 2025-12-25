@@ -517,6 +517,123 @@ Wenn wir Option D implementieren, hätten wir:
 
 Dies ist **deutlich mehr Information** als Claude.ai ursprünglich hatte, als die Referenz-SVGs erstellt wurden.
 
+---
+
+## 🎨 Claude API SVG-Generierung: Style-Guidelines (Stand 25.12.2025)
+
+### Problem: Zu künstlerisch statt technisch
+
+Die Claude API generiert aktuell SVGs mit:
+- ❌ Farbigem Himmel (blau)
+- ❌ Vollfarben statt Schraffur
+- ❌ Künstlerischer Interpretation
+- ❌ Fehlender/falscher Höhenskala
+- ❌ Vermischten Perspektiven
+
+**Ziel:** Technisch-professionelle Architekturzeichnung wie `anhang_b_ansicht.svg`
+
+### Referenz-Analyse: anhang_b_ansicht.svg
+
+| Element | Referenz-Implementierung |
+|---------|-------------------------|
+| **Hintergrund** | `fill="white"` - Reinweiss, KEIN Himmel |
+| **Gebäude-Füllung** | `fill="url(#hatch)"` - Schraffur-Pattern |
+| **Hauptlinien** | `stroke="#333"` - Dunkelgrau, 2px |
+| **Gerüst** | `stroke="#0066CC"` - EINZIGE blaue Elemente |
+| **Verankerungen** | `stroke="#CC0000"`, gestrichelt |
+| **Beläge** | `fill="#8B4513"` - Braun |
+| **Kuppel** | `fill="url(#copper)"` - Einziger Gradient |
+
+### Pflicht-Patterns für SVG
+
+```xml
+<defs>
+  <!-- Schraffur für Gebäude (diagonal 45°) -->
+  <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+    <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- Boden/Terrain -->
+  <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- Kupfer-Gradient NUR für Kuppeln -->
+  <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" style="stop-color:#7CB9A5"/>
+    <stop offset="100%" style="stop-color:#4A8A77"/>
+  </linearGradient>
+
+  <!-- Pfeil-Marker für Masslinien -->
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+  </marker>
+</defs>
+```
+
+### Farbpalette (STRIKT einhalten!)
+
+| Verwendung | Farbe | Code |
+|------------|-------|------|
+| Hintergrund | Weiss | `#FFFFFF` |
+| Hauptlinien | Dunkelgrau | `#333333` |
+| Gebäude-Füllung | Schraffur | `url(#hatch)` |
+| Gerüst-Ständer | Blau | `#0066CC` |
+| Verankerung | Rot gestrichelt | `#CC0000` |
+| Beläge | Braun | `#8B4513` |
+| Kupferkuppel | Gradient | `url(#copper)` |
+| Beschriftung | Dunkelgrau | `#333` oder `#555` |
+| Terrain | Pattern | `url(#ground)` |
+
+### Struktur-Template für Ansicht-SVG
+
+```
+1. Weisser Hintergrund (rect fill="white")
+2. Terrain-Linie unten (OK Terrain ±0.00)
+3. Gebäude mit Schraffur-Füllung
+4. Gerüst-Elemente (Ständer, Riegel, Beläge)
+5. Verankerungen (gestrichelte Linien)
+6. Höhenskala links (±0.00 bis +Xm)
+7. Lagenbeschriftung rechts (1. Lage, 2. Lage...)
+8. Legende-Box (oben rechts)
+```
+
+### Prompt-Verbesserungen für claude_svg_zones.py
+
+**VERBOTEN im Prompt:**
+- "handgezeichnet wirkend"
+- "Hintergrund mit Himmel"
+- "kreativ", "künstlerisch"
+- Farbige Fenster (#87CEEB)
+
+**ERFORDERLICH im Prompt:**
+```
+STIL: Technische Architekturzeichnung, NICHT künstlerisch!
+- Hintergrund: WEISS (kein Himmel, kein Gradient)
+- Gebäude: Schraffur-Pattern url(#hatch), KEINE Vollfarben
+- Gerüst: NUR Blau #0066CC für Ständer/Riegel
+- Alle Elemente: Graustufen und technische Patterns
+- Perspektive: Reine Frontalansicht (Orthogonalprojektion)
+```
+
+### Vergleich: Aktuell vs. Ziel
+
+| Aspekt | Claude API (Fehler) | Referenz (Korrekt) |
+|--------|---------------------|-------------------|
+| Himmel | `fill="url(#sky)"` blau | Kein Himmel, weiss |
+| Gebäude | `fill="#E8DCC8"` Vollfarbe | `fill="url(#hatch)"` |
+| Perspektive | 3D-artig, verzerrt | 2D Frontalansicht |
+| Fenster | Farbige Rechtecke | Optional, grau |
+| Höhenskala | "+0.00" (falsch) | "±0.00 bis +64.0" |
+| Proportionen | Fantasie | Massstabsgetreu |
+
+### Nächste Schritte
+
+1. **Prompt in claude_svg_zones.py überarbeiten** - Strikte Style-Vorgaben
+2. **Referenz-SVG als Example im Prompt** - Zeige Claude was wir wollen
+3. **Validierung** - Prüfe generierte SVGs auf Style-Compliance
+4. **Fallback** - Bei Style-Fehler: Standard-Generator verwenden
+
 ## Neue Features (Stand 24.12.2025)
 
 ### URL-Parameter für Adresse

@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <defs>
+    <pattern id="hatch-cut" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#333" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="15">
+      <path d="M0,15 L10,0 M10,15 L20,0" stroke="#666" stroke-width="0.5"/>
+      <circle cx="5" cy="10" r="1.5" fill="#888"/>
+    </pattern>
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Boden -->
+  <rect x="0" y="540" width="800" height="60" fill="url(#ground)"/>
+  
+  <!-- Gerüst links -->
+  <g stroke="#0066CC" stroke-width="2" fill="none">
+    <!-- Ständer -->
+    <line x1="100" y1="200" x2="100" y2="540"/>
+    <line x1="120" y1="200" x2="120" y2="540"/>
+    <!-- Horizontale Riegel -->
+    <line x1="100" y1="220" x2="120" y2="220"/>
+    <line x1="100" y1="260" x2="120" y2="260"/>
+    <line x1="100" y1="300" x2="120" y2="300"/>
+    <line x1="100" y1="340" x2="120" y2="340"/>
+    <line x1="100" y1="380" x2="120" y2="380"/>
+    <line x1="100" y1="420" x2="120" y2="420"/>
+    <line x1="100" y1="460" x2="120" y2="460"/>
+    <line x1="100" y1="500" x2="120" y2="500"/>
+    <!-- Beläge -->
+    <rect x="100" y="218" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="258" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="298" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="338" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="378" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="418" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="458" width="20" height="4" fill="#8B4513"/>
+    <rect x="100" y="498" width="20" height="4" fill="#8B4513"/>
+  </g>
+  
+  <!-- Gerüst rechts -->
+  <g stroke="#0066CC" stroke-width="2" fill="none">
+    <!-- Ständer -->
+    <line x1="680" y1="200" x2="680" y2="540"/>
+    <line x1="700" y1="200" x2="700" y2="540"/>
+    <!-- Horizontale Riegel -->
+    <line x1="680" y1="220" x2="700" y2="220"/>
+    <line x1="680" y1="260" x2="700" y2="260"/>
+    <line x1="680" y1="300" x2="700" y2="300"/>
+    <line x1="680" y1="340" x2="700" y2="340"/>
+    <line x1="680" y1="380" x2="700" y2="380"/>
+    <line x1="680" y1="420" x2="700" y2="420"/>
+    <line x1="680" y1="460" x2="700" y2="460"/>
+    <line x1="680" y1="500" x2="700" y2="500"/>
+    <!-- Beläge -->
+    <rect x="680" y="218" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="258" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="298" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="338" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="378" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="418" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="458" width="20" height="4" fill="#8B4513"/>
+    <rect x="680" y="498" width="20" height="4" fill="#8B4513"/>
+  </g>
+  
+  <!-- Arkaden/Erdgeschoss -->
+  <rect x="140" y="480" width="520" height="60" fill="url(#hatch-cut)" stroke="#333" stroke-width="1.5"/>
+  <!-- Arkadenbogen -->
+  <path d="M180,540 A20,20 0 0,1 220,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M240,540 A20,20 0 0,1 280,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M300,540 A20,20 0 0,1 340,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M360,540 A20,20 0 0,1 400,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M420,540 A20,20 0 0,1 460,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M480,540 A20,20 0 0,1 520,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M540,540 A20,20 0 0,1 580,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  <path d="M600,540 A20,20 0 0,1 640,540" fill="none" stroke="#333" stroke-width="1.5"/>
+  
+  <!-- Hauptgebäude -->
+  <rect x="200" y="360" width="400" height="120" fill="url(#hatch-cut)" stroke="#333" stroke-width="1.5"/>
+  <!-- Geschossdecken -->
+  <line x1="200" y1="390" x2="600" y2="390" stroke="#333" stroke-width="1"/>
+  <line x1="200" y1="420" x2="600" y2="420" stroke="#333" stroke-width="1"/>
+  <line x1="200" y1="450" x2="600" y2="450" stroke="#333" stroke-width="1"/>
+  <!-- Fenster -->
+  <rect x="220" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  <rect x="250" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  <rect x="280" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  <rect x="310" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  <rect x="340" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  <rect x="370" y="370" width="15" height="15" fill="#87CEEB" stroke="#333" stroke-width="0.5"/>
+  
+  <!-- Kuppel -->
+  <ellipse cx="400" cy="320" rx="60" ry="40" fill="url(#copper)" stroke="#333" stroke-width="1.5"/>
+  <!-- Laterne -->
+  <rect x="390" y="280" width="20" height="30" fill="url(#copper)" stroke="#333" stroke-width="1"/>
+  <path d="M385,280 L400,270 L415,280 Z" fill="url(#copper)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Verankerungen -->
+  <circle cx="140" cy="220" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="260" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="300" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="340" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="380" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="420" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="460" r="3" fill="#CC0000"/>
+  <circle cx="140" cy="500" r="3" fill="#CC0000"/>
+  
+  <circle cx="660" cy="220" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="260" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="300" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="340" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="380" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="420" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="460" r="3" fill="#CC0000"/>
+  <circle cx="660" cy="500" r="3" fill="#CC0000"/>
+  
+  <!-- Höhenskala -->
+  <line x1="50" y1="200" x2="50" y2="540" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="200" x2="55" y2="200" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="240" x2="55" y2="240" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="280" x2="55" y2="280" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="320" x2="55" y2="320" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="360" x2="55" y2="360" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="400" x2="55" y2="400" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="440" x2="55" y2="440" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="480" x2="55" y2="480" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="520" x2="55" y2="520" stroke="#000" stroke-width="1"/>
+  <line x1="45" y1="540" x2="55" y2="540" stroke="#000" stroke-width="1"/>
+  
+  <text x="30" y="205" font-family="Arial, sans-serif" font-size="8" fill="#000">+64</text>
+  <text x="30" y="245" font-family="Arial, sans-serif" font-size="8" fill="#000">+48</text>
+  <text x="30" y="285" font-family="Arial, sans-serif" font-size="8" fill="#000">+32</text>
+  <text x="30" y="325" font-family="Arial, sans-serif" font-size="8" fill="#000">+24</text>
+  <text x="30" y="365" font-family="Arial, sans-serif" font-size="8" fill="#000">+16</text>
+  <text x="30" y="405" font-family="Arial, sans-serif" font-size="8" fill="#000">+12</text>
+  <text x="30" y="445" font-family="Arial, sans-serif" font-size="8" fill="#000">+8</text>
+  <text x="30" y="485" font-family="Arial, sans-serif" font-size="8" fill="#000">+4</text>
+  <text x="30" y="525" font-family="Arial, sans-serif" font-size="8" fill="#000">+2</text>
+  <text x="25" y="545" font-family="Arial, sans-serif" font-size="8" fill="#000">±0.00</text>
+  
+  <!-- Lagenbeschriftung -->
+  <text x="720" y="210" font-family="Arial, sans-serif" font-size="8" fill="#000">33. Lage</text>
+  <text x="720" y="230" font-family="Arial, sans-serif" font-size="8" fill="#000">30. Lage</text>
+  <text x="720" y="250" font-family="Arial, sans-serif" font-size="8" fill="#000">27. Lage</text>
+  <text x="720" y="270" font-family="Arial, sans-serif" font-size="8" fill="#000">24. Lage</text>
+  <text x="720" y="290" font-family="Arial, sans-serif" font-size="8" fill="#000">21. Lage</text>
+  <text x="720" y="310" font-family="Arial, sans-serif" font-size="8" fill="#000">18. Lage</text>
+  <text x="720" y="330" font-family="Arial, sans-serif" font-size="8" fill="#000">15. Lage</text>
+  <text x="720" y="350" font-family="Arial, sans-serif" font-size="8" fill="#000">12. Lage</text>
+  <text x="720" y="370" font-family="Arial, sans-serif" font-size="8" fill="#000">9. Lage</text>
+  <text x="720" y="390" font-family="Arial, sans-serif" font-size="8" fill="#000">6. Lage</text>
+  <text x="720" y="410" font-family="Arial, sans-serif" font-size="8" fill="#000">3. Lage</text>
+  <text x="720" y="530" font-family="Arial, sans-serif" font-size="8" fill="#000">1. Lage</text>
+</svg>

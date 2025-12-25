@@ -213,46 +213,54 @@ def generate_cross_section_with_zones(
 
     num_layers = int(max_height / 2.0) + 1
 
-    prompt = f"""Du bist ein Experte für technische Architekturzeichnungen im SVG-Format.
+    prompt = f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
+
+## WICHTIG: STIL
+
+TECHNISCH-PROFESSIONELL, NICHT künstlerisch!
+- Hintergrund: REINWEISS (#FFFFFF) - KEIN Himmel, KEIN Gradient
+- Gebäude: NUR Schraffur-Pattern, KEINE Vollfarben
+- Perspektive: 2D Frontalansicht (Orthogonalprojektion)
+- Farben: Nur Graustufen + wenige Akzentfarben für Gerüst
 
 ## Aufgabe
 
-Erstelle einen **Gebäudeschnitt** als SVG basierend auf den folgenden Daten.
-Der Stil soll professionell, architektonisch, handgezeichnet wirkend sein.
+Erstelle einen **Gebäudeschnitt** als SVG.
 
 ## Gebäudedaten
 
 - Adresse: {address}
 - EGID: {egid or '-'}
 - Geschosse: {floors}
-- Breite (Schnitt): {width_m:.1f} m
+- Breite: {width_m:.1f} m
+- Maximale Höhe: {max_height:.1f} m
 
 ## Höhenzonen
 {zones_text}
 
-## Wichtige Anforderungen
+## Anforderungen
 
-1. **NUR die Grafik** - Kein Titelblock, keine Fusszeile
-2. **Alle {len(zones)} Zonen darstellen** mit korrekter Höhe
-3. **Zone-Typen:**
-   - arkade = niedrig mit Rundbögen, Säulen
-   - hauptgebaeude = mit Geschossdecken, Fenster
-   - kuppel = Ellipse mit Kupfer-Gradient (fill="url(#copper)"), Laterne oben
-4. **Gerüst links und rechts** - Ständer (blau #0066CC), Riegel, Beläge (braun #8B4513)
-5. **Verankerungen** - Rote Punkte (#CC0000) alle 4m vertikal
-6. **Höhenskala links** - ±0.00 bis +{max_height:.0f}m
-7. **Lagenbeschriftung** - 1. Lage bis {num_layers}. Lage
+1. **Weisser Hintergrund** - `<rect width="100%" height="100%" fill="white"/>`
+2. **Terrain unten** - Horizontale Linie bei Y=90% mit `url(#ground)` Pattern
+3. **Gebäude mit Schraffur** - `fill="url(#hatch)"` für alle Gebäudeteile
+4. **Zone-Typen:**
+   - arkade = Rechteck mit Rundbögen, Schraffur
+   - hauptgebaeude = Rechteck mit Geschosslinien, Schraffur
+   - kuppel = Ellipse mit `url(#copper)` Gradient (EINZIGER Gradient!)
+5. **Gerüst links und rechts** - Ständer #0066CC, Riegel, Beläge #8B4513
+6. **Verankerungen** - Rote gestrichelte Linien #CC0000
+7. **Höhenskala links** - Beschriftung von ±0.00 bis +{max_height:.0f}m in 5m Schritten
+8. **Lagenbeschriftung rechts** - 1. Lage bis {num_layers}. Lage (alle 2m)
 
-## SVG-Patterns (verwenden!)
+## SVG-Patterns (PFLICHT!)
 
 ```xml
 <defs>
-    <pattern id="hatch-cut" patternUnits="userSpaceOnUse" width="6" height="6">
-      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#333" stroke-width="0.8"/>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
     </pattern>
-    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="15">
-      <path d="M0,15 L10,0 M10,15 L20,0" stroke="#666" stroke-width="0.5"/>
-      <circle cx="5" cy="10" r="1.5" fill="#888"/>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
     </pattern>
     <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#7CB9A5"/>
@@ -261,18 +269,19 @@ Der Stil soll professionell, architektonisch, handgezeichnet wirkend sein.
 </defs>
 ```
 
-## Farben
+## Farben (STRIKT!)
+- Hintergrund: #FFFFFF (weiss)
+- Hauptlinien: #333333 (dunkelgrau)
+- Gebäude: url(#hatch) Schraffur
 - Gerüst: #0066CC (blau)
-- Anker: #CC0000 (rot)
+- Anker: #CC0000 (rot, gestrichelt)
 - Belag: #8B4513 (braun)
-- Gebäude-Schnitt: fill="url(#hatch-cut)"
-- Kuppel: fill="url(#copper)"
-- Fenster: #87CEEB
+- Kuppel: url(#copper)
+- Text: #333333
 
 ## Output
 
-Generiere ein vollständiges, valides SVG mit viewBox="0 0 {svg_width} {svg_height}".
-Gib NUR das SVG aus, keine Erklärungen.
+SVG mit viewBox="0 0 {svg_width} {svg_height}". NUR SVG, keine Erklärungen.
 
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_width} {svg_height}">
 """
@@ -332,12 +341,19 @@ def generate_elevation_with_zones(
 
     num_layers = int(max_height / 2.0) + 1
 
-    prompt = f"""Du bist ein Experte für technische Architekturzeichnungen im SVG-Format.
+    prompt = f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
+
+## WICHTIG: STIL
+
+TECHNISCH-PROFESSIONELL, NICHT künstlerisch!
+- Hintergrund: REINWEISS (#FFFFFF) - KEIN Himmel, KEIN blauer Gradient!
+- Gebäude: NUR Schraffur-Pattern, KEINE Vollfarben
+- Perspektive: 2D Frontalansicht (Orthogonalprojektion)
+- Farben: Graustufen + wenige Akzentfarben (nur Gerüst blau)
 
 ## Aufgabe
 
-Erstelle eine **Fassadenansicht** (Elevation) als SVG basierend auf den folgenden Daten.
-Der Stil soll professionell, architektonisch, handgezeichnet wirkend sein.
+Erstelle eine **Fassadenansicht** (Elevation) als SVG.
 
 ## Gebäudedaten
 
@@ -345,56 +361,56 @@ Der Stil soll professionell, architektonisch, handgezeichnet wirkend sein.
 - EGID: {egid or '-'}
 - Geschosse: {floors}
 - Fassadenbreite: {width_m:.1f} m
+- Maximale Höhe: {max_height:.1f} m
 
 ## Höhenzonen
 {zones_text}
 
-## Wichtige Anforderungen
+## Anforderungen
 
-1. **NUR die Grafik** - Kein Titelblock, keine Fusszeile
-2. **Frontalansicht** der Fassade (nicht Schnitt!)
-3. **Alle {len(zones)} Zonen darstellen** mit korrekter Höhe
-4. **Zone-Typen visuell:**
-   - arkade = Rundbogen-Arkaden mit Säulen, Sandstein-Farbe
-   - hauptgebaeude = Fensterreihen pro Geschoss, Fassadendetails
-   - kuppel = Kuppelform mit Kupfer-Gradient, Laterne oben, Tambour mit Fenstern
-5. **Gerüst VOR der Fassade** - Ständer (blau #0066CC), Riegel, Beläge (braun #8B4513)
-6. **Verankerungen** - Rote Punkte (#CC0000) alle 4m vertikal, alle 4m horizontal
-7. **Höhenskala links** - ±0.00 bis +{max_height:.0f}m
-8. **Lagenbeschriftung rechts** - 1. Lage bis {num_layers}. Lage
+1. **Weisser Hintergrund** - `<rect width="100%" height="100%" fill="white"/>`
+2. **Terrain unten** - Horizontale Linie bei Y=85% mit `url(#ground)` Pattern
+3. **Frontalansicht** - 2D, keine Perspektive, keine 3D-Effekte
+4. **Gebäude mit Schraffur** - `fill="url(#hatch)"` für alle Gebäudeteile
+5. **Zone-Typen:**
+   - arkade = Rechteck mit Rundbögen, Schraffur-Füllung
+   - hauptgebaeude = Rechteck mit Geschosslinien (horizontale Striche), Schraffur
+   - kuppel = Ellipse mit `url(#copper)` Gradient (EINZIGER Gradient!)
+6. **Gerüst VOR Fassade** - Ständer #0066CC (vertikale Linien), Beläge #8B4513
+7. **Verankerungen** - Gestrichelte Linien #CC0000, alle 4m vertikal
+8. **Höhenskala links** - Beschriftung ±0.00 bis +{max_height:.0f}m in 5m Schritten
+9. **Lagenbeschriftung rechts** - 1. Lage bis {num_layers}. Lage (alle 2m Höhe)
 
-## SVG-Patterns (verwenden!)
+## SVG-Patterns (PFLICHT!)
 
 ```xml
 <defs>
-    <pattern id="sandstone" patternUnits="userSpaceOnUse" width="20" height="10">
-      <rect width="20" height="10" fill="#E8DCC8"/>
-      <path d="M0,5 h20 M10,0 v10" stroke="#D4C4A8" stroke-width="0.5"/>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
     </pattern>
     <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#7CB9A5"/>
       <stop offset="100%" style="stop-color:#4A8A77"/>
     </linearGradient>
-    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#87CEEB"/>
-      <stop offset="100%" style="stop-color:#E0F0FF"/>
-    </linearGradient>
 </defs>
 ```
 
-## Farben
-- Hintergrund: url(#sky) oder #F5F5F5
-- Fassade: #E8DCC8 (Sandstein) oder url(#sandstone)
-- Fenster: #4A5568 mit hellem Rahmen
-- Kuppel: url(#copper)
+## Farben (STRIKT!)
+- Hintergrund: #FFFFFF (weiss) - KEIN Himmel!
+- Hauptlinien: #333333 (dunkelgrau)
+- Gebäude: url(#hatch) Schraffur
 - Gerüst: #0066CC (blau)
-- Anker: #CC0000 (rot)
+- Anker: #CC0000 (rot, gestrichelt)
 - Belag: #8B4513 (braun)
+- Kuppel: url(#copper)
+- Text: #333333
 
 ## Output
 
-Generiere ein vollständiges, valides SVG mit viewBox="0 0 {svg_width} {svg_height}".
-Gib NUR das SVG aus, keine Erklärungen.
+SVG mit viewBox="0 0 {svg_width} {svg_height}". NUR SVG, keine Erklärungen.
 
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_width} {svg_height}">
 """
