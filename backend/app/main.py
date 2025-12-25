@@ -1916,7 +1916,8 @@ async def visualize_cross_section(
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
-    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns")
+    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns"),
+    auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden")
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude.
@@ -1926,10 +1927,12 @@ async def visualize_cross_section(
     - **height**: SVG-Höhe in Pixel (default: 480)
     - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
+    - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
 
     Returns: SVG-Datei
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
+    from app.services.building_context import get_building_context_service, ComplexityLevel
 
     try:
         # Gebäudedaten abrufen
@@ -1964,12 +1967,14 @@ async def visualize_cross_section(
         # Höhe bestimmen - Priorität: manuell > swissBUILDINGS3D > Geschosse
         eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
         ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
+        heights_data = {}
 
         # Gemessene Höhe aus swissBUILDINGS3D DB
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
             if heights:
+                heights_data = heights
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
                 if heights.get("firsthoehe_m"):
@@ -1988,6 +1993,64 @@ async def visualize_cross_section(
         # Auto-detect roof type from heights
         roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
 
+        # === ZONEN LADEN/ERSTELLEN ===
+        zones = None
+        if building and building.egid:
+            context_service = get_building_context_service()
+            context = context_service.get_context(str(building.egid))
+
+            if not context:
+                # Polygon für Komplexitäts-Check vorbereiten
+                polygon = []
+                if geometry and geometry.polygon_coordinates:
+                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon_coordinates]
+
+                # Komplexität prüfen
+                gwr_data = {
+                    'gkat': building.category if building else None,
+                    'garea': building.area_m2 if building else None,
+                }
+                complexity = context_service.detect_complexity(polygon, gwr_data, building.area_m2 if building else None)
+
+                # Höhendifferenz prüfen (komplexe Gebäude haben oft grosse Differenz)
+                height_diff = (ridge_height_m or 0) - (eave_height_m or 0)
+                if height_diff > 15:
+                    complexity = ComplexityLevel.COMPLEX
+
+                if complexity == ComplexityLevel.COMPLEX and auto_analyze:
+                    # Claude-Analyse für komplexe Gebäude
+                    try:
+                        context = await context_service.analyze_with_claude(
+                            egid=str(building.egid),
+                            adresse=geo.matched_address,
+                            polygon=polygon,
+                            height_data=heights_data,
+                            gwr_data=gwr_data
+                        )
+                        context_service.save_context(context)
+                    except Exception as e:
+                        print(f"Claude analysis failed: {e}")
+                        # Fallback auf Auto-Context
+                        context = context_service.create_auto_context(
+                            egid=str(building.egid),
+                            adresse=geo.matched_address,
+                            polygon=polygon,
+                            height_data=heights_data,
+                            gwr_data=gwr_data
+                        )
+                else:
+                    # Auto-Context für einfache/moderate Gebäude
+                    context = context_service.create_auto_context(
+                        egid=str(building.egid),
+                        adresse=geo.matched_address,
+                        polygon=polygon,
+                        height_data=heights_data,
+                        gwr_data=gwr_data
+                    )
+
+            if context and context.zones and len(context.zones) > 1:
+                zones = [z.model_dump() for z in context.zones]
+
         # BuildingData erstellen
         building_data = BuildingData(
             address=geo.matched_address,
@@ -1999,6 +2062,7 @@ async def visualize_cross_section(
             floors=building.floors if building else 3,
             roof_type=roof_type,
             area_m2=building.area_m2 if building else None,
+            zones=zones,
         )
 
         # SVG generieren
@@ -2028,7 +2092,8 @@ async def visualize_elevation(
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
-    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns")
+    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns"),
+    auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -2038,10 +2103,12 @@ async def visualize_elevation(
     - **height**: SVG-Höhe in Pixel (default: 480)
     - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
+    - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
 
     Returns: SVG-Datei
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
+    from app.services.building_context import get_building_context_service, ComplexityLevel
 
     try:
         geo = await swisstopo.geocode(address)
@@ -2072,11 +2139,13 @@ async def visualize_elevation(
 
         eave_height_m = (building.floors or 3) * 2.8 if building else 8.0
         ridge_height_m = eave_height_m + 3.5
+        heights_data = {}
 
         if building and building.egid:
             from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
             if heights:
+                heights_data = heights
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
                 if heights.get("firsthoehe_m"):
@@ -2095,6 +2164,64 @@ async def visualize_elevation(
         # Auto-detect roof type from heights
         roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
 
+        # === ZONEN LADEN/ERSTELLEN ===
+        zones = None
+        if building and building.egid:
+            context_service = get_building_context_service()
+            context = context_service.get_context(str(building.egid))
+
+            if not context:
+                # Polygon für Komplexitäts-Check vorbereiten
+                polygon = []
+                if geometry and geometry.polygon_coordinates:
+                    polygon = [{"x": p[0], "y": p[1]} for p in geometry.polygon_coordinates]
+
+                # Komplexität prüfen
+                gwr_data = {
+                    'gkat': building.category if building else None,
+                    'garea': building.area_m2 if building else None,
+                }
+                complexity = context_service.detect_complexity(polygon, gwr_data, building.area_m2 if building else None)
+
+                # Höhendifferenz prüfen (komplexe Gebäude haben oft grosse Differenz)
+                height_diff = (ridge_height_m or 0) - (eave_height_m or 0)
+                if height_diff > 15:
+                    complexity = ComplexityLevel.COMPLEX
+
+                if complexity == ComplexityLevel.COMPLEX and auto_analyze:
+                    # Claude-Analyse für komplexe Gebäude
+                    try:
+                        context = await context_service.analyze_with_claude(
+                            egid=str(building.egid),
+                            adresse=geo.matched_address,
+                            polygon=polygon,
+                            height_data=heights_data,
+                            gwr_data=gwr_data
+                        )
+                        context_service.save_context(context)
+                    except Exception as e:
+                        print(f"Claude analysis failed: {e}")
+                        # Fallback auf Auto-Context
+                        context = context_service.create_auto_context(
+                            egid=str(building.egid),
+                            adresse=geo.matched_address,
+                            polygon=polygon,
+                            height_data=heights_data,
+                            gwr_data=gwr_data
+                        )
+                else:
+                    # Auto-Context für einfache/moderate Gebäude
+                    context = context_service.create_auto_context(
+                        egid=str(building.egid),
+                        adresse=geo.matched_address,
+                        polygon=polygon,
+                        height_data=heights_data,
+                        gwr_data=gwr_data
+                    )
+
+            if context and context.zones and len(context.zones) > 1:
+                zones = [z.model_dump() for z in context.zones]
+
         building_data = BuildingData(
             address=geo.matched_address,
             egid=building.egid if building else None,
@@ -2105,6 +2232,7 @@ async def visualize_elevation(
             floors=building.floors if building else 3,
             roof_type=roof_type,
             area_m2=building.area_m2 if building else None,
+            zones=zones,
         )
 
         generator = get_svg_generator()
@@ -2118,6 +2246,9 @@ async def visualize_elevation(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print(f"Visualization error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -424,10 +424,17 @@ class SVGGenerator:
         # Hintergrund (weiss statt grau)
         svg += f'  <rect width="{width}" height="{height}" fill="white"/>\n'
 
-        # Gebäude zeichnen (enthält jetzt Terrain, Gerüst, Höhenkoten, etc.)
-        svg += self._draw_simple_cross_section(
-            building, scale, ground_y, margin, width, height, scaffold_width, draw_width, eave_h, ridge_h, professional
-        )
+        # Gebäude zeichnen - mit oder ohne Zonen
+        if building.zones and len(building.zones) > 1:
+            # Mehrere Zonen vorhanden → Zonen-basiertes Rendering
+            svg += self._draw_cross_section_with_zones(
+                building, scale, ground_y, margin, width, height, draw_width, professional
+            )
+        else:
+            # Standard: Ein Gebäude
+            svg += self._draw_simple_cross_section(
+                building, scale, ground_y, margin, width, height, scaffold_width, draw_width, eave_h, ridge_h, professional
+            )
 
         # Kompakte Legende
         plank_color = "#8B4513"
@@ -721,6 +728,209 @@ class SVGGenerator:
 
         return svg
 
+    def _draw_cross_section_with_zones(self, building: BuildingData, scale: float, ground_y: float,
+                                        margin: dict, width: int, height: int, draw_width: float,
+                                        professional: bool = False) -> str:
+        """
+        Zeichnet Schnitt mit mehreren Gebäudezonen (z.B. Arkaden, Hauptfassade, Kuppel).
+
+        Layout für typisches Bundeshaus-artiges Gebäude:
+        - Links: Arkade/niedrige Zone
+        - Mitte: Hauptgebäude mit optionaler Kuppel
+        - Rechts: Arkade/niedrige Zone oder weitere Anbauten
+        """
+        svg = ""
+        zones = building.zones or []
+
+        # Zonen nach Typ sortieren für Layout
+        arkaden = [z for z in zones if z.get('type') in ['arkade', 'vordach']]
+        hauptgebaeude = [z for z in zones if z.get('type') in ['hauptgebaeude', 'anbau']]
+        kuppeln = [z for z in zones if z.get('type') in ['kuppel', 'turm']]
+
+        # Fallback: Alle Zonen als Hauptgebäude behandeln
+        if not hauptgebaeude and not arkaden and not kuppeln:
+            hauptgebaeude = zones
+
+        # Maximale Höhe für Skalierung
+        max_height = max([z.get('gebaeudehoehe_m', z.get('traufhoehe_m', 10)) for z in zones], default=20)
+        scaffold_height_m = max_height + 2
+
+        # Farben
+        wall_fill = "url(#hatch-cut)" if professional else "#d0d0d0"
+        plank_color = "#8B4513"
+        scaffold_color = "#0066CC"
+
+        # === TERRAIN ===
+        if professional:
+            svg += f'''
+  <!-- Terrain mit Pattern -->
+  <rect x="{margin['left'] - 30}" y="{ground_y}" width="{draw_width + 60}" height="25" fill="url(#ground)"/>
+'''
+        svg += f'  <line x1="{margin["left"] - 30}" y1="{ground_y}" x2="{width - margin["right"] + 30}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
+
+        # === GEBÄUDE-LAYOUT BERECHNEN ===
+        # Gesamtbreite aufteilen
+        total_sections = len(arkaden) + len(hauptgebaeude) + len(kuppeln)
+        if total_sections == 0:
+            total_sections = 1
+
+        # Proportionen: Arkaden schmaler, Hauptgebäude breiter, Kuppel in der Mitte
+        section_width = draw_width / (total_sections + 1)  # +1 für Abstände
+
+        # Positionen berechnen
+        current_x = margin['left'] + 20
+
+        svg += '  <!-- Gebäude-Zonen -->\n'
+        svg += '  <g id="building-zones">\n'
+
+        # Hilfsfunktion für Zone zeichnen
+        def draw_zone_section(zone: dict, x: float, zone_width: float) -> str:
+            zone_svg = ""
+            zone_name = zone.get('name', 'Zone')
+            zone_type = zone.get('type', 'hauptgebaeude')
+            trauf_h = zone.get('traufhoehe_m') or zone.get('gebaeudehoehe_m', 10)
+            first_h = zone.get('firsthoehe_m') or trauf_h
+            is_special = zone.get('sonderkonstruktion', False)
+
+            trauf_px = trauf_h * scale
+            first_px = first_h * scale
+
+            zone_color = ZONE_COLORS.get(zone_type, ZONE_COLORS['unknown'])
+
+            # Gebäudekörper
+            if zone_type == 'kuppel':
+                # Kuppel als Halbkreis
+                center_x = x + zone_width / 2
+                radius = min(zone_width / 2, first_px / 2)
+                # Unterbau (Tambour)
+                zone_svg += f'    <rect x="{x}" y="{ground_y - trauf_px}" width="{zone_width}" height="{trauf_px * 0.6}" fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>\n'
+                # Kuppel selbst
+                zone_svg += f'    <ellipse cx="{center_x}" cy="{ground_y - trauf_px * 0.6}" rx="{radius}" ry="{radius * 0.8}" fill="url(#copper)" stroke="#333" stroke-width="2"/>\n'
+            elif zone_type == 'arkade':
+                # Arkade: niedriger mit Bögen
+                zone_svg += f'    <rect x="{x}" y="{ground_y - trauf_px}" width="{zone_width}" height="{trauf_px}" fill="{zone_color["fill"]}" stroke="{zone_color["stroke"]}" stroke-width="1.5"/>\n'
+                # Bogen andeuten
+                arch_y = ground_y - trauf_px * 0.3
+                zone_svg += f'    <path d="M {x},{arch_y} Q {x + zone_width/2},{arch_y - trauf_px * 0.2} {x + zone_width},{arch_y}" fill="none" stroke="#333" stroke-width="1"/>\n'
+            else:
+                # Standard-Gebäudeteil
+                zone_svg += f'    <rect x="{x}" y="{ground_y - trauf_px}" width="{zone_width}" height="{trauf_px}" fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>\n'
+                # Dach wenn First > Traufe
+                if first_h > trauf_h:
+                    zone_svg += f'    <polygon points="{x},{ground_y - trauf_px} {x + zone_width/2},{ground_y - first_px} {x + zone_width},{ground_y - trauf_px}" fill="#C8C8C8" stroke="#333" stroke-width="1.5"/>\n'
+
+            # Zone-Label
+            label_y = ground_y - first_px - 10
+            zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y}" text-anchor="middle" font-family="Arial" font-size="9" fill="{zone_color["stroke"]}">{zone_name}</text>\n'
+
+            # Höhenangabe
+            zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y + 12}" text-anchor="middle" font-family="Arial" font-size="8" fill="#666">{trauf_h:.1f}m</text>\n'
+
+            # Sonderkonstruktion-Warnung
+            if is_special:
+                zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y + 24}" text-anchor="middle" font-family="Arial" font-size="7" fill="#cc0000">(Spezialgerüst)</text>\n'
+
+            return zone_svg
+
+        # Linke Arkaden
+        for zone in arkaden[:1]:  # Nur erste Arkade links
+            zone_svg = draw_zone_section(zone, current_x, section_width * 0.6)
+            svg += zone_svg
+            current_x += section_width * 0.7
+
+        # Hauptgebäude
+        for zone in hauptgebaeude:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 1.2)
+            svg += zone_svg
+            current_x += section_width * 1.3
+
+        # Kuppeln (überlagert auf Hauptgebäude oder daneben)
+        for zone in kuppeln:
+            # Kuppel mittig über dem Hauptgebäude
+            kuppel_x = margin['left'] + draw_width / 2 - section_width * 0.4
+            zone_svg = draw_zone_section(zone, kuppel_x, section_width * 0.8)
+            svg += zone_svg
+
+        # Rechte Arkaden
+        for zone in arkaden[1:]:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 0.6)
+            svg += zone_svg
+            current_x += section_width * 0.7
+
+        svg += '  </g>\n'
+
+        # === GERÜST (vereinfacht für Zonen) ===
+        scaffold_left_x = margin['left']
+        scaffold_right_x = margin['left'] + draw_width - 15
+
+        # Linkes Gerüst
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_left_x + 15,
+            x_outer=scaffold_left_x,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="left"
+        )
+
+        # Rechtes Gerüst
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_right_x,
+            x_outer=scaffold_right_x + 15,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="right"
+        )
+
+        # === HÖHENSKALA LINKS ===
+        scale_x = margin['left'] - 25
+        svg += f'''
+  <!-- Höhenskala -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <line x1="{scale_x}" y1="{ground_y}" x2="{scale_x}" y2="{ground_y - scaffold_height_m * scale - 10}" stroke="#333" stroke-width="0.5"/>
+'''
+        step_m = 5.0 if max_height > 20 else 2.0
+        h = 0
+        while h <= scaffold_height_m:
+            y = ground_y - h * scale
+            svg += f'    <line x1="{scale_x - 4}" y1="{y}" x2="{scale_x + 4}" y2="{y}" stroke="#333"/>\n'
+            svg += f'    <text x="{scale_x - 8}" y="{y + 3}" text-anchor="end">{"±0.00" if h == 0 else f"+{h:.0f}"}</text>\n'
+            h += step_m
+        svg += '  </g>\n'
+
+        # === HÖHENKOTEN RECHTS ===
+        kote_x = width - margin['right'] + 10
+        svg += f'''
+  <!-- Höhenkoten rechts -->
+  <g font-family="Arial" font-size="9">
+    <text x="{kote_x}" y="{ground_y + 3}">±0.00</text>
+'''
+        # Höhenkoten für jede Zone
+        for zone in zones:
+            trauf_h = zone.get('traufhoehe_m') or zone.get('gebaeudehoehe_m', 10)
+            zone_name = zone.get('name', '')[:10]  # Kurzer Name
+            y = ground_y - trauf_h * scale
+            svg += f'    <text x="{kote_x}" y="{y + 3}" fill="#0066cc">+{trauf_h:.1f}m</text>\n'
+        svg += '  </g>\n'
+
+        # === BREITENMASS ===
+        dim_y = ground_y + 30
+        svg += f'''
+  <!-- Breitenmass -->
+  <g stroke="#333" stroke-width="1" font-family="Arial" font-size="10">
+    <line x1="{margin['left'] + 20}" y1="{dim_y}" x2="{margin['left'] + draw_width - 20}" y2="{dim_y}"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+    <text x="{margin['left'] + draw_width/2}" y="{dim_y + 15}" text-anchor="middle" font-weight="bold">{building.width_m:.1f} m</text>
+  </g>
+'''
+
+        return svg
+
     def generate_elevation(self, building: BuildingData, width: int = 700, height: int = 480, professional: bool = False) -> str:
         """
         Generiert professionelle technische Fassadenansicht (Claude.ai Qualität).
@@ -775,6 +985,26 @@ class SVGGenerator:
         # Hintergrund
         svg += f'  <rect width="{width}" height="{height}" fill="white"/>\n'
 
+        # Mit Zonen oder Standard?
+        if building.zones and len(building.zones) > 1:
+            svg += self._draw_elevation_with_zones(
+                building, scale, ground_y, margin, width, height, draw_width, professional
+            )
+            # Legende + Massstab
+            plank_color = "#8B4513"
+            scaffold_color = "#0066CC"
+            legend_items = [
+                {'type': 'rect', 'fill': '#e0e0e0', 'stroke': '#333', 'label': 'Gebäude'},
+                {'type': 'line', 'color': scaffold_color, 'label': 'Gerüst'},
+                {'type': 'rect', 'fill': plank_color, 'stroke': '#333', 'label': 'Belag'},
+                {'type': 'circle', 'fill': self.COLORS['anchor'], 'label': 'Anker'},
+            ]
+            svg += self._legend(width - 100, 10, legend_items, width=90)
+            svg += self._scale_bar(margin['left'], height - 20, scale, 5)
+            svg += self._svg_footer()
+            return svg
+
+        # === Standard-Ansicht (ohne Zonen) ===
         # === TERRAIN ===
         if professional:
             svg += f'''
@@ -930,6 +1160,266 @@ class SVGGenerator:
         svg += self._scale_bar(margin['left'], height - 20, scale, 5)
 
         svg += self._svg_footer()
+        return svg
+
+    def _draw_elevation_with_zones(
+        self,
+        building: BuildingData,
+        scale: float,
+        ground_y: float,
+        margin: dict,
+        width: int,
+        height: int,
+        draw_width: float,
+        professional: bool
+    ) -> str:
+        """
+        Zeichnet Ansicht mit mehreren Gebäudezonen nebeneinander.
+        Jede Zone hat ihre eigene Höhe und wird separat dargestellt.
+        """
+        svg = ""
+        zones = building.zones or []
+
+        # Höchste Zone für Gerüst
+        max_height = max(z.get('gebaeudehoehe_m', 10) for z in zones)
+        scaffold_height_m = max_height + 2
+
+        # Sortiere Zonen für Darstellung
+        hauptgebaeude = [z for z in zones if z.get('type') == 'hauptgebaeude']
+        arkaden = [z for z in zones if z.get('type') == 'arkade']
+        kuppeln = [z for z in zones if z.get('type') == 'kuppel']
+        andere = [z for z in zones if z.get('type') not in ('hauptgebaeude', 'arkade', 'kuppel')]
+
+        # Füllfarben
+        building_fill = "url(#hatch)" if professional else "#e0e0e0"
+        plank_color = "#8B4513"
+        scaffold_color = "#0066CC"
+        scaffold_gang_width_px = 0.7 * scale
+
+        # === TERRAIN ===
+        if professional:
+            svg += f'''
+  <!-- Terrain -->
+  <rect x="{margin['left'] - 20}" y="{ground_y}" width="{draw_width + 40}" height="20" fill="url(#ground)"/>
+'''
+        svg += f'  <line x1="{margin["left"] - 20}" y1="{ground_y}" x2="{width - margin["right"] + 20}" y2="{ground_y}" stroke="#333" stroke-width="2"/>\n'
+
+        # === HÖHENSKALA LINKS ===
+        scale_x = margin['left'] - 20
+        svg += f'''
+  <!-- Höhenskala -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <line x1="{scale_x}" y1="{ground_y}" x2="{scale_x}" y2="{ground_y - scaffold_height_m * scale - 10}" stroke="#333" stroke-width="0.5"/>
+'''
+        step_m = 5.0 if max_height > 20 else 2.0
+        h = 0
+        while h <= scaffold_height_m:
+            y = ground_y - h * scale
+            svg += f'    <line x1="{scale_x - 3}" y1="{y}" x2="{scale_x + 3}" y2="{y}" stroke="#333"/>\n'
+            if h == 0:
+                svg += f'    <text x="{scale_x - 6}" y="{y + 3}" text-anchor="end">±0.00</text>\n'
+            else:
+                svg += f'    <text x="{scale_x - 6}" y="{y + 3}" text-anchor="end">+{h:.0f}</text>\n'
+            h += step_m
+        svg += '  </g>\n'
+
+        # === ZONEN BERECHNUNG ===
+        num_sections = len(hauptgebaeude) + len(arkaden) + len(andere)
+        if num_sections == 0:
+            num_sections = 1
+        section_width = (draw_width - 40) / num_sections
+
+        # Zonen-Farben
+        ZONE_COLORS = {
+            'hauptgebaeude': {'fill': '#e0e0e0', 'stroke': '#333'},
+            'arkade': {'fill': '#d0e8d0', 'stroke': '#228B22'},
+            'kuppel': {'fill': '#f0e0d0', 'stroke': '#8B4513'},
+            'turm': {'fill': '#d0d0e8', 'stroke': '#4B0082'},
+            'anbau': {'fill': '#e8e8d0', 'stroke': '#808000'},
+            'unknown': {'fill': '#f0f0f0', 'stroke': '#666'},
+        }
+
+        svg += '  <!-- Zonen -->\n'
+        svg += '  <g>\n'
+
+        current_x = margin['left'] + 20
+
+        def draw_zone_section(zone: dict, x: float, zone_width: float) -> str:
+            """Zeichnet eine einzelne Zone als Gebäudeteil in Ansicht."""
+            zone_svg = ""
+            zone_name = zone.get('name', 'Zone')
+            zone_type = zone.get('type', 'unknown')
+            trauf_h = zone.get('traufhoehe_m') or zone.get('gebaeudehoehe_m', 10)
+            first_h = zone.get('firsthoehe_m') or trauf_h
+            is_special = zone.get('sonderkonstruktion', False)
+            zone_color = ZONE_COLORS.get(zone_type, ZONE_COLORS['unknown'])
+
+            trauf_px = trauf_h * scale
+            first_px = first_h * scale
+
+            wall_fill = building_fill if professional else zone_color['fill']
+
+            # Gebäudekörper je nach Typ
+            if zone_type == 'kuppel':
+                # Kuppel als Halbkreis auf Tambour
+                center_x = x + zone_width / 2
+                radius = min(zone_width / 2, first_px / 2)
+                tambour_height = trauf_px * 0.6
+                # Tambour
+                zone_svg += f'    <rect x="{x}" y="{ground_y - tambour_height}" width="{zone_width}" height="{tambour_height}" fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>\n'
+                # Kuppel
+                zone_svg += f'    <ellipse cx="{center_x}" cy="{ground_y - tambour_height}" rx="{radius}" ry="{radius * 0.8}" fill="url(#copper)" stroke="#333" stroke-width="2"/>\n'
+            elif zone_type == 'arkade':
+                # Arkade: niedriger mit Bögen
+                zone_svg += f'    <rect x="{x}" y="{ground_y - trauf_px}" width="{zone_width}" height="{trauf_px}" fill="{zone_color["fill"]}" stroke="{zone_color["stroke"]}" stroke-width="1.5"/>\n'
+                # Bogenreihe
+                num_arches = max(1, int(zone_width / 30))
+                arch_width = zone_width / num_arches
+                for i in range(num_arches):
+                    arch_x = x + i * arch_width
+                    arch_y = ground_y - trauf_px * 0.3
+                    zone_svg += f'    <path d="M {arch_x},{arch_y} Q {arch_x + arch_width/2},{arch_y - trauf_px * 0.4} {arch_x + arch_width},{arch_y}" fill="none" stroke="#333" stroke-width="1"/>\n'
+            else:
+                # Standard-Gebäude mit Dach
+                zone_svg += f'    <rect x="{x}" y="{ground_y - trauf_px}" width="{zone_width}" height="{trauf_px}" fill="{wall_fill}" stroke="#333" stroke-width="1.5"/>\n'
+
+                # Fenster (einfache Andeutung)
+                num_floors = max(1, int(trauf_h / 3))
+                floor_height_px = trauf_px / num_floors
+                windows_per_floor = max(2, int(zone_width / 25))
+                window_width = zone_width * 0.15
+                window_height = floor_height_px * 0.5
+                window_spacing = (zone_width - windows_per_floor * window_width) / (windows_per_floor + 1)
+
+                for floor in range(num_floors):
+                    wy = ground_y - (floor + 0.7) * floor_height_px
+                    for w in range(windows_per_floor):
+                        wx = x + window_spacing + w * (window_width + window_spacing)
+                        zone_svg += f'    <rect x="{wx}" y="{wy}" width="{window_width}" height="{window_height}" fill="#fff" stroke="#333" stroke-width="0.5"/>\n'
+
+                # Dach
+                if first_h > trauf_h:
+                    dach_uberstand = 5
+                    zone_svg += f'    <polygon points="{x - dach_uberstand},{ground_y - trauf_px} {x + zone_width/2},{ground_y - first_px} {x + zone_width + dach_uberstand},{ground_y - trauf_px}" fill="#8b7355" stroke="#333" stroke-width="1.5"/>\n'
+
+            # Zone-Label
+            label_y = ground_y - first_px - 10
+            zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y}" text-anchor="middle" font-family="Arial" font-size="9" fill="{zone_color["stroke"]}">{zone_name}</text>\n'
+
+            # Höhenangabe
+            zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y + 12}" text-anchor="middle" font-family="Arial" font-size="8" fill="#666">{trauf_h:.1f}m</text>\n'
+
+            # Sonderkonstruktion-Warnung
+            if is_special:
+                zone_svg += f'    <text x="{x + zone_width/2}" y="{label_y + 24}" text-anchor="middle" font-family="Arial" font-size="7" fill="#cc0000">(Spezialgerüst)</text>\n'
+
+            return zone_svg
+
+        # Linke Arkaden
+        for zone in arkaden[:1]:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 0.6)
+            svg += zone_svg
+            current_x += section_width * 0.7
+
+        # Hauptgebäude
+        for zone in hauptgebaeude:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 1.2)
+            svg += zone_svg
+            current_x += section_width * 1.3
+
+        # Andere Zonen
+        for zone in andere:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 0.9)
+            svg += zone_svg
+            current_x += section_width
+
+        # Kuppeln (überlagert auf Hauptgebäude)
+        for zone in kuppeln:
+            kuppel_x = margin['left'] + draw_width / 2 - section_width * 0.4
+            zone_svg = draw_zone_section(zone, kuppel_x, section_width * 0.8)
+            svg += zone_svg
+
+        # Rechte Arkaden
+        for zone in arkaden[1:]:
+            zone_svg = draw_zone_section(zone, current_x, section_width * 0.6)
+            svg += zone_svg
+            current_x += section_width * 0.7
+
+        svg += '  </g>\n'
+
+        # === GERÜST LINKS ===
+        scaffold_left_x = margin['left']
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_left_x + scaffold_gang_width_px + 12,
+            x_outer=scaffold_left_x,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="left"
+        )
+
+        # Verankerungen links
+        building_left_x = margin['left'] + 20
+        svg += '  <!-- Verankerungen links -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2" stroke-dasharray="5,3">\n'
+        anchor_h = 4.0
+        while anchor_h < max_height:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <line x1="{building_left_x}" y1="{cy}" x2="{scaffold_left_x + scaffold_gang_width_px + 12}" y2="{cy}"/>\n'
+            anchor_h += 4.0
+        svg += '  </g>\n'
+
+        # === GERÜST RECHTS ===
+        scaffold_right_x = margin['left'] + draw_width - 15
+        svg += self._draw_detailed_scaffold(
+            x_inner=scaffold_right_x,
+            x_outer=scaffold_right_x + scaffold_gang_width_px + 12,
+            y_ground=ground_y,
+            height_m=scaffold_height_m,
+            scale=scale,
+            scaffold_color=scaffold_color,
+            plank_color=plank_color,
+            side="right"
+        )
+
+        # Verankerungen rechts
+        building_right_x = current_x - 10
+        svg += '  <!-- Verankerungen rechts -->\n'
+        svg += f'  <g stroke="{self.COLORS["anchor"]}" stroke-width="2" stroke-dasharray="5,3">\n'
+        anchor_h = 4.0
+        while anchor_h < max_height:
+            cy = ground_y - anchor_h * scale
+            svg += f'    <line x1="{building_right_x}" y1="{cy}" x2="{scaffold_right_x}" y2="{cy}"/>\n'
+            anchor_h += 4.0
+        svg += '  </g>\n'
+
+        # === LAGENBESCHRIFTUNG RECHTS ===
+        layer_x = scaffold_right_x + scaffold_gang_width_px + 20
+        svg += '  <!-- Lagenbeschriftung -->\n'
+        svg += f'  <g font-family="Arial" font-size="8" fill="{scaffold_color}">\n'
+        layer_height_m = 2.0
+        layer = 1
+        y = ground_y - layer_height_m * scale
+        while y > ground_y - scaffold_height_m * scale + layer_height_m * scale / 2:
+            svg += f'    <text x="{layer_x}" y="{y + 3}">{layer}. Lage</text>\n'
+            layer += 1
+            y -= layer_height_m * scale
+        svg += '  </g>\n'
+
+        # === BREITENMASS ===
+        dim_y = ground_y + 30
+        total_width_m = building.length_m or (current_x - margin['left'] - 20) / scale
+        svg += f'''
+  <!-- Breitenmass -->
+  <g stroke="#333" stroke-width="1" font-family="Arial" font-size="10">
+    <line x1="{margin['left'] + 20}" y1="{dim_y}" x2="{current_x - 10}" y2="{dim_y}"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+    <text x="{(margin['left'] + 20 + current_x - 10) / 2}" y="{dim_y + 15}" text-anchor="middle" font-weight="bold">{total_width_m:.1f} m</text>
+  </g>
+'''
+
         return svg
 
     def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, compact: bool = False, professional: bool = False) -> str:
