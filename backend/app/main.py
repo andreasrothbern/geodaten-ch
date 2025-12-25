@@ -1972,20 +1972,34 @@ async def visualize_cross_section(
         ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
         heights_data = {}
 
-        # Gemessene Höhe aus swissBUILDINGS3D DB
+        # Gemessene Höhe aus swissBUILDINGS3D DB - zuerst per EGID, dann per Koordinaten
+        from app.services.height_db import get_building_heights_detailed, get_building_height_by_coordinates
+        heights = None
+
+        # 1. EGID-basierter Lookup
         if building and building.egid:
-            from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
+
+        # 2. Fallback: Koordinaten-basierter Lookup (für Gebäude ohne EGID wie Bundeshaus)
+        if not heights and geo:
+            heights = get_building_height_by_coordinates(
+                e=geo.coordinates.lv95_e,
+                n=geo.coordinates.lv95_n,
+                tolerance_m=50.0
+            )
             if heights:
-                heights_data = heights
-                if heights.get("traufhoehe_m"):
-                    eave_height_m = heights["traufhoehe_m"]
-                if heights.get("firsthoehe_m"):
-                    ridge_height_m = heights["firsthoehe_m"]
-                measured_height_m = heights.get("gebaeudehoehe_m")
-                if measured_height_m and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
-                    eave_height_m = measured_height_m * 0.85
-                    ridge_height_m = measured_height_m
+                print(f"[HEIGHT] Koordinaten-Lookup: {heights.get('source')}, Distanz: {heights.get('distance_m')}m")
+
+        if heights:
+            heights_data = heights
+            if heights.get("traufhoehe_m"):
+                eave_height_m = heights["traufhoehe_m"]
+            if heights.get("firsthoehe_m"):
+                ridge_height_m = heights["firsthoehe_m"]
+            measured_height_m = heights.get("gebaeudehoehe_m")
+            if measured_height_m and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
+                eave_height_m = measured_height_m * 0.85
+                ridge_height_m = measured_height_m
 
         # Manuelle Werte überschreiben DB-Werte
         if traufhoehe and traufhoehe > 0:
@@ -2177,19 +2191,34 @@ async def visualize_elevation(
         ridge_height_m = eave_height_m + 3.5
         heights_data = {}
 
+        # Gemessene Höhe aus swissBUILDINGS3D DB - zuerst per EGID, dann per Koordinaten
+        from app.services.height_db import get_building_heights_detailed, get_building_height_by_coordinates
+        heights = None
+
+        # 1. EGID-basierter Lookup
         if building and building.egid:
-            from app.services.height_db import get_building_heights_detailed
             heights = get_building_heights_detailed(building.egid)
+
+        # 2. Fallback: Koordinaten-basierter Lookup (für Gebäude ohne EGID wie Bundeshaus)
+        if not heights and geo:
+            heights = get_building_height_by_coordinates(
+                e=geo.coordinates.lv95_e,
+                n=geo.coordinates.lv95_n,
+                tolerance_m=50.0
+            )
             if heights:
-                heights_data = heights
-                if heights.get("traufhoehe_m"):
-                    eave_height_m = heights["traufhoehe_m"]
-                if heights.get("firsthoehe_m"):
-                    ridge_height_m = heights["firsthoehe_m"]
-                gebaeudehoehe = heights.get("gebaeudehoehe_m")
-                if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
-                    eave_height_m = gebaeudehoehe * 0.85
-                    ridge_height_m = gebaeudehoehe
+                print(f"[HEIGHT] Koordinaten-Lookup (elevation): {heights.get('source')}, Distanz: {heights.get('distance_m')}m")
+
+        if heights:
+            heights_data = heights
+            if heights.get("traufhoehe_m"):
+                eave_height_m = heights["traufhoehe_m"]
+            if heights.get("firsthoehe_m"):
+                ridge_height_m = heights["firsthoehe_m"]
+            gebaeudehoehe = heights.get("gebaeudehoehe_m")
+            if gebaeudehoehe and not heights.get("traufhoehe_m") and not heights.get("firsthoehe_m"):
+                eave_height_m = gebaeudehoehe * 0.85
+                ridge_height_m = gebaeudehoehe
 
         # Manuelle Werte überschreiben DB-Werte
         if traufhoehe and traufhoehe > 0:
@@ -2317,6 +2346,18 @@ async def visualize_elevation(
         print(f"Visualization error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/visualize/cache",
+            tags=["Visualisierung"],
+            summary="Claude SVG Cache löschen")
+async def clear_visualization_cache(
+    address: Optional[str] = Query(None, description="Optional: Nur Cache für diese Adresse löschen")
+):
+    """Löscht den Claude SVG Cache (für Cross-Section und Elevation)."""
+    from app.services.claude_svg_zones import clear_cache
+    deleted = clear_cache(address=address)
+    return {"message": f"Cache gelöscht: {deleted} Einträge entfernt", "deleted_count": deleted}
 
 
 class FloorPlanRequest(BaseModel):
