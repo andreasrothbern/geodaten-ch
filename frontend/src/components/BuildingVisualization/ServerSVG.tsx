@@ -162,11 +162,19 @@ export function ServerSVG({
         }
 
         const svgText = await response.text()
-        console.log(`[SVG] Received ${svgText.length} chars`)
+        console.log(`[SVG] Received ${svgText.length} chars, starts with: ${svgText.substring(0, 50)}`)
+
+        // Validate SVG
+        if (!svgText || !svgText.includes('<svg')) {
+          console.error(`[SVG] Invalid SVG content received`)
+          throw new Error('Ungültiger SVG-Inhalt')
+        }
 
         // Store in cache
         svgCache.set(cacheKey, svgText)
+        console.log(`[SVG] Setting SVG state...`)
         setSvg(svgText)
+        console.log(`[SVG] SVG state set successfully`)
       } catch (err) {
         console.error(`[SVG] Error:`, err)
         if (err instanceof Error && err.name === 'AbortError') {
@@ -181,6 +189,9 @@ export function ServerSVG({
 
     fetchSVG()
   }, [cacheKey, address, apiUrl, type, width, height])
+
+  // Debug render state
+  console.log(`[SVG] Render: loading=${loading}, error=${error}, svg=${svg ? svg.length + ' chars' : 'null'}`)
 
   if (loading) {
     return (
@@ -219,6 +230,7 @@ export function ServerSVG({
   }
 
   // SVG als HTML rendern
+  console.log(`[SVG] Rendering SVG with ${svg.length} chars`)
   return (
     <div
       className={`rounded-lg overflow-hidden border ${className}`}
