@@ -194,9 +194,11 @@ def generate_cross_section_with_zones(
     logger.info(f"Generiere Cross-Section für: {address}")
     logger.info(f"Zonen-Input: {zones}")
 
-    # Zonen-Text aufbereiten
+    # Zonen-Text aufbereiten und vorhandene Typen sammeln
     zones_text = ""
     max_height = 0
+    present_zone_types = set()
+
     for zone in zones:
         # Höhe aus verschiedenen möglichen Feldnamen extrahieren
         zone_height = (
@@ -211,7 +213,8 @@ def generate_cross_section_with_zones(
             zone_height
         )
         max_height = max(max_height, first_height, zone_height)
-        zone_type = zone.get('type', 'standard')
+        zone_type = zone.get('type', 'hauptgebaeude')
+        present_zone_types.add(zone_type)
         zone_name = zone.get('name', 'Zone')
         description = zone.get('description', '')
         special = zone.get('special_scaffold', False)
@@ -223,7 +226,26 @@ def generate_cross_section_with_zones(
 
     num_layers = int(max_height / 2.0) + 1
 
+    # Dynamische Zone-Typen Beschreibung (nur vorhandene Typen!)
+    zone_type_descriptions = []
+    if 'arkade' in present_zone_types:
+        zone_type_descriptions.append("- arkade = Rechteck mit Rundbögen, Schraffur")
+    if 'hauptgebaeude' in present_zone_types or not present_zone_types:
+        zone_type_descriptions.append("- hauptgebaeude = Rechteck mit Geschosslinien und Giebeldach, Schraffur")
+    if 'kuppel' in present_zone_types:
+        zone_type_descriptions.append("- kuppel = Ellipse mit `url(#copper)` Gradient")
+    if 'turm' in present_zone_types:
+        zone_type_descriptions.append("- turm = Hoher schmaler Rechteck mit Spitzdach, Schraffur")
+
+    zone_types_text = "\n   ".join(zone_type_descriptions) if zone_type_descriptions else "- hauptgebaeude = Rechteck mit Schraffur"
+
     prompt = f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
+
+## KRITISCHE REGEL
+
+Zeichne NUR die Gebäudeteile die in "Höhenzonen" aufgelistet sind!
+- KEINE zusätzlichen Elemente hinzufügen (keine Kuppeln, Türme, etc. wenn nicht in Daten)
+- KEINE künstlerische Interpretation - NUR was in den Daten steht
 
 ## WICHTIG: STIL
 
@@ -245,18 +267,19 @@ Erstelle einen **Gebäudeschnitt** als SVG.
 - Breite: {width_m:.1f} m
 - Maximale Höhe: {max_height:.1f} m
 
-## Höhenzonen
+## Höhenzonen (NUR DIESE ZEICHNEN!)
 {zones_text}
+
+## Darstellung der Zone-Typen (NUR die oben genannten!)
+
+   {zone_types_text}
 
 ## Anforderungen
 
 1. **Weisser Hintergrund** - `<rect width="100%" height="100%" fill="white"/>`
 2. **Terrain unten** - Horizontale Linie bei Y=90% mit `url(#ground)` Pattern
 3. **Gebäude mit Schraffur** - `fill="url(#hatch)"` für alle Gebäudeteile
-4. **Zone-Typen:**
-   - arkade = Rechteck mit Rundbögen, Schraffur
-   - hauptgebaeude = Rechteck mit Geschosslinien, Schraffur
-   - kuppel = Ellipse mit `url(#copper)` Gradient (EINZIGER Gradient!)
+4. **Dachform** - Einfaches Satteldach (Dreieck) bei hauptgebaeude, KEINE Kuppel wenn nicht in Daten!
 5. **Gerüst links und rechts** - Ständer #0066CC, Riegel, Beläge #8B4513
 6. **Verankerungen** - Rote gestrichelte Linien #CC0000
 7. **Höhenskala links** - Beschriftung von ±0.00 bis +{max_height:.0f}m in 5m Schritten
@@ -286,7 +309,6 @@ Erstelle einen **Gebäudeschnitt** als SVG.
 - Gerüst: #0066CC (blau)
 - Anker: #CC0000 (rot, gestrichelt)
 - Belag: #8B4513 (braun)
-- Kuppel: url(#copper)
 - Text: #333333
 
 ## Output
@@ -332,9 +354,11 @@ def generate_elevation_with_zones(
     logger.info(f"Generiere Elevation für: {address}")
     logger.info(f"Zonen-Input: {zones}")
 
-    # Zonen-Text aufbereiten
+    # Zonen-Text aufbereiten und vorhandene Typen sammeln
     zones_text = ""
     max_height = 0
+    present_zone_types = set()
+
     for zone in zones:
         # Höhe aus verschiedenen möglichen Feldnamen extrahieren
         zone_height = (
@@ -349,7 +373,8 @@ def generate_elevation_with_zones(
             zone_height
         )
         max_height = max(max_height, first_height, zone_height)
-        zone_type = zone.get('type', 'standard')
+        zone_type = zone.get('type', 'hauptgebaeude')
+        present_zone_types.add(zone_type)
         zone_name = zone.get('name', 'Zone')
         description = zone.get('description', '')
         special = zone.get('special_scaffold', False)
@@ -361,7 +386,26 @@ def generate_elevation_with_zones(
 
     num_layers = int(max_height / 2.0) + 1
 
+    # Dynamische Zone-Typen Beschreibung (nur vorhandene Typen!)
+    zone_type_descriptions = []
+    if 'arkade' in present_zone_types:
+        zone_type_descriptions.append("- arkade = Rechteck mit Rundbögen, Schraffur-Füllung")
+    if 'hauptgebaeude' in present_zone_types or not present_zone_types:
+        zone_type_descriptions.append("- hauptgebaeude = Rechteck mit Geschosslinien und Giebeldach, Schraffur")
+    if 'kuppel' in present_zone_types:
+        zone_type_descriptions.append("- kuppel = Ellipse mit `url(#copper)` Gradient")
+    if 'turm' in present_zone_types:
+        zone_type_descriptions.append("- turm = Hoher schmaler Rechteck mit Spitzdach, Schraffur")
+
+    zone_types_text = "\n   ".join(zone_type_descriptions) if zone_type_descriptions else "- hauptgebaeude = Rechteck mit Schraffur"
+
     prompt = f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
+
+## KRITISCHE REGEL
+
+Zeichne NUR die Gebäudeteile die in "Höhenzonen" aufgelistet sind!
+- KEINE zusätzlichen Elemente hinzufügen (keine Kuppeln, Türme, etc. wenn nicht in Daten)
+- KEINE künstlerische Interpretation - NUR was in den Daten steht
 
 ## WICHTIG: STIL
 
@@ -383,8 +427,12 @@ Erstelle eine **Fassadenansicht** (Elevation) als SVG.
 - Fassadenbreite: {width_m:.1f} m
 - Maximale Höhe: {max_height:.1f} m
 
-## Höhenzonen
+## Höhenzonen (NUR DIESE ZEICHNEN!)
 {zones_text}
+
+## Darstellung der Zone-Typen (NUR die oben genannten!)
+
+   {zone_types_text}
 
 ## Anforderungen
 
@@ -392,10 +440,7 @@ Erstelle eine **Fassadenansicht** (Elevation) als SVG.
 2. **Terrain unten** - Horizontale Linie bei Y=85% mit `url(#ground)` Pattern
 3. **Frontalansicht** - 2D, keine Perspektive, keine 3D-Effekte
 4. **Gebäude mit Schraffur** - `fill="url(#hatch)"` für alle Gebäudeteile
-5. **Zone-Typen:**
-   - arkade = Rechteck mit Rundbögen, Schraffur-Füllung
-   - hauptgebaeude = Rechteck mit Geschosslinien (horizontale Striche), Schraffur
-   - kuppel = Ellipse mit `url(#copper)` Gradient (EINZIGER Gradient!)
+5. **Dachform** - Einfaches Satteldach (Dreieck) bei hauptgebaeude, KEINE Kuppel wenn nicht in Daten!
 6. **Gerüst VOR Fassade** - Ständer #0066CC (vertikale Linien), Beläge #8B4513
 7. **Verankerungen** - Gestrichelte Linien #CC0000, alle 4m vertikal
 8. **Höhenskala links** - Beschriftung ±0.00 bis +{max_height:.0f}m in 5m Schritten
@@ -425,7 +470,6 @@ Erstelle eine **Fassadenansicht** (Elevation) als SVG.
 - Gerüst: #0066CC (blau)
 - Anker: #CC0000 (rot, gestrichelt)
 - Belag: #8B4513 (braun)
-- Kuppel: url(#copper)
 - Text: #333333
 
 ## Output
