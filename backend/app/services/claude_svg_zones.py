@@ -198,8 +198,18 @@ def generate_cross_section_with_zones(
     zones_text = ""
     max_height = 0
     for zone in zones:
-        zone_height = zone.get('building_height_m', zone.get('eave_height_m', 0))
-        first_height = zone.get('first_height_m', zone_height)
+        # Höhe aus verschiedenen möglichen Feldnamen extrahieren
+        zone_height = (
+            zone.get('building_height_m') or
+            zone.get('traufhoehe_m') or
+            zone.get('eave_height_m') or
+            0
+        )
+        first_height = (
+            zone.get('first_height_m') or
+            zone.get('firsthoehe_m') or
+            zone_height
+        )
         max_height = max(max_height, first_height, zone_height)
         zone_type = zone.get('type', 'standard')
         zone_name = zone.get('name', 'Zone')
@@ -326,8 +336,18 @@ def generate_elevation_with_zones(
     zones_text = ""
     max_height = 0
     for zone in zones:
-        zone_height = zone.get('building_height_m', zone.get('eave_height_m', 0))
-        first_height = zone.get('first_height_m', zone_height)
+        # Höhe aus verschiedenen möglichen Feldnamen extrahieren
+        zone_height = (
+            zone.get('building_height_m') or
+            zone.get('traufhoehe_m') or
+            zone.get('eave_height_m') or
+            0
+        )
+        first_height = (
+            zone.get('first_height_m') or
+            zone.get('firsthoehe_m') or
+            zone_height
+        )
         max_height = max(max_height, first_height, zone_height)
         zone_type = zone.get('type', 'standard')
         zone_name = zone.get('name', 'Zone')
