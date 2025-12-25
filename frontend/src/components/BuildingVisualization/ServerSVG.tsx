@@ -145,18 +145,35 @@ export function ServerSVG({
           params.set('use_claude', 'true')
         }
 
-        const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
+        const url = `${apiUrl}/api/v1/visualize/${type}?${params}`
+        console.log(`[SVG] Fetching: ${url}`)
+
+        // 120 second timeout for Claude API calls
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 120000)
+
+        const response = await fetch(url, { signal: controller.signal })
+        clearTimeout(timeoutId)
+
+        console.log(`[SVG] Response status: ${response.status}`)
 
         if (!response.ok) {
           throw new Error(`Fehler beim Laden: ${response.status}`)
         }
 
         const svgText = await response.text()
+        console.log(`[SVG] Received ${svgText.length} chars`)
+
         // Store in cache
         svgCache.set(cacheKey, svgText)
         setSvg(svgText)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
+        console.error(`[SVG] Error:`, err)
+        if (err instanceof Error && err.name === 'AbortError') {
+          setError('Timeout: SVG-Generierung dauerte zu lange')
+        } else {
+          setError(err instanceof Error ? err.message : 'Unbekannter Fehler')
+        }
       } finally {
         setLoading(false)
       }
