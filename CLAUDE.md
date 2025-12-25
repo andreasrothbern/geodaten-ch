@@ -377,6 +377,146 @@ lawil/
         └── svg_generator.py        # Automatische Generierung
 ```
 
+---
+
+## ⚠️ KRITISCHE ANALYSE: SVG-Qualität (Stand 25.12.2025)
+
+### Das Problem
+
+Die automatisch generierten SVGs erreichen **NICHT** die Qualität der Claude.ai Referenz-SVGs.
+Trotz umfangreicher Datensammlung (Polygon, Höhen, Zonen, GWR) ist das Ergebnis "schematisch" statt "architektonisch".
+
+### Was wir haben (Daten)
+
+| Datenquelle | Was wir bekommen | Qualität |
+|-------------|------------------|----------|
+| geodienste.ch | Polygon mit 26-175 Punkten | ✅ Gut |
+| swissBUILDINGS3D | Trauf-/First-/Gebäudehöhe | ✅ Gut |
+| GWR (swisstopo) | Geschosse, Kategorie, Baujahr | ✅ Gut |
+| Claude API | Zonen-Analyse (Arkade, Hauptgebäude, Kuppel) | ✅ Gut |
+
+**Fazit Daten:** Wir haben alle nötigen Informationen.
+
+### Was wir produzieren (SVG)
+
+| Element | Unsere Implementierung | Claude.ai Referenz |
+|---------|------------------------|-------------------|
+| Arkaden | Rechteck + 1 Bogen | Säulenreihe mit Bögen, Schatten |
+| Kuppel | Ellipse (oval) | Detaillierte Kuppelform mit Laterne |
+| Fenster | Kleine Rechtecke (Raster) | Architektonisch korrekte Anordnung |
+| Proportionen | Berechnet aus Zonen-Breite | Visuell ausbalanciert |
+| Gerüst | Linien + Rechtecke | Detaillierte Ständer, Riegel, Beläge |
+| Gesamteindruck | **Technisches Diagramm** | **Architekturzeichnung** |
+
+### Warum der Unterschied?
+
+#### 1. Regelbasiert vs. Kontextverständnis
+
+**Unser Code:**
+```python
+if zone_type == 'arkade':
+    # Zeichne Rechteck + Bögen
+    svg += f'<rect x="{x}" y="{y}" ...>'
+    for i in range(num_arches):
+        svg += f'<path d="M ... Q ..." />'  # Bogen
+```
+
+**Claude.ai (interaktiv):**
+- Versteht "Bundeshaus" als historisches Parlamentsgebäude
+- Weiss wie Arkaden in der Schweizer Neorenaissance aussehen
+- Passt Proportionen visuell an
+- Iteriert basierend auf Feedback
+
+#### 2. One-Shot vs. Iterativ
+
+| Ansatz | Prozess | Ergebnis |
+|--------|---------|----------|
+| **Claude API** | 1 Prompt → 1 Antwort | "Gut genug" beim ersten Versuch |
+| **Claude.ai Chat** | Prompt → Feedback → Anpassung → Feedback → ... | Verfeinert bis perfekt |
+
+#### 3. SVG-Generierung ist schwer
+
+Selbst wenn wir Claude API bitten "generiere SVG wie Referenz":
+- Claude hat keinen visuellen Feedback-Loop
+- Kann das Ergebnis nicht "sehen"
+- Muss alles in einem Durchgang richtig machen
+
+### Mögliche Lösungsansätze
+
+#### Option A: Akzeptieren (Status Quo)
+- Schematische SVGs für Funktionalität (Gerüstplanung)
+- Für Präsentationen: Manuell mit Claude.ai erstellen
+- **Aufwand:** Keiner
+- **Qualität:** ⭐⭐ (funktional, nicht schön)
+
+#### Option B: Template-basiert
+- Vorgefertigte SVG-Templates für Gebäudetypen (EFH, MFH, Kirche, etc.)
+- Parameter einsetzen (Höhe, Breite, Zonen)
+- **Aufwand:** Hoch (viele Templates nötig)
+- **Qualität:** ⭐⭐⭐ (besser, aber starr)
+
+#### Option C: Multi-Step Claude API
+1. Claude generiert SVG
+2. Wir rendern es (headless browser)
+3. Screenshot zurück an Claude: "Verbessere das"
+4. Iteration bis gut
+- **Aufwand:** Sehr hoch (Infrastruktur, Kosten)
+- **Qualität:** ⭐⭐⭐⭐ (potenziell gut)
+
+#### Option D: Hybrid-Workflow
+- App sammelt alle Daten + generiert JSON-Export
+- User öffnet Claude.ai manuell
+- Kopiert JSON rein: "Erstelle SVG für dieses Gebäude"
+- Claude.ai generiert hochwertige SVG
+- **Aufwand:** Mittel (Export-Funktion)
+- **Qualität:** ⭐⭐⭐⭐⭐ (wie Referenz)
+
+### Empfehlung
+
+**Für PoC:** Option A (Status Quo)
+- Die schematischen SVGs zeigen, dass die Daten korrekt sind
+- Die Zonen-Erkennung funktioniert
+- Für Gerüstplanung reicht die Qualität
+
+**Für Produktion:** Option D (Hybrid)
+- Export-Button: "Daten für Claude.ai exportieren"
+- Generiert strukturierten Prompt mit allen Daten
+- User kann in Claude.ai hochwertige SVGs erstellen
+
+### Verfügbare Daten für Claude.ai Prompt
+
+Wenn wir Option D implementieren, hätten wir:
+
+```json
+{
+  "gebaeude": {
+    "adresse": "Bundesplatz 3, 3011 Bern",
+    "egid": 1017961,
+    "polygon": [[2600450.2, 1199800.5], ...],  // 26 Punkte
+    "umfang_m": 285.4,
+    "flaeche_m2": 4200
+  },
+  "hoehen": {
+    "traufhoehe_m": 14.53,
+    "firsthoehe_m": 62.57,
+    "geschosse": 4
+  },
+  "zonen": [
+    {"name": "Arkaden/Erdgeschoss", "typ": "arkade", "hoehe_m": 14.5},
+    {"name": "Hauptgebäude", "typ": "hauptgebaeude", "hoehe_m": 28.0},
+    {"name": "Kuppel/Turm", "typ": "kuppel", "hoehe_m": 30.0, "spezialgeruest": true}
+  ],
+  "geruest": {
+    "system": "Layher Blitz 70",
+    "breitenklasse": "W09",
+    "feldlaengen_m": [3.07, 2.57, 2.07, 1.57],
+    "gesamtflaeche_m2": 1850
+  }
+}
+```
+
+Dies ist **deutlich mehr Information** als Claude.ai ursprünglich hatte, als die Referenz-SVGs erstellt wurden.
+
 ## Neue Features (Stand 24.12.2025)
 
 ### URL-Parameter für Adresse
