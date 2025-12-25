@@ -173,6 +173,7 @@ function App() {
     setSimplifyEpsilon(epsilon)
     // Reset facade initialization to recalculate with new polygon
     setFacadesInitialized(false)
+    setSelectedFacades([]) // Clear selection - will be re-initialized when new data arrives
     if (currentAddress) {
       fetchScaffoldingData(currentAddress, undefined, true, epsilon)
     }
