@@ -2126,7 +2126,8 @@ async def visualize_elevation(
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
     professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns"),
-    auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden")
+    auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden"),
+    use_claude: bool = Query(False, description="Claude API für professionelle SVG-Generierung nutzen")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -2137,11 +2138,13 @@ async def visualize_elevation(
     - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
     - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
+    - **use_claude**: Claude API für professionelle SVG-Generierung (default: False)
 
     Returns: SVG-Datei
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
     from app.services.building_context import get_building_context_service, ComplexityLevel
+    from app.services.claude_svg_zones import generate_elevation_with_zones, is_available as claude_svg_available
 
     try:
         geo = await swisstopo.geocode(address)
@@ -2268,8 +2271,39 @@ async def visualize_elevation(
             zones=zones,
         )
 
-        generator = get_svg_generator()
-        svg = generator.generate_elevation(building_data, width, height, professional=professional)
+        # SVG generieren
+        svg = None
+
+        # Claude API für professionelle SVG-Generierung
+        if use_claude and claude_svg_available():
+            # Zonen für Claude vorbereiten
+            claude_zones = []
+            if zones:
+                claude_zones = zones
+            else:
+                # Standard-Zone erstellen wenn keine Zonen vorhanden
+                claude_zones = [{
+                    "name": "Gebäude",
+                    "type": "hauptgebaeude",
+                    "building_height_m": eave_height_m,
+                    "first_height_m": ridge_height_m or eave_height_m,
+                    "description": f"{building.floors if building else 3} Geschosse"
+                }]
+
+            svg = generate_elevation_with_zones(
+                address=geo.matched_address,
+                egid=building.egid if building else None,
+                width_m=round(length_m, 1),
+                floors=building.floors if building else 3,
+                zones=claude_zones,
+                svg_width=width,
+                svg_height=height
+            )
+
+        # Fallback auf Standard-Generator
+        if not svg:
+            generator = get_svg_generator()
+            svg = generator.generate_elevation(building_data, width, height, professional=professional)
 
         if not svg:
             raise HTTPException(status_code=503, detail="SVG-Generierung fehlgeschlagen")

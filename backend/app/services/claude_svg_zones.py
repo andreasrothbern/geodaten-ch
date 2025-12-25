@@ -174,6 +174,120 @@ Gib NUR das SVG aus, keine Erklärungen.
     return svg
 
 
+def generate_elevation_with_zones(
+    address: str,
+    egid: Optional[int],
+    width_m: float,
+    floors: int,
+    zones: list,
+    svg_width: int = 800,
+    svg_height: int = 600
+) -> Optional[str]:
+    """
+    Generiert professionelle Fassadenansicht mit Höhenzonen via Claude API.
+
+    Args:
+        address: Gebäudeadresse
+        egid: Eidg. Gebäudeidentifikator
+        width_m: Fassadenbreite in Metern
+        floors: Anzahl Geschosse
+        zones: Liste von Zone-Dictionaries
+        svg_width: SVG-Breite in Pixel
+        svg_height: SVG-Höhe in Pixel
+
+    Returns:
+        SVG-String oder None bei Fehler
+    """
+    # Zonen-Text aufbereiten
+    zones_text = ""
+    max_height = 0
+    for zone in zones:
+        zone_height = zone.get('building_height_m', zone.get('eave_height_m', 0))
+        first_height = zone.get('first_height_m', zone_height)
+        max_height = max(max_height, first_height, zone_height)
+        zone_type = zone.get('type', 'standard')
+        zone_name = zone.get('name', 'Zone')
+        description = zone.get('description', '')
+        special = zone.get('special_scaffold', False)
+
+        zones_text += f"""
+   - **{zone_name}** (Typ: {zone_type})
+     - Gebäudehöhe: {zone_height:.1f}m, Firsthöhe: {first_height:.1f}m
+     - {description}{"" if not special else " - **Spezialgerüst erforderlich**"}"""
+
+    num_layers = int(max_height / 2.0) + 1
+
+    prompt = f"""Du bist ein Experte für technische Architekturzeichnungen im SVG-Format.
+
+## Aufgabe
+
+Erstelle eine **Fassadenansicht** (Elevation) als SVG basierend auf den folgenden Daten.
+Der Stil soll professionell, architektonisch, handgezeichnet wirkend sein.
+
+## Gebäudedaten
+
+- Adresse: {address}
+- EGID: {egid or '-'}
+- Geschosse: {floors}
+- Fassadenbreite: {width_m:.1f} m
+
+## Höhenzonen
+{zones_text}
+
+## Wichtige Anforderungen
+
+1. **NUR die Grafik** - Kein Titelblock, keine Fusszeile
+2. **Frontalansicht** der Fassade (nicht Schnitt!)
+3. **Alle {len(zones)} Zonen darstellen** mit korrekter Höhe
+4. **Zone-Typen visuell:**
+   - arkade = Rundbogen-Arkaden mit Säulen, Sandstein-Farbe
+   - hauptgebaeude = Fensterreihen pro Geschoss, Fassadendetails
+   - kuppel = Kuppelform mit Kupfer-Gradient, Laterne oben, Tambour mit Fenstern
+5. **Gerüst VOR der Fassade** - Ständer (blau #0066CC), Riegel, Beläge (braun #8B4513)
+6. **Verankerungen** - Rote Punkte (#CC0000) alle 4m vertikal, alle 4m horizontal
+7. **Höhenskala links** - ±0.00 bis +{max_height:.0f}m
+8. **Lagenbeschriftung rechts** - 1. Lage bis {num_layers}. Lage
+
+## SVG-Patterns (verwenden!)
+
+```xml
+<defs>
+    <pattern id="sandstone" patternUnits="userSpaceOnUse" width="20" height="10">
+      <rect width="20" height="10" fill="#E8DCC8"/>
+      <path d="M0,5 h20 M10,0 v10" stroke="#D4C4A8" stroke-width="0.5"/>
+    </pattern>
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB"/>
+      <stop offset="100%" style="stop-color:#E0F0FF"/>
+    </linearGradient>
+</defs>
+```
+
+## Farben
+- Hintergrund: url(#sky) oder #F5F5F5
+- Fassade: #E8DCC8 (Sandstein) oder url(#sandstone)
+- Fenster: #4A5568 mit hellem Rahmen
+- Kuppel: url(#copper)
+- Gerüst: #0066CC (blau)
+- Anker: #CC0000 (rot)
+- Belag: #8B4513 (braun)
+
+## Output
+
+Generiere ein vollständiges, valides SVG mit viewBox="0 0 {svg_width} {svg_height}".
+Gib NUR das SVG aus, keine Erklärungen.
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_width} {svg_height}">
+"""
+
+    svg = _call_claude(prompt)
+    return svg
+
+
 def is_available() -> bool:
     """Prüft ob Claude API verfügbar ist"""
     _init_client()
