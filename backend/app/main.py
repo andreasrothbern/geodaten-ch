@@ -2101,6 +2101,15 @@ async def visualize_cross_section(
                     "description": f"{building.floors if building else 3} Geschosse"
                 }]
 
+            # building_data für Prompt-Selektor (Komplexitäts-Erkennung)
+            svg_building_data = {
+                'gkat': building.building_category_code if building else None,
+                'area_m2': building.area_m2 if building else None,
+                'sides': len(geometry.polygon) if geometry and geometry.polygon else 4,
+                'geschosse': building.floors if building else 3,
+                'adresse': geo.matched_address,
+            }
+
             svg = generate_cross_section_with_zones(
                 address=geo.matched_address,
                 egid=building.egid if building else None,
@@ -2108,7 +2117,8 @@ async def visualize_cross_section(
                 floors=building.floors if building else 3,
                 zones=claude_zones,
                 svg_width=width,
-                svg_height=height
+                svg_height=height,
+                building_data=svg_building_data
             )
 
         # Fallback auf Standard-Generator
@@ -2319,6 +2329,15 @@ async def visualize_elevation(
                     "description": f"{building.floors if building else 3} Geschosse"
                 }]
 
+            # building_data für Prompt-Selektor (Komplexitäts-Erkennung)
+            svg_building_data = {
+                'gkat': building.building_category_code if building else None,
+                'area_m2': building.area_m2 if building else None,
+                'sides': len(geometry.polygon) if geometry and geometry.polygon else 4,
+                'geschosse': building.floors if building else 3,
+                'adresse': geo.matched_address,
+            }
+
             svg = generate_elevation_with_zones(
                 address=geo.matched_address,
                 egid=building.egid if building else None,
@@ -2326,7 +2345,8 @@ async def visualize_elevation(
                 floors=building.floors if building else 3,
                 zones=claude_zones,
                 svg_width=width,
-                svg_height=height
+                svg_height=height,
+                building_data=svg_building_data
             )
 
         # Fallback auf Standard-Generator
