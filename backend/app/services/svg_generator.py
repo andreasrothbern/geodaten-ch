@@ -1708,56 +1708,58 @@ class SVGGenerator:
         stroke="{stroke_color}" stroke-width="{stroke_width}" stroke-linecap="round"/>
 '''
 
-        # Ständerpositionen entlang der Fassaden (alle 2.57m = Standard-Feldlänge)
-        FIELD_LENGTH = 2.57  # Layher Blitz 70 Standard-Feldlänge
-        SCAFFOLD_OFFSET = 0.35  # Abstand Gebäude zu Gerüst (30cm + halbe Gangbreite)
-        svg += '  <!-- Gerüst-Ständer -->\n'
+        # Ständerpositionen nur im Professional-Modus anzeigen
+        # (Im Standard-Modus sind die vielen Punkte eher hinderlich für die Fassaden-Auswahl)
+        if professional:
+            FIELD_LENGTH = 2.57  # Layher Blitz 70 Standard-Feldlänge
+            SCAFFOLD_OFFSET = 0.35  # Abstand Gebäude zu Gerüst (30cm + halbe Gangbreite)
+            svg += '  <!-- Gerüst-Ständer (nur professional) -->\n'
 
-        for i, side in enumerate(sides):
-            side_index = side.get('index', i)
-            length = side.get('length_m', 0)
+            for i, side in enumerate(sides):
+                side_index = side.get('index', i)
+                length = side.get('length_m', 0)
 
-            # Nur Ständer zeichnen wenn Fassade lang genug
-            if length < 1.0:
-                continue
+                # Nur Ständer zeichnen wenn Fassade lang genug
+                if length < 1.0:
+                    continue
 
-            # Segment-Koordinaten
-            if i < len(coords) - 1:
-                start = coords[i]
-                end = coords[i + 1]
-            else:
-                start = coords[i]
-                end = coords[0]
+                # Segment-Koordinaten
+                if i < len(coords) - 1:
+                    start = coords[i]
+                    end = coords[i + 1]
+                else:
+                    start = coords[i]
+                    end = coords[0]
 
-            # Richtungsvektor und Normale berechnen
-            dx = end[0] - start[0]
-            dy = end[1] - start[1]
-            seg_len = (dx**2 + dy**2)**0.5
-            if seg_len == 0:
-                continue
+                # Richtungsvektor und Normale berechnen
+                dx = end[0] - start[0]
+                dy = end[1] - start[1]
+                seg_len = (dx**2 + dy**2)**0.5
+                if seg_len == 0:
+                    continue
 
-            # Einheitsvektor entlang Fassade
-            ux = dx / seg_len
-            uy = dy / seg_len
-            # Normale nach aussen (für Gerüst-Offset)
-            nx = -uy
-            ny = ux
+                # Einheitsvektor entlang Fassade
+                ux = dx / seg_len
+                uy = dy / seg_len
+                # Normale nach aussen (für Gerüst-Offset)
+                nx = -uy
+                ny = ux
 
-            # Anzahl Felder berechnen
-            num_fields = max(1, int(length / FIELD_LENGTH))
-            actual_field_len = length / num_fields
+                # Anzahl Felder berechnen
+                num_fields = max(1, int(length / FIELD_LENGTH))
+                actual_field_len = length / num_fields
 
-            # Ständer an jedem Feldende platzieren (inkl. Start und Ende)
-            for field_idx in range(num_fields + 1):
-                # Position entlang der Fassade
-                t = field_idx * actual_field_len
-                pos_x = start[0] + ux * t + nx * SCAFFOLD_OFFSET
-                pos_y = start[1] + uy * t + ny * SCAFFOLD_OFFSET
+                # Ständer an jedem Feldende platzieren (inkl. Start und Ende)
+                for field_idx in range(num_fields + 1):
+                    # Position entlang der Fassade
+                    t = field_idx * actual_field_len
+                    pos_x = start[0] + ux * t + nx * SCAFFOLD_OFFSET
+                    pos_y = start[1] + uy * t + ny * SCAFFOLD_OFFSET
 
-                svg_pos = to_svg(pos_x, pos_y)
+                    svg_pos = to_svg(pos_x, pos_y)
 
-                # Ständer als kleiner Kreis mit Kreuz
-                svg += f'''  <circle cx="{svg_pos[0]:.1f}" cy="{svg_pos[1]:.1f}" r="3"
+                    # Ständer als kleiner Kreis mit Kreuz
+                    svg += f'''  <circle cx="{svg_pos[0]:.1f}" cy="{svg_pos[1]:.1f}" r="3"
           fill="#ef4444" stroke="#991b1b" stroke-width="1"
           class="scaffold-post" data-facade="{side_index}" data-field="{field_idx}"/>
 '''
