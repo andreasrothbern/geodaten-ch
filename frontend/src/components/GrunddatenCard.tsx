@@ -9,9 +9,82 @@
  * - Manual height input option for Traufe and First
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { ScaffoldingData } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
+
+/**
+ * Generiert einen strukturierten Prompt für Claude.ai
+ * Enthält alle Gebäudedaten für hochwertige SVG-Generierung
+ */
+function generateClaudePrompt(
+  data: ScaffoldingData,
+  vizType: 'cross-section' | 'elevation' | 'floor-plan'
+): string {
+  const { dimensions, gwr_data, building, address, polygon, sides } = data
+
+  const vizTypeLabels = {
+    'cross-section': 'Gebäudeschnitt (Querschnitt)',
+    'elevation': 'Fassadenansicht (Elevation)',
+    'floor-plan': 'Grundriss (Floor Plan)'
+  }
+
+  return `# SVG-Generierung: ${vizTypeLabels[vizType]}
+
+## Gebäudedaten
+
+- **Adresse:** ${address?.matched || 'Unbekannt'}
+- **EGID:** ${building?.egid || gwr_data?.egid || '-'}
+- **Koordinaten:** E ${address?.coordinates?.lv95_e?.toFixed(0) || '-'}, N ${address?.coordinates?.lv95_n?.toFixed(0) || '-'}
+
+## Dimensionen
+
+- **Traufhöhe:** ${dimensions?.traufhoehe_m?.toFixed(1) || 'unbekannt'} m
+- **Firsthöhe:** ${dimensions?.firsthoehe_m?.toFixed(1) || 'unbekannt'} m
+- **Geschosse:** ${dimensions?.floors || gwr_data?.floors || '-'}
+- **Grundfläche:** ${building?.footprint_area_m2?.toFixed(0) || gwr_data?.area_m2?.toFixed(0) || '-'} m²
+
+## GWR-Daten
+
+- **Gebäudekategorie (GKAT):** ${gwr_data?.building_category || '-'} (Code: ${gwr_data?.building_category_code || '-'})
+- **Baujahr:** ${gwr_data?.year_built || '-'}
+- **Wohnungen:** ${gwr_data?.apartments || '-'}
+
+## Polygon (${polygon?.coordinates?.length || 0} Punkte)
+
+${sides && sides.length > 0 ? `### Fassaden (${sides.length} Seiten)
+${sides.map((s, i) => `- Seite ${s.index ?? i}: ${s.length_m?.toFixed(1)}m (${s.direction || '?'})`).join('\n')}` : 'Keine Seitendaten verfügbar'}
+
+## Anforderungen
+
+Erstelle eine **technische Architekturzeichnung** im SVG-Format:
+
+1. **Stil:** Professionell-technisch, NICHT künstlerisch
+2. **Hintergrund:** Reinweiss (#FFFFFF)
+3. **Gebäude:** Schraffur-Pattern (diagonal 45°)
+4. **Gerüst:** Blau (#0066CC) für Ständer, Braun (#8B4513) für Beläge
+5. **Verankerungen:** Rot gestrichelt (#CC0000)
+6. **Massstab:** Links Höhenskala, rechts Lagenbeschriftung
+
+${vizType === 'cross-section' ? `### Schnitt-spezifisch
+- Frontalansicht (2D, keine Perspektive)
+- Geschossdecken als horizontale Linien
+- Dachform: Satteldach mit Traufe und First` : ''}
+
+${vizType === 'elevation' ? `### Ansicht-spezifisch
+- Orthogonale Frontalansicht
+- Fensterreihen pro Geschoss (angedeutet)
+- Gerüst VOR der Fassade` : ''}
+
+${vizType === 'floor-plan' ? `### Grundriss-spezifisch
+- Draufsicht auf Polygon
+- Fassaden beschriften (Länge + Richtung)
+- Gerüstzone um das Gebäude` : ''}
+
+## Output
+
+SVG mit \`viewBox="0 0 700 480"\`. NUR SVG-Code, keine Erklärungen.`
+}
 
 export interface ManualHeights {
   traufhoehe_m?: number
@@ -39,7 +112,25 @@ export function GrunddatenCard({
   const [manualFirst, setManualFirst] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('floor-plan')
   const [professionalMode, setProfessionalMode] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const { dimensions, gwr_data, building, address } = data
+
+  // Export prompt to clipboard for Claude.ai
+  const handleExportPrompt = useCallback(async () => {
+    const prompt = generateClaudePrompt(data, activeVizTab)
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopyFeedback('Kopiert!')
+      setTimeout(() => setCopyFeedback(null), 2000)
+    } catch (err) {
+      // Fallback: Open in new window
+      const blob = new Blob([prompt], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setCopyFeedback('Geöffnet')
+      setTimeout(() => setCopyFeedback(null), 2000)
+    }
+  }, [data, activeVizTab])
 
   // Initialize manual inputs with current values if they exist
   useEffect(() => {
@@ -341,6 +432,13 @@ export function GrunddatenCard({
                 >
                   SVG
                 </a>
+                <button
+                  onClick={handleExportPrompt}
+                  className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors flex items-center gap-1"
+                  title="Prompt für Claude.ai in Zwischenablage kopieren"
+                >
+                  {copyFeedback || '🤖 Export'}
+                </button>
               </div>
             </div>
 
