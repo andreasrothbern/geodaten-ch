@@ -507,18 +507,21 @@ export function GrunddatenCard({
                 >
                   SVG
                 </a>
-                <button
-                  onClick={handleExportPrompt}
-                  disabled={loadingExport}
-                  className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${
-                    loadingExport
-                      ? 'bg-purple-200 text-purple-500 cursor-wait'
-                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                  }`}
-                  title="Prompt für Claude.ai in Zwischenablage kopieren (inkl. Gebäude-Zonen)"
-                >
-                  {copyFeedback || '🤖 Export'}
-                </button>
+                {/* Export nur für Schnitt und Ansicht - Grundriss hat echte Polygon-Daten */}
+                {(activeVizTab === 'cross-section' || activeVizTab === 'elevation') && (
+                  <button
+                    onClick={handleExportPrompt}
+                    disabled={loadingExport}
+                    className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${
+                      loadingExport
+                        ? 'bg-purple-200 text-purple-500 cursor-wait'
+                        : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                    }`}
+                    title="Prompt für Claude.ai in Zwischenablage kopieren (inkl. Gebäude-Zonen)"
+                  >
+                    {copyFeedback || '🤖 Export'}
+                  </button>
+                )}
               </div>
             </div>
 
