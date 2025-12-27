@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import type { ScaffoldingData, BuildingContext, BuildingZone } from '../types'
+import type { ScaffoldingData, BuildingContext } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 
 /**
