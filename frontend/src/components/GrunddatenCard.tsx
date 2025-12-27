@@ -42,13 +42,13 @@ function generateClaudePrompt(
 - **Traufhöhe:** ${dimensions?.traufhoehe_m?.toFixed(1) || 'unbekannt'} m
 - **Firsthöhe:** ${dimensions?.firsthoehe_m?.toFixed(1) || 'unbekannt'} m
 - **Geschosse:** ${dimensions?.floors || gwr_data?.floors || '-'}
-- **Grundfläche:** ${building?.footprint_area_m2?.toFixed(0) || gwr_data?.area_m2?.toFixed(0) || '-'} m²
+- **Grundfläche:** ${building?.footprint_area_m2?.toFixed(0) || gwr_data?.area_m2_gwr?.toFixed(0) || '-'} m²
 
 ## GWR-Daten
 
-- **Gebäudekategorie (GKAT):** ${gwr_data?.building_category || '-'} (Code: ${gwr_data?.building_category_code || '-'})
-- **Baujahr:** ${gwr_data?.year_built || '-'}
-- **Wohnungen:** ${gwr_data?.apartments || '-'}
+- **Gebäudekategorie:** ${gwr_data?.building_category || '-'}
+- **Baujahr:** ${gwr_data?.construction_year || '-'}
+- **Geschosse:** ${gwr_data?.floors || '-'}
 
 ## Polygon (${polygon?.coordinates?.length || 0} Punkte)
 
