@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import type { ScaffoldingData } from '../types'
+import type { ScaffoldingData, BuildingContext, BuildingZone } from '../types'
 import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 
 /**
@@ -19,15 +19,23 @@ import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
  */
 function generateClaudePrompt(
   data: ScaffoldingData,
-  vizType: 'cross-section' | 'elevation' | 'floor-plan'
+  vizType: 'cross-section' | 'elevation' | 'floor-plan',
+  buildingContext?: BuildingContext | null
 ): string {
   const { dimensions, gwr_data, building, address, polygon, sides } = data
+  const zones = buildingContext?.zones || []
+  const isComplex = buildingContext?.complexity === 'complex' || zones.length > 1
 
   const vizTypeLabels = {
     'cross-section': 'Gebäudeschnitt (Querschnitt)',
     'elevation': 'Fassadenansicht (Elevation)',
     'floor-plan': 'Grundriss (Floor Plan)'
   }
+
+  // Zone-Beschreibungen generieren
+  const zoneDescriptions = zones.length > 0
+    ? zones.map(z => `- **${z.name}** (${z.type}): ${z.gebaeudehoehe_m?.toFixed(1) || '?'}m Höhe${z.traufhoehe_m ? `, Traufe ${z.traufhoehe_m.toFixed(1)}m` : ''}${z.beruesten ? '' : ' [NICHT eingerüstet]'}${z.sonderkonstruktion ? ' [Sonderkonstruktion]' : ''}`).join('\n')
+    : 'Keine Zonen definiert (einfaches Gebäude)'
 
   return `# SVG-Generierung: ${vizTypeLabels[vizType]}
 
@@ -36,6 +44,7 @@ function generateClaudePrompt(
 - **Adresse:** ${address?.matched || 'Unbekannt'}
 - **EGID:** ${building?.egid || gwr_data?.egid || '-'}
 - **Koordinaten:** E ${address?.coordinates?.lv95_e?.toFixed(0) || '-'}, N ${address?.coordinates?.lv95_n?.toFixed(0) || '-'}
+- **Komplexität:** ${isComplex ? '🏛️ KOMPLEX (mehrere Zonen)' : '🏠 Einfach'}
 
 ## Dimensionen
 
@@ -50,36 +59,77 @@ function generateClaudePrompt(
 - **Baujahr:** ${gwr_data?.construction_year || '-'}
 - **Geschosse:** ${gwr_data?.floors || '-'}
 
+${zones.length > 0 ? `## Höhenzonen (${zones.length} Zonen)
+
+${zoneDescriptions}
+
+### Zone-Typen Legende
+- **hauptgebaeude** = Rechteckiger Hauptkörper mit Schraffur
+- **arkade** = Niedriger Bereich mit Rundbogen (Erdgeschoss)
+- **kuppel** = Halbkreis mit Kupfer-Gradient (EINZIGER Gradient!)
+- **turm** = Schmaler, hoher Turm
+- **anbau** = Niedrigerer Anbau am Hauptgebäude
+` : ''}
+
 ## Polygon (${polygon?.coordinates?.length || 0} Punkte)
 
 ${sides && sides.length > 0 ? `### Fassaden (${sides.length} Seiten)
 ${sides.map((s, i) => `- Seite ${s.index ?? i}: ${s.length_m?.toFixed(1)}m (${s.direction || '?'})`).join('\n')}` : 'Keine Seitendaten verfügbar'}
 
+## SVG Style-Vorgaben
+
+\`\`\`xml
+<defs>
+  <!-- Schraffur für Gebäude -->
+  <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+    <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+  </pattern>
+  <!-- Kupfer-Gradient NUR für Kuppeln -->
+  <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" style="stop-color:#7CB9A5"/>
+    <stop offset="100%" style="stop-color:#4A8A77"/>
+  </linearGradient>
+</defs>
+\`\`\`
+
+| Element | Farbe/Fill |
+|---------|------------|
+| Hintergrund | #FFFFFF (weiss) |
+| Gebäude | url(#hatch) Schraffur |
+| Kuppel | url(#copper) Gradient |
+| Gerüst-Ständer | #0066CC (blau) |
+| Beläge | #8B4513 (braun) |
+| Verankerungen | #CC0000 gestrichelt |
+
 ## Anforderungen
 
-Erstelle eine **technische Architekturzeichnung** im SVG-Format:
-
-1. **Stil:** Professionell-technisch, NICHT künstlerisch
-2. **Hintergrund:** Reinweiss (#FFFFFF)
-3. **Gebäude:** Schraffur-Pattern (diagonal 45°)
-4. **Gerüst:** Blau (#0066CC) für Ständer, Braun (#8B4513) für Beläge
-5. **Verankerungen:** Rot gestrichelt (#CC0000)
-6. **Massstab:** Links Höhenskala, rechts Lagenbeschriftung
-
-${vizType === 'cross-section' ? `### Schnitt-spezifisch
-- Frontalansicht (2D, keine Perspektive)
+${vizType === 'cross-section' ? `### Schnitt (Querschnitt durch Gebäude)
+- Frontalansicht (2D Orthogonalprojektion)
+- Terrain-Linie bei ±0.00
 - Geschossdecken als horizontale Linien
-- Dachform: Satteldach mit Traufe und First` : ''}
+${isComplex ? `- WICHTIG: Verschiedene Höhen pro Zone darstellen!
+- Arkaden: Niedrig (~${zones.find(z => z.type === 'arkade')?.gebaeudehoehe_m?.toFixed(1) || '15'}m)
+- Hauptgebäude: Mittel
+- Kuppel: Hoch mit Halbkreis-Kontur` : '- Dachform: Satteldach mit Traufe und First'}
+- Gerüst links und rechts (Ständer + Beläge)
+- Höhenskala links, Lagenbeschriftung rechts` : ''}
 
-${vizType === 'elevation' ? `### Ansicht-spezifisch
+${vizType === 'elevation' ? `### Ansicht (Fassadenansicht)
 - Orthogonale Frontalansicht
-- Fensterreihen pro Geschoss (angedeutet)
-- Gerüst VOR der Fassade` : ''}
+- Terrain-Linie bei ±0.00
+${isComplex ? `- WICHTIG: Verschiedene Höhenzonen darstellen!
+- Arkaden unten: Bögen/Rundbögen
+- Hauptfassade: Fensterreihen
+- Kuppel oben: Halbkreis mit copper-Gradient (EINZIGER Gradient!)
+- Keine zusätzlichen Elemente erfinden!` : '- Fensterreihen pro Geschoss (angedeutet)\n- Satteldach als Dreieck'}
+- Gerüst VOR der Fassade
+- Höhenskala links, Lagenbeschriftung rechts` : ''}
 
-${vizType === 'floor-plan' ? `### Grundriss-spezifisch
-- Draufsicht auf Polygon
+${vizType === 'floor-plan' ? `### Grundriss (Draufsicht)
+- Polygon-Form des Gebäudes
 - Fassaden beschriften (Länge + Richtung)
-- Gerüstzone um das Gebäude` : ''}
+- Gerüstzone um das Gebäude (gelb)
+${isComplex ? '- Zonen farblich unterscheiden' : ''}` : ''}
 
 ## Output
 
@@ -113,14 +163,37 @@ export function GrunddatenCard({
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('floor-plan')
   const [professionalMode, setProfessionalMode] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [loadingExport, setLoadingExport] = useState(false)
   const { dimensions, gwr_data, building, address } = data
 
-  // Export prompt to clipboard for Claude.ai
+  // Export prompt to clipboard for Claude.ai (with building context/zones)
   const handleExportPrompt = useCallback(async () => {
-    const prompt = generateClaudePrompt(data, activeVizTab)
+    setLoadingExport(true)
+    setCopyFeedback('Lade...')
+
+    let buildingContext: BuildingContext | null = null
+
+    // Try to load building context if EGID is available
+    const egid = building?.egid || gwr_data?.egid
+    if (egid) {
+      try {
+        const response = await fetch(
+          `${apiUrl}/api/v1/building/context/${egid}?create_if_missing=true&analyze_if_complex=true`
+        )
+        if (response.ok) {
+          const contextData = await response.json()
+          buildingContext = contextData.context || null
+        }
+      } catch (err) {
+        console.warn('Could not load building context:', err)
+      }
+    }
+
+    const prompt = generateClaudePrompt(data, activeVizTab, buildingContext)
+
     try {
       await navigator.clipboard.writeText(prompt)
-      setCopyFeedback('Kopiert!')
+      setCopyFeedback('✓ Kopiert!')
       setTimeout(() => setCopyFeedback(null), 2000)
     } catch (err) {
       // Fallback: Open in new window
@@ -130,7 +203,9 @@ export function GrunddatenCard({
       setCopyFeedback('Geöffnet')
       setTimeout(() => setCopyFeedback(null), 2000)
     }
-  }, [data, activeVizTab])
+
+    setLoadingExport(false)
+  }, [data, activeVizTab, apiUrl, building?.egid, gwr_data?.egid])
 
   // Initialize manual inputs with current values if they exist
   useEffect(() => {
@@ -434,8 +509,13 @@ export function GrunddatenCard({
                 </a>
                 <button
                   onClick={handleExportPrompt}
-                  className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors flex items-center gap-1"
-                  title="Prompt für Claude.ai in Zwischenablage kopieren"
+                  disabled={loadingExport}
+                  className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${
+                    loadingExport
+                      ? 'bg-purple-200 text-purple-500 cursor-wait'
+                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                  }`}
+                  title="Prompt für Claude.ai in Zwischenablage kopieren (inkl. Gebäude-Zonen)"
                 >
                   {copyFeedback || '🤖 Export'}
                 </button>
