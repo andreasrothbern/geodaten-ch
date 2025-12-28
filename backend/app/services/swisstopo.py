@@ -13,7 +13,8 @@ from app.models.schemas import (
     AddressSearchResult,
     BuildingInfo,
     GeocodingResult,
-    Coordinates
+    Coordinates,
+    TerrainInfo
 )
 
 
@@ -128,20 +129,52 @@ class SwisstopoService:
         
         return results
     
-    async def geocode(self, address: str) -> Optional[GeocodingResult]:
-        """Geokodierung einer Adresse"""
+    async def geocode(
+        self,
+        address: str,
+        include_terrain: bool = True
+    ) -> Optional[GeocodingResult]:
+        """
+        Geokodierung einer Adresse.
+
+        Args:
+            address: Adresse zum Geokodieren
+            include_terrain: Wenn True, wird Terrain-Höhe (swissALTI3D) abgerufen
+
+        Returns:
+            GeocodingResult mit Koordinaten und optional Terrain-Höhe
+        """
         results = await self.search_address(address, limit=1)
-        
+
         if not results:
             return None
-        
+
         best = results[0]
-        
+
+        # Terrain-Höhe abrufen wenn gewünscht
+        terrain_info = None
+        if include_terrain:
+            try:
+                from app.services.terrain import get_terrain_service
+                terrain_service = get_terrain_service()
+                height = await terrain_service.get_height(
+                    best.coordinates.lv95_e,
+                    best.coordinates.lv95_n
+                )
+                if height is not None:
+                    terrain_info = TerrainInfo(
+                        terrain_height_m=height,
+                        elevation_model="COMB"
+                    )
+            except Exception as e:
+                print(f"[SwisstopoService] Terrain-Abfrage fehlgeschlagen: {e}")
+
         return GeocodingResult(
             input_address=address,
             matched_address=best.label,
             confidence=0.9 if best.feature_id else 0.7,
             coordinates=best.coordinates,
+            terrain=terrain_info,
         )
     
     # ========================================================================

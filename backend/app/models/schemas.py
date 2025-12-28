@@ -64,13 +64,34 @@ class AddressSearchResult(BaseModel):
         }
 
 
+class TerrainInfo(BaseModel):
+    """Terrain-Informationen (swissALTI3D)"""
+    terrain_height_m: float = Field(..., description="Terrain-Höhe am Referenzpunkt (m ü.M.)")
+    min_terrain_m: Optional[float] = Field(None, description="Min. Terrain-Höhe am Gebäude")
+    max_terrain_m: Optional[float] = Field(None, description="Max. Terrain-Höhe am Gebäude")
+    terrain_slope_m: Optional[float] = Field(None, description="Gefälle (max - min)")
+    elevation_model: str = Field("COMB", description="Höhenmodell (COMB, DTM2, DTM25)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "terrain_height_m": 540.4,
+                "min_terrain_m": 539.8,
+                "max_terrain_m": 541.2,
+                "terrain_slope_m": 1.4,
+                "elevation_model": "COMB"
+            }
+        }
+
+
 class GeocodingResult(BaseModel):
     """Ergebnis einer Geokodierung"""
     input_address: str
     matched_address: str
     confidence: float = Field(..., ge=0, le=1, description="Konfidenz 0-1")
     coordinates: Coordinates
-    
+    terrain: Optional[TerrainInfo] = Field(None, description="Terrain-Höhe (swissALTI3D)")
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -80,6 +101,10 @@ class GeocodingResult(BaseModel):
                 "coordinates": {
                     "lv95_e": 600423.19,
                     "lv95_n": 199521.05
+                },
+                "terrain": {
+                    "terrain_height_m": 540.4,
+                    "elevation_model": "COMB"
                 }
             }
         }

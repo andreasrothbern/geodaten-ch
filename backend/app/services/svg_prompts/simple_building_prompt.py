@@ -202,6 +202,12 @@ def generate_simple_cross_section_prompt(
     address = building_data.get('address', building_data.get('adresse', 'Unbekannt'))
     egid = building_data.get('egid', '-')
 
+    # Terrain-Höhe (swissALTI3D)
+    terrain_height = building_data.get('terrain_height_m')
+    terrain_info = ""
+    if terrain_height:
+        terrain_info = f"- **Terrain:** {terrain_height:.1f} m ü.M."
+
     # Höhe aus Zone oder Building-Data
     if zones and len(zones) > 0:
         zone = zones[0]
@@ -224,6 +230,11 @@ def generate_simple_cross_section_prompt(
         geruest_hoehe = hoehe + 1
         anzahl_lagen = int(geruest_hoehe / 2)
 
+    # Höhenkoten-Text
+    hoehenkoten_text = "+/-0.00 (OK Terrain)"
+    if terrain_height:
+        hoehenkoten_text = f"+/-0.00 = {terrain_height:.1f} m ü.M."
+
     return f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
 
 ## KRITISCHE REGELN
@@ -240,6 +251,7 @@ def generate_simple_cross_section_prompt(
 - **Traufhöhe:** {traufhoehe:.1f} m
 - **Gebäudetiefe:** {tiefe:.1f} m
 - **Geschosse:** {geschosse}
+{terrain_info}
 
 ## Schnitt-Darstellung
 
@@ -252,7 +264,7 @@ def generate_simple_cross_section_prompt(
         |      |
    -----|      |-----
         |      |
-   =====|______|===== <- Terrain +/-0.00
+   =====|______|===== <- Terrain {hoehenkoten_text}
         vvvvvvvv
         Fundament (angedeutet)
 ```
@@ -273,12 +285,12 @@ def generate_simple_cross_section_prompt(
 ## Elemente
 
 1. **Weisser Hintergrund**
-2. **Terrain-Linie** bei +/-0.00
+2. **Terrain-Linie** mit Schraffur bei {hoehenkoten_text}
 3. **Gebäudeschnitt** - Schraffiert
 4. **Geschossdecken** - Horizontale Linien
 5. **Dach** - Dreieck, schraffiert
 6. **Gerüst links und rechts** - Ständer + Beläge
-7. **Höhenkoten** - +/-0.00, Traufe, First
+7. **Höhenkoten** links: {hoehenkoten_text}, +{traufhoehe:.1f}m (Traufe), +{hoehe:.1f}m (First)
 
 ## Output
 

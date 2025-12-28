@@ -284,6 +284,17 @@ def generate_complex_cross_section_prompt(
     geschosse = building_data.get('geschosse') or building_data.get('gastw') or building_data.get('floors') or 3
     tiefe = building_data.get('gebaeudetiefe_m') or building_data.get('width_m') or 15
 
+    # Terrain-Höhe (swissALTI3D)
+    terrain_height = building_data.get('terrain_height_m')
+    terrain_info = ""
+    if terrain_height:
+        terrain_info = f"""
+## Terrain (swissALTI3D)
+
+- **Terrain-Höhe:** {terrain_height:.1f} m ü.M. (Meter über Meer)
+- Terrain-Gefälle: {building_data.get('terrain_slope_m', 0):.1f} m
+"""
+
     # Maximale Höhe aus Zonen
     max_hoehe = 10
     for zone in zones:
@@ -306,6 +317,11 @@ def generate_complex_cross_section_prompt(
         geruest_hoehe = max_hoehe + 1
         anzahl_lagen = int(geruest_hoehe / 2)
 
+    # Höhenkoten-Text
+    hoehenkoten_text = "- +/-0.00 (OK Terrain)"
+    if terrain_height:
+        hoehenkoten_text = f"- +/-0.00 = {terrain_height:.1f} m ü.M. (OK Terrain)"
+
     return f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
 
 ## KRITISCHE REGEL
@@ -320,7 +336,7 @@ Zeichne NUR die Zonen die aufgelistet sind!
 - **Maximale Höhe:** {max_hoehe:.1f} m
 - **Gebäudetiefe:** {tiefe:.1f} m
 - **Geschosse:** {geschosse}
-
+{terrain_info}
 ## Höhenzonen
 
 {zone_descriptions}
@@ -347,12 +363,15 @@ Zeichne NUR die Zonen die aufgelistet sind!
 ## Elemente
 
 1. **Weisser Hintergrund**
-2. **Terrain-Linie** bei +/-0.00
+2. **Terrain-Linie** mit Schraffur-Pattern (url(#ground))
 3. **Gebäudeschnitt** - Schraffiert, verschiedene Höhen pro Zone
 4. **Geschossdecken** - Horizontale Linien
 5. **Kuppel-Schnitt** - Falls vorhanden: Halbkreis-Kontur
 6. **Gerüst** - Links und rechts
-7. **Höhenkoten** - +/-0.00, Traufen, Firste
+7. **Höhenkoten** links:
+   {hoehenkoten_text}
+   - Traufhöhen jeder Zone
+   - Firsthöhen jeder Zone
 
 ## Output
 

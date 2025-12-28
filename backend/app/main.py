@@ -699,7 +699,36 @@ async def get_scaffolding_data(
                 print(f"Height refresh failed: {refresh_error}")
                 scaffolding_data["height_refresh_error"] = str(refresh_error)
 
-        # 5. Adress- und GWR-Infos hinzufügen
+        # 5. Terrain-Daten abrufen (swissALTI3D)
+        terrain_data = None
+        try:
+            from app.services.terrain import get_terrain_service
+            terrain_service = get_terrain_service()
+            terrain_height = await terrain_service.get_height(
+                geo.coordinates.lv95_e,
+                geo.coordinates.lv95_n
+            )
+            if terrain_height is not None:
+                terrain_data = {
+                    "terrain_height_m": terrain_height,
+                    "elevation_model": "COMB"
+                }
+                # Bei Polygon: Min/Max Höhe berechnen
+                if geometry and geometry.polygon:
+                    polygon_coords = [(p[0], p[1]) for p in geometry.polygon[:8]]  # Max 8 Punkte
+                    terrain_info = await terrain_service.get_terrain_info(
+                        geo.coordinates.lv95_e,
+                        geo.coordinates.lv95_n,
+                        polygon_coords
+                    )
+                    if terrain_info:
+                        terrain_data["min_terrain_m"] = terrain_info.min_terrain_m
+                        terrain_data["max_terrain_m"] = terrain_info.max_terrain_m
+                        terrain_data["terrain_slope_m"] = terrain_info.terrain_slope_m
+        except Exception as terrain_error:
+            print(f"[Scaffolding] Terrain-Abfrage fehlgeschlagen: {terrain_error}")
+
+        # 6. Adress- und GWR-Infos hinzufügen
         result = {
             "address": {
                 "input": address,
@@ -707,7 +736,8 @@ async def get_scaffolding_data(
                 "coordinates": {
                     "lv95_e": geo.coordinates.lv95_e,
                     "lv95_n": geo.coordinates.lv95_n,
-                }
+                },
+                "terrain": terrain_data,
             },
             "gwr_data": {
                 "egid": building.egid if building else geometry.egid,
@@ -1277,6 +1307,113 @@ async def get_height_for_egid(egid: int):
 # ============================================================================
 # Layher Materialkatalog
 # ============================================================================
+
+# ===========================================================================
+# Terrain API (swissALTI3D)
+# ===========================================================================
+
+@app.get("/api/v1/terrain/height",
+         tags=["Terrain"])
+async def get_terrain_height(
+    e: float = Query(..., description="LV95 Easting (E-Koordinate)"),
+    n: float = Query(..., description="LV95 Northing (N-Koordinate)"),
+):
+    """
+    Terrain-Höhe an einer Koordinate abrufen (swissALTI3D).
+
+    Liefert die Geländehöhe in Metern über Meer (m ü.M.)
+    aus dem hochpräzisen swissALTI3D Höhenmodell.
+
+    **Beispiel:** `?e=2600948&n=1199582` → Münsterplatz Bern
+
+    **Höhenmodell:** COMB (kombiniert DTM2 + DTM25)
+    - DTM2: 2m Auflösung (LiDAR, hochpräzise)
+    - DTM25: 25m Auflösung (DHM25)
+    """
+    try:
+        from app.services.terrain import get_terrain_service
+        terrain_service = get_terrain_service()
+        height = await terrain_service.get_height(e, n)
+
+        if height is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Keine Terrain-Daten für diese Koordinaten verfügbar"
+            )
+
+        return {
+            "easting": e,
+            "northing": n,
+            "terrain_height_m": height,
+            "elevation_model": "COMB",
+            "source": "swissALTI3D"
+        }
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fehler bei Terrain-Abfrage: {str(ex)}"
+        )
+
+
+@app.get("/api/v1/terrain/profile",
+         tags=["Terrain"])
+async def get_terrain_profile(
+    start_e: float = Query(..., description="Start LV95 Easting"),
+    start_n: float = Query(..., description="Start LV95 Northing"),
+    end_e: float = Query(..., description="Ende LV95 Easting"),
+    end_n: float = Query(..., description="Ende LV95 Northing"),
+    nb_points: int = Query(10, ge=2, le=100, description="Anzahl Punkte"),
+):
+    """
+    Terrain-Profil entlang einer Linie abrufen.
+
+    Nützlich für:
+    - Fassaden-Gefälle berechnen
+    - Schnitt-Darstellung mit realistischem Gelände
+    - Niveauausgleich für Gerüst
+
+    **Beispiel:** Profil entlang der Bundeshaus-Fassade
+    """
+    try:
+        from app.services.terrain import get_terrain_service
+        terrain_service = get_terrain_service()
+        profile = await terrain_service.get_profile(
+            [(start_e, start_n), (end_e, end_n)],
+            nb_points=nb_points
+        )
+
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail="Kein Terrain-Profil für diese Koordinaten verfügbar"
+            )
+
+        return {
+            "start": {"easting": start_e, "northing": start_n},
+            "end": {"easting": end_e, "northing": end_n},
+            "points": [p.model_dump() for p in profile.points],
+            "statistics": {
+                "min_height_m": profile.min_height_m,
+                "max_height_m": profile.max_height_m,
+                "height_diff_m": profile.height_diff_m,
+                "total_distance_m": profile.total_distance_m
+            },
+            "source": "swissALTI3D"
+        }
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fehler bei Terrain-Profil-Abfrage: {str(ex)}"
+        )
+
+
+# ===========================================================================
+# Materialkatalog
+# ===========================================================================
 
 @app.get("/api/v1/catalog/systems",
          tags=["Materialkatalog"])
