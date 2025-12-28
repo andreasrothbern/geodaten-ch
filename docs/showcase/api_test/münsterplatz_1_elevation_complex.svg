@@ -1,0 +1,166 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Schraffur für Gebäude -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Dach-Schraffur -->
+    <pattern id="roof-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#777" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient für Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="50%" style="stop-color:#5A9A87"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+
+    <!-- Arkaden-Muster -->
+    <pattern id="arcade" patternUnits="userSpaceOnUse" width="30" height="40">
+      <path d="M5,40 L5,15 Q15,5 25,15 L25,40" fill="none" stroke="#666" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Weisser Hintergrund -->
+  <rect width="100%" height="100%" fill="#FFFFFF"/>
+
+  <!-- Terrain -->
+  <rect x="0" y="408" width="700" height="72" fill="url(#ground)" stroke="#666"/>
+
+  <!-- Seitenkapellen (Anbau) - 15m hoch -->
+  <rect x="200" y="348" width="100" height="60" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+  <polygon points="200,348 250,328 350,328 400,348" fill="url(#roof-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <rect x="400" y="348" width="100" height="60" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+  <polygon points="400,348 450,328 550,328 600,348" fill="url(#roof-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Kirchenschiff (Hauptgebäude) - 28m hoch -->
+  <rect x="250" y="296" width="200" height="112" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <line x1="250" y1="348" x2="450" y2="348" stroke="#666" stroke-width="0.5"/>
+  <polygon points="250,296 350,266 450,296" fill="url(#roof-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Turm - 100.3m hoch -->
+  <rect x="325" y="48" width="50" height="248" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <line x1="325" y1="108" x2="375" y2="108" stroke="#666" stroke-width="0.5"/>
+  <line x1="325" y1="148" x2="375" y2="148" stroke="#666" stroke-width="0.5"/>
+  <line x1="325" y1="188" x2="375" y2="188" stroke="#666" stroke-width="0.5"/>
+  <line x1="325" y1="228" x2="375" y2="228" stroke="#666" stroke-width="0.5"/>
+  <line x1="325" y1="268" x2="375" y2="268" stroke="#666" stroke-width="0.5"/>
+  <polygon points="325,48 350,28 375,48" fill="url(#roof-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Gerüst -->
+  <!-- Vertikale Ständer -->
+  <line x1="120" y1="26" x2="120" y2="408" stroke="#0066CC" stroke-width="3"/>
+  <line x1="160" y1="26" x2="160" y2="408" stroke="#0066CC" stroke-width="3"/>
+  <line x1="200" y1="26" x2="200" y2="408" stroke="#0066CC" stroke-width="3"/>
+  <line x1="480" y1="26" x2="480" y2="408" stroke="#0066CC" stroke-width="3"/>
+  <line x1="520" y1="26" x2="520" y2="408" stroke="#0066CC" stroke-width="3"/>
+  <line x1="560" y1="26" x2="560" y2="408" stroke="#0066CC" stroke-width="3"/>
+
+  <!-- Horizontale Beläge alle 8px (entspricht 2m) -->
+  <!-- Beläge von oben nach unten -->
+  <rect x="120" y="34" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="42" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="50" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="58" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="66" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="74" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="82" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="90" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="98" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="106" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="114" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="122" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="130" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="138" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="146" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="154" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="162" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="170" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="178" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="186" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="194" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="202" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="210" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="218" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="226" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="234" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="242" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="250" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="258" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="266" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="274" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="282" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="290" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="298" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="306" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="314" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="322" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="330" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="338" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="346" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="354" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="362" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="370" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="378" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="386" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="394" width="440" height="2" fill="#8B4513"/>
+  <rect x="120" y="402" width="440" height="2" fill="#8B4513"/>
+
+  <!-- Verankerungen alle 16px (4m) -->
+  <line x1="120" y1="58" x2="250" y2="58" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="90" x2="250" y2="90" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="122" x2="250" y2="122" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="154" x2="250" y2="154" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="186" x2="250" y2="186" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="218" x2="250" y2="218" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="250" x2="250" y2="250" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="282" x2="250" y2="282" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="314" x2="250" y2="314" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="346" x2="250" y2="346" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="120" y1="378" x2="250" y2="378" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <line x1="450" y1="58" x2="560" y2="58" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="90" x2="560" y2="90" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="122" x2="560" y2="122" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="154" x2="560" y2="154" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="186" x2="560" y2="186" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="218" x2="560" y2="218" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="250" x2="560" y2="250" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="282" x2="560" y2="282" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="314" x2="560" y2="314" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="346" x2="560" y2="346" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="378" x2="560" y2="378" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Höhenskala links -->
+  <text x="10" y="412" font-family="Arial" font-size="10" fill="#333">+0</text>
+  <text x="10" y="372" font-family="Arial" font-size="10" fill="#333">+10</text>
+  <text x="10" y="332" font-family="Arial" font-size="10" fill="#333">+20</text>
+  <text x="10" y="292" font-family="Arial" font-size="10" fill="#333">+30</text>
+  <text x="10" y="252" font-family="Arial" font-size="10" fill="#333">+40</text>
+  <text x="10" y="212" font-family="Arial" font-size="10" fill="#333">+50</text>
+  <text x="10" y="172" font-family="Arial" font-size="10" fill="#333">+60</text>
+  <text x="10" y="132" font-family="Arial" font-size="10" fill="#333">+70</text>
+  <text x="10" y="92" font-family="Arial" font-size="10" fill="#333">+80</text>
+  <text x="10" y="52" font-family="Arial" font-size="10" fill="#333">+90</text>
+  <text x="10" y="32" font-family="Arial" font-size="10" fill="#333">+100</text>
+
+  <!-- Lagenbeschriftung rechts -->
+  <text x="580" y="36" font-family="Arial" font-size="8" fill="#333">50.</text>
+  <text x="580" y="76" font-family="Arial" font-size="8" fill="#333">40.</text>
+  <text x="580" y="116" font-family="Arial" font-size="8" fill="#333">30.</text>
+  <text x="580" y="156" font-family="Arial" font-size="8" fill="#333">25.</text>
+  <text x="580" y="196" font-family="Arial" font-size="8" fill="#333">20.</text>
+  <text x="580" y="236" font-family="Arial" font-size="8" fill="#333">15.</text>
+  <text x="580" y="276" font-family="Arial" font-size="8" fill="#333">10.</text>
+  <text x="580" y="316" font-family="Arial" font-size="8" fill="#333">5.</text>
+  <text x="580" y="356" font-family="Arial" font-size="8" fill="#333">2.</text>
+  <text x="580" y="396" font-family="Arial" font-size="8" fill="#333">1.</text>
+</svg>

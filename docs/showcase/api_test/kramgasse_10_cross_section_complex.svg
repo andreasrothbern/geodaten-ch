@@ -1,0 +1,86 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+    
+    <pattern id="roof-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#777" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+  
+  <!-- Weisser Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+  
+  <!-- Terrain -->
+  <rect x="0" y="300" width="700" height="30" fill="url(#ground)"/>
+  <line x1="0" y1="300" x2="700" y2="300" stroke="#333333" stroke-width="1"/>
+  
+  <!-- Gerüst links -->
+  <rect x="180" y="70" width="20" height="230" fill="none" stroke="#0066CC" stroke-width="2"/>
+  <!-- Gerüst-Lagen links -->
+  <line x1="180" y1="90" x2="200" y2="90" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="110" x2="200" y2="110" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="130" x2="200" y2="130" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="150" x2="200" y2="150" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="170" x2="200" y2="170" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="190" x2="200" y2="190" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="210" x2="200" y2="210" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="230" x2="200" y2="230" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="250" x2="200" y2="250" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="270" x2="200" y2="270" stroke="#8B4513" stroke-width="2"/>
+  <line x1="180" y1="290" x2="200" y2="290" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Gerüst rechts -->
+  <rect x="500" y="70" width="20" height="230" fill="none" stroke="#0066CC" stroke-width="2"/>
+  <!-- Gerüst-Lagen rechts -->
+  <line x1="500" y1="90" x2="520" y2="90" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="110" x2="520" y2="110" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="130" x2="520" y2="130" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="150" x2="520" y2="150" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="170" x2="520" y2="170" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="190" x2="520" y2="190" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="210" x2="520" y2="210" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="230" x2="520" y2="230" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="250" x2="520" y2="250" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="270" x2="520" y2="270" stroke="#8B4513" stroke-width="2"/>
+  <line x1="500" y1="290" x2="520" y2="290" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Hauptgebäude (Schnitt) -->
+  <rect x="220" y="126" width="260" height="174" fill="url(#hatch)" stroke="#333333" stroke-width="2"/>
+  
+  <!-- Satteldach -->
+  <polygon points="220,126 350,90 480,126" fill="url(#roof-hatch)" stroke="#333333" stroke-width="2"/>
+  
+  <!-- Geschosslinien -->
+  <line x1="220" y1="271" x2="480" y2="271" stroke="#333333" stroke-width="1"/>
+  <line x1="220" y1="242" x2="480" y2="242" stroke="#333333" stroke-width="1"/>
+  <line x1="220" y1="213" x2="480" y2="213" stroke="#333333" stroke-width="1"/>
+  <line x1="220" y1="184" x2="480" y2="184" stroke="#333333" stroke-width="1"/>
+  <line x1="220" y1="155" x2="480" y2="155" stroke="#333333" stroke-width="1"/>
+  
+  <!-- Verankerungslinien -->
+  <line x1="200" y1="150" x2="220" y2="150" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="500" y1="150" x2="480" y2="150" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="200" y1="200" x2="220" y2="200" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="500" y1="200" x2="480" y2="200" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,3"/>
+  
+  <!-- Höhenkoten -->
+  <text x="150" y="305" fill="#333333" font-family="Arial" font-size="12">+/-0.00</text>
+  <text x="150" y="130" fill="#333333" font-family="Arial" font-size="12">+18.4m (Traufe)</text>
+  <text x="150" y="95" fill="#333333" font-family="Arial" font-size="12">+21.6m (First)</text>
+  <text x="530" y="75" fill="#333333" font-family="Arial" font-size="12">+22.6m (Gerüst)</text>
+  
+  <!-- Maßlinien -->
+  <line x1="140" y1="300" x2="140" y2="90" stroke="#666" stroke-width="0.5"/>
+  <line x1="135" y1="300" x2="145" y2="300" stroke="#666" stroke-width="0.5"/>
+  <line x1="135" y1="126" x2="145" y2="126" stroke="#666" stroke-width="0.5"/>
+  <line x1="135" y1="90" x2="145" y2="90" stroke="#666" stroke-width="0.5"/>
+  
+  <line x1="540" y1="300" x2="540" y2="70" stroke="#666" stroke-width="0.5"/>
+  <line x1="535" y1="70" x2="545" y2="70" stroke="#666" stroke-width="0.5"/>
+</svg>

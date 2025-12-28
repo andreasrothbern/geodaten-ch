@@ -267,7 +267,7 @@ Model Context Protocol für Claude Desktop/API.
 
 ### PoC Nicht-Scope
 
-- Terrain-Integration (Phase 1.2)
+rain-Integration (Phase 1.2)
 - DXF-Export (Phase 1.4)
 - MCP-Server (Phase 2)
 - Projektverwaltung (Phase 3)

@@ -1,0 +1,124 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <!-- Schraffur für Gebäude -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Dach-Schraffur -->
+    <pattern id="roof-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#777" stroke-width="0.5"/>
+    </pattern>
+</defs>
+
+<!-- Weißer Hintergrund -->
+<rect width="100%" height="100%" fill="#FFFFFF"/>
+
+<!-- Terrain/Boden -->
+<rect x="0" y="408" width="700" height="72" fill="url(#ground)" stroke="none"/>
+<line x1="0" y1="408" x2="700" y2="408" stroke="#666" stroke-width="2"/>
+
+<!-- Höhenskala links -->
+<g id="height-scale">
+    <line x1="40" y1="60" x2="40" y2="408" stroke="#333" stroke-width="1"/>
+    <line x1="35" y1="408" x2="45" y2="408" stroke="#333" stroke-width="1"/>
+    <text x="25" y="413" font-family="Arial" font-size="10" fill="#333">+0</text>
+    <line x1="35" y1="338" x2="45" y2="338" stroke="#333" stroke-width="1"/>
+    <text x="15" y="343" font-family="Arial" font-size="10" fill="#333">+10</text>
+    <line x1="35" y1="268" x2="45" y2="268" stroke="#333" stroke-width="1"/>
+    <text x="15" y="273" font-family="Arial" font-size="10" fill="#333">+20</text>
+    <line x1="35" y1="198" x2="45" y2="198" stroke="#333" stroke-width="1"/>
+    <text x="15" y="203" font-family="Arial" font-size="10" fill="#333">+30</text>
+</g>
+
+<!-- Hauptgebäude -->
+<g id="hauptgebaeude">
+    <!-- Gebäudekörper bis Traufe (18.4m) -->
+    <rect x="150" y="280" width="300" height="128" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Geschosslinien -->
+    <line x1="150" y1="387" x2="450" y2="387" stroke="#333" stroke-width="1"/>
+    <line x1="150" y1="366" x2="450" y2="366" stroke="#333" stroke-width="1"/>
+    <line x1="150" y1="345" x2="450" y2="345" stroke="#333" stroke-width="1"/>
+    <line x1="150" y1="324" x2="450" y2="324" stroke="#333" stroke-width="1"/>
+    <line x1="150" y1="303" x2="450" y2="303" stroke="#333" stroke-width="1"/>
+    
+    <!-- Satteldach (21.6m Gesamthöhe) -->
+    <polygon points="150,280 300,257 450,280" fill="url(#roof-hatch)" stroke="#333" stroke-width="2"/>
+</g>
+
+<!-- Südlicher Anbau -->
+<g id="anbau">
+    <!-- Anbaukörper bis Traufe (15.0m) -->
+    <rect x="450" y="303" width="120" height="105" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+    
+    <!-- Geschosslinien -->
+    <line x1="450" y1="387" x2="570" y2="387" stroke="#333" stroke-width="1"/>
+    <line x1="450" y1="366" x2="570" y2="366" stroke="#333" stroke-width="1"/>
+    <line x1="450" y1="345" x2="570" y2="345" stroke="#333" stroke-width="1"/>
+    <line x1="450" y1="324" x2="570" y2="324" stroke="#333" stroke-width="1"/>
+    
+    <!-- Satteldach (17.5m Gesamthöhe) -->
+    <polygon points="450,303 510,287 570,303" fill="url(#roof-hatch)" stroke="#333" stroke-width="2"/>
+</g>
+
+<!-- Gerüst (22.6m hoch, 11 Lagen) -->
+<g id="geruest">
+    <!-- Vertikale Ständer -->
+    <line x1="120" y1="250" x2="120" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="170" y1="250" x2="170" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="220" y1="250" x2="220" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="270" y1="250" x2="270" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="320" y1="250" x2="320" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="370" y1="250" x2="370" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="420" y1="250" x2="420" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="470" y1="250" x2="470" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="520" y1="250" x2="520" y2="408" stroke="#0066CC" stroke-width="3"/>
+    <line x1="570" y1="250" x2="570" y2="408" stroke="#0066CC" stroke-width="3"/>
+    
+    <!-- Horizontale Beläge (alle 14.5 Pixel = ca. 2m) -->
+    <rect x="120" y="394" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="380" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="366" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="352" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="338" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="324" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="310" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="296" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="282" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="268" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    <rect x="120" y="254" width="450" height="8" fill="#8B4513" stroke="#333" stroke-width="1"/>
+    
+    <!-- Verankerungen (alle 4m vertikal = ca. 28 Pixel) -->
+    <line x1="120" y1="380" x2="150" y2="380" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="120" y1="352" x2="150" y2="352" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="120" y1="324" x2="150" y2="324" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="220" y1="380" x2="450" y2="380" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="220" y1="352" x2="450" y2="352" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="220" y1="324" x2="450" y2="324" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="470" y1="380" x2="570" y2="380" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="470" y1="352" x2="570" y2="352" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="470" y1="324" x2="570" y2="324" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+</g>
+
+<!-- Lagenbeschriftung rechts -->
+<g id="lagen" font-family="Arial" font-size="9" fill="#333">
+    <text x="580" y="402">1. Lage</text>
+    <text x="580" y="388">2. Lage</text>
+    <text x="580" y="374">3. Lage</text>
+    <text x="580" y="360">4. Lage</text>
+    <text x="580" y="346">5. Lage</text>
+    <text x="580" y="332">6. Lage</text>
+    <text x="580" y="318">7. Lage</text>
+    <text x="580" y="304">8. Lage</text>
+    <text x="580" y="290">9. Lage</text>
+    <text x="580" y="276">10. Lage</text>
+    <text x="580" y="262">11. Lage</text>
+</g>
+
+</svg>

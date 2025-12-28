@@ -719,10 +719,68 @@ STIL: Technische Architekturzeichnung, NICHT künstlerisch!
 
 ### Nächste Schritte
 
-1. **Prompt in claude_svg_zones.py überarbeiten** - Strikte Style-Vorgaben
-2. **Referenz-SVG als Example im Prompt** - Zeige Claude was wir wollen
+1. ~~**Prompt in claude_svg_zones.py überarbeiten**~~ ✅ Erledigt
+2. ~~**Referenz-SVG als Example im Prompt**~~ ✅ Erledigt (Patterns definiert)
 3. **Validierung** - Prüfe generierte SVGs auf Style-Compliance
 4. **Fallback** - Bei Style-Fehler: Standard-Generator verwenden
+
+---
+
+## 🧪 Claude API SVG-Generierung: Testergebnisse (28.12.2025)
+
+### Getestete Gebäude
+
+| Gebäude | Adresse | Zonen erkannt | Qualität |
+|---------|---------|---------------|----------|
+| **Bundeshaus** | Bundesplatz 3, 3011 Bern | 3 (Arkade, Hauptgebäude, Kuppel) | ⭐⭐⭐⭐ |
+| **Kramgasse 10** | Kramgasse 10, 3011 Bern | 2 (Hauptgebäude, Anbau) | ⭐⭐⭐⭐ |
+| **Berner Münster** | Münsterplatz 1, 3011 Bern | 3 (Kirchenschiff, Seitenkapellen, Turm) | ⭐⭐⭐⭐ |
+| **St. Peter & Paul** | Rathausgasse 2, 3011 Bern | 2 (Kirchenschiff, Doppeltürme) | ⭐⭐⭐⭐ |
+
+### Erkannte Zonen-Details
+
+#### Bundeshaus (EGID: 2242547)
+- **Arkaden**: 6m (arkade)
+- **Hauptgebäude**: 25m (hauptgebaeude)
+- **Kuppel**: 64m (kuppel, sonderkonstruktion)
+
+#### Berner Münster (EGID: 1230337)
+- **Kirchenschiff**: 28m (hauptgebaeude)
+- **Seitenkapellen**: 15m (anbau)
+- **Turm**: 100.3m (turm, sonderkonstruktion)
+
+#### St. Peter & Paul (EGID: 191821074)
+- **Kirchenschiff**: 22m (hauptgebaeude)
+- **Doppeltürme**: 60m (turm)
+
+### Erkenntnisse
+
+1. **Building-Hints sind kritisch**: Ohne spezifische Hinweise für bekannte Gebäude erkennt Claude nur 1-2 Zonen
+2. **Echte Höhendaten wichtig**: swissBUILDINGS3D liefert zuverlässige Trauf-/Firsthöhen
+3. **Prompt-Selektor funktioniert**: SIMPLE vs COMPLEX wird korrekt unterschieden
+4. **SVG-Stil konsistent**: Weisser Hintergrund, Schraffur, blaue Gerüste
+
+### Generierte Test-SVGs
+
+```
+docs/showcase/api_test/
+├── bundesplatz_3_elevation_complex.svg
+├── bundesplatz_3_cross_section_complex.svg
+├── kramgasse_10_elevation_complex.svg
+├── kramgasse_10_cross_section_complex.svg
+├── münsterplatz_1_elevation_complex.svg
+├── münsterplatz_1_cross_section_complex.svg
+├── rathausgasse_2_elevation_complex.svg
+└── rathausgasse_2_cross_section_complex.svg
+```
+
+### Test-Script
+
+`backend/scripts/test_improved_prompts.py` - Automatisierter Test mit:
+- Geocoding + GWR-Daten
+- Echte Höhen aus swissBUILDINGS3D
+- Claude-Analyse für komplexe Gebäude
+- SVG-Generierung + Speicherung
 
 ## Neue Features (Stand 24.12.2025)
 
@@ -768,7 +826,7 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: 25.12.2025)
+## Status (Stand: 28.12.2025)
 
 ### Fertig ✅
 - [x] Backend + Frontend Deployment
@@ -782,7 +840,7 @@ npx @railway/cli volume add --mount-path /app/data
 - [x] Douglas-Peucker Polygon-Vereinfachung
 - [x] URL-Parameter für Adresse (?address=...)
 - [x] Compact-Modus für Grundriss-SVG
-- [x] **Building Context System** (POC - poc_bundeshaus_mvp Branch)
+- [x] **Building Context System** (poc_bundeshaus_mvp Branch → main)
   - Pydantic Models (BuildingZone, BuildingContext)
   - SQLite Speicherung (building_contexts.db)
   - Komplexitäts-Erkennung (simple/moderate/complex)
@@ -792,25 +850,30 @@ npx @railway/cli volume add --mount-path /app/data
   - Frontend TypeScript Types
   - **Mehrzonenerkennung** bei extremer Höhendifferenz (>15m)
   - **Frontend Zonen-Editor** mit Bearbeitung
-- [x] **Gerüstbau-SVG Features** (poc_bundeshaus_mvp Branch)
+- [x] **Gerüstbau-SVG Features** (poc_bundeshaus_mvp Branch → main)
   - Ständerpositionen (alle 2.57m, Layher Blitz 70)
   - Verankerungen (Ecken + alle 4m)
   - Zugänge (Z1-Zn) nach SUVA-Vorschriften (max 50m)
   - Zonen-Farbcodierung im Grundriss
   - Professional-Mode mit Schraffur
+- [x] **Claude API SVG-Generierung mit Zonen** (NEU 28.12.2025)
+  - Prompt-Selektor System (SIMPLE vs COMPLEX)
+  - Building-Hints für bekannte Gebäude
+  - Echte Höhendaten aus swissBUILDINGS3D
+  - Getestet mit: Bundeshaus, Kramgasse, Münster, St. Peter & Paul
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
-  - Separate Gebäudeteile statt 1 Polygon
+  - Separate Gebäudeteile statt 1 Polygon (teilweise gelöst durch Zonen)
   - Ehrenhof/Innenhöfe markieren
   - Masslinien mit Pfeilen
   - Detaillierte Legende
 
 ### Geplant 🔜
-- [ ] swissALTI3D (Terrain) Integration
+- [ ] **swissALTI3D (Terrain) Integration** - Nächster Schritt
+- [ ] **Dachdaten-Integration** - Nächster Schritt
 - [ ] DXF-Export
 - [ ] Custom Domain
-- [ ] Tests: Zonen-Erkennung (L/U-Form, Anbauten)
 
 ## ACHTUNG: Technische Schulden
 

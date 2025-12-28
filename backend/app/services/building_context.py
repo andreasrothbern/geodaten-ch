@@ -394,6 +394,8 @@ class BuildingContextService:
         gastw = gwr_data.get('gastw', 'unbekannt') if gwr_data else 'unbekannt'
         gbauj = gwr_data.get('gbauj', 'unbekannt') if gwr_data else 'unbekannt'
         garea = gwr_data.get('garea', 'unbekannt') if gwr_data else 'unbekannt'
+        building_name = gwr_data.get('building_name', '') if gwr_data else ''
+        building_hints = gwr_data.get('building_hints', '') if gwr_data else ''
 
         # Höhendaten
         traufhoehe = height_data.get('traufhoehe_m', 'nicht verfügbar')
@@ -445,10 +447,13 @@ IGNORIERE NICHT diese Höhendifferenz!
 ### Gebäude-Metadaten (GWR)
 - EGID: {egid}
 - Adresse: {adresse or 'nicht verfügbar'}
+- Gebäudename: {building_name or 'nicht bekannt'}
 - Kategorie: {gkat} ({gkat_text})
 - Geschosse: {gastw}
 - Baujahr: {gbauj}
 - Grundfläche (GWR): {garea} m²
+
+{building_hints}
 
 ## Deine Aufgabe
 
