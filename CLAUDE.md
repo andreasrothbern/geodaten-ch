@@ -17,6 +17,7 @@ geodaten-ch/
 │       └── services/
 │           ├── swisstopo.py  # swisstopo API Adapter
 │           ├── geodienste.py # geodienste.ch WFS (Gebäudegeometrie)
+│           ├── terrain.py    # swissALTI3D Terrain-Höhen (NEU)
 │           ├── height_db.py  # Höhendatenbank Service
 │           └── cache.py      # SQLite Cache
 │   └── scripts/
@@ -78,6 +79,75 @@ GET https://api3.geo.admin.ch/rest/services/api/MapServer/identify
     &geometry=2600000,1199000
     &layers=all:ch.bfs.gebaeude_wohnungs_register
 ```
+
+## swissALTI3D Terrain API (NEU)
+
+Präzise Geländehöhen für die Schweiz (LiDAR-basiert).
+
+### Endpunkte (swisstopo)
+
+```python
+# Einzelpunkt-Höhe
+GET https://api3.geo.admin.ch/rest/services/height
+    ?easting=2600423        # LV95 E-Koordinate
+    &northing=1199521       # LV95 N-Koordinate
+    &sr=2056                # Optional: Koordinatensystem (default: LV95)
+# Response: {"height": "543.1"}
+
+# Terrain-Profil entlang einer Linie
+GET https://api3.geo.admin.ch/rest/services/profile.json
+    ?geom={"type":"LineString","coordinates":[[E1,N1],[E2,N2]]}
+    &sr=2056
+    &nb_points=50           # Anzahl Punkte
+# Response: {"alts": {"COMB": [...], "DTM2": [...], "DTM25": [...]}}
+```
+
+### Höhenmodelle
+
+| Modell | Auflösung | Beschreibung |
+|--------|-----------|--------------|
+| **COMB** | 2m | Kombiniertes Modell (empfohlen) |
+| **DTM2** | 2m | Digitales Terrainmodell |
+| **DTM25** | 25m | Gröbere Auflösung |
+
+### Backend-Integration
+
+```python
+# In app/services/terrain.py
+terrain_service = get_terrain_service()
+
+# Einzelpunkt
+height = await terrain_service.get_height(2600423, 1199521)
+# -> 543.1 (m ü.M.)
+
+# Profil
+profile = await terrain_service.get_profile(
+    start_e=2600000, start_n=1199000,
+    end_e=2600500, end_n=1199500,
+    nb_points=50
+)
+# -> {"model": "COMB", "heights": [...], "distances": [...]}
+```
+
+### App-API Endpunkte
+
+```python
+# Terrain-Höhe an Koordinate
+GET /api/v1/terrain/height?e=2600423&n=1199521
+# Response: {"height_m": 543.1, "model": "COMB"}
+
+# Terrain-Profil
+GET /api/v1/terrain/profile?start_e=...&start_n=...&end_e=...&end_n=...
+# Response: {"heights": [...], "distances": [...]}
+```
+
+### Beispiel-Höhen
+
+| Ort | Koordinaten (LV95) | Höhe |
+|-----|-------------------|------|
+| Bundeshaus Bern | 2600423, 1199521 | 543.1 m ü.M. |
+| Zermatt | 2620845, 1097886 | 2627.8 m ü.M. |
+| Bern Münster | 2600656, 1199497 | 535.4 m ü.M. |
 
 ## GWR-Daten (verfügbare Felder)
 
@@ -861,6 +931,11 @@ npx @railway/cli volume add --mount-path /app/data
   - Building-Hints für bekannte Gebäude
   - Echte Höhendaten aus swissBUILDINGS3D
   - Getestet mit: Bundeshaus, Kramgasse, Münster, St. Peter & Paul
+- [x] **swissALTI3D Terrain-Integration** (NEU 28.12.2025)
+  - TerrainService in `backend/app/services/terrain.py`
+  - Terrain-Höhe bei Geocoding (automatisch, m ü.M.)
+  - API Endpoints: `/api/v1/terrain/height`, `/api/v1/terrain/profile`
+  - In SVG-Prompts: Absolute Höhenkoten (m ü.M.)
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
@@ -870,7 +945,6 @@ npx @railway/cli volume add --mount-path /app/data
   - Detaillierte Legende
 
 ### Geplant 🔜
-- [ ] **swissALTI3D (Terrain) Integration** - Nächster Schritt
 - [ ] **Dachdaten-Integration** - Nächster Schritt
 - [ ] DXF-Export
 - [ ] Custom Domain
