@@ -2197,15 +2197,37 @@ async def visualize_cross_section(
                 if height_diff > 15:
                     complexity = ComplexityLevel.COMPLEX
 
+                # Building-Hints für bekannte Gebäude hinzufügen
+                from app.services.building_hints import get_building_hints, should_use_orthofoto
+                hints = get_building_hints(
+                    address=geo.matched_address,
+                    egid=building.egid,
+                    building_category_code=building.building_category_code if building else None
+                )
+                if hints:
+                    gwr_data["building_name"] = hints["name"]
+                    gwr_data["building_hints"] = hints["hints"]
+                    print(f"[HINTS] Erkannt: {hints['name']} (Match: {hints.get('match_type')})")
+
+                # Orthofoto für komplexe/bekannte Gebäude
+                use_orthofoto = should_use_orthofoto(
+                    address=geo.matched_address,
+                    egid=building.egid,
+                    is_complex=(complexity == ComplexityLevel.COMPLEX),
+                    building_category_code=building.building_category_code if building else None
+                )
+
                 if complexity == ComplexityLevel.COMPLEX and auto_analyze:
                     # Claude-Analyse für komplexe Gebäude
                     try:
+                        print(f"[ANALYZE] Starte Claude-Analyse (Orthofoto: {use_orthofoto})")
                         context = await context_service.analyze_with_claude(
                             egid=str(building.egid),
                             adresse=geo.matched_address,
                             polygon=polygon,
                             height_data=heights_data,
-                            gwr_data=gwr_data
+                            gwr_data=gwr_data,
+                            include_orthofoto=use_orthofoto
                         )
                         context_service.save_context(context)
                     except Exception as e:
@@ -2402,7 +2424,7 @@ async def visualize_elevation(
         # Auto-detect roof type from heights
         roof_type = "flat" if (ridge_height_m is None or ridge_height_m <= eave_height_m) else "gable"
 
-        # === ZONEN LADEN/ERSTELLEN ===
+        # === ZONEN LADEN/ERSTELLEN (Elevation) ===
         zones = None
         if building and building.egid:
             context_service = get_building_context_service()
@@ -2426,15 +2448,37 @@ async def visualize_elevation(
                 if height_diff > 15:
                     complexity = ComplexityLevel.COMPLEX
 
+                # Building-Hints für bekannte Gebäude hinzufügen
+                from app.services.building_hints import get_building_hints, should_use_orthofoto
+                hints = get_building_hints(
+                    address=geo.matched_address,
+                    egid=building.egid,
+                    building_category_code=building.building_category_code if building else None
+                )
+                if hints:
+                    gwr_data["building_name"] = hints["name"]
+                    gwr_data["building_hints"] = hints["hints"]
+                    print(f"[HINTS] Erkannt (elevation): {hints['name']} (Match: {hints.get('match_type')})")
+
+                # Orthofoto für komplexe/bekannte Gebäude
+                use_orthofoto = should_use_orthofoto(
+                    address=geo.matched_address,
+                    egid=building.egid,
+                    is_complex=(complexity == ComplexityLevel.COMPLEX),
+                    building_category_code=building.building_category_code if building else None
+                )
+
                 if complexity == ComplexityLevel.COMPLEX and auto_analyze:
                     # Claude-Analyse für komplexe Gebäude
                     try:
+                        print(f"[ANALYZE] Starte Claude-Analyse elevation (Orthofoto: {use_orthofoto})")
                         context = await context_service.analyze_with_claude(
                             egid=str(building.egid),
                             adresse=geo.matched_address,
                             polygon=polygon,
                             height_data=heights_data,
-                            gwr_data=gwr_data
+                            gwr_data=gwr_data,
+                            include_orthofoto=use_orthofoto
                         )
                         context_service.save_context(context)
                     except Exception as e:
