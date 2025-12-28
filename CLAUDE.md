@@ -210,6 +210,108 @@ result = roof_service.calculate(
 - **Komplexe Gebäude:** Für Bundeshaus, Kirchen → Option A/B nötig
 - **Konfidenz:** Gibt an wie verlässlich die Berechnung ist (0-1)
 
+## Orthofoto-Service (NEU 28.12.2025)
+
+Ruft Luftbilder (Orthofotos) von swisstopo WMS ab für Claude-Analyse.
+
+### Backend-Integration
+
+```python
+# In app/services/orthofoto.py
+from app.services.orthofoto import get_orthofoto_service
+
+orthofoto_service = get_orthofoto_service()
+
+# Orthofoto für Bereich abrufen
+result = await orthofoto_service.get_orthofoto(
+    center_e=2600450,           # LV95 E-Koordinate
+    center_n=1199830,           # LV95 N-Koordinate
+    width_m=100,                # Ausschnittbreite in Metern
+    height_m=100,               # Ausschnitthöhe in Metern
+    resolution_m=0.5,           # Meter pro Pixel
+    layer="orthofoto"           # "orthofoto", "karte" oder "luftbild"
+)
+# -> OrthofotoResult mit image_base64, width_px, height_px, ...
+
+# Für Gebäude mit automatischem Padding
+result = await orthofoto_service.get_building_orthofoto(
+    center_e=2600450,
+    center_n=1199830,
+    building_width_m=30,
+    building_depth_m=20,
+    padding_factor=1.5,         # 50% mehr Umgebung
+    resolution_m=0.25           # Hohe Auflösung
+)
+```
+
+### OrthofotoResult
+
+```python
+@dataclass
+class OrthofotoResult:
+    image_base64: str           # Base64-kodiertes PNG für Claude Vision API
+    width_px: int               # Bildbreite in Pixeln
+    height_px: int              # Bildhöhe in Pixeln
+    center_e: float             # LV95 E-Koordinate Zentrum
+    center_n: float             # LV95 N-Koordinate Zentrum
+    resolution_m: float         # Meter pro Pixel
+    bbox: Tuple[float, ...]     # Bounding Box (min_e, min_n, max_e, max_n)
+    source: str                 # "swisstopo"
+    media_type: str             # "image/png"
+```
+
+### Integration mit Claude-Analyse
+
+Die Claude-Analyse für komplexe Gebäude kann optional ein Orthofoto einbeziehen:
+
+```python
+# In app/services/building_context.py
+context = await context_service.analyze_with_claude(
+    egid="1234567",
+    adresse="Bundesplatz 3, 3011 Bern",
+    polygon=polygon,
+    height_data=height_data,
+    gwr_data=gwr_data,
+    include_orthofoto=True      # Orthofoto für Analyse einbeziehen
+)
+
+# Ergebnis enthält zusätzliche Analyse
+if context.has_orthofoto_analysis:
+    print(context.orthofoto_analysis)
+    # {
+    #   "roof_features": ["gauben_nord", "pv_anlage_sued"],
+    #   "courtyards": ["innenhof_zentral"],
+    #   "access_issues": ["baum_suedwest"],
+    #   "building_style": "gruenderzeit",
+    #   "polygon_accuracy": "gut"
+    # }
+```
+
+### Kosten-Vergleich
+
+| Analyse-Typ | Kosten | Verwendung |
+|-------------|--------|------------|
+| Nur Geometrie | ~$0.01-0.02 | Standard, schnell |
+| Mit Orthofoto | ~$0.05-0.10 | Komplexe Gebäude, Innenhöfe |
+
+### Was Claude aus dem Orthofoto erkennt
+
+1. **Dachaufbauten**: Gauben, Kamine, PV-Anlagen, Dachterrassen
+2. **Innenhöfe**: U-Form, Karree, Durchgänge
+3. **Gebäudegrenzen**: Polygon-Verifizierung
+4. **Architektur-Stil**: Historisch, Gründerzeit, Modern
+5. **Zugangsprobleme**: Bäume, enge Gassen, Nachbargebäude
+
+### Neuer ZoneType: INNENHOF
+
+Erkannte Innenhöfe werden als separate Zone mit `beruesten: false` erfasst:
+
+```python
+class ZoneType(str, Enum):
+    # ... bestehende Typen ...
+    INNENHOF = "innenhof"  # Nicht einrüsten
+```
+
 ## GWR-Daten (verfügbare Felder)
 
 - `egid` - Eidg. Gebäudeidentifikator
@@ -1003,6 +1105,13 @@ npx @railway/cli volume add --mount-path /app/data
   - Dachform-Klassifikation (Flach, Sattel, Walm, Pult)
   - Dachausrichtung aus Polygon-Geometrie
   - Im Scaffolding-Response als `roof` Objekt
+- [x] **Orthofoto-Service & Claude-Analyse Integration** (NEU 28.12.2025)
+  - OrthofotoService in `backend/app/services/orthofoto.py`
+  - swisstopo WMS für Luftbilder
+  - Integration in Claude-Analyse (`include_orthofoto=True`)
+  - Neuer ZoneType: `INNENHOF` (nicht einrüsten)
+  - Orthofoto-spezifische Analyse (Dachaufbauten, Innenhöfe, Zugangsprobleme)
+  - Kosten: ~$0.01-0.02 ohne, ~$0.05-0.10 mit Orthofoto
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
@@ -1014,7 +1123,6 @@ npx @railway/cli volume add --mount-path /app/data
 ### Geplant 🔜
 - [ ] **Sonnendach-Import (Option A)** - Dachneigung/Ausrichtung aus BFE-Daten
 - [ ] **swissBUILDINGS3D 3D-Analyse (Option B)** - Präzise Dachgeometrie
-- [ ] **Claude-Analyse für komplexe Gebäude** - Zonen-Erkennung via API
 - [ ] **DXF/IFC-Export** - 3D-Modellierung
 - [ ] Custom Domain
 

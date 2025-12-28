@@ -23,6 +23,7 @@ class ZoneType(str, Enum):
     VORDACH = "vordach"
     TREPPENHAUS = "treppenhaus"
     GARAGE = "garage"
+    INNENHOF = "innenhof"  # Neu: Innenhöfe/Lichthöfe (nicht einrüsten)
     UNKNOWN = "unknown"
 
 
@@ -162,6 +163,16 @@ class BuildingContext(BaseModel):
     zugaenge_hinweise: list[str] = Field(
         default_factory=list,
         description="Hinweise zu den Zugängen"
+    )
+
+    # Orthofoto-Analyse (optional)
+    has_orthofoto_analysis: bool = Field(
+        default=False,
+        description="Wurde ein Orthofoto analysiert?"
+    )
+    orthofoto_analysis: Optional[dict] = Field(
+        default=None,
+        description="Ergebnisse der Orthofoto-Analyse (Dachaufbauten, Innenhöfe, etc.)"
     )
 
     # Quelle und Qualität

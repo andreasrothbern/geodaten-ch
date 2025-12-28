@@ -312,6 +312,12 @@ class BuildingContextService:
 
         Sendet Polygon, Höhen und Metadaten an Claude und erhält
         eine strukturierte Zonen-Analyse zurück.
+
+        Mit include_orthofoto=True wird zusätzlich ein Luftbild analysiert:
+        - Erkennung von Dachaufbauten (Gauben, Kamine, PV)
+        - Identifikation von Innenhöfen
+        - Verifikation der Gebäudegrenzen
+        - Erhöhte Kosten (~$0.05-0.10 statt ~$0.01-0.02)
         """
         import anthropic
 
@@ -325,6 +331,27 @@ class BuildingContextService:
         ys = [p.get('y', p.get('n', p[1] if isinstance(p, (list, tuple)) else 0)) for p in polygon]
         bbox_width = max(xs) - min(xs) if xs else 0
         bbox_height = max(ys) - min(ys) if ys else 0
+        center_e = (min(xs) + max(xs)) / 2 if xs else 0
+        center_n = (min(ys) + max(ys)) / 2 if ys else 0
+
+        # Orthofoto abrufen wenn gewünscht
+        orthofoto_data = None
+        if include_orthofoto:
+            try:
+                from app.services.orthofoto import get_orthofoto_service
+                orthofoto_service = get_orthofoto_service()
+                orthofoto_data = await orthofoto_service.get_building_orthofoto(
+                    center_e=center_e,
+                    center_n=center_n,
+                    building_width_m=bbox_width,
+                    building_depth_m=bbox_height,
+                    padding_factor=1.5,
+                    resolution_m=0.25
+                )
+                if orthofoto_data:
+                    logger.info(f"Orthofoto loaded: {orthofoto_data.width_px}x{orthofoto_data.height_px}px")
+            except Exception as e:
+                logger.warning(f"Could not load orthofoto: {e}")
 
         # Prompt erstellen
         prompt = self._create_analysis_prompt(
@@ -337,18 +364,40 @@ class BuildingContextService:
             height_data=height_data,
             gwr_data=gwr_data,
             egid=egid,
-            adresse=adresse
+            adresse=adresse,
+            has_orthofoto=orthofoto_data is not None
         )
 
         # Claude API aufrufen
         try:
             client = anthropic.Anthropic()
 
+            # Message-Content bauen (mit oder ohne Bild)
+            if orthofoto_data:
+                # Vision API mit Bild
+                message_content = [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": orthofoto_data.media_type,
+                            "data": orthofoto_data.image_base64,
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            else:
+                # Nur Text
+                message_content = prompt
+
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=2000,
                 messages=[
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": message_content}
                 ]
             )
 
@@ -360,6 +409,10 @@ class BuildingContextService:
                 egid=egid,
                 adresse=adresse
             )
+
+            # Orthofoto-Flag setzen
+            if orthofoto_data:
+                context.has_orthofoto_analysis = True
 
             return context
 
@@ -381,7 +434,8 @@ class BuildingContextService:
         height_data: dict,
         gwr_data: Optional[dict],
         egid: str,
-        adresse: Optional[str]
+        adresse: Optional[str],
+        has_orthofoto: bool = False
     ) -> str:
         """Erstellt den Analyse-Prompt für Claude"""
 
@@ -454,7 +508,7 @@ IGNORIERE NICHT diese Höhendifferenz!
 - Grundfläche (GWR): {garea} m²
 
 {building_hints}
-
+{self._create_orthofoto_section(has_orthofoto)}
 ## Deine Aufgabe
 
 Analysiere das Gebäude und teile es in Höhenzonen auf.
@@ -643,6 +697,10 @@ Ergebnis:
                 )
                 zones.append(zone)
 
+            # Orthofoto-Analyse extrahieren (falls vorhanden)
+            orthofoto_analysis = data.get('orthofoto_analysis')
+            has_orthofoto = orthofoto_analysis is not None
+
             context = BuildingContext(
                 egid=egid,
                 adresse=adresse,
@@ -656,6 +714,8 @@ Ergebnis:
                 has_special_features=data.get('has_special_features', False),
                 zugaenge=data.get('zugaenge', []),
                 zugaenge_hinweise=data.get('zugaenge_hinweise', []),
+                has_orthofoto_analysis=has_orthofoto,
+                orthofoto_analysis=orthofoto_analysis,
                 source=ContextSource.CLAUDE,
                 confidence=data.get('overall_confidence', 0.8),
                 validated_by_user=False,
@@ -793,6 +853,67 @@ Ergebnis:
         negative = sum(1 for c in cross_products if c < 0)
 
         return positive > 0 and negative > 0
+
+    def _create_orthofoto_section(self, has_orthofoto: bool) -> str:
+        """Erstellt den Orthofoto-Analyse-Abschnitt des Prompts"""
+        if not has_orthofoto:
+            return ""
+
+        return """
+## Orthofoto-Analyse (WICHTIG!)
+
+Dir wurde ein Luftbild (Orthofoto) des Gebäudes zur Verfügung gestellt. Analysiere dieses Bild zusätzlich zu den Geometriedaten.
+
+### Was du im Orthofoto erkennen sollst:
+
+1. **Dachaufbauten**
+   - Gauben/Dachfenster (Position und Anzahl)
+   - Kamine, Entlüftungen
+   - Photovoltaik/Solaranlagen (falls vorhanden → Hinweis auf Zugangsprobleme)
+   - Dachterrassen, Aufbauten
+
+2. **Innenhöfe/Lichthöfe**
+   - Geschlossene Höfe (U-Form, Karree)
+   - Offene Höfe (L-Form)
+   - Einfahrten/Durchgänge
+   - Diese als separate "innenhof"-Zone markieren!
+
+3. **Gebäudegrenzen verifizieren**
+   - Stimmt das Polygon mit dem sichtbaren Gebäude überein?
+   - Anbauten die im Polygon fehlen?
+   - Verbindungsbauten zu Nachbargebäuden?
+
+4. **Architektur-Stil erkennen**
+   - Historisch (vor 1900): Oft komplexe Dachformen, Türme
+   - Gründerzeit (1870-1914): Symmetrisch, Erkerbau
+   - Modern (ab 1950): Flachdächer, einfache Formen
+   - → Beeinflusst die Zonen-Schätzung
+
+5. **Potentielle Zugangsprobleme**
+   - Vorgärten, Zäune (Abstand zur Fassade)
+   - Nachbargebäude (eng angrenzend)
+   - Strassen/Verkehrsflächen
+   - Bäume nahe am Gebäude
+
+### Orthofoto-spezifische Ausgabe
+
+Füge deiner JSON-Antwort diese zusätzlichen Felder hinzu:
+
+```json
+{
+  "orthofoto_analysis": {
+    "roof_features": ["gauben_nord", "pv_anlage_sued", "kamin"],
+    "courtyards": ["innenhof_zentral"],
+    "access_issues": ["baum_suedwest", "enge_gasse_nord"],
+    "building_style": "gruenderzeit",
+    "polygon_accuracy": "gut|teilweise|schlecht",
+    "notes": "Optionale Bemerkungen zum Luftbild"
+  }
+}
+```
+
+**WICHTIG:** Wenn du einen Innenhof erkennst, erstelle dafür eine separate Zone mit `type: "innenhof"` und `beruesten: false`.
+"""
 
     def _get_gkat_text(self, gkat: int) -> str:
         """Gibt den Text zur Gebäudekategorie zurück"""
