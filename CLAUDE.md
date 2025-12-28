@@ -149,6 +149,67 @@ GET /api/v1/terrain/profile?start_e=...&start_n=...&end_e=...&end_n=...
 | Zermatt | 2620845, 1097886 | 2627.8 m ü.M. |
 | Bern Münster | 2600656, 1199497 | 535.4 m ü.M. |
 
+## Dachneigung-Berechnung (Option C)
+
+Heuristische Berechnung der Dachdaten aus verfügbaren Höhen.
+
+### Berechnung
+
+```python
+# Formel für Satteldach
+neigung_grad = arctan((firsthoehe - traufhoehe) / (gebaeudetiefe / 2)) × (180/π)
+
+# Beispiel: EFH mit 6m Traufe, 9m First, 10m Tiefe
+neigung = arctan((9 - 6) / 5) = arctan(0.6) = 31°
+```
+
+### Dachformen (RoofType)
+
+| Typ | Neigung | Beschreibung |
+|-----|---------|--------------|
+| `flachdach` | < 5° | Attika-Dach |
+| `pultdach` | 5-15° | Einseitig geneigt |
+| `satteldach` | 15-45° | Standard Wohnbau |
+| `walmdach` | 15-45° | Quadratisches Gebäude |
+| `mansarddach` | > 60° | Gebrochene Flächen |
+
+### Backend-Integration
+
+```python
+# In app/services/roof.py
+roof_service = get_roof_service()
+
+result = roof_service.calculate(
+    traufhoehe_m=6.0,
+    firsthoehe_m=9.0,
+    building_depth_m=10.0,
+    polygon=[(E1,N1), (E2,N2), ...]
+)
+# -> RoofData(roof_type=SATTELDACH, roof_angle_deg=31.0, ...)
+```
+
+### API Response (im Scaffolding-Endpoint)
+
+```json
+{
+  "roof": {
+    "roof_type": "satteldach",
+    "roof_angle_deg": 31.0,
+    "roof_orientation": "O-W",
+    "first_azimuth_deg": 90.0,
+    "roof_area_m2": 153.9,
+    "scaffolding_height_m": 10.0,
+    "confidence": 0.6
+  }
+}
+```
+
+### Einschränkungen
+
+- **Einfache Gebäude:** Gute Ergebnisse für EFH/MFH
+- **Komplexe Gebäude:** Für Bundeshaus, Kirchen → Option A/B nötig
+- **Konfidenz:** Gibt an wie verlässlich die Berechnung ist (0-1)
+
 ## GWR-Daten (verfügbare Felder)
 
 - `egid` - Eidg. Gebäudeidentifikator
@@ -936,6 +997,12 @@ npx @railway/cli volume add --mount-path /app/data
   - Terrain-Höhe bei Geocoding (automatisch, m ü.M.)
   - API Endpoints: `/api/v1/terrain/height`, `/api/v1/terrain/profile`
   - In SVG-Prompts: Absolute Höhenkoten (m ü.M.)
+- [x] **Dachneigung-Berechnung Option C** (NEU 28.12.2025)
+  - RoofService in `backend/app/services/roof.py`
+  - Heuristische Berechnung aus Trauf-/Firsthöhe
+  - Dachform-Klassifikation (Flach, Sattel, Walm, Pult)
+  - Dachausrichtung aus Polygon-Geometrie
+  - Im Scaffolding-Response als `roof` Objekt
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
@@ -945,8 +1012,10 @@ npx @railway/cli volume add --mount-path /app/data
   - Detaillierte Legende
 
 ### Geplant 🔜
-- [ ] **Dachdaten-Integration** - Nächster Schritt
-- [ ] DXF-Export
+- [ ] **Sonnendach-Import (Option A)** - Dachneigung/Ausrichtung aus BFE-Daten
+- [ ] **swissBUILDINGS3D 3D-Analyse (Option B)** - Präzise Dachgeometrie
+- [ ] **Claude-Analyse für komplexe Gebäude** - Zonen-Erkennung via API
+- [ ] **DXF/IFC-Export** - 3D-Modellierung
 - [ ] Custom Domain
 
 ## ACHTUNG: Technische Schulden
