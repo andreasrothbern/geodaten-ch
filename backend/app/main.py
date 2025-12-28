@@ -728,6 +728,30 @@ async def get_scaffolding_data(
         except Exception as terrain_error:
             print(f"[Scaffolding] Terrain-Abfrage fehlgeschlagen: {terrain_error}")
 
+        # 5b. Dachdaten berechnen (Option C: heuristische Berechnung)
+        roof_data = None
+        try:
+            from app.services.roof import get_roof_service
+            roof_service = get_roof_service()
+
+            # Höhendaten aus scaffolding_data extrahieren
+            heights = scaffolding_data.get("heights", {})
+            dims = scaffolding_data.get("dimensions", {})
+
+            roof_calc = roof_service.calculate(
+                traufhoehe_m=heights.get("traufhoehe_m"),
+                firsthoehe_m=heights.get("firsthoehe_m"),
+                building_depth_m=dims.get("width_m"),  # Tiefe = kürzere Seite
+                building_length_m=dims.get("length_m"),
+                ground_area_m2=scaffolding_data.get("building", {}).get("area_m2"),
+                polygon=geometry.polygon if geometry else None,
+                floors=building.floors if building else None,
+                building_category_code=building.building_category_code if building else None
+            )
+            roof_data = roof_calc.to_dict()
+        except Exception as roof_error:
+            print(f"[Scaffolding] Dach-Berechnung fehlgeschlagen: {roof_error}")
+
         # 6. Adress- und GWR-Infos hinzufügen
         result = {
             "address": {
@@ -751,6 +775,8 @@ async def get_scaffolding_data(
                 "work_type": work_type,
                 "scaffold_type": scaffold_type,
             },
+            # Dachdaten (Option C: heuristische Berechnung)
+            "roof": roof_data,
             **scaffolding_data,
         }
 
