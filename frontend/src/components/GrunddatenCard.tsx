@@ -319,6 +319,8 @@ export function GrunddatenCard({
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('floor-plan')
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [loadingExport, setLoadingExport] = useState(false)
+  const [cacheFeedback, setCacheFeedback] = useState<string | null>(null)
+  const [clearingCache, setClearingCache] = useState(false)
   const { dimensions, gwr_data, building, address } = data
 
   // Export prompt to clipboard for Claude.ai (via Backend API)
@@ -411,6 +413,37 @@ export function GrunddatenCard({
 
     setLoadingExport(false)
   }, [data, apiUrl, address?.matched, building?.egid, gwr_data?.egid])
+
+  // Clear all caches for current address
+  const handleClearCache = useCallback(async () => {
+    if (!address?.matched) return
+
+    setClearingCache(true)
+    setCacheFeedback('Lösche...')
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/v1/smart-building/cache?address=${encodeURIComponent(address.matched)}&cache_type=all`,
+        { method: 'DELETE' }
+      )
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('[CACHE] Cleared:', result)
+        setCacheFeedback('✓ Cache geleert')
+        setTimeout(() => setCacheFeedback(null), 2000)
+      } else {
+        setCacheFeedback('Fehler')
+        setTimeout(() => setCacheFeedback(null), 2000)
+      }
+    } catch (err) {
+      console.error('[CACHE] Error clearing cache:', err)
+      setCacheFeedback('Fehler')
+      setTimeout(() => setCacheFeedback(null), 2000)
+    }
+
+    setClearingCache(false)
+  }, [apiUrl, address?.matched])
 
   // Initialize manual inputs with current values if they exist
   useEffect(() => {
@@ -748,8 +781,8 @@ export function GrunddatenCard({
                 ))}
               </div>
 
-              {/* Download Button + Export für Claude.ai */}
-              <div className="flex items-center gap-3">
+              {/* Download Button + Export für Claude.ai + Cache leeren */}
+              <div className="flex items-center gap-2">
                 <a
                   href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700${dimensions.traufhoehe_m ? `&traufhoehe=${dimensions.traufhoehe_m}` : ''}${dimensions.firsthoehe_m ? `&firsthoehe=${dimensions.firsthoehe_m}` : ''}${(activeVizTab === 'cross-section' || activeVizTab === 'elevation') ? '&use_claude=true' : ''}`}
                   download={`${activeVizTab}_${data.address.matched.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
@@ -771,6 +804,19 @@ export function GrunddatenCard({
                   title="Prompt für Claude.ai kopieren - generiert Grundriss + Ansicht + Schnitt"
                 >
                   {copyFeedback || '🤖 Export für Claude.ai'}
+                </button>
+                {/* Cache leeren Button */}
+                <button
+                  onClick={handleClearCache}
+                  disabled={clearingCache}
+                  className={`text-xs px-2 py-1 rounded transition-colors ${
+                    clearingCache
+                      ? 'bg-orange-200 text-orange-500 cursor-wait'
+                      : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                  }`}
+                  title="Cache für dieses Gebäude leeren (Bundle, Research, SVG)"
+                >
+                  {cacheFeedback || '🗑️ Cache'}
                 </button>
               </div>
             </div>
