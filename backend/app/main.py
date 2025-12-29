@@ -1405,9 +1405,10 @@ async def debug_height_details(egid: int):
 
     # get_height_details aufrufen
     result = get_height_details(
-        egid=egid,
         floors=None,
         building_category_code=None,
+        manual_height=None,
+        egid=egid,
     )
 
     return {
