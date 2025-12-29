@@ -483,3 +483,155 @@ def clear_svg_cache(egid: Optional[str] = None, svg_type: Optional[str] = None):
     except Exception as e:
         logger.error(f"Cache clear error: {e}")
         return 0
+
+
+# ============================================================================
+# SmartBuildingService Integration (NEU 29.12.2025)
+# ============================================================================
+
+SMART_BUILDING_AVAILABLE = False
+try:
+    from app.services.smart_building import (
+        get_smart_building_service,
+        get_prompt_generator,
+        SVGType,
+    )
+    SMART_BUILDING_AVAILABLE = True
+    logger.info("SmartBuildingService geladen")
+except ImportError as e:
+    logger.warning(f"SmartBuildingService nicht verfügbar: {e}")
+
+
+async def generate_svg_with_smart_service(
+    address: str,
+    svg_type: str = "schnitt",
+    force_refresh: bool = False,
+) -> Optional[str]:
+    """
+    Generiert SVG via SmartBuildingService (einheitliche Datenpipeline).
+
+    Diese Funktion vereint alle Datenquellen und generiert identische
+    Prompts für Export und automatische SVG-Generierung.
+
+    Args:
+        address: Schweizer Adresse
+        svg_type: "schnitt", "ansicht", "grundriss", "umgebung", oder "all"
+        force_refresh: Cache ignorieren
+
+    Returns:
+        SVG-String oder None bei Fehler
+    """
+    if not SMART_BUILDING_AVAILABLE:
+        logger.error("SmartBuildingService nicht verfügbar")
+        return None
+
+    if not is_available():
+        logger.error("Claude API nicht verfügbar")
+        return None
+
+    # Cache initialisieren
+    _init_cache_db()
+
+    # SVG-Typ parsen
+    svg_type_enum = SVGType.SCHNITT
+    if svg_type.lower() == "ansicht":
+        svg_type_enum = SVGType.ANSICHT
+    elif svg_type.lower() == "grundriss":
+        svg_type_enum = SVGType.GRUNDRISS
+    elif svg_type.lower() == "umgebung":
+        svg_type_enum = SVGType.UMGEBUNG
+    elif svg_type.lower() == "all":
+        svg_type_enum = SVGType.ALL
+
+    try:
+        # Daten sammeln via SmartBuildingService
+        service = get_smart_building_service()
+        bundle = await service.collect_all_data(
+            address=address,
+            force_refresh=force_refresh,
+            include_research=True,
+            include_zones_analysis=True,
+            include_terrain=True,
+        )
+
+        if not bundle.address_matched:
+            logger.error(f"Adresse nicht gefunden: {address}")
+            return None
+
+        # Cache-Key generieren (aus Bundle-Daten)
+        cache_key = _generate_smart_cache_key(svg_type, bundle)
+
+        # Aus Cache laden (wenn nicht force_refresh)
+        if not force_refresh:
+            cached = _get_cached_svg(cache_key)
+            if cached:
+                return cached
+
+        # Prompt generieren
+        generator = get_prompt_generator()
+        prompt = generator.generate(
+            bundle=bundle,
+            svg_type=svg_type_enum,
+            include_style_guide=True,
+        )
+
+        logger.info(f"SmartBuilding Prompt generiert: {len(prompt)} chars")
+        logger.info(f"Bundle: {len(bundle.zones)} Zonen, Komplexität: {bundle.complexity}")
+
+        # Claude API aufrufen
+        svg = _call_claude(prompt)
+
+        # Im Cache speichern
+        if svg:
+            _save_to_cache(
+                cache_key=cache_key,
+                svg_type=svg_type,
+                egid=bundle.egid,
+                address=bundle.address_matched,
+                svg_content=svg,
+                complexity=bundle.complexity
+            )
+
+        return svg
+
+    except Exception as e:
+        logger.error(f"SmartBuildingService SVG Generation Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _generate_smart_cache_key(svg_type: str, bundle) -> str:
+    """Generiert Cache-Key aus BuildingDataBundle"""
+    data = {
+        "type": svg_type,
+        "address": bundle.address_matched,
+        "egid": bundle.egid,
+        "zones": [z.id for z in bundle.zones],
+        "complexity": bundle.complexity,
+        "height": bundle.firsthoehe_m or bundle.traufhoehe_m,
+        "v": "3.1"  # SmartBuilding Version
+    }
+    json_str = json.dumps(data, sort_keys=True)
+    return hashlib.md5(json_str.encode()).hexdigest()
+
+
+def generate_svg_smart_sync(
+    address: str,
+    svg_type: str = "schnitt",
+    force_refresh: bool = False,
+) -> Optional[str]:
+    """
+    Synchrone Wrapper-Funktion für generate_svg_with_smart_service.
+
+    Für Verwendung in nicht-async Kontexten.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(
+        generate_svg_with_smart_service(address, svg_type, force_refresh)
+    )

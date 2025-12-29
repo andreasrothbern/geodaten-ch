@@ -277,6 +277,7 @@ GET /api/v1/ausmass/komplett?address=...&system_id=blitz70
 
 | Datum | Änderung | Von |
 |-------|----------|-----|
+| 2025-12-29 | SmartBuildingService - Einheitliche Datenpipeline mit 10-Schritte Sammlung | Claude Code |
 | 2025-12-29 | Einheitliches Prompt-System v3.0 - Professional Toggle entfernt | Claude Code |
 | 2025-12-29 | Dynamisches Prompt-System (research_service + prompt_builder) | Claude Code |
 | 2025-12-29 | Terrain-Höhe im Frontend + Claude API | Claude Code |

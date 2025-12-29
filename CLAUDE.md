@@ -778,6 +778,220 @@ Das neue System ersetzt die statischen Building-Hints:
 | Keine Kosten | ~$0.01-0.02 pro neuem Gebäude |
 | Sofort verfügbar | 1-2s Latenz bei Cache-Miss |
 
+## SmartBuildingService (NEU 29.12.2025)
+
+Zentraler Service für die schrittweise Sammlung aller Gebäudedaten für Gerüstplanung.
+
+### Architektur
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   SmartBuildingService                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  collect_all_data(address) → BuildingDataBundle             │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              10-Schritte Pipeline                   │   │
+│  ├─────────────────────────────────────────────────────┤   │
+│  │  1. Geocoding (swisstopo)                          │   │
+│  │  2. GWR-Daten (swisstopo)                          │   │
+│  │  3. Höhendaten (swissBUILDINGS3D)                  │   │
+│  │  4. Terrain (swissALTI3D, Hanglage)                │   │
+│  │  5. Polygon & Fassaden (geodienste.ch)             │   │
+│  │  6. Dach-Analyse (berechnet)                       │   │
+│  │  7. Gebäude-Recherche (Claude Haiku)               │   │
+│  │  8. Zonen-Analyse (Claude Sonnet - bei Komplex)    │   │
+│  │  9. SUVA Zugangspunkte (berechnet)                 │   │
+│  │ 10. Qualitätsbewertung                             │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │            BuildingDataBundle (Cache)               │   │
+│  │            → 24h TTL in SQLite                      │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │         UnifiedPromptGenerator                      │   │
+│  │         → IDENTISCHER Prompt für Export & API       │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Dateien
+
+```
+backend/app/services/smart_building/
+├── __init__.py              # Modul-Export
+├── models.py                # BuildingDataBundle, ZoneInfo, TerrainProfile
+├── service.py               # SmartBuildingService (Orchestrierung)
+└── prompt_generator.py      # UnifiedPromptGenerator
+```
+
+### API-Endpunkte
+
+```python
+# Alle Gebäudedaten sammeln
+GET /api/v1/smart-building/data?address=Bundesplatz 3, 3011 Bern
+    &force_refresh=false   # Bundle-Cache ignorieren
+    &include_research=true # Claude-Recherche einbeziehen
+    &include_zones=true    # Zonen-Analyse einbeziehen
+    &include_terrain=true  # Terrain-Daten einbeziehen
+# Response: Vollständiges JSON mit allen gesammelten Daten
+
+# Einheitlichen Prompt generieren
+GET /api/v1/smart-building/prompt
+    ?address=Bundesplatz 3, 3011 Bern
+    &svg_type=all          # all, grundriss, ansicht, schnitt, umgebung
+    &force_refresh=false   # ALLE Caches ignorieren (Bundle + Research)
+# Response: Prompt-String + Metadaten
+
+# SVG generieren mit vollem Cache-Kontrolle
+GET /api/v1/smart-building/svg
+    ?address=Bundesplatz 3, 3011 Bern
+    &svg_type=schnitt      # grundriss, ansicht, schnitt
+    &force_refresh=false   # ALLE Caches ignorieren (Bundle + Research + SVG)
+# Response: SVG-String oder null
+
+# Cache-Statistiken
+GET /api/v1/smart-building/cache/stats
+# Response: { bundle_count, research_entries, svg_versions }
+
+# Cache löschen
+DELETE /api/v1/smart-building/cache
+    ?address=null          # Optional: nur für diese Adresse
+    &cache_type=all        # all, bundle, research, svg
+# Response: { cleared_caches: [...], message: "..." }
+```
+
+### force_refresh Verhalten
+
+| Parameter | Bundle-Cache | Research-Cache | SVG-Cache |
+|-----------|--------------|----------------|-----------|
+| `/data?force_refresh=true` | ✅ Ignoriert | ✅ Ignoriert | - |
+| `/prompt?force_refresh=true` | ✅ Ignoriert | ✅ Ignoriert | - |
+| `/svg?force_refresh=true` | ✅ Ignoriert | ✅ Ignoriert | ✅ Ignoriert |
+
+### Python-Verwendung
+
+```python
+from app.services.smart_building import (
+    get_smart_building_service,
+    get_prompt_generator,
+    SVGType,
+)
+
+# Daten sammeln
+service = get_smart_building_service()
+bundle = await service.collect_all_data(
+    address="Bundesplatz 3, 3011 Bern",
+    force_refresh=False,
+    include_research=True,
+    include_zones_analysis=True,
+    include_terrain=True,
+)
+
+# Prompt generieren
+generator = get_prompt_generator()
+prompt = generator.generate(
+    bundle=bundle,
+    svg_type=SVGType.ALL,
+    include_style_guide=True,
+)
+
+# SVG generieren (via claude_svg_zones.py)
+from app.services.claude_svg_zones import generate_svg_with_smart_service
+svg = await generate_svg_with_smart_service(
+    address="Bundesplatz 3, 3011 Bern",
+    svg_type="schnitt",
+)
+```
+
+### BuildingDataBundle
+
+Zentrales Datenmodell mit allen gesammelten Informationen:
+
+```python
+@dataclass
+class BuildingDataBundle:
+    # Identifikation
+    egid: Optional[str]
+    address_matched: Optional[str]
+    building_name: Optional[str]
+    building_type: Optional[str]
+    architectural_style: Optional[str]
+
+    # Geometrie
+    polygon: Optional[List[List[float]]]
+    sides: Optional[List[Dict]]
+    perimeter_m: Optional[float]
+
+    # Höhen
+    traufhoehe_m: Optional[float]
+    firsthoehe_m: Optional[float]
+    height_quality: DataQuality
+
+    # Terrain (Hanglage)
+    terrain: Optional[TerrainProfile]
+
+    # Dach
+    roof_type: Optional[str]
+    roof_angle_deg: Optional[float]
+
+    # Zonen
+    zones: List[ZoneInfo]
+    complexity: str  # "simple", "moderate", "complex"
+
+    # Zugänge
+    access_points: List[AccessPoint]
+    suva_compliant: bool
+
+    # Meta
+    data_sources: List[DataSource]
+    overall_quality: DataQuality
+    warnings: List[str]
+```
+
+### Komplexitäts-Erkennung
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│           _needs_zones_analysis(bundle) → bool              │
+├─────────────────────────────────────────────────────────────┤
+│  COMPLEX (Claude Sonnet Analyse):                           │
+│  → Extreme Höhendifferenz (First - Trauf > 15m)            │
+│  → Komplexe GWR-Kategorie (1040, 1060, 1080, 1110, 1130)   │
+│  → Grosses Gebäude (> 1000 m²)                             │
+│  → Komplexes Polygon (> 12 Punkte)                         │
+│                                                             │
+│  SIMPLE (Auto-Zone):                                        │
+│  → Standard-Wohngebäude                                     │
+│  → Einfache Geometrie                                       │
+│  → Keine extremen Höhenunterschiede                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Kosten
+
+| Szenario | Cache | Recherche | Zonen-Analyse | Total |
+|----------|-------|-----------|---------------|-------|
+| Cache-Hit | ✓ | - | - | $0.00 |
+| Einfaches Gebäude | ✗ | Haiku | Auto | ~$0.01-0.02 |
+| Komplexes Gebäude | ✗ | Haiku | Sonnet | ~$0.05-0.15 |
+
+### Vorteile gegenüber altem System
+
+| Alt (separate Services) | Neu (SmartBuildingService) |
+|-------------------------|---------------------------|
+| Daten verstreut | Alles in BuildingDataBundle |
+| Mehrfache API-Calls | Bundle-Cache (24h) |
+| Separate Prompts | IDENTISCHER Prompt für Export & API |
+| Manuelle Integration | Einheitliche Pipeline |
+| Keine Qualitätskontrolle | overall_quality, warnings, errors |
+
 ## Douglas-Peucker Polygon-Vereinfachung
 
 Die App verwendet den Douglas-Peucker Algorithmus zur Reduktion der Fassadensegmente.
@@ -1372,6 +1586,17 @@ npx @railway/cli volume add --mount-path /app/data
   - **"Professional" Toggle entfernt** - Claude wird immer für Schnitt/Ansicht verwendet
   - Backend `use_claude` Default geändert auf `True`
   - API-Endpoints: `/api/v1/prompt/generate`, `/api/v1/prompt/research/stats`
+- [x] **SmartBuildingService** (NEU 29.12.2025)
+  - Zentraler Service für schrittweise Gebäudedaten-Sammlung
+  - 10-Schritte Pipeline: Geocoding → GWR → Höhen → Terrain → Polygon → Dach → Recherche → Zonen → Zugänge → Qualität
+  - `smart_building/models.py` - BuildingDataBundle, ZoneInfo, TerrainProfile
+  - `smart_building/service.py` - Orchestrierung aller Datenquellen
+  - `smart_building/prompt_generator.py` - Einheitliche Prompt-Generierung
+  - Bundle-Caching (24h TTL) in SQLite
+  - Komplexitäts-Erkennung: simple → auto-zone, complex → Claude Sonnet Analyse
+  - SUVA-konforme Zugangspunkt-Berechnung
+  - API-Endpoints: `/api/v1/smart-building/data`, `/api/v1/smart-building/prompt`, `/api/v1/smart-building/cache/stats`
+  - Integration in `claude_svg_zones.py`: `generate_svg_with_smart_service()`
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs

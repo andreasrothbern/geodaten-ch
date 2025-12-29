@@ -3405,6 +3405,416 @@ async def clear_expired_research_cache():
 
 
 # ============================================================================
+# SmartBuildingService API (NEU 29.12.2025)
+# ============================================================================
+
+@app.get("/api/v1/smart-building/data",
+         tags=["Smart Building"],
+         summary="Sammelt alle Gebäudedaten für Gerüstplanung")
+async def get_smart_building_data(
+    address: str,
+    force_refresh: bool = Query(False, description="Cache ignorieren"),
+    include_research: bool = Query(True, description="Claude-Recherche für Gebäude-Identifikation"),
+    include_zones_analysis: bool = Query(True, description="Claude-Analyse für komplexe Gebäude"),
+    include_terrain: bool = Query(True, description="Terrain-Daten (Hanglage) abrufen"),
+):
+    """
+    Sammelt schrittweise alle verfügbaren Daten für ein Gebäude.
+
+    **Datenquellen (10 Schritte):**
+    1. Geocoding (Adresse → Koordinaten, EGID)
+    2. GWR-Daten (Kategorie, Geschosse, Fläche)
+    3. Höhendaten (swissBUILDINGS3D)
+    4. Terrain (swissALTI3D, Hanglage-Erkennung)
+    5. Polygon & Fassaden (geodienste.ch)
+    6. Dach-Analyse (berechnet)
+    7. Gebäude-Recherche (Claude Haiku)
+    8. Zonen-Analyse (Claude Sonnet - nur bei komplexen Gebäuden)
+    9. SUVA Zugangspunkte (berechnet)
+    10. Qualitätsbewertung
+
+    **Cache:** 24 Stunden TTL
+
+    **Kosten:**
+    - Cache-Hit: $0.00
+    - Recherche (Haiku): ~$0.01-0.02
+    - Zonen-Analyse (Sonnet): ~$0.05-0.10 (nur bei komplexen Gebäuden)
+    """
+    try:
+        from app.services.smart_building import get_smart_building_service
+
+        service = get_smart_building_service()
+        bundle = await service.collect_all_data(
+            address=address,
+            force_refresh=force_refresh,
+            include_research=include_research,
+            include_zones_analysis=include_zones_analysis,
+            include_terrain=include_terrain,
+        )
+
+        return {
+            "status": "ok",
+            "address_input": bundle.address_input,
+            "address_matched": bundle.address_matched,
+            "egid": bundle.egid,
+            "coordinates": {
+                "lv95_e": bundle.lv95_e,
+                "lv95_n": bundle.lv95_n
+            } if bundle.lv95_e else None,
+            "building": {
+                "name": bundle.building_name,
+                "type": bundle.building_type,
+                "style": bundle.architectural_style,
+                "construction_year": bundle.construction_year,
+            },
+            "gwr": {
+                "category": bundle.gwr_category,
+                "category_code": bundle.gwr_category_code,
+                "floors": bundle.gwr_floors,
+                "area_m2": bundle.gwr_area_m2,
+            } if bundle.gwr_category else None,
+            "heights": {
+                "traufhoehe_m": bundle.traufhoehe_m,
+                "firsthoehe_m": bundle.firsthoehe_m,
+                "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+                "estimated_m": bundle.estimated_height_m,
+                "source": bundle.height_source.value if bundle.height_source else None,
+                "quality": bundle.height_quality.value if bundle.height_quality else None,
+            },
+            "terrain": {
+                "reference_height_m": bundle.terrain.reference_height_m,
+                "slope_m": bundle.terrain.slope_m,
+                "is_sloped": bundle.terrain.is_sloped,
+            } if bundle.terrain else None,
+            "roof": {
+                "type": bundle.roof_type,
+                "angle_deg": bundle.roof_angle_deg,
+                "orientation": bundle.roof_orientation,
+                "area_m2": bundle.roof_area_m2,
+                "confidence": bundle.roof_confidence,
+            } if bundle.roof_type else None,
+            "geometry": {
+                "polygon_points": len(bundle.polygon) if bundle.polygon else 0,
+                "perimeter_m": bundle.perimeter_m,
+                "footprint_area_m2": bundle.footprint_area_m2,
+                "bbox_width_m": bundle.bbox_width_m,
+                "bbox_depth_m": bundle.bbox_depth_m,
+                "sides_count": len(bundle.sides) if bundle.sides else 0,
+            },
+            "zones": [
+                {
+                    "id": z.id,
+                    "name": z.name,
+                    "type": z.zone_type,
+                    "traufhoehe_m": z.traufhoehe_m,
+                    "firsthoehe_m": z.firsthoehe_m,
+                    "beruesten": z.beruesten,
+                    "sonderkonstruktion": z.sonderkonstruktion,
+                    "confidence": z.confidence,
+                }
+                for z in bundle.zones
+            ],
+            "access_points": [
+                {
+                    "id": a.id,
+                    "fassade_id": a.fassade_id,
+                    "position_percent": a.position_percent,
+                    "suva_compliant": a.suva_compliant,
+                }
+                for a in bundle.access_points
+            ],
+            "complexity": bundle.complexity,
+            "data_sources": [s.value for s in bundle.data_sources],
+            "quality": bundle.overall_quality.value if bundle.overall_quality else None,
+            "warnings": bundle.warnings,
+            "errors": bundle.errors,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/smart-building/prompt",
+         tags=["Smart Building"],
+         summary="Generiert einheitlichen Prompt aus SmartBuildingService")
+async def get_smart_building_prompt(
+    address: str,
+    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, schnitt, umgebung"),
+    force_refresh: bool = Query(False, description="Cache ignorieren"),
+    include_style_guide: bool = Query(True, description="Style-Vorgaben im Prompt"),
+):
+    """
+    Generiert einen einheitlichen Prompt für SVG-Erstellung.
+
+    **WICHTIG:** Identischer Prompt für:
+    - Export-Button → Claude.ai (manuell)
+    - Claude API → Automatische SVG-Generierung
+
+    **Vorteile gegenüber /api/v1/prompt/generate:**
+    - Nutzt SmartBuildingService (einheitliche Datenpipeline)
+    - Bundle-Caching (24h TTL)
+    - Erweiterbar für Umgebungsplan
+    - Strukturiertes BuildingDataBundle
+    """
+    try:
+        from app.services.smart_building import (
+            get_smart_building_service,
+            get_prompt_generator,
+            SVGType,
+        )
+
+        # SVG-Typ parsen
+        svg_type_enum = SVGType.ALL
+        if svg_type.lower() == "grundriss":
+            svg_type_enum = SVGType.GRUNDRISS
+        elif svg_type.lower() == "ansicht":
+            svg_type_enum = SVGType.ANSICHT
+        elif svg_type.lower() == "schnitt":
+            svg_type_enum = SVGType.SCHNITT
+        elif svg_type.lower() == "umgebung":
+            svg_type_enum = SVGType.UMGEBUNG
+
+        # Daten sammeln
+        service = get_smart_building_service()
+        bundle = await service.collect_all_data(
+            address=address,
+            force_refresh=force_refresh,
+            include_research=True,
+            include_zones_analysis=True,
+            include_terrain=True,
+        )
+
+        # Prompt generieren
+        generator = get_prompt_generator()
+        prompt = generator.generate(
+            bundle=bundle,
+            svg_type=svg_type_enum,
+            include_style_guide=include_style_guide,
+        )
+
+        return {
+            "status": "ok",
+            "prompt": prompt,
+            "address": bundle.address_matched,
+            "egid": bundle.egid,
+            "svg_type": svg_type,
+            "zones_count": len(bundle.zones),
+            "complexity": bundle.complexity,
+            "data_sources": [s.value for s in bundle.data_sources],
+            "prompt_length": len(prompt),
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/smart-building/cache/stats",
+         tags=["Smart Building"],
+         summary="Cache-Statistiken des SmartBuildingService")
+async def get_smart_building_cache_stats():
+    """
+    Gibt Statistiken des BuildingDataBundle-Cache zurück.
+    """
+    try:
+        import sqlite3
+        from pathlib import Path
+        import os
+
+        DATA_DIR = Path(os.getenv("DATA_DIR", "app/data"))
+        DB_PATH = DATA_DIR / "building_contexts.db"
+
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+
+        # Anzahl Einträge
+        cursor.execute("SELECT COUNT(*) FROM smart_building_cache")
+        total = cursor.fetchone()[0]
+
+        # Abgelaufene Einträge
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            SELECT COUNT(*) FROM smart_building_cache
+            WHERE expires_at < ?
+        """, (now,))
+        expired = cursor.fetchone()[0]
+
+        conn.close()
+
+        return {
+            "status": "ok",
+            "cache": {
+                "total_entries": total,
+                "active_entries": total - expired,
+                "expired_entries": expired,
+                "ttl_hours": 24,
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "cache": {
+                "total_entries": 0,
+                "active_entries": 0,
+                "expired_entries": 0,
+            }
+        }
+
+
+@app.get("/api/v1/smart-building/svg",
+         tags=["Smart Building"],
+         summary="Generiert SVG via SmartBuildingService")
+async def generate_smart_building_svg(
+    address: str,
+    svg_type: str = Query("schnitt", description="SVG-Typ: schnitt, ansicht, grundriss"),
+    force_refresh: bool = Query(False, description="ALLE Caches ignorieren (Bundle, Recherche, SVG)"),
+):
+    """
+    Generiert SVG mit vollständiger Cache-Kontrolle.
+
+    **force_refresh=true umgeht ALLE Caches:**
+    - SmartBuilding Bundle Cache (24h)
+    - Claude Recherche Cache (30 Tage)
+    - SVG Cache
+
+    **Ideal für:**
+    - Prompt-Entwicklung und Testing
+    - Nach Änderungen an Prompt-Templates
+    - Frische Daten nach Höhen-Import
+
+    **Kosten bei force_refresh:**
+    - Einfaches Gebäude: ~$0.05-0.10 (Haiku + Sonnet)
+    - Komplexes Gebäude: ~$0.10-0.20 (Haiku + 2x Sonnet)
+    """
+    try:
+        from app.services.claude_svg_zones import (
+            generate_svg_with_smart_service,
+            is_available,
+        )
+
+        if not is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Claude API nicht verfügbar (ANTHROPIC_API_KEY fehlt)"
+            )
+
+        svg = await generate_svg_with_smart_service(
+            address=address,
+            svg_type=svg_type,
+            force_refresh=force_refresh,
+        )
+
+        if not svg:
+            raise HTTPException(
+                status_code=500,
+                detail="SVG-Generierung fehlgeschlagen"
+            )
+
+        return Response(
+            content=svg,
+            media_type="image/svg+xml",
+            headers={
+                "X-Force-Refresh": str(force_refresh),
+                "X-SVG-Type": svg_type,
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/smart-building/cache",
+            tags=["Smart Building"],
+            summary="Löscht alle SmartBuilding Caches")
+async def clear_smart_building_cache(
+    address: Optional[str] = Query(None, description="Nur für diese Adresse löschen"),
+    cache_type: str = Query("all", description="all, bundle, research, svg"),
+):
+    """
+    Löscht SmartBuilding Cache-Einträge.
+
+    **cache_type:**
+    - `all`: Alle Caches (Bundle + Research + SVG)
+    - `bundle`: Nur BuildingDataBundle Cache
+    - `research`: Nur Claude Recherche Cache
+    - `svg`: Nur SVG Cache
+    """
+    try:
+        import sqlite3
+        from pathlib import Path
+        import os
+
+        DATA_DIR = Path(os.getenv("DATA_DIR", "app/data"))
+        DB_PATH = DATA_DIR / "building_contexts.db"
+        SVG_CACHE_PATH = DATA_DIR.parent / "services" / "claude_svg_cache.db"
+
+        deleted = {"bundle": 0, "research": 0, "svg": 0}
+
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+
+        # Bundle Cache
+        if cache_type in ["all", "bundle"]:
+            if address:
+                cursor.execute(
+                    "DELETE FROM smart_building_cache WHERE address LIKE ?",
+                    (f"%{address}%",)
+                )
+            else:
+                cursor.execute("DELETE FROM smart_building_cache")
+            deleted["bundle"] = cursor.rowcount
+
+        # Research Cache
+        if cache_type in ["all", "research"]:
+            if address:
+                cursor.execute(
+                    "DELETE FROM claude_research_cache WHERE adresse LIKE ?",
+                    (f"%{address}%",)
+                )
+            else:
+                cursor.execute("DELETE FROM claude_research_cache")
+            deleted["research"] = cursor.rowcount
+
+        conn.commit()
+        conn.close()
+
+        # SVG Cache (separate Datenbank)
+        if cache_type in ["all", "svg"]:
+            try:
+                from app.services.claude_svg_zones import clear_svg_cache
+                if address:
+                    # SVG Cache hat keine Adress-Suche, nur EGID
+                    deleted["svg"] = 0
+                else:
+                    deleted["svg"] = clear_svg_cache()
+            except Exception:
+                deleted["svg"] = 0
+
+        return {
+            "status": "ok",
+            "deleted": deleted,
+            "total": sum(deleted.values()),
+            "address_filter": address,
+            "cache_type": cache_type,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 
