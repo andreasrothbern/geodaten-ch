@@ -447,7 +447,7 @@ class SmartBuildingService:
 
             heights = None
 
-            # 1. EGID-basierter Lookup
+            # 1. EGID-basierter Lookup (lokal)
             if bundle.egid:
                 try:
                     egid_int = int(bundle.egid)
@@ -455,11 +455,32 @@ class SmartBuildingService:
                 except (ValueError, TypeError):
                     heights = None
 
-            # 2. Fallback: Koordinaten-basiert
+            # 2. Fallback: Koordinaten-basiert (lokal)
             if not heights and bundle.lv95_e and bundle.lv95_n:
                 heights = get_building_height_by_coordinates(
                     bundle.lv95_e, bundle.lv95_n, tolerance_m=50.0
                 )
+
+            # 3. On-Demand Import wenn lokal nicht gefunden
+            if not heights and bundle.lv95_e and bundle.lv95_n:
+                try:
+                    from app.services.height_fetcher import fetch_height_for_coordinates
+                    logger.info(f"On-demand Höhen-Import für E={bundle.lv95_e}, N={bundle.lv95_n}")
+
+                    egid_int = int(bundle.egid) if bundle.egid else None
+                    result = await fetch_height_for_coordinates(
+                        e=bundle.lv95_e,
+                        n=bundle.lv95_n,
+                        egid=egid_int
+                    )
+
+                    if result.get("success") and result.get("heights"):
+                        heights = result["heights"]
+                        logger.info(f"On-demand Import erfolgreich: {result.get('imported_count', 0)} Gebäude")
+                    elif result.get("status") == "already_exists":
+                        heights = result.get("heights")
+                except Exception as fetch_error:
+                    logger.warning(f"On-demand Höhen-Import fehlgeschlagen: {fetch_error}")
 
             if heights:
                 bundle.traufhoehe_m = heights.get('traufhoehe_m')
