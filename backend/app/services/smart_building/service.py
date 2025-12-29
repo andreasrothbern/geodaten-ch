@@ -438,36 +438,59 @@ class SmartBuildingService:
             bundle.add_warning(f"GWR-Daten nicht verfügbar: {str(e)}")
 
     async def _collect_height_data(self, bundle: BuildingDataBundle):
-        """Schritt 3: Höhendaten aus swissBUILDINGS3D"""
+        """Schritt 3: Höhendaten aus swissBUILDINGS3D
+
+        Nutzt die vollständige Lookup-Strategie aus geodienste.py:
+        1. EGID-Lookup (building_heights_detailed)
+        2. EGID-Legacy (building_heights)
+        3. Koordinaten-Lookup (building_heights_by_coord)
+        4. Geschätzt aus GWR-Daten (Geschosse × Geschosshöhe)
+        5. Standard nach Kategorie (EFH: 8m, MFH: 12m, etc.)
+
+        Falls lokal keine Daten: On-Demand Import via STAC API.
+        """
         try:
-            from app.services.height_db import (
-                get_building_heights_detailed,
-                get_building_height_by_coordinates
-            )
+            from app.services.geodienste import _get_height_from_sources
 
-            heights = None
-
-            # 1. EGID-basierter Lookup (lokal)
+            # EGID als int konvertieren
+            egid_int = None
             if bundle.egid:
                 try:
                     egid_int = int(bundle.egid)
-                    heights = get_building_heights_detailed(egid_int)
                 except (ValueError, TypeError):
-                    heights = None
+                    pass
 
-            # 2. Fallback: Koordinaten-basiert (lokal)
-            if not heights and bundle.lv95_e and bundle.lv95_n:
-                heights = get_building_height_by_coordinates(
-                    bundle.lv95_e, bundle.lv95_n, tolerance_m=50.0
-                )
+            # Vollständige Höhen-Lookup-Strategie aus geodienste.py nutzen
+            height_result = _get_height_from_sources(
+                floors=bundle.gwr_floors,
+                building_category_code=bundle.gwr_category_code,
+                egid=egid_int,
+                lv95_e=bundle.lv95_e,
+                lv95_n=bundle.lv95_n,
+            )
 
-            # 3. On-Demand Import wenn lokal nicht gefunden
-            if not heights and bundle.lv95_e and bundle.lv95_n:
+            # Ergebnisse übernehmen
+            bundle.traufhoehe_m = height_result.get('traufhoehe_m')
+            bundle.firsthoehe_m = height_result.get('firsthoehe_m')
+            bundle.gebaeudehoehe_m = height_result.get('gebaeudehoehe_m')
+            bundle.estimated_height_m = height_result.get('estimated_height_m')
+
+            # Quelle bestimmen
+            if height_result.get('measured_height_m'):
+                bundle.height_source = DataSource.SWISSBUILDINGS3D
+                bundle.height_quality = DataQuality.HIGH
+                bundle.add_source(DataSource.SWISSBUILDINGS3D)
+            elif height_result.get('estimated_source') == 'calculated_from_floors':
+                bundle.height_quality = DataQuality.MEDIUM
+            else:
+                bundle.height_quality = DataQuality.LOW
+
+            # On-Demand Import falls keine gemessenen Höhen gefunden
+            if not height_result.get('measured_height_m') and bundle.lv95_e and bundle.lv95_n:
                 try:
                     from app.services.height_fetcher import fetch_height_for_coordinates
                     logger.info(f"On-demand Höhen-Import für E={bundle.lv95_e}, N={bundle.lv95_n}")
 
-                    egid_int = int(bundle.egid) if bundle.egid else None
                     result = await fetch_height_for_coordinates(
                         e=bundle.lv95_e,
                         n=bundle.lv95_n,
@@ -476,25 +499,27 @@ class SmartBuildingService:
 
                     if result.get("success") and result.get("heights"):
                         heights = result["heights"]
+                        bundle.traufhoehe_m = heights.get('traufhoehe_m')
+                        bundle.firsthoehe_m = heights.get('firsthoehe_m')
+                        bundle.gebaeudehoehe_m = heights.get('gebaeudehoehe_m')
+                        bundle.height_source = DataSource.SWISSBUILDINGS3D
+                        bundle.height_quality = DataQuality.HIGH
+                        bundle.add_source(DataSource.SWISSBUILDINGS3D)
                         logger.info(f"On-demand Import erfolgreich: {result.get('imported_count', 0)} Gebäude")
-                    elif result.get("status") == "already_exists":
-                        heights = result.get("heights")
+                    elif result.get("status") == "already_exists" and result.get("heights"):
+                        heights = result["heights"]
+                        bundle.traufhoehe_m = heights.get('traufhoehe_m')
+                        bundle.firsthoehe_m = heights.get('firsthoehe_m')
+                        bundle.gebaeudehoehe_m = heights.get('gebaeudehoehe_m')
+                        bundle.height_source = DataSource.SWISSBUILDINGS3D
+                        bundle.height_quality = DataQuality.HIGH
+                        bundle.add_source(DataSource.SWISSBUILDINGS3D)
                 except Exception as fetch_error:
                     logger.warning(f"On-demand Höhen-Import fehlgeschlagen: {fetch_error}")
 
-            if heights:
-                bundle.traufhoehe_m = heights.get('traufhoehe_m')
-                bundle.firsthoehe_m = heights.get('firsthoehe_m')
-                bundle.gebaeudehoehe_m = heights.get('gebaeudehoehe_m')
-                bundle.height_source = DataSource.SWISSBUILDINGS3D
-                bundle.height_quality = DataQuality.HIGH
-                bundle.add_source(DataSource.SWISSBUILDINGS3D)
-            else:
-                # Fallback: Aus Geschossen schätzen
-                floors = bundle.gwr_floors or 3
-                bundle.estimated_height_m = floors * 3.0 + 2.5  # 3m pro Geschoss + Dach
-                bundle.height_quality = DataQuality.LOW
-                bundle.add_warning("Höhe aus Geschossen geschätzt (swissBUILDINGS3D nicht verfügbar)")
+            # Warning falls nur geschätzte Höhe
+            if not bundle.traufhoehe_m and not bundle.firsthoehe_m:
+                bundle.add_warning(f"Höhe geschätzt: {height_result.get('estimated_source', 'unknown')}")
 
         except Exception as e:
             logger.error(f"Height data error: {e}")
