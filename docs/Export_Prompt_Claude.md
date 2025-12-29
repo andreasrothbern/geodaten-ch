@@ -1,4 +1,6 @@
-# SVG-Generierung: [Grundriss | Fassadenansicht | Gebäudeschnitt]
+# SVG-Generierung: Grundriss + Fassadenansicht + Gebäudeschnitt
+
+> **Hinweis:** Ein Export-Button generiert Daten für alle 3 SVG-Typen.
 
 ## 1. Gebäude-Identifikation
 - **Adresse:** [Strasse Nr, PLZ Ort]
@@ -137,7 +139,14 @@
 - Höhenskala links, Lagenbeschriftung rechts
 
 ## 10. Output
-SVG mit `viewBox="0 0 700 480"`. NUR SVG-Code, keine Erklärungen.
+
+Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
+
+1. **grundriss.svg** - Draufsicht mit Polygon und Gerüstzone
+2. **fassadenansicht.svg** - Frontalansicht mit Gerüst
+3. **gebaeudesschnitt.svg** - Querschnitt mit Geschossen
+
+**NUR SVG-Code**, keine Erklärungen. Trenne die SVGs klar voneinander.
 
 ---
 

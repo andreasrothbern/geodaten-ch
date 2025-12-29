@@ -17,22 +17,17 @@ import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
  * Generiert einen strukturierten Prompt für Claude.ai
  * Enthält alle Gebäudedaten für hochwertige SVG-Generierung
  * Inkl. Gebäude-Identifikation und RECHERCHE-ANWEISUNG
+ *
+ * Generiert Anforderungen für ALLE 3 SVG-Typen in einem Prompt.
  */
 function generateClaudePrompt(
   data: ScaffoldingData,
-  vizType: 'cross-section' | 'elevation' | 'floor-plan',
   buildingContext?: BuildingContext | null
 ): string {
   const { dimensions, gwr_data, building, address, polygon, sides, roof } = data
   const zones = buildingContext?.zones || []
   const isComplex = buildingContext?.complexity === 'complex' || zones.length > 1
   const terrain = address?.terrain
-
-  const vizTypeLabels = {
-    'cross-section': 'Gebäudeschnitt (Querschnitt)',
-    'elevation': 'Fassadenansicht (Elevation)',
-    'floor-plan': 'Grundriss (Floor Plan)'
-  }
 
   // Gebäudetyp aus GWR-Kategorie ableiten
   const getGebaeudetype = (): string => {
@@ -51,7 +46,7 @@ function generateClaudePrompt(
   const buildingName = buildingContext?.building_name || 'RECHERCHIEREN'
   const needsResearch = buildingName === 'RECHERCHIEREN' || isComplex
 
-  return `# SVG-Generierung: ${vizTypeLabels[vizType]}
+  return `# SVG-Generierung: Grundriss + Fassadenansicht + Gebäudeschnitt
 
 ## 1. Gebäude-Identifikation
 
@@ -160,38 +155,44 @@ ${sides.map((s, i) => `| ${s.index ?? i + 1} | ${s.length_m?.toFixed(1)} | ${s.d
 
 ## 9. Anforderungen
 
-${vizType === 'cross-section' ? `### Für Gebäudeschnitt:
-- Frontalansicht (2D Orthogonalprojektion)
-- Terrain-Linie bei ±0.00
-- Geschossdecken als horizontale Linien
-${isComplex ? `- WICHTIG: Verschiedene Höhen pro Zone darstellen!
-- Arkaden: Niedrig (~${zones.find(z => z.type === 'arkade')?.gebaeudehoehe_m?.toFixed(1) || '15'}m)
-- Hauptgebäude: Mittel
-- Kuppel: Hoch mit Halbkreis-Kontur` : '- Dachform: Satteldach mit Traufe und First'}
-- Gerüst links und rechts (Ständer + Beläge)
-- Höhenskala links, Lagenbeschriftung rechts` : ''}
+### Für Grundriss (SVG 1):
+- Polygon-Form des Gebäudes (Draufsicht)
+- Fassaden beschriften (Länge + Richtung)
+- Gerüstzone um das Gebäude (gelb, 1m Abstand)
+- Nordpfeil und Massstab
+${isComplex ? '- Zonen farblich unterscheiden\n- Innenhöfe markieren' : ''}
 
-${vizType === 'elevation' ? `### Für Fassadenansicht:
-- Orthogonale Frontalansicht
-- Terrain-Linie bei ±0.00
+### Für Fassadenansicht (SVG 2):
+- Orthogonale Frontalansicht (2D)
+- Terrain-Linie bei ±0.00 (oder m ü.M. bei Hanglage)
 ${isComplex ? `- WICHTIG: Verschiedene Höhenzonen darstellen!
 - Arkaden unten: Bögen/Rundbögen
 - Hauptfassade: Fensterreihen
 - Kuppel oben: Halbkreis mit copper-Gradient (EINZIGER Gradient!)
 - Keine zusätzlichen Elemente erfinden!` : '- Fensterreihen pro Geschoss (angedeutet)\n- Satteldach als Dreieck'}
-- Gerüst VOR der Fassade
-- Höhenskala links, Lagenbeschriftung rechts` : ''}
+- Gerüst VOR der Fassade (Ständer blau, Beläge braun)
+- Höhenskala links, Lagenbeschriftung rechts
 
-${vizType === 'floor-plan' ? `### Für Grundriss:
-- Polygon-Form des Gebäudes
-- Fassaden beschriften (Länge + Richtung)
-- Gerüstzone um das Gebäude (gelb)
-- Nordpfeil und Massstab
-${isComplex ? '- Zonen farblich unterscheiden' : ''}` : ''}
+### Für Gebäudeschnitt (SVG 3):
+- Querschnitt durch Gebäude (2D Orthogonalprojektion)
+- Terrain-Linie bei ±0.00
+- Geschossdecken als horizontale Linien
+${isComplex ? `- WICHTIG: Verschiedene Höhen pro Zone darstellen!
+- Arkaden: Niedrig (~${zones.find(z => z.type === 'arkade')?.gebaeudehoehe_m?.toFixed(1) || '6'}m)
+- Hauptgebäude: Mittel
+- Kuppel: Hoch mit Halbkreis-Kontur` : '- Dachform: Satteldach mit Traufe und First'}
+- Gerüst links und rechts (Ständer + Beläge)
+- Höhenskala links, Lagenbeschriftung rechts
 
 ## 10. Output
 
-SVG mit \`viewBox="0 0 700 480"\`. **NUR SVG-Code**, keine Erklärungen.
+Erstelle **3 separate SVGs**, jeweils mit \`viewBox="0 0 700 480"\`:
+
+1. **grundriss.svg** - Draufsicht mit Polygon und Gerüstzone
+2. **fassadenansicht.svg** - Frontalansicht mit Gerüst
+3. **gebaeudesschnitt.svg** - Querschnitt mit Geschossen
+
+**NUR SVG-Code**, keine Erklärungen. Trenne die SVGs klar voneinander.
 
 ---
 
@@ -251,7 +252,7 @@ export function GrunddatenCard({
       }
     }
 
-    const prompt = generateClaudePrompt(data, activeVizTab, buildingContext)
+    const prompt = generateClaudePrompt(data, buildingContext)
 
     try {
       await navigator.clipboard.writeText(prompt)
@@ -267,7 +268,7 @@ export function GrunddatenCard({
     }
 
     setLoadingExport(false)
-  }, [data, activeVizTab, apiUrl, building?.egid, gwr_data?.egid])
+  }, [data, apiUrl, building?.egid, gwr_data?.egid])
 
   // Initialize manual inputs with current values if they exist
   useEffect(() => {
@@ -628,21 +629,19 @@ export function GrunddatenCard({
                 >
                   SVG
                 </a>
-                {/* Export nur für Schnitt und Ansicht - Grundriss hat echte Polygon-Daten */}
-                {(activeVizTab === 'cross-section' || activeVizTab === 'elevation') && (
-                  <button
-                    onClick={handleExportPrompt}
-                    disabled={loadingExport}
-                    className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${
-                      loadingExport
-                        ? 'bg-purple-200 text-purple-500 cursor-wait'
-                        : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                    }`}
-                    title="Prompt für Claude.ai in Zwischenablage kopieren (inkl. Gebäude-Zonen)"
-                  >
-                    {copyFeedback || '🤖 Export'}
-                  </button>
-                )}
+                {/* Export für Claude.ai - generiert alle 3 SVGs */}
+                <button
+                  onClick={handleExportPrompt}
+                  disabled={loadingExport}
+                  className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${
+                    loadingExport
+                      ? 'bg-purple-200 text-purple-500 cursor-wait'
+                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                  }`}
+                  title="Prompt für Claude.ai kopieren - generiert Grundriss + Ansicht + Schnitt"
+                >
+                  {copyFeedback || '🤖 Export für Claude.ai'}
+                </button>
               </div>
             </div>
 
