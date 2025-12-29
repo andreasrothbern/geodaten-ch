@@ -9,7 +9,8 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { useUserPreferences } from './hooks/useUserPreferences'
 import { exportToCSV, exportToPDF, prepareExportData } from './utils/export'
 import { clearSvgCache } from './components/BuildingVisualization/ServerSVG'
-import type { LookupResult, ScaffoldingData } from './types'
+import type { LookupResult, ScaffoldingData, SmartBuildingData } from './types'
+import { smartToScaffoldingData } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -63,36 +64,52 @@ function App() {
     refresh?: boolean,
     epsilon?: number | null
   ) => {
-    console.log(`[DEBUG fetchScaffoldingData] Called with address="${address}", refresh=${refresh}, epsilon=${epsilon}`)
+    console.log(`[SmartService] Fetching data for: ${address}`)
     setScaffoldingLoading(true)
     try {
-      let url = `${API_URL}/api/v1/scaffolding?address=${encodeURIComponent(address)}`
-      if (heights?.traufhoehe_m) {
-        url += `&traufhoehe=${heights.traufhoehe_m}`
-      }
-      if (heights?.firsthoehe_m) {
-        url += `&firsthoehe=${heights.firsthoehe_m}`
-      }
+      // NEU: SmartBuildingService API
+      let url = `${API_URL}/api/v1/smart-building/data?address=${encodeURIComponent(address)}`
       if (refresh) {
-        url += `&refresh=true`
+        url += `&force_refresh=true`
       }
-      if (epsilon !== null && epsilon !== undefined) {
-        url += `&simplify_epsilon=${epsilon}`
-      }
-      console.log(`[DEBUG fetchScaffoldingData] Fetching URL: ${url}`)
+      // Optionen für SmartService
+      url += `&include_research=true&include_zones=true&include_terrain=true`
+
+      console.log(`[SmartService] API URL: ${url}`)
       const response = await fetch(url)
+
       if (response.ok) {
-        const data = await response.json()
-        console.log(`[DEBUG fetchScaffoldingData] Response OK, traufhoehe_m=${data.dimensions?.traufhoehe_m}, firsthoehe_m=${data.dimensions?.firsthoehe_m}`)
-        console.log(`[DEBUG fetchScaffoldingData] _height_debug:`, data._height_debug)
-        setScaffoldingData(data)
+        const smartData: SmartBuildingData = await response.json()
+        console.log(`[SmartService] Response OK:`, {
+          building_name: smartData.building_name,
+          complexity: smartData.complexity,
+          zones: smartData.zones?.length || 0,
+          data_sources: smartData.data_sources,
+        })
+
+        // Manuelle Höhen überschreiben
+        if (heights?.traufhoehe_m) {
+          smartData.traufhoehe_m = heights.traufhoehe_m
+        }
+        if (heights?.firsthoehe_m) {
+          smartData.firsthoehe_m = heights.firsthoehe_m
+        }
+
+        // Konvertieren zu ScaffoldingData für Abwärtskompatibilität
+        const scaffoldingData = smartToScaffoldingData(smartData)
+        setScaffoldingData(scaffoldingData)
+
         // Clear SVG cache when heights are manually set
         if (heights?.traufhoehe_m || heights?.firsthoehe_m) {
           clearSvgCache()
         }
+      } else {
+        console.error(`[SmartService] Error: ${response.status} ${response.statusText}`)
+        const errorText = await response.text()
+        console.error(`[SmartService] Response:`, errorText)
       }
     } catch (err) {
-      console.error('Scaffolding fetch error:', err)
+      console.error('[SmartService] Fetch error:', err)
     } finally {
       setScaffoldingLoading(false)
     }
