@@ -497,10 +497,40 @@ export function GrunddatenCard({
             <span className="text-gray-500">Eingabe:</span>
             <span className="ml-2 font-medium">{address?.input || '-'}</span>
           </div>
-          <div>
+          <div className="col-span-2">
             <span className="text-gray-500">Gefunden:</span>
             <span className="ml-2 font-medium">{address?.matched || '-'}</span>
+            {data.smart_building?.building_name && (
+              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-sm font-semibold">
+                📍 {data.smart_building.building_name}
+              </span>
+            )}
+            {data.smart_building?.building_type && !data.smart_building?.building_name && (
+              <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                {data.smart_building.building_type}
+              </span>
+            )}
           </div>
+          {/* Gebäude-Recherche Details */}
+          {data.smart_building?.building_name && (
+            <div className="col-span-2 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+              {data.smart_building.building_type && (
+                <span className="bg-gray-50 px-2 py-0.5 rounded">{data.smart_building.building_type}</span>
+              )}
+              {data.smart_building.architectural_style && (
+                <span className="bg-gray-50 px-2 py-0.5 rounded">{data.smart_building.architectural_style}</span>
+              )}
+              {data.smart_building.research_confidence && (
+                <span className={`px-2 py-0.5 rounded ${
+                  data.smart_building.research_confidence > 0.7 ? 'bg-green-50 text-green-700' :
+                  data.smart_building.research_confidence > 0.4 ? 'bg-yellow-50 text-yellow-700' :
+                  'bg-red-50 text-red-700'
+                }`}>
+                  {Math.round(data.smart_building.research_confidence * 100)}% Konfidenz
+                </span>
+              )}
+            </div>
+          )}
           <div>
             <span className="text-gray-500">Koordinaten (LV95):</span>
             <span className="ml-2 font-mono text-xs">

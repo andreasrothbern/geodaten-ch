@@ -44,7 +44,7 @@ DB_PATH = DATA_DIR / "building_contexts.db"
 
 # Cache-Konfiguration
 CACHE_TTL_DAYS = 30
-RESEARCH_MODEL = "claude-3-haiku-20240307"  # Schnell und günstig für Recherche
+RESEARCH_MODEL = "claude-sonnet-4-20250514"  # Genauer für Gebäude-Identifikation
 
 
 @dataclass
