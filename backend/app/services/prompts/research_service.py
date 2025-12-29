@@ -348,9 +348,15 @@ class ClaudeResearchService:
 
 {context}
 
+WICHTIG:
+- Beachte die EXAKTE Hausnummer - verschiedene Hausnummern in derselben Strasse sind unterschiedliche Gebäude!
+- Die GWR-Kategorie (falls angegeben) ist ein starker Hinweis auf den Gebäudetyp.
+- Bei Strassen wie "Rathausgasse", "Münstergasse", "Kirchgasse" etc. kann das Gebäude an dieser Adresse
+  ein ANDERES Gebäude sein als das namensgebende (z.B. Rathausgasse 2 ≠ Rathaus).
+
 Aufgaben:
-1. Identifiziere das Gebäude (Name, falls bekannt/historisch)
-2. Bestimme den Gebäudetyp (Wohnhaus, Kirche, öffentliches Gebäude, etc.)
+1. Identifiziere das EXAKTE Gebäude an dieser Hausnummer (Name, falls bekannt/historisch)
+2. Bestimme den Gebäudetyp (Wohnhaus, Kirche, öffentliches Gebäude, etc.) - GWR-Kategorie beachten!
 3. Ermittle den Baustil falls erkennbar (Neugotik, Barock, Klassizismus, Modern, etc.)
 4. Beschreibe Türme/Kuppeln falls vorhanden (Anzahl, Position, ungefähre Höhe)
 5. Liste besondere architektonische Merkmale
