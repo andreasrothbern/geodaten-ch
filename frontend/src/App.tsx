@@ -62,7 +62,7 @@ function App() {
     address: string,
     heights?: ManualHeights,
     refresh?: boolean,
-    epsilon?: number | null
+    _epsilon?: number | null  // Unused since SmartBuildingService migration
   ) => {
     console.log(`[SmartService] Fetching data for: ${address}`)
     setScaffoldingLoading(true)
