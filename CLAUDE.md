@@ -629,6 +629,152 @@ LANDMARKS = [
 ]
 ```
 
+## Dynamisches Prompt-System (NEU 29.12.2025)
+
+Zentrales Template für Claude SVG-Generierung mit dynamischer Gebäude-Recherche.
+
+### Architektur
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│               PROMPT-SYSTEM ARCHITEKTUR                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │     docs/Export_Prompt_Claude.md (VORLAGE)          │   │
+│  │     → Zentrale Dokumentation des Templates          │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│           ┌───────────────┴───────────────┐                 │
+│           ▼                               ▼                 │
+│  ┌─────────────────┐           ┌─────────────────────────┐ │
+│  │ Frontend Export │           │ Backend use_claude=true │ │
+│  │ → API Aufruf    │           │ → Automatisch           │ │
+│  └─────────────────┘           └─────────────────────────┘ │
+│           │                               │                 │
+│           └───────────────┬───────────────┘                 │
+│                           ▼                                 │
+│           ┌─────────────────────────────────────────────┐   │
+│           │    /api/v1/prompt/generate                  │   │
+│           │    → ClaudeResearchService (dynamisch)      │   │
+│           │    → PromptBuilder (Template)               │   │
+│           └─────────────────────────────────────────────┘   │
+│                           │                                 │
+│                           ▼                                 │
+│           ┌─────────────────────────────────────────────┐   │
+│           │    claude_research_cache (SQLite)           │   │
+│           │    → 30 Tage TTL                            │   │
+│           │    → Ca. $0.01-0.02 pro Recherche (Haiku)   │   │
+│           └─────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Dateien
+
+```
+backend/app/services/prompts/
+├── __init__.py              # Modul-Export
+├── research_service.py      # Claude-Recherche mit Cache
+└── prompt_builder.py        # Template-basierter Prompt-Aufbau
+```
+
+### API-Endpunkte
+
+```python
+# Prompt generieren (inkl. dynamischer Recherche)
+GET /api/v1/prompt/generate
+    ?address=Bundesplatz 3, 3011 Bern
+    &svg_type=all          # all, grundriss, ansicht, schnitt
+    &include_research=true # Dynamische Claude-Recherche
+
+# Response:
+{
+    "prompt": "# SVG-Generierung: Grundriss + Fassadenansicht + ...",
+    "address": "Bundesplatz 3, 3011 Bern",
+    "egid": 2242547,
+    "svg_type": "all",
+    "research_included": true,
+    "data_sources": {
+        "geocoding": true,
+        "gwr": true,
+        "heights": true,
+        "terrain": true,
+        "polygon": true,
+        "roof": true
+    }
+}
+
+# Cache-Statistiken
+GET /api/v1/prompt/research/stats
+
+# Abgelaufene Cache-Einträge löschen
+POST /api/v1/prompt/research/clear-expired
+```
+
+### ClaudeResearchService
+
+Dynamische Gebäude-Recherche via Claude API (Haiku) mit Caching.
+
+```python
+from app.services.prompts import get_research_service
+
+service = get_research_service()
+research = await service.get_building_research(
+    adresse="Bundesplatz 3, 3011 Bern",
+    egid="2242547",
+    coordinates=(2600450, 1199830),
+    gwr_data={"building_category": "Öffentliches Gebäude"}
+)
+
+# BuildingResearch enthält:
+# - building_name: "Bundeshaus (Schweizer Parlamentsgebäude)"
+# - building_type: "Parlamentsgebäude"
+# - architectural_style: "Historismus (Neorenaissance)"
+# - tower_config: {"count": 0, "position": null}
+# - special_features: ["Kuppel", "Arkaden", "Ehrenhof"]
+# - suggested_zones: [{"name": "Arkaden", "height_m": 6, ...}, ...]
+```
+
+### PromptBuilder
+
+Template-basierter Prompt-Aufbau nach `Export_Prompt_Claude.md`.
+
+```python
+from app.services.prompts import get_prompt_builder
+
+builder = get_prompt_builder()
+prompt = await builder.build_svg_prompt(
+    adresse="Bundesplatz 3, 3011 Bern",
+    egid="2242547",
+    dimensions={"traufhoehe_m": 14.5, "firsthoehe_m": 62.6},
+    gwr_data={"building_category": "Öffentliches Gebäude"},
+    terrain={"terrain_height_m": 543.1},
+    polygon=[[2600450, 1199830], ...],
+    svg_type="all",
+    include_research=True  # Dynamische Recherche aktivieren
+)
+```
+
+### Kosten
+
+| Aktion | Kosten |
+|--------|--------|
+| Gecachte Recherche | $0.00 |
+| Neue Recherche (Haiku) | ~$0.01-0.02 |
+| Cache-TTL | 30 Tage |
+
+### Ersetzt building_hints.py
+
+Das neue System ersetzt die statischen Building-Hints:
+
+| Alt (building_hints.py) | Neu (prompts/) |
+|-------------------------|----------------|
+| 7 hardcoded Gebäude | Dynamisch für alle |
+| Manuelle Pflege nötig | Automatische Recherche |
+| Keine Kosten | ~$0.01-0.02 pro neuem Gebäude |
+| Sofort verfügbar | 1-2s Latenz bei Cache-Miss |
+
 ## Douglas-Peucker Polygon-Vereinfachung
 
 Die App verwendet den Douglas-Peucker Algorithmus zur Reduktion der Fassadensegmente.
@@ -1213,6 +1359,13 @@ npx @railway/cli volume add --mount-path /app/data
   - Claude-Recherche-Cache (Wiederverwendung von API-Ergebnissen)
   - Landmark-Buildings Seed-Daten (Bundeshaus, Münster, etc.)
   - API-Endpoints: `/api/v1/search`, `/api/v1/building/{egid}/svg/*`, `/api/v1/db/stats`
+- [x] **Dynamisches Prompt-System** (NEU 29.12.2025)
+  - `research_service.py` - Dynamische Gebäude-Recherche via Claude Haiku
+  - `prompt_builder.py` - Template-basiert nach `Export_Prompt_Claude.md`
+  - Ersetzt statische `building_hints.py` durch dynamische Recherche
+  - 30 Tage Cache für Recherche-Ergebnisse (~$0.01-0.02 pro Gebäude)
+  - Frontend Export nutzt Backend-API für konsistente Prompts
+  - API-Endpoints: `/api/v1/prompt/generate`, `/api/v1/prompt/research/stats`
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs

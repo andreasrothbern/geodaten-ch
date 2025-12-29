@@ -3201,6 +3201,210 @@ async def seed_landmark_buildings():
 
 
 # ============================================================================
+# Prompt Generation API (NEU 29.12.2025)
+# ============================================================================
+
+@app.get("/api/v1/prompt/generate",
+         tags=["Prompt Generation"],
+         summary="Generiert Claude-Prompt für SVG-Erstellung")
+async def generate_claude_prompt(
+    address: str,
+    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, schnitt"),
+    include_research: bool = Query(True, description="Dynamische Claude-Recherche durchführen")
+):
+    """
+    Generiert einen strukturierten Prompt für Claude SVG-Generierung.
+
+    Dieser Endpoint sammelt alle verfügbaren Daten (Geocoding, GWR, Höhen,
+    Terrain, Polygon) und erstellt einen Prompt basierend auf der
+    zentralen Vorlage (Export_Prompt_Claude.md).
+
+    **Features:**
+    - Dynamische Gebäude-Recherche via Claude API (gecacht, 30 Tage TTL)
+    - Automatische Komplexitäts-Erkennung
+    - Terrain-Höhen (m ü.M.) aus swissALTI3D
+    - Höhenzonen für komplexe Gebäude
+
+    **Kosten:**
+    - Gecachte Recherche: $0.00
+    - Neue Recherche: ca. $0.01-0.02 (Haiku)
+
+    **Verwendung:**
+    - Frontend Export-Button → Clipboard → Claude.ai
+    - Backend use_claude=true → Automatische SVG-Generierung
+    """
+    try:
+        from app.services.prompts import get_prompt_builder
+
+        # Geocoding
+        geo = await swisstopo.geocode(address)
+        if not geo:
+            raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+        coordinates = (geo.coordinates.lv95_e, geo.coordinates.lv95_n)
+
+        # Gebäude identifizieren
+        buildings = await swisstopo.identify_buildings(
+            geo.coordinates.lv95_e, geo.coordinates.lv95_n, tolerance=15
+        )
+        building = buildings[0] if buildings else None
+
+        # GWR-Daten
+        gwr_data = None
+        if building:
+            gwr_data = {
+                "building_category": building.building_category,
+                "construction_year": building.construction_year,
+                "floors": building.floors,
+                "area_m2_gwr": building.area_m2
+            }
+
+        # Geometrie
+        geometry = await geodienste.get_building_geometry(
+            x=geo.coordinates.lv95_e,
+            y=geo.coordinates.lv95_n,
+            tolerance=50,
+            egid=building.egid if building else None
+        )
+
+        polygon = None
+        sides = None
+        if geometry:
+            if hasattr(geometry, 'polygon') and geometry.polygon:
+                polygon = [[p[0], p[1]] for p in geometry.polygon]
+            if hasattr(geometry, 'sides'):
+                sides = geometry.sides
+
+        # Höhendaten
+        dimensions = {
+            "traufhoehe_m": None,
+            "firsthoehe_m": None,
+            "floors": building.floors if building else None,
+            "footprint_area_m2": geometry.area_m2 if geometry else (building.area_m2 if building else None)
+        }
+
+        if building and building.egid:
+            from app.services.height_db import get_building_heights_detailed
+            heights = get_building_heights_detailed(building.egid)
+            if heights:
+                dimensions["traufhoehe_m"] = heights.get("traufhoehe_m")
+                dimensions["firsthoehe_m"] = heights.get("firsthoehe_m")
+                if heights.get("gebaeudehoehe_m") and not dimensions["traufhoehe_m"]:
+                    dimensions["traufhoehe_m"] = heights["gebaeudehoehe_m"] * 0.85
+
+        # Terrain
+        terrain = None
+        if geo.terrain:
+            terrain = {
+                "terrain_height_m": geo.terrain.terrain_height_m,
+                "terrain_slope_m": geo.terrain.terrain_slope_m if hasattr(geo.terrain, 'terrain_slope_m') else None
+            }
+
+        # Dach-Daten
+        roof = None
+        if dimensions["traufhoehe_m"] and dimensions["firsthoehe_m"]:
+            from app.services.roof import get_roof_service
+            roof_service = get_roof_service()
+            roof_result = roof_service.calculate(
+                traufhoehe_m=dimensions["traufhoehe_m"],
+                firsthoehe_m=dimensions["firsthoehe_m"],
+                building_depth_m=geometry.depth_m if geometry else 10,
+                polygon=polygon
+            )
+            if roof_result:
+                roof = {
+                    "roof_type": roof_result.roof_type.value if hasattr(roof_result.roof_type, 'value') else str(roof_result.roof_type),
+                    "roof_angle_deg": roof_result.roof_angle_deg,
+                    "roof_orientation": roof_result.roof_orientation,
+                    "roof_area_m2": roof_result.roof_area_m2,
+                    "confidence": roof_result.confidence
+                }
+
+        # Prompt generieren
+        builder = get_prompt_builder()
+        prompt = await builder.build_svg_prompt(
+            adresse=geo.matched_address,
+            egid=str(building.egid) if building else None,
+            coordinates=coordinates,
+            dimensions=dimensions,
+            gwr_data=gwr_data,
+            terrain=terrain,
+            roof=roof,
+            polygon=polygon,
+            sides=sides,
+            svg_type=svg_type,
+            include_research=include_research
+        )
+
+        return {
+            "prompt": prompt,
+            "address": geo.matched_address,
+            "egid": building.egid if building else None,
+            "svg_type": svg_type,
+            "research_included": include_research,
+            "data_sources": {
+                "geocoding": True,
+                "gwr": gwr_data is not None,
+                "heights": dimensions["traufhoehe_m"] is not None,
+                "terrain": terrain is not None,
+                "polygon": polygon is not None,
+                "roof": roof is not None
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/prompt/research/stats",
+         tags=["Prompt Generation"],
+         summary="Statistiken des Recherche-Cache")
+async def get_research_cache_stats():
+    """
+    Gibt Statistiken des Claude-Recherche-Cache zurück.
+
+    **Informationen:**
+    - Anzahl gecachter Einträge
+    - Anzahl abgelaufener Einträge
+    - Geschätzte Gesamtkosten
+    - Token-Verbrauch
+    """
+    from app.services.prompts import get_research_service
+
+    service = get_research_service()
+    stats = service.get_cache_stats()
+
+    return {
+        "status": "ok",
+        "cache": stats
+    }
+
+
+@app.post("/api/v1/prompt/research/clear-expired",
+          tags=["Prompt Generation"],
+          summary="Löscht abgelaufene Cache-Einträge")
+async def clear_expired_research_cache():
+    """
+    Löscht abgelaufene Einträge aus dem Recherche-Cache.
+
+    **Hinweis:** Cache-Einträge haben eine TTL von 30 Tagen.
+    """
+    from app.services.prompts import get_research_service
+
+    service = get_research_service()
+    deleted = service.clear_expired_cache()
+
+    return {
+        "status": "ok",
+        "deleted_entries": deleted
+    }
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 

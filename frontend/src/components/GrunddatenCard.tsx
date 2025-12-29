@@ -322,30 +322,56 @@ export function GrunddatenCard({
   const [loadingExport, setLoadingExport] = useState(false)
   const { dimensions, gwr_data, building, address } = data
 
-  // Export prompt to clipboard for Claude.ai (with building context/zones)
+  // Export prompt to clipboard for Claude.ai (via Backend API)
+  // Nutzt /api/v1/prompt/generate für dynamische Recherche und einheitliches Template
   const handleExportPrompt = useCallback(async () => {
     setLoadingExport(true)
-    setCopyFeedback('Lade...')
+    setCopyFeedback('Recherchiere...')
 
-    let buildingContext: BuildingContext | null = null
+    let prompt = ''
 
-    // Try to load building context if EGID is available
-    const egid = building?.egid || gwr_data?.egid
-    if (egid) {
-      try {
-        const response = await fetch(
-          `${apiUrl}/api/v1/building/context/${egid}?create_if_missing=true&analyze_if_complex=true`
-        )
-        if (response.ok) {
-          const contextData = await response.json()
-          buildingContext = contextData.context || null
+    try {
+      // Prompt vom Backend generieren lassen (inkl. dynamischer Claude-Recherche)
+      const promptUrl = `${apiUrl}/api/v1/prompt/generate?address=${encodeURIComponent(address?.matched || '')}&svg_type=all&include_research=true`
+      const response = await fetch(promptUrl)
+
+      if (response.ok) {
+        const result = await response.json()
+        prompt = result.prompt
+        console.log('[EXPORT] Prompt generiert via API', {
+          address: result.address,
+          egid: result.egid,
+          research_included: result.research_included,
+          data_sources: result.data_sources
+        })
+      } else {
+        // Fallback: Lokale Prompt-Generierung
+        console.warn('[EXPORT] API failed, using local fallback')
+        let buildingContext: BuildingContext | null = null
+        const egid = building?.egid || gwr_data?.egid
+        if (egid) {
+          try {
+            const contextResponse = await fetch(
+              `${apiUrl}/api/v1/building/context/${egid}?create_if_missing=true&analyze_if_complex=true`
+            )
+            if (contextResponse.ok) {
+              const contextData = await contextResponse.json()
+              buildingContext = contextData.context || null
+            }
+          } catch (err) {
+            console.warn('Could not load building context:', err)
+          }
         }
-      } catch (err) {
-        console.warn('Could not load building context:', err)
+        prompt = generateClaudePrompt(data, buildingContext)
       }
+    } catch (err) {
+      // Fallback bei Netzwerkfehler
+      console.warn('[EXPORT] Network error, using local fallback:', err)
+      prompt = generateClaudePrompt(data, null)
     }
 
-    const prompt = generateClaudePrompt(data, buildingContext)
+    // Prompt in Zwischenablage kopieren
+    setCopyFeedback('Kopiere...')
 
     try {
       // Versuche moderne Clipboard API
@@ -385,7 +411,7 @@ export function GrunddatenCard({
     }
 
     setLoadingExport(false)
-  }, [data, apiUrl, building?.egid, gwr_data?.egid])
+  }, [data, apiUrl, address?.matched, building?.egid, gwr_data?.egid])
 
   // Initialize manual inputs with current values if they exist
   useEffect(() => {

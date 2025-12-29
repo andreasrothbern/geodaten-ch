@@ -41,6 +41,73 @@
 | **Claude-Analyse** | ✅ | Auto-Erkennung bei extremer Höhendifferenz |
 | **Orthofoto** | ✅ | Luftbild-Analyse für komplexe Gebäude |
 | **Building Hints** | ✅ | Bekannte Gebäude (Bundeshaus, Münster) |
+| **Dynamisches Prompt-System** | ✅ | Gebäude-Recherche via Claude API + Cache |
+
+---
+
+## 🤖 Dynamisches Prompt-System (NEU 29.12.2025)
+
+Ersetzt statische Building-Hints durch dynamische Gebäude-Recherche.
+
+### Komponenten
+
+| Komponente | Datei | Funktion |
+|------------|-------|----------|
+| ResearchService | `prompts/research_service.py` | Claude Haiku für Gebäude-Recherche |
+| PromptBuilder | `prompts/prompt_builder.py` | Template-basierter Prompt-Aufbau |
+| Vorlage | `docs/Export_Prompt_Claude.md` | Zentrale Dokumentation |
+
+### Ablauf
+
+```
+Frontend Export-Button     Backend use_claude=true
+         │                          │
+         └──────────┬───────────────┘
+                    ▼
+    GET /api/v1/prompt/generate?address=...
+                    │
+                    ▼
+         ┌──────────────────┐
+         │ Claude-Recherche │
+         │ (Cache prüfen)   │
+         └──────────────────┘
+                    │
+     ┌──────────────┼──────────────┐
+     ▼              ▼              ▼
+   HIT           MISS          FALLBACK
+  (cached)    (Claude API)    (GWR-Daten)
+     │              │              │
+     └──────────────┼──────────────┘
+                    ▼
+         ┌──────────────────┐
+         │  Prompt-Builder  │
+         │  (Template)      │
+         └──────────────────┘
+                    │
+                    ▼
+         Strukturierter Prompt
+```
+
+### Kosten
+
+| Szenario | Kosten | Latenz |
+|----------|--------|--------|
+| Cache-Hit (30 Tage) | $0.00 | <100ms |
+| Cache-Miss (Haiku) | ~$0.01-0.02 | 1-2s |
+| Fallback (kein API) | $0.00 | <100ms |
+
+### API-Endpunkte
+
+```python
+# Prompt generieren
+GET /api/v1/prompt/generate?address=Bundesplatz%203&svg_type=all
+
+# Cache-Statistiken
+GET /api/v1/prompt/research/stats
+
+# Abgelaufene Einträge löschen
+POST /api/v1/prompt/research/clear-expired
+```
 
 ---
 
@@ -207,6 +274,7 @@ GET /api/v1/ausmass/komplett?address=...&system_id=blitz70
 
 | Datum | Änderung | Von |
 |-------|----------|-----|
+| 2025-12-29 | Dynamisches Prompt-System (research_service + prompt_builder) | Claude Code |
 | 2025-12-29 | Terrain-Höhe im Frontend + Claude API | Claude Code |
 | 2025-12-29 | Dach-Daten (Neigung, Form) im Frontend | Claude Code |
 | 2025-12-29 | Export Prompt erweitert (Terrain, Dach, Zonen) | Claude Code |
