@@ -450,7 +450,7 @@ class SmartBuildingService:
         Falls lokal keine Daten: On-Demand Import via STAC API.
         """
         try:
-            from app.services.geodienste import _get_height_from_sources
+            from app.services.geodienste import get_height_details
 
             # EGID als int konvertieren
             egid_int = None
@@ -461,9 +461,10 @@ class SmartBuildingService:
                     pass
 
             # Vollständige Höhen-Lookup-Strategie aus geodienste.py nutzen
-            height_result = _get_height_from_sources(
+            height_result = get_height_details(
                 floors=bundle.gwr_floors,
                 building_category_code=bundle.gwr_category_code,
+                manual_height=None,
                 egid=egid_int,
                 lv95_e=bundle.lv95_e,
                 lv95_n=bundle.lv95_n,
