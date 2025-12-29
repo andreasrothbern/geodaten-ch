@@ -253,19 +253,24 @@ class PromptBuilder:
         prompt_parts.append("## 3. Geometrische Basisdaten")
         prompt_parts.append("")
         prompt_parts.append("### Dimensionen")
-        prompt_parts.append(f"- **Traufhöhe:** {data.traufhoehe_m:.1f if data.traufhoehe_m else 'unbekannt'} m")
-        prompt_parts.append(f"- **Firsthöhe:** {data.firsthoehe_m:.1f if data.firsthoehe_m else 'unbekannt'} m")
+        trauf_str = f"{data.traufhoehe_m:.1f} m" if data.traufhoehe_m else "unbekannt"
+        first_str = f"{data.firsthoehe_m:.1f} m" if data.firsthoehe_m else "unbekannt"
+        area_str = f"{data.footprint_area_m2:.0f} m²" if data.footprint_area_m2 else f"{data.gwr_area_m2} m²" if data.gwr_area_m2 else "-"
+        prompt_parts.append(f"- **Traufhöhe:** {trauf_str}")
+        prompt_parts.append(f"- **Firsthöhe:** {first_str}")
         prompt_parts.append(f"- **Geschosse:** {data.floors or data.gwr_floors or '-'}")
-        prompt_parts.append(f"- **Grundfläche:** {data.footprint_area_m2:.0f if data.footprint_area_m2 else (data.gwr_area_m2 or '-')} m²")
+        prompt_parts.append(f"- **Grundfläche:** {area_str}")
         prompt_parts.append("")
 
         # Dach-Analyse
         if data.roof_type:
             prompt_parts.append("### Dach-Analyse (heuristisch berechnet)")
+            roof_angle_str = f"{data.roof_angle_deg:.0f}°" if data.roof_angle_deg else "-"
+            roof_area_str = f"{data.roof_area_m2:.0f} m²" if data.roof_area_m2 else "-"
             prompt_parts.append(f"- **Dachform:** {data.roof_type}")
-            prompt_parts.append(f"- **Dachneigung:** {data.roof_angle_deg:.0f if data.roof_angle_deg else '-'}°")
+            prompt_parts.append(f"- **Dachneigung:** {roof_angle_str}")
             prompt_parts.append(f"- **First-Ausrichtung:** {data.roof_orientation or '-'}")
-            prompt_parts.append(f"- **Dachfläche:** {data.roof_area_m2:.0f if data.roof_area_m2 else '-'} m²")
+            prompt_parts.append(f"- **Dachfläche:** {roof_area_str}")
             if data.roof_confidence:
                 conf_text = "(niedrig = Schätzung)" if data.roof_confidence < 0.5 else "(hoch = verlässlich)"
                 prompt_parts.append(f"- **Konfidenz:** {data.roof_confidence * 100:.0f}% {conf_text}")
