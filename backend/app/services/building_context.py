@@ -413,7 +413,8 @@ class BuildingContextService:
             context = self._parse_claude_response(
                 response_text,
                 egid=egid,
-                adresse=adresse
+                adresse=adresse,
+                gwr_data=gwr_data
             )
 
             # Orthofoto-Flag setzen
@@ -689,7 +690,8 @@ Ergebnis:
         self,
         response_text: str,
         egid: str,
-        adresse: Optional[str]
+        adresse: Optional[str],
+        gwr_data: Optional[dict] = None
     ) -> BuildingContext:
         """Parst die Claude-Response und erstellt einen BuildingContext"""
         try:
