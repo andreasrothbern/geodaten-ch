@@ -17,13 +17,18 @@ from typing import List, Dict, Any, Optional
 
 
 # =============================================================================
-# SVG PATTERNS FÜR EINFACHE GEBÄUDE
+# SVG PATTERNS FÜR EINFACHE GEBÄUDE (Version 2.0)
 # =============================================================================
 
 SIMPLE_SVG_DEFS = """<defs>
-    <!-- Schraffur für Gebäude -->
+    <!-- LOCKERE Schraffur für Aussenflächen (Fassade, Grundriss) -->
     <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
-      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur für Schnittflächen (geschnittenes Mauerwerk) -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
     </pattern>
 
     <!-- Terrain/Boden -->
@@ -31,7 +36,7 @@ SIMPLE_SVG_DEFS = """<defs>
       <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
     </pattern>
 
-    <!-- Dach-Schraffur (gleich wie Gebäude) -->
+    <!-- Dach-Schraffur -->
     <pattern id="roof-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
       <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#777" stroke-width="0.5"/>
     </pattern>
@@ -39,27 +44,31 @@ SIMPLE_SVG_DEFS = """<defs>
 
 
 # =============================================================================
-# FARBPALETTE FÜR EINFACHE GEBÄUDE
+# FARBPALETTE FÜR EINFACHE GEBÄUDE (Version 2.0)
 # =============================================================================
 
 SIMPLE_COLORS = """## Farben (STRIKT - KEINE ANDEREN FARBEN!)
 
-| Element | Farbe | Code |
-|---------|-------|------|
-| Hintergrund | Weiss | #FFFFFF |
-| Gebäude-Füllung | Schraffur | url(#hatch) |
-| Dach-Füllung | Schraffur | url(#roof-hatch) |
-| Linien/Umrisse | Dunkelgrau | #333333 |
-| Gerüst-Ständer | Blau | #0066CC |
-| Gerüst-Beläge | Braun | #8B4513 |
-| Verankerung | Rot gestrichelt | #CC0000 |
-| Text | Dunkelgrau | #333333 |
+| Element | Farbe | Code | Verwendung |
+|---------|-------|------|------------|
+| Hintergrund | Weiss | #FFFFFF | Alle SVGs |
+| Gebäude-Aussenfläche | Lockere Schraffur | url(#hatch) | Fassade + Grundriss |
+| Schnittfläche (Mauerwerk) | Dichte Schraffur | url(#cut-hatch) | NUR Schnitt! |
+| Innenraum | Weiss/LEER | #FFFFFF | NUR Schnitt! |
+| Dach-Füllung | Schraffur | url(#roof-hatch) | Dach |
+| Linien/Umrisse | Dunkelgrau | #333333 | Alle |
+| Gerüst-Ständer | Blau | #0066CC | Alle |
+| Gerüst-Beläge | Braun | #8B4513 | Alle |
+| Verankerung | Rot gestrichelt | #CC0000 | Ansicht + Schnitt |
 
-VERBOTEN:
-- KEINE Gradienten
+**VERBOTEN:**
+- KEINE Gradienten (ausser Kuppeln - hier nicht relevant)
 - KEINE bunten Farben
-- KEINE Kupfer/Bronze-Töne
-- KEIN blauer Himmel-Hintergrund"""
+- KEIN blauer Himmel-Hintergrund
+
+**KRITISCH - Unterschied Fassade vs. Schnitt:**
+- Fassade: Aussenflächen mit lockerer Schraffur `url(#hatch)`
+- Schnitt: Geschnittenes Mauerwerk mit dichter Schraffur `url(#cut-hatch)`, Innenräume LEER!"""
 
 
 # =============================================================================
@@ -237,11 +246,25 @@ def generate_simple_cross_section_prompt(
 
     return f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
 
-## KRITISCHE REGELN
+## KRITISCHE REGELN - SCHNITT vs. FASSADE
 
-1. Dies ist ein **EINFACHES WOHNGEBÄUDE**
-2. Schnittdarstellung (Seitenansicht durch das Gebäude)
-3. **VERBOTEN:** Kuppeln, Türme, komplexe Elemente, Gradienten
+1. Dies ist ein **GEBÄUDESCHNITT** (AUFGESCHNITTEN entlang Schnittlinie A-A)
+2. **EINFACHES WOHNGEBÄUDE** - KEINE Kuppeln, Türme, komplexe Elemente, Gradienten!
+
+```
+GEBÄUDESCHNITT - Blick in SCHNITTEBENE
+=======================================
+
+    ┌─────────┐
+    │█│     │█│ ← Schnittfläche (DICHT schraffiert)
+    │ │     │ │   url(#cut-hatch)
+    │ │     │ │
+    │ │     │ │ ← Innenraum (WEISS, LEER!)
+    └─┴─────┴─┘
+
+█ = DICHTE Schnitt-Schraffur url(#cut-hatch)
+  = WEISS (Innenräume LEER lassen!)
+```
 
 ## Gebäudedaten
 
@@ -253,20 +276,23 @@ def generate_simple_cross_section_prompt(
 - **Geschosse:** {geschosse}
 {terrain_info}
 
-## Schnitt-Darstellung
+## Schnitt-Darstellung (ASCII-Vorlage)
 
 ```
            /\\
-          /  \\        <- Dachraum
+          /  \\        <- Dachraum (INNEN LEER!)
          /____\\       <- Traufe {traufhoehe:.1f}m
-        |      |
-   -----|      |----- <- Geschossdecken
-        |      |
-   -----|      |-----
-        |      |
-   =====|______|===== <- Terrain {hoehenkoten_text}
+        █      █
+   -----█      █----- <- Geschossdecken
+        █      █
+   -----█      █-----
+        █      █
+   =====█______█===== <- Terrain {hoehenkoten_text}
         vvvvvvvv
         Fundament (angedeutet)
+
+█ = Geschnittene Mauern (DICHT schraffiert)
+  = Innenraum (WEISS/LEER)
 ```
 
 ## Gerüst im Schnitt
@@ -274,7 +300,7 @@ def generate_simple_cross_section_prompt(
 - Gerüst VOR der Fassade (links und rechts)
 - Lagen: {anzahl_lagen} Stück
 - Beläge als horizontale braune Linien
-- Ständer als vertikale blaue Linien
+- Ständer als vertikale blaue Linien (#0066CC)
 
 ## SVG-Patterns
 
@@ -282,15 +308,17 @@ def generate_simple_cross_section_prompt(
 
 {SIMPLE_COLORS}
 
-## Elemente
+## Elemente (KRITISCH!)
 
-1. **Weisser Hintergrund**
-2. **Terrain-Linie** mit Schraffur bei {hoehenkoten_text}
-3. **Gebäudeschnitt** - Schraffiert
-4. **Geschossdecken** - Horizontale Linien
-5. **Dach** - Dreieck, schraffiert
-6. **Gerüst links und rechts** - Ständer + Beläge
-7. **Höhenkoten** links: {hoehenkoten_text}, +{traufhoehe:.1f}m (Traufe), +{hoehe:.1f}m (First)
+1. **Weisser Hintergrund** - `fill="#FFFFFF"`
+2. **Terrain-Linie** mit Schraffur `url(#ground)` bei {hoehenkoten_text}
+3. **Geschnittene Mauern** - DICHTE Schraffur `url(#cut-hatch)` (NICHT hatch!)
+4. **Innenräume** - WEISS/LEER `fill="#FFFFFF"` (KEINE Schraffur!)
+5. **Geschossdecken** - Horizontale Linien
+6. **Dach** - Dreieck-Kontur, Dachraum INNEN LEER
+7. **Gerüst links und rechts** - Ständer blau, Beläge braun
+8. **Höhenkoten** links: {hoehenkoten_text}, +{traufhoehe:.1f}m (Traufe), +{hoehe:.1f}m (First)
+9. **Schnittmarkierung** - A-A
 
 ## Output
 

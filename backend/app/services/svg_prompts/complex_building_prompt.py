@@ -17,13 +17,18 @@ from typing import List, Dict, Any, Optional
 
 
 # =============================================================================
-# SVG PATTERNS FÜR KOMPLEXE GEBÄUDE
+# SVG PATTERNS FÜR KOMPLEXE GEBÄUDE (Version 2.0)
 # =============================================================================
 
 COMPLEX_SVG_DEFS = """<defs>
-    <!-- Schraffur für Gebäude -->
+    <!-- LOCKERE Schraffur für Aussenflächen (Fassade, Grundriss) -->
     <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
-      <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur für Schnittflächen (geschnittenes Mauerwerk) -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
     </pattern>
 
     <!-- Terrain/Boden -->
@@ -36,7 +41,7 @@ COMPLEX_SVG_DEFS = """<defs>
       <path d="M0,0 l6,6 M-1,5 l3,3 M5,-1 l3,3" stroke="#777" stroke-width="0.5"/>
     </pattern>
 
-    <!-- Kupfer-Gradient für Kuppeln -->
+    <!-- Kupfer-Gradient für Kuppeln (EINZIGER Gradient!) -->
     <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#7CB9A5"/>
       <stop offset="50%" style="stop-color:#5A9A87"/>
@@ -51,24 +56,27 @@ COMPLEX_SVG_DEFS = """<defs>
 
 
 # =============================================================================
-# FARBPALETTE FÜR KOMPLEXE GEBÄUDE
+# FARBPALETTE FÜR KOMPLEXE GEBÄUDE (Version 2.0)
 # =============================================================================
 
-COMPLEX_COLORS = """## Farben
+COMPLEX_COLORS = """## Farben (KRITISCH!)
 
-| Element | Farbe | Code |
-|---------|-------|------|
-| Hintergrund | Weiss | #FFFFFF |
-| Gebäude-Füllung | Schraffur | url(#hatch) |
-| Dach-Füllung | Schraffur | url(#roof-hatch) |
-| Kuppel | Kupfer-Gradient | url(#copper) |
-| Linien/Umrisse | Dunkelgrau | #333333 |
-| Gerüst-Ständer | Blau | #0066CC |
-| Gerüst-Beläge | Braun | #8B4513 |
-| Verankerung | Rot gestrichelt | #CC0000 |
-| Text | Dunkelgrau | #333333 |
+| Element | Farbe | Code | Verwendung |
+|---------|-------|------|------------|
+| Hintergrund | Weiss | #FFFFFF | Alle SVGs |
+| Gebäude-Aussenfläche | Lockere Schraffur | url(#hatch) | Fassade + Grundriss |
+| Schnittfläche (Mauerwerk) | Dichte Schraffur | url(#cut-hatch) | NUR Schnitt! |
+| Innenraum | Weiss/LEER | #FFFFFF | NUR Schnitt! |
+| Dach-Füllung | Schraffur | url(#roof-hatch) | Dach |
+| Kuppel | Kupfer-Gradient | url(#copper) | EINZIGER Gradient! |
+| Linien/Umrisse | Dunkelgrau | #333333 | Alle SVGs |
+| Gerüst-Ständer | Blau | #0066CC | Alle SVGs |
+| Gerüst-Beläge | Braun | #8B4513 | Alle SVGs |
+| Verankerung | Rot gestrichelt | #CC0000 | Ansicht + Schnitt |
 
-HINWEIS: Kuppel ist das EINZIGE Element mit Gradient!"""
+**KRITISCH - Unterschied Fassade vs. Schnitt:**
+- Fassade: Aussenflächen mit lockerer Schraffur `url(#hatch)`
+- Schnitt: Geschnittenes Mauerwerk mit dichter Schraffur `url(#cut-hatch)`, Innenräume LEER (weiss)!"""
 
 
 # =============================================================================
@@ -324,10 +332,25 @@ def generate_complex_cross_section_prompt(
 
     return f"""Du bist ein Experte für TECHNISCHE Architekturzeichnungen im SVG-Format.
 
-## KRITISCHE REGEL
+## KRITISCHE REGEL - SCHNITT vs. FASSADE
 
-Dies ist ein SCHNITT (Seitenansicht durch das Gebäude).
+Dies ist ein **GEBÄUDESCHNITT** (Gebäude AUFGESCHNITTEN entlang Schnittlinie A-A).
 Zeichne NUR die Zonen die aufgelistet sind!
+
+```
+GEBÄUDESCHNITT - Blick in SCHNITTEBENE
+=======================================
+
+    ┌─────────┐
+    │█│     │█│ ← Schnittfläche (DICHT schraffiert)
+    │ │     │ │   url(#cut-hatch)
+    │ │     │ │
+    │ │     │ │ ← Innenraum (WEISS, LEER!)
+    └─┴─────┴─┘
+
+█ = DICHTE Schnitt-Schraffur url(#cut-hatch)
+  = WEISS (Innenräume LEER lassen!)
+```
 
 ## Gebäudedaten
 
@@ -347,6 +370,7 @@ Zeichne NUR die Zonen die aufgelistet sind!
 - Bei Kuppel: Halbkreis-Kontur oben
 - Bei Türmen: Erhöhte Bereiche
 - Bei Arkaden: Niedrigerer Bereich mit Bögen
+- **WICHTIG:** Gewölbe, Decken, Böden im Innenraum sichtbar!
 
 ## Gerüst im Schnitt
 
@@ -360,18 +384,20 @@ Zeichne NUR die Zonen die aufgelistet sind!
 
 {COMPLEX_COLORS}
 
-## Elemente
+## Elemente (KRITISCH!)
 
-1. **Weisser Hintergrund**
-2. **Terrain-Linie** mit Schraffur-Pattern (url(#ground))
-3. **Gebäudeschnitt** - Schraffiert, verschiedene Höhen pro Zone
-4. **Geschossdecken** - Horizontale Linien
-5. **Kuppel-Schnitt** - Falls vorhanden: Halbkreis-Kontur
-6. **Gerüst** - Links und rechts
-7. **Höhenkoten** links:
+1. **Weisser Hintergrund** - `fill="#FFFFFF"`
+2. **Terrain-Linie** mit Schraffur-Pattern `url(#ground)`
+3. **Geschnittene Mauern** - DICHTE Schraffur `url(#cut-hatch)` (NICHT hatch!)
+4. **Innenräume** - WEISS/LEER `fill="#FFFFFF"` (KEINE Schraffur!)
+5. **Geschossdecken** - Horizontale Linien
+6. **Kuppel-Schnitt** - Falls vorhanden: Halbkreis-Kontur, Innen LEER
+7. **Gerüst** - Links und rechts (Ständer blau, Beläge braun)
+8. **Höhenkoten** links:
    {hoehenkoten_text}
    - Traufhöhen jeder Zone
    - Firsthöhen jeder Zone
+9. **Schnittmarkierung** - A-A
 
 ## Output
 

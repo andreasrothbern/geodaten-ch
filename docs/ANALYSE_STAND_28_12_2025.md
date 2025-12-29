@@ -48,19 +48,19 @@
 | Traufhöhe | swissBUILDINGS3D | 14.53 m | ✅ Verfügbar |
 | Firsthöhe | swissBUILDINGS3D | 62.57 m | ✅ Verfügbar |
 | Gebäudehöhe | swissBUILDINGS3D | 62.57 m | ✅ Verfügbar |
-| **Terrain-Höhe** | swissALTI3D | 543.1 m ü.M. | ✅ Verfügbar, **NICHT angezeigt** |
-| Terrain min/max | swissALTI3D Profil | - | ❌ Nicht implementiert |
+| **Terrain-Höhe** | swissALTI3D | 543.1 m ü.M. | ✅ **Angezeigt in Frontend** |
+| Terrain min/max | swissALTI3D Profil | - | ⚠️ Geplant (4-Eckpunkte) |
 
 ### 2.4 Dach-Daten (Option C - Heuristisch)
 
 | Feld | Quelle | Beispiel EFH | Status |
 |------|--------|--------------|--------|
-| Dachneigung | Berechnet | 31° | ✅ Berechnet |
-| Dachform | Klassifiziert | Satteldach | ✅ Berechnet |
-| Dachausrichtung | Aus Polygon | O-W | ✅ Berechnet |
+| Dachneigung | Berechnet | 31° | ✅ Berechnet + **Angezeigt** |
+| Dachform | Klassifiziert | Satteldach | ✅ Berechnet + **Angezeigt** |
+| Dachausrichtung | Aus Polygon | O-W | ✅ Berechnet + **Angezeigt** |
 | First-Azimut | Berechnet | 90° | ✅ Berechnet |
-| Dachfläche | Geschätzt | 153.9 m² | ✅ Berechnet |
-| **Anzeige im Frontend** | - | - | ❌ **NICHT angezeigt** |
+| Dachfläche | Geschätzt | 153.9 m² | ✅ Berechnet + **Angezeigt** |
+| **Anzeige im Frontend** | - | - | ✅ **Implementiert (29.12.2025)** |
 
 ### 2.5 Zonen-Daten (Komplexe Gebäude)
 
@@ -111,30 +111,31 @@
 
 ### 4.1 Terrain-Höhe (Hanglage-Erkennung)
 
-**Status:** ✅ Implementiert, ❌ Nicht angezeigt
+**Status:** ✅ Implementiert, ✅ **Angezeigt (29.12.2025)**
 
 ```python
 # Backend: terrain.py
 height = await terrain_service.get_height(e, n)
 # -> 543.1 (m ü.M.)
 
-# Bei Geocoding bereits verfügbar:
-geo_result.terrain.terrain_height_m
+# Im Scaffolding-Response:
+response["address"]["terrain"] = {
+    "terrain_height_m": 543.1,
+    "min_terrain_m": ...,
+    "max_terrain_m": ...,
+    "terrain_slope_m": ...  # Hanglage-Erkennung
+}
 ```
 
-**Problem:** Die Terrain-Höhe wird bei Geocoding abgerufen, aber:
-- Nicht im Scaffolding-Response zurückgegeben
-- Nicht im Frontend angezeigt
-- Kein Terrain-Profil für Hanglage-Erkennung
-
-**Für Gerüstbau relevant:**
-- Hanglage erfordert Höhenausgleich
-- Unterschiedliche Gerüsthöhen je nach Geländeseite
-- SUVA-Vorschriften für Hanggerüste
+**Implementiert:**
+- ✅ Terrain-Höhe im Frontend angezeigt (Adresse-Sektion)
+- ✅ Hanglage-Warnung bei >1m Differenz
+- ✅ An Claude-API übergeben für komplexe Gebäude
+- ⚠️ Terrain-Profil um 4 Eckpunkte: Geplant
 
 ### 4.2 Dach-Daten (Neigung, Form, Ausrichtung)
 
-**Status:** ✅ Berechnet (roof.py), ❌ Nicht angezeigt
+**Status:** ✅ Berechnet (roof.py), ✅ **Angezeigt (29.12.2025)**
 
 ```python
 # Backend: roof.py
@@ -146,19 +147,17 @@ roof_data = roof_service.calculate(...)
 #      ...
 #    )
 
-# Im Scaffolding-Response verfügbar als:
+# Im Scaffolding-Response:
 response["roof"] = roof_data.to_dict()
 ```
 
-**Problem:** Die Dach-Daten sind im API-Response, aber:
-- Nicht im Frontend-UI angezeigt
-- Keine Visualisierung der Dachform
-- Keine Integration in SVG-Generierung
-
-**Für Gerüstbau/Solar relevant:**
-- Dachneigung beeinflusst Gerüsthöhe (First + 1m)
-- Dachausrichtung wichtig für PV-Anlagen
-- Dachform bestimmt Gerüstgeometrie
+**Implementiert:**
+- ✅ Dachform mit Icon im Frontend
+- ✅ Dachneigung in Grad
+- ✅ First-Ausrichtung (O-W, N-S)
+- ✅ Dachfläche in m²
+- ✅ Konfidenz-Anzeige (bei <50% gelbe Warnung)
+- ✅ An Claude-Prompt übergeben
 
 ---
 
@@ -256,10 +255,10 @@ response["roof"] = roof_data.to_dict()
 | | Umfang | Berechnet | ✅ | ✅ | Gerüstmenge |
 | **Höhen** | Traufhöhe | swissBUILDINGS3D | ✅ | ✅ | Gerüsthöhe |
 | | Firsthöhe | swissBUILDINGS3D | ✅ | ✅ | Dacharbeiten |
-| | **Terrain** | swissALTI3D | ✅ | ❌ | **Hanglage** |
-| **Dach** | Neigung | Berechnet | ✅ | ❌ | **Solar/Dach** |
-| | Form | Klassifiziert | ✅ | ❌ | **Gerüstform** |
-| | Ausrichtung | Berechnet | ✅ | ❌ | **Solar** |
+| | **Terrain** | swissALTI3D | ✅ | ✅ | **Hanglage** |
+| **Dach** | Neigung | Berechnet | ✅ | ✅ | **Solar/Dach** |
+| | Form | Klassifiziert | ✅ | ✅ | **Gerüstform** |
+| | Ausrichtung | Berechnet | ✅ | ✅ | **Solar** |
 | **Zonen** | Komplexität | Erkannt | ✅ | ✅ | Multi-Zone |
 | | Zonen-Liste | Claude | ✅ | ✅ | Teilbereiche |
 | | Orthofoto-Analyse | Claude Vision | ✅ | ❌ | Innenhöfe |
@@ -269,28 +268,38 @@ response["roof"] = roof_data.to_dict()
 
 ---
 
-## 8. Nächste Schritte (Vorschlag für Claude.ai Session)
+## 8. Nächste Schritte (Stand: 29.12.2025)
 
-### Priorität 1: Fehlende Anzeigen ergänzen
+### ✅ Erledigt: Priorität 1 - Fehlende Anzeigen ergänzen
 
-1. **Terrain-Höhe im Frontend anzeigen**
-   - Höhe m ü.M. in BuildingCard
-   - Warnung bei Hanglage
+1. **Terrain-Höhe im Frontend anzeigen** ✅
+   - Höhe m ü.M. in Adresse-Sektion
+   - Hanglage-Badge bei >1m Differenz
 
-2. **Dach-Daten im Frontend anzeigen**
+2. **Dach-Daten im Frontend anzeigen** ✅
    - Neigung, Form, Ausrichtung
-   - Icon/Badge für Dachtyp
+   - Icon/Symbol für Dachtyp
+   - Konfidenz-Warnung bei <50%
 
-### Priorität 2: Hanglage-Erkennung
+### ✅ Erledigt: Priorität 2 - Hanglage-Erkennung
+
+1. **Terrain-Daten an Claude-API** ✅
+   - terrain_data Parameter in analyze_with_claude()
+   - Hanglage-Hinweise im Prompt für komplexe Gebäude
+
+2. **Hanglage-Warnung im Frontend** ✅
+   - Orange Badge bei >1m Differenz
+
+### ⚠️ Ausstehend: Terrain-Profil (4 Eckpunkte)
 
 1. **Terrain-Profil implementieren**
-   - 4 Eckpunkte des Polygons
-   - Min/Max Höhe berechnen
-   - Differenz = Hanglage
+   - 4 Eckpunkte des Polygons abfragen
+   - Min/Max Höhe pro Seite berechnen
+   - Genauere Hanglage-Erkennung
 
-2. **Hanglage-Warnung**
-   - > 1m Differenz → Hinweis
+2. **Detaillierte Hanglage-Analyse**
    - > 3m Differenz → Ausgleichsberechnung
+   - Fassaden-spezifische Gerüsthöhen
 
 ### Priorität 3: Workflow für Projektleiter
 

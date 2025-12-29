@@ -2940,6 +2940,267 @@ async def generate_materialbewirtschaftung_document(
 
 
 # ============================================================================
+# Smarte Suche & Intelligent DB
+# ============================================================================
+
+@app.get("/api/v1/search",
+         tags=["Smarte Suche"])
+async def smart_search(
+    q: str = Query(..., min_length=2, description="Suchbegriff (Name, Alias oder Adresse)"),
+    limit: int = Query(10, ge=1, le=50, description="Max. Anzahl Ergebnisse")
+):
+    """
+    Smarte Gebäudesuche mit Alias-Unterstützung.
+
+    **Reihenfolge:**
+    1. Exakte Alias-Matches ("Bundeshaus" → EGID)
+    2. Volltext-Suche (FTS5)
+    3. Fallback: Geocoding via swisstopo
+
+    **Beispiele:**
+    - `/api/v1/search?q=Bundeshaus` → Findet Bundeshaus direkt
+    - `/api/v1/search?q=Münster Bern` → Findet Berner Münster
+    - `/api/v1/search?q=Kramgasse 10` → Geocoding-Fallback
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    results = await db_service.smart_search(q, limit)
+
+    return {
+        "query": q,
+        "total": len(results),
+        "results": [
+            {
+                "egid": r.egid,
+                "adresse": r.adresse,
+                "name": r.name,
+                "score": round(r.score, 3),
+                "source": r.source,
+                "coordinates": r.coordinates,
+                "has_cached_data": r.has_cached_data,
+                "has_cached_svgs": r.has_cached_svgs
+            }
+            for r in results
+        ]
+    }
+
+
+@app.get("/api/v1/search/suggestions",
+         tags=["Smarte Suche"])
+async def search_suggestions(
+    q: str = Query(..., min_length=2, description="Suchbegriff für Autocomplete"),
+    limit: int = Query(5, ge=1, le=20, description="Max. Anzahl Vorschläge")
+):
+    """
+    Autocomplete-Vorschläge für Suche.
+
+    **Beispiel:** `/api/v1/search/suggestions?q=Bund`
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    results = await db_service.smart_search(q, limit)
+
+    suggestions = []
+    for r in results:
+        if r.name:
+            suggestions.append({"text": r.name, "type": "name", "egid": r.egid})
+        if r.adresse:
+            suggestions.append({"text": r.adresse, "type": "adresse", "egid": r.egid})
+
+    return {"suggestions": suggestions[:limit]}
+
+
+@app.get("/api/v1/building/{egid}/environment",
+         tags=["Smarte Suche"])
+async def get_building_environment(
+    egid: str,
+    refresh: bool = Query(False, description="Cache ignorieren und neu laden")
+):
+    """
+    Umgebungsdaten eines Gebäudes (Nachbarn, blockierte Fassaden).
+
+    **Liefert:**
+    - Nachbargebäude im Umkreis
+    - Blockierte Fassaden (zu wenig Platz für Gerüst)
+    - Terrain-Daten (Hanglage)
+    - Erkannte Rundungen
+
+    **Beispiel:** `/api/v1/building/2242547/environment`
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+
+    # Aus Cache laden wenn nicht refresh
+    if not refresh:
+        cached = db_service.get_building_environment(egid)
+        if cached:
+            return {
+                "egid": cached.egid,
+                "surrounding_buildings": cached.surrounding_buildings,
+                "blocked_facades": cached.blocked_facades,
+                "terrain_data": cached.terrain_data,
+                "curves": cached.curves,
+                "from_cache": True,
+                "updated_at": cached.updated_at
+            }
+
+    # TODO: Live-Abfrage wenn nicht im Cache
+    return {
+        "egid": egid,
+        "surrounding_buildings": [],
+        "blocked_facades": [],
+        "terrain_data": None,
+        "curves": [],
+        "from_cache": False,
+        "message": "Live-Abfrage noch nicht implementiert"
+    }
+
+
+@app.get("/api/v1/building/{egid}/svg/{svg_type}",
+         tags=["SVG Cache"],
+         response_class=Response)
+async def get_cached_svg(
+    egid: str,
+    svg_type: str,
+    regenerate: bool = Query(False, description="SVG neu generieren")
+):
+    """
+    SVG aus Cache laden oder generieren.
+
+    **SVG-Typen:**
+    - `grundriss` - Grundriss mit Polygon
+    - `ansicht` - Frontalansicht
+    - `schnitt` - Querschnitt
+
+    **Beispiel:** `/api/v1/building/2242547/svg/ansicht`
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+
+    # Aus Cache laden
+    if not regenerate:
+        cached = db_service.get_cached_svg(egid, svg_type)
+        if cached:
+            return Response(
+                content=cached.svg_content,
+                media_type="image/svg+xml",
+                headers={
+                    "X-Cache": "HIT",
+                    "X-Generated-By": cached.generated_by,
+                    "X-Created-At": cached.created_at
+                }
+            )
+
+    # TODO: SVG generieren wenn nicht im Cache
+    raise HTTPException(
+        status_code=404,
+        detail=f"SVG {svg_type} für EGID {egid} nicht im Cache. Nutze /api/v1/visualize/* Endpoints."
+    )
+
+
+@app.post("/api/v1/building/{egid}/svg/{svg_type}",
+          tags=["SVG Cache"])
+async def save_svg_to_cache(
+    egid: str,
+    svg_type: str,
+    svg_content: str = Query(..., description="SVG-Inhalt"),
+    generated_by: str = Query("manual", description="Quelle: auto, claude_api, claude_ai, manual")
+):
+    """
+    SVG im Cache speichern.
+
+    **Beispiel:** Manuell erstelltes SVG cachen.
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    cache_key = db_service.set_cached_svg(
+        egid=egid,
+        svg_type=svg_type,
+        svg_content=svg_content,
+        generated_by=generated_by
+    )
+
+    return {
+        "status": "cached",
+        "cache_key": cache_key,
+        "egid": egid,
+        "svg_type": svg_type
+    }
+
+
+@app.delete("/api/v1/building/{egid}/svg",
+            tags=["SVG Cache"])
+async def invalidate_svg_cache(
+    egid: str,
+    svg_type: Optional[str] = Query(None, description="Nur bestimmten Typ löschen")
+):
+    """
+    SVG-Cache für ein Gebäude invalidieren.
+
+    **Beispiel:** `/api/v1/building/2242547/svg?svg_type=ansicht`
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    count = db_service.invalidate_svg_cache(egid, svg_type)
+
+    return {
+        "status": "invalidated",
+        "egid": egid,
+        "svg_type": svg_type or "all",
+        "deleted_count": count
+    }
+
+
+@app.get("/api/v1/db/stats",
+         tags=["System"])
+async def get_intelligent_db_stats():
+    """
+    Statistiken der intelligenten Datenbank.
+
+    **Liefert:**
+    - Anzahl Gebäude (gesamt, Landmarks)
+    - SVG-Cache Statistiken
+    - Research-Cache Statistiken
+    - Datenbank-Grösse
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    return db_service.get_stats()
+
+
+@app.post("/api/v1/db/seed-landmarks",
+          tags=["System"])
+async def seed_landmark_buildings():
+    """
+    Bekannte Schweizer Gebäude als Seed-Daten hinzufügen.
+
+    **Fügt hinzu:**
+    - Bundeshaus
+    - Berner Münster
+    - Kirche St. Peter und Paul
+    - Zytglogge
+
+    **Idempotent:** Kann mehrfach aufgerufen werden.
+    """
+    from app.services.intelligent_db import get_intelligent_db_service
+
+    db_service = get_intelligent_db_service()
+    db_service.seed_landmark_buildings()
+
+    return {
+        "status": "seeded",
+        "message": "Landmark buildings added successfully"
+    }
+
+
+# ============================================================================
 # Error Handler
 # ============================================================================
 

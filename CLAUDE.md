@@ -543,6 +543,92 @@ cd backend
 python scripts/import_building_heights.py daten.gml --canton BE
 ```
 
+## Intelligente Datenbank (NEU 29.12.2025)
+
+Erweiterte Datenbank für smarte Suche, SVG-Caching und Umgebungsdaten.
+
+### API-Endpunkte
+
+```python
+# Smarte Suche (Alias → FTS → Geocoding)
+GET /api/v1/search?q=Bundeshaus
+# Response: {"results": [{"egid": "2242547", "name": "Bundeshaus", "score": 1.0, "source": "alias"}]}
+
+# Autocomplete-Vorschläge
+GET /api/v1/search/suggestions?q=Bund
+
+# SVG aus Cache laden
+GET /api/v1/building/{egid}/svg/{svg_type}
+# svg_type: grundriss, ansicht, schnitt
+
+# SVG in Cache speichern
+POST /api/v1/building/{egid}/svg/{svg_type}?svg_content=...&generated_by=claude_api
+
+# Cache invalidieren
+DELETE /api/v1/building/{egid}/svg?svg_type=ansicht
+
+# Umgebungsdaten (Nachbarn, blockierte Fassaden)
+GET /api/v1/building/{egid}/environment
+
+# DB-Statistiken
+GET /api/v1/db/stats
+
+# Bekannte Gebäude hinzufügen
+POST /api/v1/db/seed-landmarks
+```
+
+### Datenbank-Tabellen (building_contexts.db)
+
+| Tabelle | Beschreibung |
+|---------|--------------|
+| `buildings` | Gebäude-Stammdaten mit Name, Aliases, Keywords |
+| `buildings_fts` | FTS5 Volltext-Index für smarte Suche |
+| `svg_cache` | Persistenter SVG-Cache mit Versionierung |
+| `building_environment` | Umgebungsdaten (Nachbarn, Terrain, Kurven) |
+| `claude_research_cache` | Claude API Recherche-Ergebnisse |
+
+### Smarte Suche Strategie
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SMARTE SUCHE                             │
+├─────────────────────────────────────────────────────────────┤
+│  1. Alias-Match (Score 1.0)                                 │
+│     "Bundeshaus" → EGID 2242547 (exakt)                     │
+│     "Parlamentsgebäude" → EGID 2242547 (aus aliases JSON)   │
+│     ↓ falls nicht gefunden                                  │
+│  2. Volltext-Suche FTS5 (Score 0.5-0.9)                     │
+│     "Münster Bern" → Suche in name, aliases, keywords       │
+│     ↓ falls nicht gefunden                                  │
+│  3. Geocoding-Fallback (Score ~0.7)                         │
+│     "Kramgasse 10, Bern" → swisstopo Geocoding             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### SVG-Cache Versionierung
+
+```python
+# Cache-Key = SHA256(egid + svg_type + version)[:16]
+SVG_VERSION = "2.0"
+
+# Cache wird invalidiert bei:
+# - Neue Version (Prompt-Änderungen)
+# - Manueller Aufruf von DELETE endpoint
+# - Höhendaten-Update für das Gebäude
+```
+
+### Bekannte Gebäude (Landmarks)
+
+```python
+# Seed-Daten mit POST /api/v1/db/seed-landmarks
+LANDMARKS = [
+    {"egid": "2242547", "name": "Bundeshaus", "aliases": ["Parlamentsgebäude"]},
+    {"egid": "1230337", "name": "Berner Münster", "aliases": ["Münster Bern"]},
+    {"egid": "191821074", "name": "Kirche St. Peter und Paul"},
+    {"egid": "1017961", "name": "Zytglogge", "aliases": ["Zeitglockenturm"]}
+]
+```
+
 ## Douglas-Peucker Polygon-Vereinfachung
 
 Die App verwendet den Douglas-Peucker Algorithmus zur Reduktion der Fassadensegmente.
@@ -1059,7 +1145,7 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: 28.12.2025)
+## Status (Stand: 29.12.2025)
 
 ### Fertig ✅
 - [x] Backend + Frontend Deployment
@@ -1112,6 +1198,21 @@ npx @railway/cli volume add --mount-path /app/data
   - Neuer ZoneType: `INNENHOF` (nicht einrüsten)
   - Orthofoto-spezifische Analyse (Dachaufbauten, Innenhöfe, Zugangsprobleme)
   - Kosten: ~$0.01-0.02 ohne, ~$0.05-0.10 mit Orthofoto
+- [x] **SVG Prompt-System V2.0** (NEU 29.12.2025)
+  - Separate Prompts: `terrain_prompt.py`, `environment_prompt.py`
+  - Zwei Schraffur-Typen: `url(#hatch)` vs. `url(#cut-hatch)`
+  - ASCII-Diagramme für Fassade vs. Schnitt Unterscheidung
+  - Verdeckungsregel: Vorne verdeckt hinten
+  - Bounding-Box Berechnung für komplexe Polygone
+  - Terrain-Höhe in m ü.M. Referenz
+- [x] **Intelligente Datenbank** (NEU 29.12.2025)
+  - `intelligent_db.py` Service für erweiterte DB-Funktionen
+  - Smarte Suche: Alias-Match → FTS5 → Geocoding-Fallback
+  - SVG-Cache mit Versionierung und Cache-Invalidierung
+  - Umgebungsdaten-Cache (Nachbargebäude, blockierte Fassaden)
+  - Claude-Recherche-Cache (Wiederverwendung von API-Ergebnissen)
+  - Landmark-Buildings Seed-Daten (Bundeshaus, Münster, etc.)
+  - API-Endpoints: `/api/v1/search`, `/api/v1/building/{egid}/svg/*`, `/api/v1/db/stats`
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs

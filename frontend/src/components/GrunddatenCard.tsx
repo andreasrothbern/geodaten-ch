@@ -19,6 +19,13 @@ import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
  * Inkl. Gebäude-Identifikation und RECHERCHE-ANWEISUNG
  *
  * Generiert Anforderungen für ALLE 3 SVG-Typen in einem Prompt.
+ *
+ * Version 2.0 (29.12.2025):
+ * - Zwei Schraffur-Typen (hatch vs. cut-hatch)
+ * - Unterschied Fassade vs. Schnitt erklärt
+ * - Verdeckungsregel für Fassade
+ * - Innenräume LEER im Schnitt
+ * - Vereinfachte Polygon-Darstellung bei >10 Punkten
  */
 function generateClaudePrompt(
   data: ScaffoldingData,
@@ -28,6 +35,24 @@ function generateClaudePrompt(
   const zones = buildingContext?.zones || []
   const isComplex = buildingContext?.complexity === 'complex' || zones.length > 1
   const terrain = address?.terrain
+
+  // Polygon-Komplexität: >10 Punkte = vereinfachte Darstellung
+  const polygonPoints = polygon?.coordinates?.length || 0
+  const useSimplifiedPolygon = polygonPoints > 10
+
+  // Bounding-Box berechnen (für vereinfachte Darstellung)
+  const getBoundingBox = () => {
+    if (!polygon?.coordinates || polygon.coordinates.length < 3) return null
+    const xs = polygon.coordinates.map((c: number[]) => c[0])
+    const ys = polygon.coordinates.map((c: number[]) => c[1])
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    return {
+      width_m: maxX - minX,
+      depth_m: maxY - minY
+    }
+  }
+  const bbox = getBoundingBox()
 
   // Gebäudetyp aus GWR-Kategorie ableiten
   const getGebaeudetype = (): string => {
@@ -45,6 +70,11 @@ function generateClaudePrompt(
   // Gebäudename aus Context oder "RECHERCHIEREN"
   const buildingName = buildingContext?.building_name || 'RECHERCHIEREN'
   const needsResearch = buildingName === 'RECHERCHIEREN' || isComplex
+
+  // Terrain-Höhenkote für Referenz
+  const terrainRef = terrain?.terrain_height_m
+    ? `±0.00 = ${terrain.terrain_height_m.toFixed(1)} m ü.M.`
+    : '±0.00 (OK Terrain)'
 
   return `# SVG-Generierung: Grundriss + Fassadenansicht + Gebäudeschnitt
 
@@ -87,11 +117,23 @@ ${roof ? `### Dach-Analyse (heuristisch berechnet)
 ` : ''}
 ### Terrain (swissALTI3D)
 ${terrain ? `- **Terrain-Höhe:** ${terrain.terrain_height_m?.toFixed(1)} m ü.M.
-- **Hanglage:** ${terrain.terrain_slope_m && terrain.terrain_slope_m > 1 ? `Ja (${terrain.terrain_slope_m.toFixed(1)}m Differenz - unterschiedliche Gerüsthöhen nötig!)` : 'Nein'}` : '- Keine Terrain-Daten verfügbar'}
+- **Referenzpunkt:** Haupteingang = ${terrainRef}
+- **Hanglage:** ${terrain.terrain_slope_m && terrain.terrain_slope_m > 1 ? `Ja (${terrain.terrain_slope_m.toFixed(1)}m Differenz - unterschiedliche Gerüsthöhen nötig!)` : 'Nein (eben)'}` : '- Keine Terrain-Daten verfügbar'}
 
-### Polygon
-- **Eckpunkte:** ${polygon?.coordinates?.length || 0}
-- **Koordinatensystem:** LV95 (EPSG:2056)
+### Polygon-Daten
+${useSimplifiedPolygon ? `
+> **HINWEIS:** Komplexes Polygon mit ${polygonPoints} Punkten → **Vereinfachte Darstellung verwenden!**
+
+#### Vereinfachte Bounding-Box
+- **Länge (O-W):** ca. ${bbox?.width_m?.toFixed(0) || '?'} m
+- **Breite (N-S):** ca. ${bbox?.depth_m?.toFixed(0) || '?'} m
+
+#### Gerüstzone
+- **Abstand:** 1.0 m um Gebäude
+- **Darstellung:** Vereinfachte rechteckige Hülle um Gesamtgebäude
+- **NICHT:** Exakte Offset-Kontur des komplexen Polygons (keine Treppenstufen!)
+` : `- **Eckpunkte:** ${polygonPoints}
+- **Koordinatensystem:** LV95 (EPSG:2056)`}
 
 ## 4. GWR-Daten (Gebäude- und Wohnungsregister)
 - **Gebäudekategorie:** ${gwr_data?.building_category || '-'}
@@ -103,7 +145,7 @@ ${terrain ? `- **Terrain-Höhe:** ${terrain.terrain_height_m?.toFixed(1)} m ü.M
 ${zones.length > 0 ? `
 | Zone | Typ | Höhe | Traufe | Eingerüstet |
 |------|-----|------|--------|-------------|
-${zones.map(z => `| ${z.name} | ${z.type} | ${z.gebaeudehoehe_m?.toFixed(1) || '?'}m | ${z.traufhoehe_m?.toFixed(1) || '-'}m | ${z.beruesten !== false ? 'Ja' : 'Nein'} |`).join('\n')}
+${zones.map(z => `| ${z.name} | ${z.type} | ${z.gebaeudehoehe_m?.toFixed(1) || '?'}m | ${z.traufhoehe_m?.toFixed(1) || '-'}m | ${z.beruesten !== false ? 'Ja' : 'Nein [Sonderkonstruktion]'} |`).join('\n')}
 
 ### Zone-Typen Legende
 - **hauptgebaeude** = Rechteckiger Hauptkörper mit Schraffur
@@ -126,16 +168,30 @@ ${isComplex ? `## 6. Baustil-Merkmale
 ${sides && sides.length > 0 ? `
 | Seite | Länge (m) | Richtung |
 |-------|-----------|----------|
-${sides.map((s, i) => `| ${s.index ?? i + 1} | ${s.length_m?.toFixed(1)} | ${s.direction || '?'} |`).join('\n')}` : 'Keine Seitendaten verfügbar'}
+${sides.map((s, i) => `| ${s.index ?? i + 1} | ${s.length_m?.toFixed(1)} | ${s.direction || '?'} |`).join('\n')}
 
-## 8. SVG Style-Vorgaben
+- **Längste Fassade:** ${Math.max(...sides.map(s => s.length_m || 0)).toFixed(1)} m
+- **Gesamtumfang:** ca. ${dimensions?.perimeter_m?.toFixed(0) || '?'} m` : 'Keine Seitendaten verfügbar'}
+
+## 8. SVG Style-Vorgaben (KRITISCH!)
 
 \`\`\`xml
 <defs>
-  <!-- Schraffur für Gebäude -->
+  <!-- LOCKERE Schraffur für Aussenflächen (Fassade, Grundriss) -->
   <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
-    <path d="M0,0 l8,8 M-2,6 l4,4 M6,-2 l4,4" stroke="#999" stroke-width="0.5"/>
+    <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
   </pattern>
+
+  <!-- DICHTE Schraffur für Schnittflächen (geschnittenes Mauerwerk) -->
+  <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+    <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+  </pattern>
+
+  <!-- Terrain/Boden -->
+  <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+
   <!-- Kupfer-Gradient NUR für Kuppeln -->
   <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
     <stop offset="0%" style="stop-color:#7CB9A5"/>
@@ -144,59 +200,96 @@ ${sides.map((s, i) => `| ${s.index ?? i + 1} | ${s.length_m?.toFixed(1)} | ${s.d
 </defs>
 \`\`\`
 
-| Element | Farbe/Fill |
-|---------|------------|
-| Hintergrund | #FFFFFF (weiss) |
-| Gebäude | url(#hatch) Schraffur |
-| Kuppel | url(#copper) Gradient |
-| Gerüst-Ständer | #0066CC (blau) |
-| Beläge | #8B4513 (braun) |
-| Verankerungen | #CC0000 gestrichelt |
+| Element | Farbe/Fill | Verwendung |
+|---------|------------|------------|
+| Hintergrund | #FFFFFF (weiss) | Alle SVGs |
+| Gebäude-Aussenfläche | url(#hatch) - lockere Schraffur | Fassade + Grundriss |
+| Schnittfläche (Mauerwerk) | url(#cut-hatch) - dichte Schraffur | NUR im Schnitt! |
+| Innenraum | #FFFFFF (weiss, LEER) | NUR im Schnitt! |
+| Kuppel | url(#copper) Gradient | Einziger Gradient! |
+| Gerüst-Ständer | #0066CC (blau) | Alle SVGs |
+| Beläge | #8B4513 (braun) | Alle SVGs |
+| Verankerungen | #CC0000 gestrichelt | Ansicht + Schnitt |
 
-## 9. Anforderungen
+## 9. KRITISCHE UNTERSCHEIDUNG: Fassade vs. Schnitt
 
-### Für Grundriss (SVG 1):
-- Polygon-Form des Gebäudes (Draufsicht)
-- Fassaden beschriften (Länge + Richtung)
-- Gerüstzone um das Gebäude (gelb, 1m Abstand)
-- Nordpfeil und Massstab
+\`\`\`
+FASSADENANSICHT                    GEBÄUDESCHNITT
+================                    ===============
+Blick von AUSSEN                   Blick in SCHNITTEBENE
+
+    ┌─────────┐                        ┌─────────┐
+    │░░░░░░░░░│ ← Fassade             │█│     │█│ ← Schnittfläche
+    │░░░░░░░░░│   (alles sichtbar      │ │     │ │   (dicht schraffiert)
+    │░░░░░░░░░│    von aussen)         │ │     │ │
+    └─────────┘                        │ │     │ │ ← Innenraum (LEER!)
+                                       └─┴─────┴─┘
+
+░░░ = lockere Schraffur            █ = dichte Schnitt-Schraffur
+      url(#hatch)                       url(#cut-hatch)
+                                     = weiss (Innenraum)
+\`\`\`
+
+## 10. Anforderungen pro SVG
+
+### SVG 1: Grundriss (Draufsicht)
+- **Perspektive:** Vogelperspektive, Blick von oben
+- **Zeigt:** Gebäudeumriss, Wandstärken
+- **Gebäudeform:** ${useSimplifiedPolygon ? 'Vereinfacht basierend auf Gebäudetyp (Bounding-Box + typische Form)' : 'Polygon-Form des Gebäudes'}
+- **Gerüstzone:** Rechteckige Hülle mit 1m Abstand (KEINE Treppenstufen!)
+- **Schraffur:** url(#hatch) für Mauern
+- **Elemente:** Nordpfeil, Massstab, Fassadenlängen
 ${isComplex ? '- Zonen farblich unterscheiden\n- Innenhöfe markieren' : ''}
 
-### Für Fassadenansicht (SVG 2):
-- Orthogonale Frontalansicht (2D)
-- Terrain-Linie bei ±0.00 (oder m ü.M. bei Hanglage)
-${isComplex ? `- WICHTIG: Verschiedene Höhenzonen darstellen!
+### SVG 2: Fassadenansicht (Elevation)
+- **Perspektive:** Frontalansicht von AUSSEN, orthogonal (2D)
+- **Zeigt:** NUR die sichtbare Aussenfläche
+- **WICHTIG - Verdeckungsregel:**
+  - Vordere Elemente VERDECKEN hintere Elemente
+  - Turm verdeckt dahinterliegendes Hauptschiff
+  - KEINE Innenräume sichtbar!
+  - KEINE Gewölbe sichtbar (nur von aussen erkennbare Dachform)
+- **Schraffur:** url(#hatch) für alle Fassadenflächen
+- **Terrain-Linie:** bei ${terrainRef}
+${isComplex ? `- Verschiedene Höhenzonen darstellen!
 - Arkaden unten: Bögen/Rundbögen
 - Hauptfassade: Fensterreihen
 - Kuppel oben: Halbkreis mit copper-Gradient (EINZIGER Gradient!)
 - Keine zusätzlichen Elemente erfinden!` : '- Fensterreihen pro Geschoss (angedeutet)\n- Satteldach als Dreieck'}
 - Gerüst VOR der Fassade (Ständer blau, Beläge braun)
-- Höhenskala links, Lagenbeschriftung rechts
+- Höhenskala links (${terrainRef}, +Traufe, +First), Lagenbeschriftung rechts
 
-### Für Gebäudeschnitt (SVG 3):
-- Querschnitt durch Gebäude (2D Orthogonalprojektion)
-- Terrain-Linie bei ±0.00
-- Geschossdecken als horizontale Linien
-${isComplex ? `- WICHTIG: Verschiedene Höhen pro Zone darstellen!
+### SVG 3: Gebäudeschnitt (Querschnitt)
+- **Perspektive:** Gebäude AUFGESCHNITTEN entlang Schnittlinie A-A
+- **Zeigt:** Innenräume, Konstruktion, Raumhöhen
+- **WICHTIG - Schraffur-Regel:**
+  - Geschnittene Mauern = DICHTE Schraffur url(#cut-hatch)
+  - Innenräume = WEISS/LEER (KEINE Schraffur!)
+  - Gewölbe, Decken, Böden sichtbar
+  - Raumhöhen ablesbar
+- **Terrain-Linie:** bei ${terrainRef} mit url(#ground) Pattern
+- **Geschossdecken:** Horizontale Linien
+${isComplex ? `- Verschiedene Höhen pro Zone darstellen!
 - Arkaden: Niedrig (~${zones.find(z => z.type === 'arkade')?.gebaeudehoehe_m?.toFixed(1) || '6'}m)
 - Hauptgebäude: Mittel
 - Kuppel: Hoch mit Halbkreis-Kontur` : '- Dachform: Satteldach mit Traufe und First'}
 - Gerüst links und rechts (Ständer + Beläge)
-- Höhenskala links, Lagenbeschriftung rechts
+- Höhenskala links (${terrainRef}, +Traufe, +First), Lagenbeschriftung rechts
+- Schnittmarkierung A-A
 
-## 10. Output
+## 11. Output
 
 Erstelle **3 separate SVGs**, jeweils mit \`viewBox="0 0 700 480"\`:
 
-1. **grundriss.svg** - Draufsicht mit Polygon und Gerüstzone
-2. **fassadenansicht.svg** - Frontalansicht mit Gerüst
-3. **gebaeudesschnitt.svg** - Querschnitt mit Geschossen
+1. **grundriss.svg** - Draufsicht mit ${useSimplifiedPolygon ? 'vereinfachter Gebäudeform' : 'Polygon'} und rechteckiger Gerüstzone
+2. **fassadenansicht.svg** - Aussenansicht, vordere Elemente verdecken hintere
+3. **gebaeudesschnitt.svg** - Aufgeschnitten, Innenräume sichtbar und LEER
 
-**NUR SVG-Code**, keine Erklärungen. Trenne die SVGs klar voneinander.
+**NUR SVG-Code**, keine Erklärungen. Trenne die SVGs klar voneinander (z.B. mit Kommentar \`<!-- SVG 1: Grundriss -->\`).
 
 ---
 
-*Generiert mit Gerüstplanung Schweiz App - https://cooperative-commitment-production.up.railway.app*`
+*Generiert mit Gerüstplanung Schweiz App v2.0 - https://cooperative-commitment-production.up.railway.app*`
 }
 
 export interface ManualHeights {
