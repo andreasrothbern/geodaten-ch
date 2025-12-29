@@ -567,17 +567,26 @@ async def get_scaffolding_data(
     refresh: bool = Query(False, description="Cache ignorieren und neu laden"),
     work_type: str = Query("dacharbeiten", description="Arbeitstyp: dacharbeiten (First+1m) oder fassadenarbeiten (Traufe)"),
     scaffold_type: str = Query("arbeitsgeruest", description="Gerüstart: arbeitsgeruest, schutzgeruest, fanggeruest"),
-    simplify_epsilon: Optional[float] = Query(None, ge=0.1, le=3.0, description="Douglas-Peucker Vereinfachung (0.1-3.0m). Auto: EFH=0.3, MFH=0.8, Gross=1.5")
+    simplify_epsilon: Optional[float] = Query(None, ge=0.1, le=3.0, description="Douglas-Peucker Vereinfachung (0.1-3.0m). Auto: EFH=0.3, MFH=0.8, Gross=1.5"),
+    use_smart_service: bool = Query(True, description="SmartBuildingService nutzen (parallel, einheitlich)")
 ):
     """
     Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
+
+    **NEU: SmartBuildingService** (use_smart_service=true, default)
+    - Parallele Datensammlung (5x schneller)
+    - Einheitliches Datenmodell (BuildingDataBundle)
+    - Claude-Recherche für Gebäude-Identifikation
+    - 24h Bundle-Cache
 
     Liefert:
     - Exakten Grundriss (Polygon mit allen Eckpunkten)
     - Seitenlängen jeder Fassade
     - Gesamtumfang (für Gerüstmeter)
-    - Geschätzte Gebäudehöhe
+    - Gemessene/geschätzte Gebäudehöhe
     - Geschätzte Gerüstfläche
+    - Gebäude-Identifikation (Name, Typ, Baustil)
+    - Höhenzonen (bei komplexen Gebäuden)
 
     **Arbeitstyp:**
     - `dacharbeiten`: Gerüsthöhe = Firsthöhe + 1.0m (SUVA Vorschrift)
@@ -590,6 +599,51 @@ async def get_scaffolding_data(
 
     **Beispiel:** `?address=Bundesplatz 3, 3011 Bern&work_type=dacharbeiten`
     """
+
+    # =================================================================
+    # NEU: SmartBuildingService (Standard)
+    # =================================================================
+    if use_smart_service:
+        try:
+            from app.services.smart_building import get_smart_building_service
+
+            service = get_smart_building_service()
+
+            # Daten sammeln (parallel, gecacht)
+            bundle = await service.collect_all_data(
+                address=address,
+                force_refresh=refresh,
+                include_research=True,
+                include_zones_analysis=True,
+                include_terrain=True,
+            )
+
+            # Manuelle Höhen überschreiben
+            if traufhoehe:
+                bundle.traufhoehe_m = traufhoehe
+            if firsthoehe:
+                bundle.firsthoehe_m = firsthoehe
+            if height:
+                bundle.estimated_height_m = height
+
+            # Response konvertieren
+            result = service.bundle_to_scaffolding_response(
+                bundle=bundle,
+                work_type=work_type,
+                scaffold_type=scaffold_type,
+            )
+
+            return result
+
+        except Exception as smart_error:
+            print(f"[SmartService] Fehler, Fallback zu Legacy: {smart_error}")
+            import traceback
+            traceback.print_exc()
+            # Fallback zu Legacy-Code unten
+
+    # =================================================================
+    # LEGACY: Bisheriger Code (Fallback)
+    # =================================================================
     cache_key = f"scaffolding:{address}:{egid}"
 
     # Cache nur verwenden wenn nicht refresh und keine manuelle Höhe

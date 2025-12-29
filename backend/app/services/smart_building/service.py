@@ -814,6 +814,131 @@ class SmartBuildingService:
             else:
                 bundle.overall_quality = DataQuality.LOW
 
+    def bundle_to_scaffolding_response(
+        self,
+        bundle: BuildingDataBundle,
+        work_type: str = "dacharbeiten",
+        scaffold_type: str = "arbeitsgeruest"
+    ) -> Dict[str, Any]:
+        """
+        Konvertiert BuildingDataBundle zum /api/v1/scaffolding Response-Format.
+
+        Ermöglicht nahtlose Integration ohne Frontend-Änderungen.
+        """
+        # Aktive Höhe bestimmen
+        active_height = bundle.get_active_height() or 10.0
+
+        # Gerüsthöhe basierend auf Arbeitstyp
+        if work_type == "dacharbeiten":
+            geruesthoehe = (bundle.firsthoehe_m or active_height) + 1.0
+        else:
+            geruesthoehe = bundle.traufhoehe_m or active_height
+
+        # Umfang und Fläche berechnen
+        perimeter = bundle.perimeter_m or 40.0
+        scaffold_area = perimeter * geruesthoehe
+
+        # Terrain-Daten
+        terrain_data = None
+        if bundle.terrain:
+            terrain_data = {
+                "terrain_height_m": bundle.terrain.reference_height_m,
+                "elevation_model": "COMB",
+                "min_terrain_m": bundle.terrain.min_height_m,
+                "max_terrain_m": bundle.terrain.max_height_m,
+                "terrain_slope_m": bundle.terrain.slope_m,
+            }
+
+        # Dach-Daten
+        roof_data = None
+        if bundle.roof_type:
+            roof_data = {
+                "roof_type": bundle.roof_type,
+                "roof_angle_deg": bundle.roof_angle_deg,
+                "roof_orientation": bundle.roof_orientation,
+                "roof_area_m2": bundle.roof_area_m2,
+                "confidence": bundle.roof_confidence,
+            }
+
+        # Polygon-Daten
+        polygon_data = None
+        if bundle.polygon:
+            polygon_data = {
+                "coordinates": bundle.polygon,
+                "coordinate_system": "LV95 (EPSG:2056)",
+            }
+
+        # Response aufbauen
+        return {
+            "address": {
+                "input": bundle.address_input,
+                "matched": bundle.address_matched,
+                "coordinates": {
+                    "lv95_e": bundle.lv95_e,
+                    "lv95_n": bundle.lv95_n,
+                },
+                "terrain": terrain_data,
+            },
+            "gwr_data": {
+                "egid": bundle.egid,
+                "building_category": bundle.gwr_category,
+                "construction_year": bundle.construction_year or (
+                    bundle.gwr_category_code  # Fallback
+                ),
+                "floors": bundle.gwr_floors,
+                "area_m2_gwr": bundle.gwr_area_m2,
+            },
+            "configuration": {
+                "work_type": work_type,
+                "scaffold_type": scaffold_type,
+            },
+            "roof": roof_data,
+            "building": {
+                "egid": bundle.egid,
+                "name": bundle.building_name,
+                "type": bundle.building_type,
+                "style": bundle.architectural_style,
+                "footprint_area_m2": bundle.footprint_area_m2 or bundle.gwr_area_m2,
+                "bounding_box": {
+                    "width_m": bundle.bbox_width_m,
+                    "depth_m": bundle.bbox_depth_m,
+                },
+            },
+            "dimensions": {
+                "traufhoehe_m": bundle.traufhoehe_m,
+                "firsthoehe_m": bundle.firsthoehe_m,
+                "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+                "estimated_height_m": bundle.estimated_height_m or active_height,
+                "height_source": bundle.height_source.value if bundle.height_source else "unknown",
+                "floors": bundle.gwr_floors or bundle.floors_estimated,
+                "perimeter_m": perimeter,
+                "geruesthoehe_m": geruesthoehe,
+            },
+            "polygon": polygon_data,
+            "sides": bundle.sides or [],
+            "viewer_3d_url": (
+                f"https://3d.geo.admin.ch/#/embed?egid={bundle.egid}"
+                if bundle.egid else None
+            ),
+            "geruestflaeche_m2": scaffold_area,
+            # SmartService-spezifische Daten
+            "smart_building": {
+                "bundle_cached": True,
+                "data_sources": [s.value for s in bundle.data_sources],
+                "overall_quality": bundle.overall_quality.value if bundle.overall_quality else "unknown",
+                "complexity": bundle.complexity,
+                "zones_count": len(bundle.zones),
+                "research": {
+                    "building_name": bundle.building_name,
+                    "building_type": bundle.building_type,
+                    "architectural_style": bundle.architectural_style,
+                    "confidence": bundle.research_confidence,
+                },
+                "warnings": bundle.warnings,
+                "errors": bundle.errors,
+            }
+        }
+
 
 # Singleton
 _service_instance: Optional[SmartBuildingService] = None
