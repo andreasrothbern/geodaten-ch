@@ -711,7 +711,11 @@ def get_height_details(
             from app.services.height_db import get_building_height, get_building_heights_detailed, get_building_height_by_coordinates
 
             # Zuerst detaillierte Höhen versuchen
-            detailed = get_building_heights_detailed(egid)
+            detailed = None
+            try:
+                detailed = get_building_heights_detailed(egid)
+            except Exception:
+                pass
 
             # Prüfen ob detailed verwertbare Daten hat
             detailed_has_data = False
