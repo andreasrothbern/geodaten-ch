@@ -780,6 +780,44 @@ def get_height_details(
                         result["coord_match_distance_m"] = coord_height.get("distance_m")
                         height_found_in_db = True
 
+            # Fallback 3: On-Demand Fetch von swissBUILDINGS3D (STAC API)
+            if not height_found_in_db and lv95_e and lv95_n:
+                try:
+                    import asyncio
+                    import concurrent.futures
+                    from app.services.height_fetcher import fetch_height_for_coordinates
+
+                    def _run_async_fetch():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            return loop.run_until_complete(
+                                fetch_height_for_coordinates(lv95_e, lv95_n, egid)
+                            )
+                        finally:
+                            loop.close()
+
+                    # ThreadPoolExecutor to avoid event loop conflicts
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(_run_async_fetch)
+                        ondemand_result = future.result(timeout=60)
+
+                    if ondemand_result.get("success"):
+                        heights = ondemand_result.get("heights", {})
+                        if heights:
+                            result["traufhoehe_m"] = heights.get("traufhoehe_m")
+                            result["firsthoehe_m"] = heights.get("firsthoehe_m")
+                            result["gebaeudehoehe_m"] = heights.get("gebaeudehoehe_m")
+                            main_height = heights.get("gebaeudehoehe_m") or heights.get("firsthoehe_m")
+                            if main_height and main_height >= 2.0:
+                                result["measured_height_m"] = main_height
+                                result["measured_source"] = heights.get("source", "ondemand:swissBUILDINGS3D")
+                                result["ondemand_fetch_used"] = True
+                                result["ondemand_tile_id"] = ondemand_result.get("tile_id")
+                                height_found_in_db = True
+                except Exception as e:
+                    result["ondemand_fetch_error"] = str(e)
+
             # Plausibilitätsprüfung für measured_height_m
             if result["measured_height_m"] and result["estimated_height_m"]:
                 ratio = result["measured_height_m"] / result["estimated_height_m"]
@@ -829,6 +867,65 @@ def get_height_details(
                     measured_is_plausible = False
         except ImportError:
             pass
+
+    # 2b. Koordinaten-basierte Fallbacks (auch ohne EGID)
+    # Diese Fallbacks funktionieren nur wenn Koordinaten vorhanden sind
+    if not height_found_in_db and lv95_e and lv95_n:
+        try:
+            from app.services.height_db import get_building_height_by_coordinates
+            
+            # Koordinaten-basierter Lookup
+            coord_height = get_building_height_by_coordinates(lv95_e, lv95_n, tolerance_m=50.0)
+            if coord_height:
+                result["traufhoehe_m"] = coord_height.get("traufhoehe_m")
+                result["firsthoehe_m"] = coord_height.get("firsthoehe_m")
+                result["gebaeudehoehe_m"] = coord_height.get("gebaeudehoehe_m")
+                main_height = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
+                if main_height and main_height >= 2.0:
+                    result["measured_height_m"] = main_height
+                    result["measured_source"] = coord_height.get("source", "database_coord:swissBUILDINGS3D")
+                    result["coord_lookup_used"] = True
+                    result["coord_match_distance_m"] = coord_height.get("distance_m")
+                    height_found_in_db = True
+        except Exception:
+            pass
+
+    # 2c. On-Demand Fetch als letzter Fallback (auch ohne EGID)
+    if not height_found_in_db and lv95_e and lv95_n:
+        try:
+            import asyncio
+            import concurrent.futures
+            from app.services.height_fetcher import fetch_height_for_coordinates
+
+            def _run_async_fetch_no_egid():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(
+                        fetch_height_for_coordinates(lv95_e, lv95_n, egid)
+                    )
+                finally:
+                    loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_async_fetch_no_egid)
+                ondemand_result = future.result(timeout=60)
+
+            if ondemand_result.get("success"):
+                heights = ondemand_result.get("heights", {})
+                if heights:
+                    result["traufhoehe_m"] = heights.get("traufhoehe_m")
+                    result["firsthoehe_m"] = heights.get("firsthoehe_m")
+                    result["gebaeudehoehe_m"] = heights.get("gebaeudehoehe_m")
+                    main_height = heights.get("gebaeudehoehe_m") or heights.get("firsthoehe_m")
+                    if main_height and main_height >= 2.0:
+                        result["measured_height_m"] = main_height
+                        result["measured_source"] = heights.get("source", "ondemand:swissBUILDINGS3D")
+                        result["ondemand_fetch_used"] = True
+                        result["ondemand_tile_id"] = ondemand_result.get("tile_id")
+                        height_found_in_db = True
+        except Exception as e:
+            result["ondemand_fetch_error"] = str(e)
 
     # 3. Manuelle Traufhöhe/Firsthöhe anwenden (überschreibt DB-Werte)
     if manual_traufhoehe and manual_traufhoehe > 0:

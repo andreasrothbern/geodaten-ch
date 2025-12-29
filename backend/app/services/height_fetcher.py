@@ -102,12 +102,15 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
     Uses the STAC API spatial query to find intersecting tiles.
 
     Args:
-        e: LV95 Easting
-        n: LV95 Northing
+        e: LV95 or LV03 Easting (auto-converted)
+        n: LV95 or LV03 Northing (auto-converted)
 
     Returns:
         STAC item dict with tile info and download URL, or None
     """
+    # Ensure coordinates are in LV95 format (handle LV03 input)
+    e, n = ensure_lv95(e, n)
+
     # Convert LV95 to WGS84 for STAC API query
     # Approximation formulas from swisstopo (accurate to ~1m)
     # Reference: https://www.swisstopo.admin.ch/en/knowledge-facts/surveying-geodesy/reference-frames/local/lv95.html
