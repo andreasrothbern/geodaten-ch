@@ -2310,7 +2310,7 @@ async def visualize_cross_section(
                 'adresse': geo.matched_address,
             }
 
-            svg = generate_cross_section_with_zones(
+            svg = await generate_cross_section_with_zones(
                 address=geo.matched_address,
                 egid=building.egid if building else None,
                 width_m=round(length_m, 1),
@@ -2574,7 +2574,7 @@ async def visualize_elevation(
                 'adresse': geo.matched_address,
             }
 
-            svg = generate_elevation_with_zones(
+            svg = await generate_elevation_with_zones(
                 address=geo.matched_address,
                 egid=building.egid if building else None,
                 width_m=round(length_m, 1),
@@ -3763,27 +3763,35 @@ async def clear_smart_building_cache(
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
 
-        # Bundle Cache
+        # Bundle Cache (Tabelle existiert evtl. noch nicht)
         if cache_type in ["all", "bundle"]:
-            if address:
-                cursor.execute(
-                    "DELETE FROM smart_building_cache WHERE address LIKE ?",
-                    (f"%{address}%",)
-                )
-            else:
-                cursor.execute("DELETE FROM smart_building_cache")
-            deleted["bundle"] = cursor.rowcount
+            try:
+                if address:
+                    cursor.execute(
+                        "DELETE FROM smart_building_cache WHERE address LIKE ?",
+                        (f"%{address}%",)
+                    )
+                else:
+                    cursor.execute("DELETE FROM smart_building_cache")
+                deleted["bundle"] = cursor.rowcount
+            except sqlite3.OperationalError:
+                # Tabelle existiert noch nicht
+                deleted["bundle"] = 0
 
-        # Research Cache
+        # Research Cache (Tabelle existiert evtl. noch nicht)
         if cache_type in ["all", "research"]:
-            if address:
-                cursor.execute(
-                    "DELETE FROM claude_research_cache WHERE adresse LIKE ?",
-                    (f"%{address}%",)
-                )
-            else:
-                cursor.execute("DELETE FROM claude_research_cache")
-            deleted["research"] = cursor.rowcount
+            try:
+                if address:
+                    cursor.execute(
+                        "DELETE FROM claude_research_cache WHERE adresse LIKE ?",
+                        (f"%{address}%",)
+                    )
+                else:
+                    cursor.execute("DELETE FROM claude_research_cache")
+                deleted["research"] = cursor.rowcount
+            except sqlite3.OperationalError:
+                # Tabelle existiert noch nicht
+                deleted["research"] = 0
 
         conn.commit()
         conn.close()

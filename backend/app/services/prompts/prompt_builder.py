@@ -309,14 +309,19 @@ class PromptBuilder:
         prompt_parts.append("")
 
         # Fassaden
-        if data.sides:
+        if data.sides and isinstance(data.sides, list) and len(data.sides) > 0:
             prompt_parts.append("### Fassaden")
             prompt_parts.append("| Seite | Länge (m) | Richtung |")
             prompt_parts.append("|-------|-----------|----------|")
             for i, side in enumerate(data.sides, 1):
-                length = side.get('length_m', 0)
-                direction = side.get('direction', '-')
-                prompt_parts.append(f"| {i} | {length:.1f} | {direction} |")
+                if isinstance(side, dict):
+                    length = side.get('length_m', 0)
+                    direction = side.get('direction', '-')
+                    prompt_parts.append(f"| {i} | {length:.1f} | {direction} |")
+            prompt_parts.append("")
+        elif data.sides and isinstance(data.sides, int):
+            # sides ist nur die Anzahl der Polygon-Punkte
+            prompt_parts.append(f"### Polygon: {data.sides} Eckpunkte")
             prompt_parts.append("")
 
         # 4. GWR-Daten

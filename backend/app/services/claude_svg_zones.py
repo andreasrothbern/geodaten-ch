@@ -320,7 +320,7 @@ Erstelle NUR den SVG-Code, keine Erklärungen.
 """
 
 
-def generate_cross_section_with_zones(
+async def generate_cross_section_with_zones(
     address: str,
     egid: Optional[int],
     width_m: float,
@@ -363,15 +363,7 @@ def generate_cross_section_with_zones(
     logger.info(f"Zonen-Input: {zones}")
 
     # Einheitlichen Prompt generieren (async)
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    prompt = loop.run_until_complete(
-        _build_unified_prompt("schnitt", address, egid, width_m, floors, zones, building_data)
-    )
+    prompt = await _build_unified_prompt("schnitt", address, egid, width_m, floors, zones, building_data)
 
     logger.info(f"Prompt generiert ({len(prompt)} chars)")
 
@@ -387,7 +379,7 @@ def generate_cross_section_with_zones(
     return svg
 
 
-def generate_elevation_with_zones(
+async def generate_elevation_with_zones(
     address: str,
     egid: Optional[int],
     width_m: float,
@@ -430,15 +422,7 @@ def generate_elevation_with_zones(
     logger.info(f"Zonen-Input: {zones}")
 
     # Einheitlichen Prompt generieren (async)
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    prompt = loop.run_until_complete(
-        _build_unified_prompt("ansicht", address, egid, width_m, floors, zones, building_data)
-    )
+    prompt = await _build_unified_prompt("ansicht", address, egid, width_m, floors, zones, building_data)
 
     logger.info(f"Prompt generiert ({len(prompt)} chars)")
 
