@@ -1,16 +1,20 @@
 """
 Claude API SVG Generator für Zone-basierte Gebäudeschnitte.
 
-Features:
-- Timeout: 90 Sekunden für Claude API
-- Caching: SQLite-basiert, SVGs werden nach Generierung gespeichert
-- Logging: Detaillierte Logs für Debugging
-- Prompt-Selektor: Unterscheidet einfache und komplexe Gebäude
+Version: 3.0 - Einheitliches Prompt-System
+Datum: 29.12.2025
 
-Version: 2.0 (mit Prompt-Selektor System)
-Datum: 25.12.2025
+Verwendet den zentralen PromptBuilder (prompts/prompt_builder.py) für
+identische Prompts bei Export UND automatischer SVG-Generierung.
+
+Features:
+- Einheitlicher Prompt für Export und API-Generierung
+- Dynamische Gebäude-Recherche via Claude Haiku (gecacht)
+- SVG-Caching in SQLite
+- 90 Sekunden Timeout für Claude API
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -24,20 +28,14 @@ from typing import Optional, Dict, Any, List
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Prompt-Selektor importieren
+# PromptBuilder importieren (NEU - einheitliches System)
+PROMPT_BUILDER_AVAILABLE = False
 try:
-    from app.services.svg_prompts import (
-        get_elevation_prompt,
-        get_cross_section_prompt,
-        get_prompt_metadata,
-        detect_building_complexity,
-        BuildingComplexity,
-    )
-    PROMPT_SELECTOR_AVAILABLE = True
-    logger.info("Prompt-Selektor System geladen")
+    from app.services.prompts import get_prompt_builder
+    PROMPT_BUILDER_AVAILABLE = True
+    logger.info("PromptBuilder System geladen (einheitliche Prompts)")
 except ImportError as e:
-    PROMPT_SELECTOR_AVAILABLE = False
-    logger.warning(f"Prompt-Selektor nicht verfügbar: {e}")
+    logger.warning(f"PromptBuilder nicht verfügbar: {e}")
 
 # Anthropic SDK
 ANTHROPIC_AVAILABLE = False
@@ -66,6 +64,7 @@ def _init_cache_db():
             address TEXT,
             svg_content TEXT,
             complexity TEXT,
+            prompt_version TEXT DEFAULT '3.0',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -79,7 +78,11 @@ def _get_cached_svg(cache_key: str) -> Optional[str]:
     try:
         conn = sqlite3.connect(str(CACHE_DB_PATH))
         cursor = conn.cursor()
-        cursor.execute("SELECT svg_content FROM svg_cache WHERE cache_key = ?", (cache_key,))
+        # Nur Version 3.0 Cache verwenden (neue Prompts)
+        cursor.execute(
+            "SELECT svg_content FROM svg_cache WHERE cache_key = ? AND prompt_version = '3.0'",
+            (cache_key,)
+        )
         row = cursor.fetchone()
         conn.close()
         if row:
@@ -99,50 +102,45 @@ def _save_to_cache(cache_key: str, svg_type: str, egid: Optional[str], address: 
         conn = sqlite3.connect(str(CACHE_DB_PATH))
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO svg_cache (cache_key, svg_type, egid, address, svg_content, complexity)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO svg_cache
+            (cache_key, svg_type, egid, address, svg_content, complexity, prompt_version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, '3.0', CURRENT_TIMESTAMP)
         """, (cache_key, svg_type, egid, address, svg_content, complexity))
         conn.commit()
         conn.close()
-        logger.info(f"Cache SAVE: {cache_key[:50]}... ({len(svg_content)} chars, complexity={complexity})")
+        logger.info(f"SVG cached: {cache_key[:50]}... ({len(svg_content)} chars)")
     except Exception as e:
-        logger.error(f"Cache save error: {e}")
+        logger.error(f"Cache write error: {e}")
 
 
-def _init_client():
-    """Initialisiert den Anthropic Client mit Timeout"""
-    global anthropic_client
-    if ANTHROPIC_AVAILABLE and anthropic_client is None:
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if api_key:
-            # Timeout auf 90 Sekunden setzen
-            anthropic_client = anthropic.Anthropic(
-                api_key=api_key,
-                timeout=90.0  # 90 Sekunden Timeout
-            )
-            logger.info("Anthropic Client initialisiert (timeout=90s)")
-        else:
-            logger.warning("ANTHROPIC_API_KEY nicht gesetzt")
+def is_available() -> bool:
+    """Prüft ob Claude API verfügbar ist"""
+    return ANTHROPIC_AVAILABLE and os.getenv("ANTHROPIC_API_KEY") is not None
 
 
-def _call_claude(prompt: str, max_tokens: int = 8000) -> Optional[str]:
-    """Ruft Claude API auf und extrahiert SVG"""
-    _init_client()
-
-    if not ANTHROPIC_AVAILABLE or anthropic_client is None:
-        logger.error("Anthropic SDK not available or no API key")
+def _call_claude(prompt: str, timeout: int = 90) -> Optional[str]:
+    """Ruft Claude API auf mit Timeout"""
+    if not ANTHROPIC_AVAILABLE:
+        logger.error("Anthropic SDK nicht verfügbar")
         return None
 
-    start_time = time.time()
-    logger.info(f"Claude API Call gestartet (max_tokens={max_tokens})...")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.error("ANTHROPIC_API_KEY nicht gesetzt")
+        return None
 
     try:
-        message = anthropic_client.messages.create(
+        client = anthropic.Anthropic(api_key=api_key)
+
+        start_time = time.time()
+        logger.info(f"Claude API Aufruf gestartet (timeout: {timeout}s)")
+        logger.info(f"Prompt-Länge: {len(prompt)} chars")
+
+        message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            max_tokens=8000,
+            timeout=timeout,
+            messages=[{"role": "user", "content": prompt}]
         )
 
         elapsed = time.time() - start_time
@@ -167,12 +165,10 @@ def _call_claude(prompt: str, max_tokens: int = 8000) -> Optional[str]:
         logger.error(f"Claude API TIMEOUT nach {elapsed:.1f}s: {e}")
         return None
     except anthropic.APIError as e:
-        elapsed = time.time() - start_time
-        logger.error(f"Claude API ERROR nach {elapsed:.1f}s: {e}")
+        logger.error(f"Claude API ERROR: {e}")
         return None
     except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"Claude API EXCEPTION nach {elapsed:.1f}s: {e}")
+        logger.error(f"Claude API EXCEPTION: {e}")
         return None
 
 
@@ -184,65 +180,144 @@ def _generate_cache_key(svg_type: str, address: str, egid: Optional[int], zones:
         "address": address,
         "egid": egid,
         "zones": zones,
-        "v": "2.0"  # Version für Cache-Invalidierung bei Prompt-Änderungen
+        "v": "3.0"  # Version für Cache-Invalidierung bei Prompt-Änderungen
     }
     if building_data:
         # Relevante Felder für Komplexitäts-Erkennung
         data["gkat"] = building_data.get("gkat") or building_data.get("building_category_code")
         data["area"] = building_data.get("area_m2")
-        data["sides"] = building_data.get("sides")
+        data["terrain"] = building_data.get("terrain_height_m")
     json_str = json.dumps(data, sort_keys=True)
     return hashlib.md5(json_str.encode()).hexdigest()
 
 
-def _prepare_building_data(
+async def _build_unified_prompt(
+    svg_type: str,
     address: str,
     egid: Optional[int],
     width_m: float,
     floors: int,
     zones: list,
     building_data: Optional[dict] = None
-) -> Dict[str, Any]:
-    """Bereitet building_data für Prompt-Selektor vor"""
+) -> str:
+    """
+    Baut den einheitlichen Prompt via PromptBuilder.
 
-    # Basis-Daten
-    data = {
-        "address": address,
-        "adresse": address,
-        "egid": egid,
-        "width_m": width_m,
-        "fassadenbreite_m": width_m,
-        "facade_length_m": width_m,
+    IDENTISCHER Prompt für Export UND automatische SVG-Generierung!
+    """
+    if not PROMPT_BUILDER_AVAILABLE:
+        return _generate_fallback_prompt(svg_type, address, egid, width_m, floors, zones)
+
+    builder = get_prompt_builder()
+
+    # Dimensionen aus Zonen extrahieren
+    max_height = 0
+    max_trauf = 0
+    for zone in zones:
+        h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
+             zone.get('first_height_m') or zone.get('building_height_m', 0))
+        t = zone.get('traufhoehe_m', 0)
+        if h > max_height:
+            max_height = h
+        if t > max_trauf:
+            max_trauf = t
+
+    dimensions = {
+        "traufhoehe_m": max_trauf or (max_height * 0.85 if max_height else None),
+        "firsthoehe_m": max_height or None,
         "floors": floors,
-        "geschosse": floors,
-        "gastw": floors,
+        "footprint_area_m2": building_data.get("area_m2") if building_data else None
     }
 
-    # Zusätzliche Daten übernehmen wenn vorhanden
+    # GWR-Daten
+    gwr_data = None
     if building_data:
-        data.update({
-            "gkat": building_data.get("gkat") or building_data.get("building_category_code"),
-            "building_category_code": building_data.get("building_category_code") or building_data.get("gkat"),
-            "area_m2": building_data.get("area_m2") or building_data.get("garea"),
-            "garea": building_data.get("garea") or building_data.get("area_m2"),
-            "sides": building_data.get("sides") or building_data.get("polygon_points", 4),
-            "polygon_points": building_data.get("polygon_points") or building_data.get("sides", 4),
-        })
+        gwr_data = {
+            "building_category": building_data.get("building_category"),
+            "construction_year": building_data.get("construction_year"),
+            "floors": floors,
+            "area_m2_gwr": building_data.get("area_m2")
+        }
 
-    # Höhen aus Zonen extrahieren
-    if zones:
-        max_height = 0
-        for zone in zones:
-            h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
-                 zone.get('first_height_m') or zone.get('building_height_m', 0))
-            if h > max_height:
-                max_height = h
+    # Terrain
+    terrain = None
+    if building_data and building_data.get("terrain_height_m"):
+        terrain = {
+            "terrain_height_m": building_data.get("terrain_height_m"),
+            "terrain_slope_m": building_data.get("terrain_slope_m")
+        }
 
-        if max_height > 0:
-            data["hoehe_m"] = max_height
-            data["gebaeudehoehe_m"] = max_height
+    # Koordinaten
+    coordinates = None
+    if building_data:
+        e = building_data.get("lv95_e")
+        n = building_data.get("lv95_n")
+        if e and n:
+            coordinates = (e, n)
 
-    return data
+    # Polygon/Sides
+    polygon = building_data.get("polygon") if building_data else None
+    sides = building_data.get("sides") if building_data else None
+
+    # Prompt generieren (inkl. dynamischer Recherche!)
+    prompt = await builder.build_svg_prompt(
+        adresse=address,
+        egid=str(egid) if egid else None,
+        coordinates=coordinates,
+        dimensions=dimensions,
+        gwr_data=gwr_data,
+        terrain=terrain,
+        roof=building_data.get("roof") if building_data else None,
+        polygon=polygon,
+        sides=sides,
+        zones=zones,
+        svg_type=svg_type,  # "schnitt" oder "ansicht"
+        include_research=True  # Dynamische Recherche aktivieren!
+    )
+
+    return prompt
+
+
+def _generate_fallback_prompt(
+    svg_type: str,
+    address: str,
+    egid: Optional[int],
+    width_m: float,
+    floors: int,
+    zones: list
+) -> str:
+    """Fallback-Prompt wenn PromptBuilder nicht verfügbar"""
+
+    max_height = 10
+    for zone in zones:
+        h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
+             zone.get('first_height_m') or zone.get('building_height_m', 0))
+        if h > max_height:
+            max_height = h
+
+    svg_type_name = "Gebäudeschnitt" if svg_type == "schnitt" else "Fassadenansicht"
+
+    return f"""# SVG-Generierung: {svg_type_name}
+
+## Gebäude
+- Adresse: {address}
+- EGID: {egid or '-'}
+- Breite: {width_m:.1f}m
+- Höhe: {max_height:.1f}m
+- Geschosse: {floors}
+
+## Anforderungen
+- Weisser Hintergrund (#FFFFFF)
+- Gebäude mit Schraffur-Pattern (url(#hatch))
+- Gerüst links und rechts (blau #0066CC)
+- Höhenskala links (0 bis +{max_height:.0f}m)
+- viewBox="0 0 700 480"
+
+## Zonen
+{json.dumps(zones, indent=2, ensure_ascii=False)}
+
+Erstelle NUR den SVG-Code, keine Erklärungen.
+"""
 
 
 def generate_cross_section_with_zones(
@@ -258,8 +333,7 @@ def generate_cross_section_with_zones(
     """
     Generiert professionellen Gebäudeschnitt mit Höhenzonen via Claude API.
 
-    Verwendet den Prompt-Selektor um zwischen einfachen und komplexen
-    Gebäuden zu unterscheiden.
+    Verwendet den EINHEITLICHEN PromptBuilder - identischer Prompt wie Export!
 
     Args:
         address: Gebäudeadresse
@@ -267,9 +341,9 @@ def generate_cross_section_with_zones(
         width_m: Gebäudebreite in Metern
         floors: Anzahl Geschosse
         zones: Liste der Höhenzonen
-        svg_width: SVG-Breite in Pixel
-        svg_height: SVG-Höhe in Pixel
-        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, sides)
+        svg_width: SVG-Breite in Pixel (für Kompatibilität, wird ignoriert)
+        svg_height: SVG-Höhe in Pixel (für Kompatibilität, wird ignoriert)
+        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, terrain, etc.)
 
     Returns:
         SVG-String oder None bei Fehler
@@ -278,41 +352,36 @@ def generate_cross_section_with_zones(
     _init_cache_db()
 
     # Cache-Key generieren
-    cache_key = _generate_cache_key("cross-section", address, egid, zones, building_data)
+    cache_key = _generate_cache_key("schnitt", address, egid, zones, building_data)
 
     # Aus Cache laden
     cached = _get_cached_svg(cache_key)
     if cached:
         return cached
 
-    logger.info(f"Generiere Cross-Section für: {address}")
+    logger.info(f"Generiere Schnitt für: {address}")
     logger.info(f"Zonen-Input: {zones}")
 
-    # Building-Data für Prompt-Selektor vorbereiten
-    prepared_data = _prepare_building_data(address, egid, width_m, floors, zones, building_data)
+    # Einheitlichen Prompt generieren (async)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    # Komplexität ermitteln und loggen
-    complexity = "unknown"
-    if PROMPT_SELECTOR_AVAILABLE:
-        metadata = get_prompt_metadata(zones, prepared_data)
-        complexity = metadata.get("complexity", "unknown")
-        logger.info(f"Gebäude-Komplexität: {complexity}")
-        logger.info(f"Prompt-Metadata: {metadata}")
+    prompt = loop.run_until_complete(
+        _build_unified_prompt("schnitt", address, egid, width_m, floors, zones, building_data)
+    )
 
-        # Prompt vom Selektor generieren
-        prompt = get_cross_section_prompt(zones, prepared_data, None)
-    else:
-        # Fallback: Einfacher Prompt (ohne Kuppel-Referenzen)
-        logger.warning("Prompt-Selektor nicht verfügbar, verwende Fallback")
-        prompt = _generate_fallback_cross_section_prompt(
-            address, egid, width_m, floors, zones, svg_width, svg_height
-        )
+    logger.info(f"Prompt generiert ({len(prompt)} chars)")
 
+    # Claude API aufrufen
     svg = _call_claude(prompt)
 
     # Im Cache speichern
     if svg:
-        _save_to_cache(cache_key, "cross-section", str(egid) if egid else None,
+        complexity = "unified"  # Neues System
+        _save_to_cache(cache_key, "schnitt", str(egid) if egid else None,
                        address, svg, complexity)
 
     return svg
@@ -331,8 +400,7 @@ def generate_elevation_with_zones(
     """
     Generiert professionelle Fassadenansicht mit Höhenzonen via Claude API.
 
-    Verwendet den Prompt-Selektor um zwischen einfachen und komplexen
-    Gebäuden zu unterscheiden.
+    Verwendet den EINHEITLICHEN PromptBuilder - identischer Prompt wie Export!
 
     Args:
         address: Gebäudeadresse
@@ -340,9 +408,9 @@ def generate_elevation_with_zones(
         width_m: Fassadenbreite in Metern
         floors: Anzahl Geschosse
         zones: Liste der Höhenzonen
-        svg_width: SVG-Breite in Pixel
-        svg_height: SVG-Höhe in Pixel
-        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, sides)
+        svg_width: SVG-Breite in Pixel (für Kompatibilität, wird ignoriert)
+        svg_height: SVG-Höhe in Pixel (für Kompatibilität, wird ignoriert)
+        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, terrain, etc.)
 
     Returns:
         SVG-String oder None bei Fehler
@@ -351,156 +419,67 @@ def generate_elevation_with_zones(
     _init_cache_db()
 
     # Cache-Key generieren
-    cache_key = _generate_cache_key("elevation", address, egid, zones, building_data)
+    cache_key = _generate_cache_key("ansicht", address, egid, zones, building_data)
 
     # Aus Cache laden
     cached = _get_cached_svg(cache_key)
     if cached:
         return cached
 
-    logger.info(f"Generiere Elevation für: {address}")
+    logger.info(f"Generiere Ansicht für: {address}")
     logger.info(f"Zonen-Input: {zones}")
 
-    # Building-Data für Prompt-Selektor vorbereiten
-    prepared_data = _prepare_building_data(address, egid, width_m, floors, zones, building_data)
+    # Einheitlichen Prompt generieren (async)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    # Komplexität ermitteln und loggen
-    complexity = "unknown"
-    if PROMPT_SELECTOR_AVAILABLE:
-        metadata = get_prompt_metadata(zones, prepared_data)
-        complexity = metadata.get("complexity", "unknown")
-        logger.info(f"Gebäude-Komplexität: {complexity}")
-        logger.info(f"Prompt-Metadata: {metadata}")
+    prompt = loop.run_until_complete(
+        _build_unified_prompt("ansicht", address, egid, width_m, floors, zones, building_data)
+    )
 
-        # Prompt vom Selektor generieren
-        prompt = get_elevation_prompt(zones, prepared_data, None)
-    else:
-        # Fallback: Einfacher Prompt (ohne Kuppel-Referenzen)
-        logger.warning("Prompt-Selektor nicht verfügbar, verwende Fallback")
-        prompt = _generate_fallback_elevation_prompt(
-            address, egid, width_m, floors, zones, svg_width, svg_height
-        )
+    logger.info(f"Prompt generiert ({len(prompt)} chars)")
 
+    # Claude API aufrufen
     svg = _call_claude(prompt)
 
     # Im Cache speichern
     if svg:
-        _save_to_cache(cache_key, "elevation", str(egid) if egid else None,
+        complexity = "unified"  # Neues System
+        _save_to_cache(cache_key, "ansicht", str(egid) if egid else None,
                        address, svg, complexity)
 
     return svg
 
 
-def _generate_fallback_cross_section_prompt(
-    address: str, egid: Optional[int], width_m: float, floors: int,
-    zones: list, svg_width: int, svg_height: int
-) -> str:
-    """Fallback-Prompt wenn Prompt-Selektor nicht verfügbar"""
+def clear_svg_cache(egid: Optional[str] = None, svg_type: Optional[str] = None):
+    """
+    Löscht SVG-Cache Einträge.
 
-    max_height = 10
-    for zone in zones:
-        h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
-             zone.get('first_height_m') or zone.get('building_height_m', 0))
-        if h > max_height:
-            max_height = h
-
-    return f"""Erstelle einen technischen Gebäudeschnitt als SVG.
-
-KRITISCH: Dies ist ein EINFACHES Gebäude. KEINE Kuppeln, KEINE Türme, KEINE Arkaden!
-
-Gebäude: {address}, {floors} Geschosse, {width_m:.1f}m breit, {max_height:.1f}m hoch
-
-Zeichne:
-- Weisser Hintergrund
-- Rechteckiges Gebäude mit Satteldach (Dreieck)
-- Schraffur-Muster für Füllung
-- Gerüst links und rechts (blau #0066CC)
-- Höhenskala links (0 bis +{max_height:.0f}m)
-
-SVG viewBox="0 0 {svg_width} {svg_height}". NUR SVG, keine Erklärungen."""
-
-
-def _generate_fallback_elevation_prompt(
-    address: str, egid: Optional[int], width_m: float, floors: int,
-    zones: list, svg_width: int, svg_height: int
-) -> str:
-    """Fallback-Prompt wenn Prompt-Selektor nicht verfügbar"""
-
-    max_height = 10
-    for zone in zones:
-        h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
-             zone.get('first_height_m') or zone.get('building_height_m', 0))
-        if h > max_height:
-            max_height = h
-
-    return f"""Erstelle eine technische Fassadenansicht als SVG.
-
-KRITISCH: Dies ist ein EINFACHES Gebäude. KEINE Kuppeln, KEINE Türme, KEINE Arkaden!
-
-Gebäude: {address}, {floors} Geschosse, {width_m:.1f}m breit, {max_height:.1f}m hoch
-
-Zeichne:
-- Weisser Hintergrund (KEIN Himmel!)
-- Rechteckiges Gebäude mit Satteldach (Dreieck)
-- Schraffur-Muster für Füllung
-- Gerüst vor der Fassade (blau #0066CC)
-- Höhenskala links (0 bis +{max_height:.0f}m)
-- Lagenbeschriftung rechts
-
-SVG viewBox="0 0 {svg_width} {svg_height}". NUR SVG, keine Erklärungen."""
-
-
-def is_available() -> bool:
-    """Prüft ob Claude API verfügbar ist"""
-    _init_client()
-    return ANTHROPIC_AVAILABLE and anthropic_client is not None
-
-
-def clear_cache(egid: Optional[str] = None, address: Optional[str] = None):
-    """Löscht Cache-Einträge"""
+    Args:
+        egid: Nur für dieses Gebäude löschen (optional)
+        svg_type: Nur diesen Typ löschen: 'schnitt', 'ansicht' (optional)
+    """
     try:
-        _init_cache_db()
         conn = sqlite3.connect(str(CACHE_DB_PATH))
         cursor = conn.cursor()
-        if egid:
+
+        if egid and svg_type:
+            cursor.execute("DELETE FROM svg_cache WHERE egid = ? AND svg_type = ?", (egid, svg_type))
+        elif egid:
             cursor.execute("DELETE FROM svg_cache WHERE egid = ?", (egid,))
-        elif address:
-            cursor.execute("DELETE FROM svg_cache WHERE address LIKE ?", (f"%{address}%",))
+        elif svg_type:
+            cursor.execute("DELETE FROM svg_cache WHERE svg_type = ?", (svg_type,))
         else:
             cursor.execute("DELETE FROM svg_cache")
+
         deleted = cursor.rowcount
         conn.commit()
         conn.close()
-        logger.info(f"Cache cleared: {deleted} entries")
+        logger.info(f"Cache gelöscht: {deleted} Einträge")
         return deleted
     except Exception as e:
         logger.error(f"Cache clear error: {e}")
         return 0
-
-
-def get_cache_stats() -> Dict[str, Any]:
-    """Gibt Cache-Statistiken zurück"""
-    try:
-        _init_cache_db()
-        conn = sqlite3.connect(str(CACHE_DB_PATH))
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM svg_cache")
-        total = cursor.fetchone()[0]
-
-        cursor.execute("SELECT complexity, COUNT(*) FROM svg_cache GROUP BY complexity")
-        by_complexity = dict(cursor.fetchall())
-
-        cursor.execute("SELECT svg_type, COUNT(*) FROM svg_cache GROUP BY svg_type")
-        by_type = dict(cursor.fetchall())
-
-        conn.close()
-
-        return {
-            "total_entries": total,
-            "by_complexity": by_complexity,
-            "by_type": by_type
-        }
-    except Exception as e:
-        logger.error(f"Cache stats error: {e}")
-        return {"error": str(e)}

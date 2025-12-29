@@ -41,13 +41,16 @@
 | **Claude-Analyse** | ✅ | Auto-Erkennung bei extremer Höhendifferenz |
 | **Orthofoto** | ✅ | Luftbild-Analyse für komplexe Gebäude |
 | **Building Hints** | ✅ | Bekannte Gebäude (Bundeshaus, Münster) |
-| **Dynamisches Prompt-System** | ✅ | Gebäude-Recherche via Claude API + Cache |
+| **Einheitliches Prompt-System** | ✅ | v3.0 - Claude API immer für Schnitt/Ansicht |
 
 ---
 
-## 🤖 Dynamisches Prompt-System (NEU 29.12.2025)
+## 🤖 Einheitliches Prompt-System v3.0 (29.12.2025)
 
 Ersetzt statische Building-Hints durch dynamische Gebäude-Recherche.
+
+**WICHTIG:** Der "Professional" Toggle wurde entfernt. Claude API wird jetzt IMMER für
+Schnitt und Ansicht verwendet - identischer Prompt wie Export für Claude.ai.
 
 ### Komponenten
 
@@ -55,16 +58,21 @@ Ersetzt statische Building-Hints durch dynamische Gebäude-Recherche.
 |------------|-------|----------|
 | ResearchService | `prompts/research_service.py` | Claude Haiku für Gebäude-Recherche |
 | PromptBuilder | `prompts/prompt_builder.py` | Template-basierter Prompt-Aufbau |
+| claude_svg_zones | `claude_svg_zones.py` | Nutzt PromptBuilder (v3.0) |
 | Vorlage | `docs/Export_Prompt_Claude.md` | Zentrale Dokumentation |
 
 ### Ablauf
 
 ```
-Frontend Export-Button     Backend use_claude=true
+Frontend Export-Button     Backend (automatisch)
          │                          │
+         │                   use_claude=true (Default)
          └──────────┬───────────────┘
                     ▼
-    GET /api/v1/prompt/generate?address=...
+         ┌──────────────────┐
+         │  PromptBuilder   │
+         │  (einheitlich!)  │
+         └──────────────────┘
                     │
                     ▼
          ┌──────────────────┐
@@ -79,13 +87,8 @@ Frontend Export-Button     Backend use_claude=true
      │              │              │
      └──────────────┼──────────────┘
                     ▼
-         ┌──────────────────┐
-         │  Prompt-Builder  │
-         │  (Template)      │
-         └──────────────────┘
-                    │
-                    ▼
-         Strukturierter Prompt
+      IDENTISCHER Prompt für
+      Export UND SVG-Generierung
 ```
 
 ### Kosten
@@ -274,6 +277,7 @@ GET /api/v1/ausmass/komplett?address=...&system_id=blitz70
 
 | Datum | Änderung | Von |
 |-------|----------|-----|
+| 2025-12-29 | Einheitliches Prompt-System v3.0 - Professional Toggle entfernt | Claude Code |
 | 2025-12-29 | Dynamisches Prompt-System (research_service + prompt_builder) | Claude Code |
 | 2025-12-29 | Terrain-Höhe im Frontend + Claude API | Claude Code |
 | 2025-12-29 | Dach-Daten (Neigung, Form) im Frontend | Claude Code |

@@ -68,8 +68,6 @@ interface ServerSVGProps {
   traufhoehe?: number
   /** Manual ridge height (Firsthöhe) to override database value */
   firsthoehe?: number
-  /** Professional mode with hatch patterns */
-  professional?: boolean
 }
 
 /**
@@ -84,18 +82,17 @@ export function ServerSVG({
   height = 480,
   className = '',
   traufhoehe,
-  firsthoehe,
-  professional = false
+  firsthoehe
 }: ServerSVGProps) {
   const [svg, setSvg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const fetchedRef = useRef<string | null>(null)
 
-  // Cache key includes manual heights, professional mode
-  // Claude API is only used in professional mode for cross-section/elevation
-  const useClaude = professional && (type === 'cross-section' || type === 'elevation')
-  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${professional}|${useClaude}`
+  // Cache key includes manual heights
+  // Claude API is always used for cross-section/elevation (unified prompt system)
+  const useClaude = type === 'cross-section' || type === 'elevation'
+  const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${useClaude}`
 
   useEffect(() => {
     if (!address) {
@@ -134,12 +131,8 @@ export function ServerSVG({
         if (firsthoehe && firsthoehe > 0) {
           params.set('firsthoehe', firsthoehe.toString())
         }
-        // Add professional mode
-        if (professional) {
-          params.set('professional', 'true')
-        }
-        // Use Claude API only in professional mode for cross-section/elevation
-        if (professional && (type === 'cross-section' || type === 'elevation')) {
+        // Always use Claude API for cross-section/elevation (unified prompt system)
+        if (type === 'cross-section' || type === 'elevation') {
           params.set('use_claude', 'true')
         }
 
@@ -240,6 +233,7 @@ export function ServerSVG({
 
 /**
  * Tabs für alle drei Visualisierungstypen
+ * Claude API wird automatisch für Schnitt/Ansicht verwendet (unified prompt system)
  */
 interface VisualizationTabsProps {
   address: string
@@ -248,7 +242,6 @@ interface VisualizationTabsProps {
 
 export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
   const [activeTab, setActiveTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
-  const [professional, setProfessional] = useState(false)
 
   const tabs = [
     { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
@@ -258,7 +251,7 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
 
   return (
     <div className="space-y-4">
-      {/* Tab Navigation + Professional Toggle */}
+      {/* Tab Navigation */}
       <div className="flex items-center justify-between border-b pb-2">
         <div className="flex gap-2">
           {tabs.map(tab => (
@@ -276,19 +269,6 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
             </button>
           ))}
         </div>
-        {/* Professional Toggle */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <span className="text-xs text-gray-500">Professional</span>
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={professional}
-              onChange={(e) => setProfessional(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
-          </div>
-        </label>
       </div>
 
       {/* SVG Content */}
@@ -298,13 +278,12 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
         apiUrl={apiUrl}
         width={700}
         height={activeTab === 'floor-plan' ? 500 : 480}
-        professional={professional}
       />
 
       {/* Download Button */}
       <div className="flex justify-end">
         <a
-          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${professional ? '&professional=true' : ''}${professional && (activeTab === 'cross-section' || activeTab === 'elevation') ? '&use_claude=true' : ''}`}
+          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${(activeTab === 'cross-section' || activeTab === 'elevation') ? '&use_claude=true' : ''}`}
           download={`${activeTab}_${address.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
           target="_blank"
           rel="noopener noreferrer"

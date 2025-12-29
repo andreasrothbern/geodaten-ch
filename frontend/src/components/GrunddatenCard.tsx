@@ -317,7 +317,6 @@ export function GrunddatenCard({
   const [manualTraufe, setManualTraufe] = useState<string>('')
   const [manualFirst, setManualFirst] = useState<string>('')
   const [activeVizTab, setActiveVizTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('floor-plan')
-  const [professionalMode, setProfessionalMode] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [loadingExport, setLoadingExport] = useState(false)
   const { dimensions, gwr_data, building, address } = data
@@ -749,22 +748,10 @@ export function GrunddatenCard({
                 ))}
               </div>
 
-              {/* Professional Toggle + Download Button */}
+              {/* Download Button + Export für Claude.ai */}
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <span className="text-xs text-gray-500">Professional</span>
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={professionalMode}
-                      onChange={(e) => setProfessionalMode(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-8 h-4 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-600"></div>
-                  </div>
-                </label>
                 <a
-                  href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700${dimensions.traufhoehe_m ? `&traufhoehe=${dimensions.traufhoehe_m}` : ''}${dimensions.firsthoehe_m ? `&firsthoehe=${dimensions.firsthoehe_m}` : ''}${professionalMode ? '&professional=true' : ''}${professionalMode && (activeVizTab === 'cross-section' || activeVizTab === 'elevation') ? '&use_claude=true' : ''}`}
+                  href={`${apiUrl}/api/v1/visualize/${activeVizTab}?address=${encodeURIComponent(data.address.matched)}&width=1000&height=700${dimensions.traufhoehe_m ? `&traufhoehe=${dimensions.traufhoehe_m}` : ''}${dimensions.firsthoehe_m ? `&firsthoehe=${dimensions.firsthoehe_m}` : ''}${(activeVizTab === 'cross-section' || activeVizTab === 'elevation') ? '&use_claude=true' : ''}`}
                   download={`${activeVizTab}_${data.address.matched.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -798,7 +785,6 @@ export function GrunddatenCard({
                 height={activeVizTab === 'floor-plan' ? 450 : 400}
                 traufhoehe={dimensions.traufhoehe_m || undefined}
                 firsthoehe={dimensions.firsthoehe_m || undefined}
-                professional={professionalMode}
               />
             </div>
           </div>

@@ -629,15 +629,18 @@ LANDMARKS = [
 ]
 ```
 
-## Dynamisches Prompt-System (NEU 29.12.2025)
+## Einheitliches Prompt-System (v3.0 - 29.12.2025)
 
 Zentrales Template für Claude SVG-Generierung mit dynamischer Gebäude-Recherche.
+
+**WICHTIG:** Der "Professional" Toggle wurde entfernt. Claude API wird jetzt IMMER für
+Schnitt und Ansicht verwendet (identischer Prompt wie Export für Claude.ai).
 
 ### Architektur
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│               PROMPT-SYSTEM ARCHITEKTUR                     │
+│            EINHEITLICHES PROMPT-SYSTEM v3.0                 │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -648,16 +651,16 @@ Zentrales Template für Claude SVG-Generierung mit dynamischer Gebäude-Recherch
 │           ┌───────────────┴───────────────┐                 │
 │           ▼                               ▼                 │
 │  ┌─────────────────┐           ┌─────────────────────────┐ │
-│  │ Frontend Export │           │ Backend use_claude=true │ │
-│  │ → API Aufruf    │           │ → Automatisch           │ │
+│  │ Frontend Export │           │ Backend (automatisch)   │ │
+│  │ → API Aufruf    │           │ → use_claude=true       │ │
 │  └─────────────────┘           └─────────────────────────┘ │
 │           │                               │                 │
 │           └───────────────┬───────────────┘                 │
 │                           ▼                                 │
 │           ┌─────────────────────────────────────────────┐   │
-│           │    /api/v1/prompt/generate                  │   │
+│           │    PromptBuilder.build_svg_prompt()         │   │
 │           │    → ClaudeResearchService (dynamisch)      │   │
-│           │    → PromptBuilder (Template)               │   │
+│           │    → IDENTISCHER Prompt für Export & API    │   │
 │           └─────────────────────────────────────────────┘   │
 │                           │                                 │
 │                           ▼                                 │
@@ -1359,12 +1362,15 @@ npx @railway/cli volume add --mount-path /app/data
   - Claude-Recherche-Cache (Wiederverwendung von API-Ergebnissen)
   - Landmark-Buildings Seed-Daten (Bundeshaus, Münster, etc.)
   - API-Endpoints: `/api/v1/search`, `/api/v1/building/{egid}/svg/*`, `/api/v1/db/stats`
-- [x] **Dynamisches Prompt-System** (NEU 29.12.2025)
+- [x] **Einheitliches Prompt-System v3.0** (NEU 29.12.2025)
   - `research_service.py` - Dynamische Gebäude-Recherche via Claude Haiku
   - `prompt_builder.py` - Template-basiert nach `Export_Prompt_Claude.md`
+  - `claude_svg_zones.py` - Nutzt jetzt PromptBuilder (identische Prompts)
   - Ersetzt statische `building_hints.py` durch dynamische Recherche
   - 30 Tage Cache für Recherche-Ergebnisse (~$0.01-0.02 pro Gebäude)
   - Frontend Export nutzt Backend-API für konsistente Prompts
+  - **"Professional" Toggle entfernt** - Claude wird immer für Schnitt/Ansicht verwendet
+  - Backend `use_claude` Default geändert auf `True`
   - API-Endpoints: `/api/v1/prompt/generate`, `/api/v1/prompt/research/stats`
 
 ### In Arbeit 🔨

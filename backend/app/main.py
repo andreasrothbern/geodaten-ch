@@ -2079,9 +2079,9 @@ async def visualize_cross_section(
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
-    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns"),
+    professional: bool = Query(False, description="Professional Mode für Fallback-Generator"),
     auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden"),
-    use_claude: bool = Query(False, description="Claude API für professionelle SVG-Generierung nutzen")
+    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)")
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude.
@@ -2092,7 +2092,7 @@ async def visualize_cross_section(
     - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
     - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
-    - **use_claude**: Claude API für professionelle SVG-Generierung (default: False)
+    - **use_claude**: Claude API für SVG-Generierung (default: True, unified prompt system)
 
     Returns: SVG-Datei
     """
@@ -2349,9 +2349,9 @@ async def visualize_elevation(
     height: int = 480,
     traufhoehe: Optional[float] = Query(None, description="Manuelle Traufhöhe in Metern"),
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
-    professional: bool = Query(False, description="Professional Mode mit Schraffur-Patterns"),
+    professional: bool = Query(False, description="Professional Mode für Fallback-Generator"),
     auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden"),
-    use_claude: bool = Query(False, description="Claude API für professionelle SVG-Generierung nutzen")
+    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -2362,7 +2362,7 @@ async def visualize_elevation(
     - **traufhoehe**: Manuelle Traufhöhe (überschreibt DB)
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
     - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
-    - **use_claude**: Claude API für professionelle SVG-Generierung (default: False)
+    - **use_claude**: Claude API für SVG-Generierung (default: True, unified prompt system)
 
     Returns: SVG-Datei
     """
