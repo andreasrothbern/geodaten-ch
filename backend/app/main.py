@@ -1388,37 +1388,6 @@ async def get_height_for_egid(egid: int):
         raise HTTPException(status_code=503, detail="Height database not available")
 
 
-@app.get("/api/v1/heights/debug/{egid}",
-         tags=["Höhendaten"])
-async def debug_height_details(egid: int):
-    """Debug-Endpunkt für get_height_details() - zeigt alle Zwischenschritte."""
-    from app.services.geodienste import get_height_details
-    from app.services.height_db import get_building_height, get_building_heights_detailed
-
-    # Direkte Aufrufe
-    legacy = get_building_height(egid)
-    detailed = None
-    try:
-        detailed = get_building_heights_detailed(egid)
-    except Exception as e:
-        detailed = {"error": str(e)}
-
-    # get_height_details aufrufen
-    result = get_height_details(
-        floors=None,
-        building_category_code=None,
-        manual_height=None,
-        egid=egid,
-    )
-
-    return {
-        "egid": egid,
-        "legacy_direct": legacy,
-        "detailed_direct": detailed,
-        "get_height_details_result": result
-    }
-
-
 # ============================================================================
 # Layher Materialkatalog
 # ============================================================================

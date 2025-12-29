@@ -403,10 +403,8 @@ class SmartBuildingService:
                 bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
 
                 # EGID aus Geocoding (falls vorhanden)
-                logger.info(f"Geocoding result: hasattr(geo, 'egid')={hasattr(geo, 'egid')}, geo.egid={getattr(geo, 'egid', 'N/A')}")
                 if hasattr(geo, 'egid') and geo.egid:
                     bundle.egid = str(geo.egid)
-                    logger.info(f"bundle.egid after geocoding: {bundle.egid}")
             else:
                 bundle.add_error(f"Geocoding fehlgeschlagen für: {bundle.address_input}")
 
@@ -429,9 +427,7 @@ class SmartBuildingService:
 
             if buildings:
                 building = buildings[0]
-                logger.info(f"GWR building found: egid={building.egid}, floors={building.floors}")
                 bundle.egid = str(building.egid) if building.egid else bundle.egid
-                logger.info(f"bundle.egid after GWR: {bundle.egid}")
                 bundle.gwr_floors = building.floors
                 bundle.gwr_area_m2 = building.area_m2
                 bundle.gwr_category = building.building_category
@@ -467,7 +463,6 @@ class SmartBuildingService:
                     pass
 
             # Vollständige Höhen-Lookup-Strategie aus geodienste.py nutzen
-            logger.info(f"Calling get_height_details with egid={egid_int}, lv95_e={bundle.lv95_e}, lv95_n={bundle.lv95_n}")
             height_result = get_height_details(
                 floors=bundle.gwr_floors,
                 building_category_code=bundle.gwr_category_code,
@@ -476,7 +471,6 @@ class SmartBuildingService:
                 lv95_e=bundle.lv95_e,
                 lv95_n=bundle.lv95_n,
             )
-            logger.info(f"get_height_details returned: measured={height_result.get('measured_height_m')}, trauf={height_result.get('traufhoehe_m')}, first={height_result.get('firsthoehe_m')}")
 
             # Ergebnisse übernehmen
             bundle.traufhoehe_m = height_result.get('traufhoehe_m')
