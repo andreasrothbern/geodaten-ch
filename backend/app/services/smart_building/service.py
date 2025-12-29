@@ -344,9 +344,11 @@ class SmartBuildingService:
             bundle.add_error("Geocoding fehlgeschlagen - keine weiteren Daten verfügbar")
             return bundle
 
-        # PHASE 2: Parallel - alle brauchen nur Koordinaten/EGID
+        # PHASE 2a: GWR zuerst (setzt EGID, die Heights braucht)
+        await self._collect_gwr_data(bundle)
+
+        # PHASE 2b: Parallel - Heights braucht EGID von GWR
         phase2_tasks = [
-            self._collect_gwr_data(bundle),
             self._collect_height_data(bundle),
             self._collect_polygon_data(bundle),
         ]
