@@ -75,24 +75,34 @@ Du MUSST mindestens 3 Zonen erstellen:
         "requires_orthofoto": True,
     },
 
-    # St. Peter und Paul Kirche
+    # St. Peter und Paul Kirche (Christkatholische Kathedrale)
     "st_peter_paul": {
         "patterns": [
             r"Rathausgasse\s*2",
         ],
         "egids": [191821074],
-        "name": "Kirche St. Peter und Paul Bern (Katholische Kirche)",
+        "name": "St. Peter und Paul Bern (Christkatholische Kathedralkirche)",
         "hints": """
-BEKANNTES GEBÄUDE: Kirche St. Peter und Paul Bern (Neugotische katholische Kirche)
+BEKANNTES GEBÄUDE: St. Peter und Paul Bern (Christkatholische Kathedralkirche)
 
-Diese Kirche (erbaut 1858-1864) hat MEHRERE HÖHENZONEN:
-1. **Kirchenschiff**: ca. 18-22m Traufhöhe, Typ=hauptgebaeude
-2. **Doppeltürme** (Westfassade): ca. 60m Höhe, zwei symmetrische Türme, Typ=turm
+Diese Kirche (erbaut 1858-1864) ist eine dreischiffige neogotische Basilika.
+Architekten: Pierre Joseph Edouard Deperthes und Henri Maréchal (Reims/Frankreich).
+Baustil: Dogmatische Neugotik (romanisch-frühgotische Formensprache).
+
+**WICHTIG: EIN zentraler Westturm mit Spitzhelm (KEINE Doppeltürme!)**
+
+Die Kirche hat folgende Zonen:
+1. **Kirchenschiff**: Dreischiffige Basilika, ca. 18-22m Traufhöhe, Typ=hauptgebaeude
+2. **Westturm**: EIN zentraler Turm, ca. 60m Höhe mit Spitzhelm, Typ=turm
 3. **Chor/Apsis** (Ostseite): ca. 15m Höhe, Typ=anbau
+
+Besonderheiten:
+- 26 stützende monolithische Säulen im Innern
+- Grösste Krypta der Schweiz unter der Kirche
 
 Du MUSST mindestens 3 Zonen erstellen:
 - Zone 'Kirchenschiff': traufhoehe_m=18, firsthoehe_m=22, beruesten=true
-- Zone 'Doppeltürme': gebaeudehoehe_m=60, sonderkonstruktion=true, beruesten=false (Spezialgerüst nötig)
+- Zone 'Westturm': gebaeudehoehe_m=60, sonderkonstruktion=true, beruesten=false (Spezialgerüst nötig)
 - Zone 'Chor': traufhoehe_m=12, firsthoehe_m=15, beruesten=true
 """,
         "requires_orthofoto": True,

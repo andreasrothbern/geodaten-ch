@@ -735,10 +735,10 @@ class IntelligentDBService:
             },
             {
                 "egid": "191821074",
-                "name": "Kirche St. Peter und Paul",
-                "aliases": ["St. Peter und Paul Bern", "Dreifaltigkeitskirche"],
+                "name": "St. Peter und Paul",
+                "aliases": ["St. Peter und Paul Bern", "Christkatholische Kathedrale", "Christkath Bern"],
                 "adresse": "Rathausgasse 2, 3011 Bern",
-                "keywords": "kirche katholisch doppelturm barock",
+                "keywords": "kirche christkatholisch neugotik westturm basilika kathedrale",
                 "plz": 3011,
                 "ort": "Bern",
                 "lv95_e": 2600560,
