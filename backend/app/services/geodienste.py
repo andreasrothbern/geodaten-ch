@@ -705,13 +705,14 @@ def get_height_details(
     # 2. Gemessene Höhe aus Datenbank laden (falls verfügbar)
     measured_is_plausible = True
     height_found_in_db = False
+    detailed = None  # Initialisieren vor if-Block (wird in _debug verwendet)
+    detailed_has_data = False
 
     if egid:
         try:
             from app.services.height_db import get_building_height, get_building_heights_detailed, get_building_height_by_coordinates
 
             # Zuerst detaillierte Höhen versuchen
-            detailed = None
             try:
                 detailed = get_building_heights_detailed(egid)
             except Exception:
