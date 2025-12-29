@@ -56,6 +56,37 @@ Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeli
 
 **Wichtig:** Nach Adress-Suche werden ALLE Daten gesammelt, inkl. Gebäudename aus Claude-Recherche.
 
+## Integrierte Datenquellen
+
+| Quelle | Daten | Genauigkeit | Status |
+|--------|-------|-------------|--------|
+| **swisstopo API** | Geokodierung, GWR, Terrain | ±1m | Live-API |
+| **GWR (BFS)** | EGID, Adresse, Geschosse, Kategorie, Baujahr | Amtlich, aktuell | via swisstopo |
+| **geodienste.ch WFS** | Gebäudegrundriss (Polygon) | ±10cm (AV-Daten) | Live-API |
+| **swissBUILDINGS3D 3.0** | Gemessene Gebäudehöhe | ±50cm (Photogrammetrie) | DB + On-Demand |
+| **swissALTI3D** | Terrain-Höhen (m ü.M.) | ±0.5m (LiDAR) | Live-API |
+
+### Höhendaten-Verfügbarkeit
+
+**Lokal importiert (sofort verfügbar):**
+- Kanton Bern: 365'790 Gebäude
+- Kanton Solothurn: 234'879 Gebäude
+- **Total: ~600'000 Gebäude**
+
+**On-Demand abrufbar (Kantone mit EGID-Support):**
+AG, AI, AR, BE, BL, BS, FR, GL, JU, LU, NE, SG, SH, SO, SZ, TG + Stadt Zürich
+
+### Datengenauigkeit
+
+| Messwert | Quelle | Genauigkeit |
+|----------|--------|-------------|
+| Gebäudehöhe (gemessen) | swissBUILDINGS3D | ±0.5m |
+| Gebäudehöhe (geschätzt) | Geschosse × 3.2m | ±2-3m |
+| Terrain-Höhe | swissALTI3D | ±0.5m |
+| Fassadenlänge | AV-Grundriss | ±10cm |
+| Grundfläche | AV-Grundriss | ±0.1m² |
+| Koordinaten | LV95 | ±1m |
+
 ## Architektur
 
 ```
@@ -1531,6 +1562,41 @@ Im Gerüstbau-Tab wird das SVG im Compact-Modus gerendert:
 - Keine "Gebäudedaten"-Box
 - Kleinere Margins → mehr Platz für Polygon
 - Kompaktere Fassaden-Labels
+
+## Test-Adressen
+
+### Kantone mit WFS-Unterstützung (Gerüstbau-Daten verfügbar)
+
+| Kanton | Adresse | Höhendaten | WFS |
+|--------|-----------------------------------|------------|-----|
+| BE | Kramgasse 49, 3011 Bern | DB | ✅ |
+| BE | Bundesplatz 3, 3011 Bern | DB | ✅ |
+| SO | Hauptgasse 10, 4500 Solothurn | DB | ✅ |
+| BS | Marktplatz 10, 4051 Basel | On-Demand | ✅ |
+| FR | Rue de Romont 10, 1700 Fribourg | On-Demand | ✅ |
+| ZH | Bahnhofstrasse 50, 8001 Zürich | On-Demand | ✅ |
+| AG | Bahnhofstrasse 20, 5000 Aarau | On-Demand | ✅ |
+| SG | Marktgasse 11, 9000 St. Gallen | On-Demand | ✅ |
+| TG | Freiestrasse 10, 8500 Frauenfeld | On-Demand | ✅ |
+| BL | Hauptstrasse 50, 4410 Liestal | On-Demand | ✅ |
+| SH | Vordergasse 17, 8200 Schaffhausen | On-Demand | ✅ |
+
+### 3D Tiles API Test-Koordinaten
+
+| Region | Koordinaten (WGS84) | Status |
+|--------|---------------------|--------|
+| Tessin/Graubünden | lat=46.3131, lon=8.4476 | ✅ Funktioniert |
+| Wallis | lat=46.2305, lon=10.1451 | ✅ Funktioniert |
+| Bern Stadt | lat=46.9466, lon=7.4448 | ❌ Keine Abdeckung |
+| Zürich Stadt | lat=47.3769, lon=8.5417 | ❌ Keine Abdeckung |
+
+### Kantone ohne WFS-Unterstützung
+
+| Kanton | Grund |
+|--------|-------|
+| LU | Keine geodienste.ch WFS-Daten |
+| NE | Keine geodienste.ch WFS-Daten |
+| GE, VD, VS | Kantonale Geodienste nicht integriert |
 
 ## Deployment
 

@@ -354,17 +354,24 @@ WICHTIG:
 - Bei Strassen wie "Rathausgasse", "Münstergasse", "Kirchgasse" etc. kann das Gebäude an dieser Adresse
   ein ANDERES Gebäude sein als das namensgebende (z.B. Rathausgasse 2 ≠ Rathaus).
 
+BEKANNTE ADRESSEN (zur Referenz):
+- Bundesplatz 3, 3011 Bern = Bundeshaus (Schweizer Parlamentsgebäude)
+- Münsterplatz 1, 3011 Bern = Berner Münster
+- Rathausgasse 2, 3011 Bern = Kirche St. Peter und Paul (NICHT Rathaus!)
+- Kramgasse 49, 3011 Bern = Einsteinhaus
+
 Aufgaben:
-1. Identifiziere das EXAKTE Gebäude an dieser Hausnummer (Name, falls bekannt/historisch)
-2. Bestimme den Gebäudetyp (Wohnhaus, Kirche, öffentliches Gebäude, etc.) - GWR-Kategorie beachten!
-3. Ermittle den Baustil falls erkennbar (Neugotik, Barock, Klassizismus, Modern, etc.)
-4. Beschreibe Türme/Kuppeln falls vorhanden (Anzahl, Position, ungefähre Höhe)
-5. Liste besondere architektonische Merkmale
-6. Schlage Höhenzonen vor falls das Gebäude komplex erscheint
+1. Identifiziere das EXAKTE Gebäude an dieser Hausnummer
+2. Bestimme den OFFIZIELLEN GEBÄUDENAMEN (z.B. "Bundeshaus", "Berner Münster") - NICHT die Adresse!
+3. Bestimme den Gebäudetyp (Wohnhaus, Kirche, öffentliches Gebäude, etc.) - GWR-Kategorie beachten!
+4. Ermittle den Baustil falls erkennbar (Neugotik, Barock, Klassizismus, Modern, etc.)
+5. Beschreibe Türme/Kuppeln falls vorhanden (Anzahl, Position, ungefähre Höhe)
+6. Liste besondere architektonische Merkmale
+7. Schlage Höhenzonen vor falls das Gebäude komplex erscheint
 
 Antworte NUR im folgenden JSON-Format:
 {{
-  "building_name": "Name oder null",
+  "building_name": "Offizieller Gebäudename oder null (NICHT die Adresse!)",
   "building_type": "Typ",
   "architectural_style": "Stil oder null",
   "construction_year": Jahr oder null,

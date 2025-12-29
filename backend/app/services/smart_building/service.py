@@ -449,7 +449,11 @@ class SmartBuildingService:
 
             # 1. EGID-basierter Lookup
             if bundle.egid:
-                heights = get_building_heights_detailed(bundle.egid)
+                try:
+                    egid_int = int(bundle.egid)
+                    heights = get_building_heights_detailed(egid_int)
+                except (ValueError, TypeError):
+                    heights = None
 
             # 2. Fallback: Koordinaten-basiert
             if not heights and bundle.lv95_e and bundle.lv95_n:
