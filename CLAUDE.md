@@ -4,6 +4,58 @@
 
 Dieses Projekt bietet eine API und Web-App für Schweizer Geodaten (Gebäude, Adressen, Grundstücke).
 
+**Deployment auf Railway.app:**
+- Frontend: https://cooperative-commitment-production.up.railway.app/
+- Backend: https://acceptable-trust-production.up.railway.app/
+- Mit Adresse: `?address=Bundesplatz%203,%203011%20Bern`
+
+## Datenfluss (SmartBuildingService)
+
+Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeline:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATENFLUSS                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Frontend (Suche)                                               │
+│       │                                                         │
+│       ▼                                                         │
+│  GET /api/v1/smart-building/data?address=...                   │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌─────────────────────────────────────────┐                   │
+│  │       SmartBuildingService              │                   │
+│  │       (10-Schritte Pipeline)            │                   │
+│  ├─────────────────────────────────────────┤                   │
+│  │  1. Geocoding (swisstopo)               │                   │
+│  │  2. GWR-Daten (Geschosse, Fläche)       │                   │
+│  │  3. Höhendaten (swissBUILDINGS3D)       │                   │
+│  │  4. Terrain (swissALTI3D, Hanglage)     │                   │
+│  │  5. Polygon (geodienste.ch WFS)         │                   │
+│  │  6. Dach-Analyse (berechnet)            │                   │
+│  │  7. Recherche (Claude Sonnet)           │ ← building_name   │
+│  │  8. Zonen-Analyse (bei komplexen)       │                   │
+│  │  9. SUVA Zugänge (berechnet)            │                   │
+│  │ 10. Qualitätsbewertung                  │                   │
+│  └─────────────────────────────────────────┘                   │
+│       │                                                         │
+│       ▼                                                         │
+│  BuildingDataBundle (gecacht 24h)                               │
+│       │                                                         │
+│       ├──────────────────────────────────────┐                 │
+│       ▼                                      ▼                 │
+│  Frontend (Anzeige)               SVG-Generierung              │
+│  - Koordinaten                    - Claude API                 │
+│  - Höhen                          - Einheitlicher Prompt       │
+│  - Gebäudename                    - Gecacht pro EGID           │
+│  - Zonen                                                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Wichtig:** Nach Adress-Suche werden ALLE Daten gesammelt, inkl. Gebäudename aus Claude-Recherche.
+
 ## Architektur
 
 ```
