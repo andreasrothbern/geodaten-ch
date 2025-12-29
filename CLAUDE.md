@@ -1597,6 +1597,20 @@ npx @railway/cli volume add --mount-path /app/data
   - SUVA-konforme Zugangspunkt-Berechnung
   - API-Endpoints: `/api/v1/smart-building/data`, `/api/v1/smart-building/prompt`, `/api/v1/smart-building/cache/stats`
   - Integration in `claude_svg_zones.py`: `generate_svg_with_smart_service()`
+- [x] **Frontend SmartService Integration** (NEU 29.12.2025)
+  - Frontend ruft direkt `/api/v1/smart-building/data` auf (statt `/api/v1/scaffolding`)
+  - TypeScript: `SmartBuildingData` Interface in `types.ts`
+  - Konverter-Funktion: `smartToScaffoldingData()` für Abwärtskompatibilität
+  - Visualisierungs-Endpunkte nutzen SmartService Cache
+  - `/api/v1/scaffolding` als **deprecated** markiert
+
+### API Migration (29.12.2025)
+
+| Alt (deprecated) | Neu (empfohlen) |
+|------------------|-----------------|
+| `GET /api/v1/scaffolding?address=...` | `GET /api/v1/smart-building/data?address=...` |
+| `GET /api/v1/scaffolding/by-egid/{egid}` | `GET /api/v1/smart-building/data?address=...` |
+| Separate Datensammlung pro Endpunkt | Einheitlicher Bundle-Cache (24h) |
 
 ### In Arbeit 🔨
 - [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs

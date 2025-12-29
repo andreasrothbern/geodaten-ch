@@ -557,7 +557,8 @@ async def get_complete_data(
 # ============================================================================
 
 @app.get("/api/v1/scaffolding",
-         tags=["Gerüstbau"])
+         tags=["Gerüstbau"],
+         deprecated=True)
 async def get_scaffolding_data(
     address: str = Query(..., min_length=5, description="Adresse"),
     egid: Optional[int] = Query(None, description="EGID (falls bekannt)"),
@@ -571,13 +572,15 @@ async def get_scaffolding_data(
     use_smart_service: bool = Query(True, description="SmartBuildingService nutzen (parallel, einheitlich)")
 ):
     """
-    Gebäudegeometrie und Gerüstbau-relevante Daten abrufen.
+    ⚠️ **DEPRECATED**: Bitte `/api/v1/smart-building/data` verwenden.
 
-    **NEU: SmartBuildingService** (use_smart_service=true, default)
-    - Parallele Datensammlung (5x schneller)
-    - Einheitliches Datenmodell (BuildingDataBundle)
-    - Claude-Recherche für Gebäude-Identifikation
-    - 24h Bundle-Cache
+    Dieser Endpunkt wird für Abwärtskompatibilität beibehalten, aber nicht mehr aktiv weiterentwickelt.
+
+    **Migration:**
+    ```
+    ALT: GET /api/v1/scaffolding?address=...
+    NEU: GET /api/v1/smart-building/data?address=...&include_research=true&include_zones=true
+    ```
 
     Liefert:
     - Exakten Grundriss (Polygon mit allen Eckpunkten)
@@ -881,15 +884,16 @@ async def get_scaffolding_data(
 
 
 @app.get("/api/v1/scaffolding/by-egid/{egid}",
-         tags=["Gerüstbau"])
+         tags=["Gerüstbau"],
+         deprecated=True)
 async def get_scaffolding_by_egid(
     egid: int,
     height: Optional[float] = Query(None, description="Manuelle Gebäudehöhe in Metern")
 ):
     """
-    Gebäudegeometrie per EGID abrufen.
+    ⚠️ **DEPRECATED**: Bitte `/api/v1/smart-building/data` mit Adresse verwenden.
 
-    Schneller als Adresssuche, wenn EGID bekannt ist.
+    Gebäudegeometrie per EGID abrufen.
 
     **Beispiel:** `/api/v1/scaffolding/by-egid/2242547`
     """
@@ -2135,7 +2139,8 @@ async def visualize_cross_section(
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
     professional: bool = Query(False, description="Professional Mode für Fallback-Generator"),
     auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden"),
-    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)")
+    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)"),
+    force_refresh: bool = Query(False, description="Cache ignorieren für frische Daten")
 ):
     """
     Generiert SVG-Schnittansicht für ein Gebäude.
@@ -2147,14 +2152,34 @@ async def visualize_cross_section(
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
     - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
     - **use_claude**: Claude API für SVG-Generierung (default: True, unified prompt system)
+    - **force_refresh**: Cache ignorieren (default: False)
+
+    **NEU:** Nutzt SmartBuildingService für einheitliche Datenpipeline und Caching.
+    Bei manuellen Höhenangaben wird der Legacy-Pfad verwendet.
 
     Returns: SVG-Datei
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
     from app.services.building_context import get_building_context_service, ComplexityLevel
-    from app.services.claude_svg_zones import generate_cross_section_with_zones, is_available as claude_svg_available
+    from app.services.claude_svg_zones import (
+        generate_cross_section_with_zones,
+        generate_svg_with_smart_service,
+        is_available as claude_svg_available
+    )
 
     try:
+        # === SCHNELLER PFAD: SmartBuildingService (ohne manuelle Höhen) ===
+        if use_claude and claude_svg_available() and not traufhoehe and not firsthoehe:
+            svg = await generate_svg_with_smart_service(
+                address=address,
+                svg_type="schnitt",
+                force_refresh=force_refresh,
+            )
+            if svg:
+                return Response(content=svg, media_type="image/svg+xml")
+            # Fallthrough zu Legacy-Pfad bei Fehler
+
+        # === LEGACY PFAD: Manuelle Höhen oder Fallback-Generator ===
         # Gebäudedaten abrufen
         geo = await swisstopo.geocode(address)
         if not geo:
@@ -2405,7 +2430,8 @@ async def visualize_elevation(
     firsthoehe: Optional[float] = Query(None, description="Manuelle Firsthöhe in Metern"),
     professional: bool = Query(False, description="Professional Mode für Fallback-Generator"),
     auto_analyze: bool = Query(True, description="Auto-Claude-Analyse bei komplexen Gebäuden"),
-    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)")
+    use_claude: bool = Query(True, description="Claude API für SVG-Generierung (unified prompt system)"),
+    force_refresh: bool = Query(False, description="Cache ignorieren für frische Daten")
 ):
     """
     Generiert SVG-Fassadenansicht für ein Gebäude.
@@ -2417,14 +2443,34 @@ async def visualize_elevation(
     - **firsthoehe**: Manuelle Firsthöhe (überschreibt DB)
     - **auto_analyze**: Auto-Claude-Analyse bei komplexen Gebäuden (default: True)
     - **use_claude**: Claude API für SVG-Generierung (default: True, unified prompt system)
+    - **force_refresh**: Cache ignorieren (default: False)
+
+    **NEU:** Nutzt SmartBuildingService für einheitliche Datenpipeline und Caching.
+    Bei manuellen Höhenangaben wird der Legacy-Pfad verwendet.
 
     Returns: SVG-Datei
     """
     from app.services.svg_generator import get_svg_generator, BuildingData
     from app.services.building_context import get_building_context_service, ComplexityLevel
-    from app.services.claude_svg_zones import generate_elevation_with_zones, is_available as claude_svg_available
+    from app.services.claude_svg_zones import (
+        generate_elevation_with_zones,
+        generate_svg_with_smart_service,
+        is_available as claude_svg_available
+    )
 
     try:
+        # === SCHNELLER PFAD: SmartBuildingService (ohne manuelle Höhen) ===
+        if use_claude and claude_svg_available() and not traufhoehe and not firsthoehe:
+            svg = await generate_svg_with_smart_service(
+                address=address,
+                svg_type="ansicht",
+                force_refresh=force_refresh,
+            )
+            if svg:
+                return Response(content=svg, media_type="image/svg+xml")
+            # Fallthrough zu Legacy-Pfad bei Fehler
+
+        # === LEGACY PFAD: Manuelle Höhen oder Fallback-Generator ===
         geo = await swisstopo.geocode(address)
         if not geo:
             raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
