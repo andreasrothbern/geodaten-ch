@@ -68,13 +68,16 @@ Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeli
 
 ### Höhendaten-Verfügbarkeit
 
-**Lokal importiert (sofort verfügbar):**
-- Kanton Bern: 365'790 Gebäude
-- Kanton Solothurn: 234'879 Gebäude
-- **Total: ~600'000 Gebäude**
+**On-Demand für ALLE Gebäude (NEU 30.12.2025):**
+- Höhendaten werden automatisch per STAC API abgerufen
+- Beim ersten Aufruf: ~5-10s für Tile-Download
+- Danach: Sofort aus lokaler DB (gecacht)
+- Funktioniert für **jedes Gebäude in der Schweiz**
 
-**On-Demand abrufbar (Kantone mit EGID-Support):**
-AG, AI, AR, BE, BL, BS, FR, GL, JU, LU, NE, SG, SH, SO, SZ, TG + Stadt Zürich
+**Technische Details:**
+- LV03→LV95 Koordinatenkonvertierung automatisch
+- Tile-Größe: 1km × 1km (~100-500 Gebäude pro Tile)
+- Koordinaten-Toleranz: ±50m für Lookup
 
 ### Datengenauigkeit
 
@@ -602,18 +605,23 @@ CREATE TABLE building_contexts (
 │     → Gesamthöhe aus swissBUILDINGS3D per EGID             │
 │     ↓ falls nicht gefunden                                  │
 │  4. Koordinaten-Lookup (building_heights_by_coord)          │
-│     → Höhe per LV95-Koordinaten (±25m Toleranz)            │
+│     → Höhe per LV95-Koordinaten (±50m Toleranz)            │
 │     → Für Gebäude ohne EGID in swissBUILDINGS3D            │
 │     ↓ falls nicht gefunden                                  │
-│  5. Geschätzt aus GWR-Daten                                 │
+│  5. ON-DEMAND FETCH (STAC API) ← NEU 30.12.2025            │
+│     → Automatischer Download des swissBUILDINGS3D Tiles    │
+│     → Import aller Gebäude im 1km×1km Tile                 │
+│     → Funktioniert für JEDES Gebäude in der Schweiz        │
+│     ↓ falls nicht verfügbar                                 │
+│  6. Geschätzt aus GWR-Daten                                 │
 │     → Geschosse × Geschosshöhe + Dachhöhe                  │
 │     ↓ falls keine Geschossdaten                             │
-│  6. Standard nach Kategorie                                 │
+│  7. Standard nach Kategorie                                 │
 │     → EFH: 8m, MFH: 12m, etc.                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Wichtig:** Koordinaten-Lookup (Stufe 4) wurde hinzugefügt, weil swissBUILDINGS3D nicht bei allen Gebäuden eine EGID enthält.
+**Wichtig (30.12.2025):** On-Demand Fetch lädt automatisch Höhendaten für jedes Gebäude. Die DB wird "on-the-fly" befüllt - kein Voraus-Import mehr nötig!
 
 ### swissBUILDINGS3D Import
 
