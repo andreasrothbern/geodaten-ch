@@ -430,7 +430,7 @@ class SmartBuildingService:
                 bundle.gwr_area_m2 = building.area_m2
                 bundle.gwr_category = building.building_category
                 bundle.gwr_category_code = building.building_category_code
-                bundle.footprint_area_m2 = building.footprint_area_m2 or building.area_m2
+                bundle.footprint_area_m2 = building.area_m2  # BuildingInfo hat area_m2, nicht footprint_area_m2
                 bundle.add_source(DataSource.SWISSTOPO_GWR)
 
         except Exception as e:
@@ -535,7 +535,8 @@ class SmartBuildingService:
                 bundle.polygon = geometry.polygon
                 bundle.sides = geometry.sides
                 bundle.perimeter_m = geometry.perimeter_m
-                bundle.polygon_simplified = geometry.simplified
+                bundle.footprint_area_m2 = bundle.footprint_area_m2 or geometry.area_m2  # Aus Polygon falls GWR fehlt
+                bundle.polygon_simplified = getattr(geometry, 'simplified', False)  # Optional
                 bundle.add_source(DataSource.GEODIENSTE_WFS)
 
                 # Bounding Box berechnen

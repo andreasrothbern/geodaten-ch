@@ -215,11 +215,11 @@ async def _build_unified_prompt(
     max_trauf = 0
     for zone in zones:
         h = (zone.get('gebaeudehoehe_m') or zone.get('firsthoehe_m') or
-             zone.get('first_height_m') or zone.get('building_height_m', 0))
-        t = zone.get('traufhoehe_m', 0)
-        if h > max_height:
+             zone.get('first_height_m') or zone.get('building_height_m') or 0)
+        t = zone.get('traufhoehe_m') or 0
+        if h and h > max_height:
             max_height = h
-        if t > max_trauf:
+        if t and t > max_trauf:
             max_trauf = t
 
     dimensions = {

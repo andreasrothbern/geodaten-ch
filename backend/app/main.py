@@ -3552,80 +3552,105 @@ async def get_smart_building_data(
             include_terrain=include_terrain,
         )
 
+        # Flache Struktur für Frontend SmartBuildingData Interface
         return {
-            "status": "ok",
+            # Identifikation
+            "egid": bundle.egid,
             "address_input": bundle.address_input,
             "address_matched": bundle.address_matched,
-            "egid": bundle.egid,
-            "coordinates": {
-                "lv95_e": bundle.lv95_e,
-                "lv95_n": bundle.lv95_n
-            } if bundle.lv95_e else None,
-            "building": {
-                "name": bundle.building_name,
-                "type": bundle.building_type,
-                "style": bundle.architectural_style,
-                "construction_year": bundle.construction_year,
-            },
-            "gwr": {
-                "category": bundle.gwr_category,
-                "category_code": bundle.gwr_category_code,
-                "floors": bundle.gwr_floors,
-                "area_m2": bundle.gwr_area_m2,
-            } if bundle.gwr_category else None,
-            "heights": {
-                "traufhoehe_m": bundle.traufhoehe_m,
-                "firsthoehe_m": bundle.firsthoehe_m,
-                "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
-                "estimated_m": bundle.estimated_height_m,
-                "source": bundle.height_source.value if bundle.height_source else None,
-                "quality": bundle.height_quality.value if bundle.height_quality else None,
-            },
+            "lv95_e": bundle.lv95_e,
+            "lv95_n": bundle.lv95_n,
+
+            # Gebäude-Identifikation (aus Recherche)
+            "building_name": bundle.building_name,
+            "building_type": bundle.building_type,
+            "architectural_style": bundle.architectural_style,
+            "construction_year": bundle.construction_year,
+
+            # GWR-Daten
+            "gwr_category": bundle.gwr_category,
+            "gwr_category_code": bundle.gwr_category_code,
+            "gwr_floors": bundle.gwr_floors,
+            "gwr_area_m2": bundle.gwr_area_m2,
+
+            # Geometrie
+            "polygon": bundle.polygon,
+            "polygon_simplified": bundle.polygon_simplified,
+            "sides": bundle.sides,
+            "perimeter_m": bundle.perimeter_m,
+            "footprint_area_m2": bundle.footprint_area_m2,
+            "bbox_width_m": bundle.bbox_width_m,
+            "bbox_depth_m": bundle.bbox_depth_m,
+
+            # Höhendaten
+            "traufhoehe_m": bundle.traufhoehe_m,
+            "firsthoehe_m": bundle.firsthoehe_m,
+            "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+            "height_source": bundle.height_source.value if bundle.height_source else None,
+            "height_quality": bundle.height_quality.value if bundle.height_quality else None,
+            "estimated_height_m": bundle.estimated_height_m,
+            "floors_estimated": bundle.gwr_floors,
+
+            # Terrain
             "terrain": {
                 "reference_height_m": bundle.terrain.reference_height_m,
+                "min_height_m": bundle.terrain.min_height_m,
+                "max_height_m": bundle.terrain.max_height_m,
                 "slope_m": bundle.terrain.slope_m,
                 "is_sloped": bundle.terrain.is_sloped,
+                "slope_direction": bundle.terrain.slope_direction,
+                "requires_level_compensation": bundle.terrain.requires_level_compensation,
             } if bundle.terrain else None,
-            "roof": {
-                "type": bundle.roof_type,
-                "angle_deg": bundle.roof_angle_deg,
-                "orientation": bundle.roof_orientation,
-                "area_m2": bundle.roof_area_m2,
-                "confidence": bundle.roof_confidence,
-            } if bundle.roof_type else None,
-            "geometry": {
-                "polygon_points": len(bundle.polygon) if bundle.polygon else 0,
-                "perimeter_m": bundle.perimeter_m,
-                "footprint_area_m2": bundle.footprint_area_m2,
-                "bbox_width_m": bundle.bbox_width_m,
-                "bbox_depth_m": bundle.bbox_depth_m,
-                "sides_count": len(bundle.sides) if bundle.sides else 0,
-            },
+
+            # Dach
+            "roof_type": bundle.roof_type,
+            "roof_angle_deg": bundle.roof_angle_deg,
+            "roof_orientation": bundle.roof_orientation,
+            "roof_area_m2": bundle.roof_area_m2,
+            "roof_confidence": bundle.roof_confidence,
+
+            # Zonen
             "zones": [
                 {
                     "id": z.id,
                     "name": z.name,
-                    "type": z.zone_type,
+                    "zone_type": z.zone_type,
                     "traufhoehe_m": z.traufhoehe_m,
                     "firsthoehe_m": z.firsthoehe_m,
+                    "gebaeudehoehe_m": z.gebaeudehoehe_m,
+                    "fassaden_ids": z.fassaden_ids,
                     "beruesten": z.beruesten,
                     "sonderkonstruktion": z.sonderkonstruktion,
                     "confidence": z.confidence,
+                    "source": z.source.value if z.source else None,
+                    "notes": z.notes,
                 }
                 for z in bundle.zones
             ],
+            "complexity": bundle.complexity,
+            "has_height_variations": bundle.has_height_variations,
+            "has_towers": bundle.has_towers,
+            "has_annexes": bundle.has_annexes,
+            "has_courtyards": bundle.has_courtyards,
+
+            # Zugänge
             "access_points": [
                 {
                     "id": a.id,
                     "fassade_id": a.fassade_id,
                     "position_percent": a.position_percent,
+                    "reason": a.reason,
                     "suva_compliant": a.suva_compliant,
                 }
                 for a in bundle.access_points
             ],
-            "complexity": bundle.complexity,
+            "suva_compliant": bundle.suva_compliant,
+
+            # Meta
             "data_sources": [s.value for s in bundle.data_sources],
-            "quality": bundle.overall_quality.value if bundle.overall_quality else None,
+            "overall_quality": bundle.overall_quality.value if bundle.overall_quality else None,
+            "research_confidence": bundle.research_confidence,
+            "analysis_confidence": bundle.analysis_confidence,
             "warnings": bundle.warnings,
             "errors": bundle.errors,
         }

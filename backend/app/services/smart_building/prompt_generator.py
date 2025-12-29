@@ -193,7 +193,8 @@ Folge den unten aufgeführten Daten und Style-Vorgaben EXAKT."""
             if len(bundle.polygon) > 10:
                 lines.append(f"> **HINWEIS:** Komplexes Polygon mit {len(bundle.polygon)} Punkten")
                 lines.append(f"> → Vereinfachte rechteckige Darstellung empfohlen")
-                lines.append(f"- **Bounding Box:** {bundle.bbox_width_m:.1f}m × {bundle.bbox_depth_m:.1f}m")
+                if bundle.bbox_width_m and bundle.bbox_depth_m:
+                    lines.append(f"- **Bounding Box:** {bundle.bbox_width_m:.1f}m × {bundle.bbox_depth_m:.1f}m")
             else:
                 lines.append(f"- **Eckpunkte:** {len(bundle.polygon)}")
 
