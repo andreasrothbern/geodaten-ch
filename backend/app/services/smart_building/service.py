@@ -401,8 +401,10 @@ class SmartBuildingService:
                 bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
 
                 # EGID aus Geocoding (falls vorhanden)
+                logger.info(f"Geocoding result: hasattr(geo, 'egid')={hasattr(geo, 'egid')}, geo.egid={getattr(geo, 'egid', 'N/A')}")
                 if hasattr(geo, 'egid') and geo.egid:
                     bundle.egid = str(geo.egid)
+                    logger.info(f"bundle.egid after geocoding: {bundle.egid}")
             else:
                 bundle.add_error(f"Geocoding fehlgeschlagen für: {bundle.address_input}")
 
@@ -425,7 +427,9 @@ class SmartBuildingService:
 
             if buildings:
                 building = buildings[0]
+                logger.info(f"GWR building found: egid={building.egid}, floors={building.floors}")
                 bundle.egid = str(building.egid) if building.egid else bundle.egid
+                logger.info(f"bundle.egid after GWR: {bundle.egid}")
                 bundle.gwr_floors = building.floors
                 bundle.gwr_area_m2 = building.area_m2
                 bundle.gwr_category = building.building_category
