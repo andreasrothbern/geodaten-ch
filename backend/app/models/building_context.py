@@ -112,6 +112,10 @@ class BuildingContext(BaseModel):
     # Identifikation
     egid: str = Field(..., description="Eidgenössische Gebäude-ID")
     adresse: Optional[str] = Field(default=None, description="Vollständige Adresse")
+    building_name: Optional[str] = Field(
+        default=None,
+        description="Name des Gebäudes (z.B. 'Bundeshaus', 'Berner Münster')"
+    )
 
     # Zonen
     zones: list[BuildingZone] = Field(

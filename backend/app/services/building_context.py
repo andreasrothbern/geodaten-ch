@@ -277,9 +277,13 @@ class BuildingContextService:
         except Exception as e:
             logger.warning(f"Access calculation failed: {e}")
 
+        # Gebäudename aus gwr_data/hints übernehmen
+        building_name = gwr_data.get('building_name') if gwr_data else None
+
         context = BuildingContext(
             egid=egid,
             adresse=adresse,
+            building_name=building_name,
             zones=[zone],
             complexity=complexity,
             has_height_variations=False,
@@ -305,7 +309,8 @@ class BuildingContextService:
         polygon: list[dict],
         height_data: dict,
         gwr_data: Optional[dict] = None,
-        include_orthofoto: bool = False
+        include_orthofoto: bool = False,
+        terrain_data: Optional[dict] = None
     ) -> BuildingContext:
         """
         Analysiert ein komplexes Gebäude mit Claude AI.
@@ -365,7 +370,8 @@ class BuildingContextService:
             gwr_data=gwr_data,
             egid=egid,
             adresse=adresse,
-            has_orthofoto=orthofoto_data is not None
+            has_orthofoto=orthofoto_data is not None,
+            terrain_data=terrain_data
         )
 
         # Claude API aufrufen
@@ -435,7 +441,8 @@ class BuildingContextService:
         gwr_data: Optional[dict],
         egid: str,
         adresse: Optional[str],
-        has_orthofoto: bool = False
+        has_orthofoto: bool = False,
+        terrain_data: Optional[dict] = None
     ) -> str:
         """Erstellt den Analyse-Prompt für Claude"""
 
@@ -455,6 +462,26 @@ class BuildingContextService:
         traufhoehe = height_data.get('traufhoehe_m', 'nicht verfügbar')
         firsthoehe = height_data.get('firsthoehe_m', 'nicht verfügbar')
         gebaeudehoehe = height_data.get('gebaeudehoehe_m', 'nicht verfügbar')
+
+        # Terrain-Daten (Hanglage)
+        terrain_section = ""
+        if terrain_data:
+            terrain_height = terrain_data.get('terrain_height_m', 'nicht verfügbar')
+            terrain_slope = terrain_data.get('terrain_slope_m')
+            terrain_min = terrain_data.get('min_terrain_m')
+            terrain_max = terrain_data.get('max_terrain_m')
+            terrain_section = f"""
+### Terrain-Daten (swissALTI3D)
+- Terrain-Höhe: {terrain_height} m ü.M.
+"""
+            if terrain_min is not None and terrain_max is not None:
+                terrain_section += f"- Terrain-Bereich: {terrain_min:.1f} bis {terrain_max:.1f} m ü.M.\n"
+            if terrain_slope is not None and terrain_slope > 1.0:
+                terrain_section += f"""- **HANGLAGE: {terrain_slope:.1f}m Differenz!**
+  → Unterschiedliche Gerüsthöhen je Fassade nötig
+  → Ausgleichshölzer/Spindeln für Niveauunterschiede
+  → Beachte SUVA-Vorschriften für Hanggerüste
+"""
 
         # Höhendifferenz berechnen für spezielle Hinweise
         height_diff_warning = ""
@@ -498,6 +525,7 @@ IGNORIERE NICHT diese Höhendifferenz!
 - Globale Firsthöhe: {firsthoehe} m
 - Globale Gebäudehöhe: {gebaeudehoehe} m
 {height_diff_warning}
+{terrain_section}
 ### Gebäude-Metadaten (GWR)
 - EGID: {egid}
 - Adresse: {adresse or 'nicht verfügbar'}
@@ -701,9 +729,13 @@ Ergebnis:
             orthofoto_analysis = data.get('orthofoto_analysis')
             has_orthofoto = orthofoto_analysis is not None
 
+            # Gebäudename aus gwr_data/hints übernehmen
+            building_name = gwr_data.get('building_name') if gwr_data else None
+
             context = BuildingContext(
                 egid=egid,
                 adresse=adresse,
+                building_name=building_name,
                 zones=zones,
                 zone_adjacency=data.get('zone_adjacency'),
                 complexity=ComplexityLevel(data.get('complexity', 'moderate')),

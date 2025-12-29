@@ -2111,6 +2111,20 @@ async def visualize_cross_section(
         )
         building = buildings[0] if buildings else None
 
+        # Terrain-Daten für Hanglage-Erkennung
+        terrain_data = None
+        try:
+            from app.services.terrain import get_terrain_service
+            terrain_service = get_terrain_service()
+            terrain_height = await terrain_service.get_height(
+                geo.coordinates.lv95_e, geo.coordinates.lv95_n
+            )
+            if terrain_height is not None:
+                terrain_data = {"terrain_height_m": terrain_height}
+                # Terrain-Profil für Hanglage (TODO: 4 Eckpunkte)
+        except Exception as terrain_error:
+            print(f"[CrossSection] Terrain-Abfrage fehlgeschlagen: {terrain_error}")
+
         # Geometrie abrufen
         geometry = await geodienste.get_building_geometry(
             x=geo.coordinates.lv95_e,
@@ -2227,7 +2241,8 @@ async def visualize_cross_section(
                             polygon=polygon,
                             height_data=heights_data,
                             gwr_data=gwr_data,
-                            include_orthofoto=use_orthofoto
+                            include_orthofoto=use_orthofoto,
+                            terrain_data=terrain_data
                         )
                         context_service.save_context(context)
                     except Exception as e:
@@ -2365,6 +2380,19 @@ async def visualize_elevation(
         )
         building = buildings[0] if buildings else None
 
+        # Terrain-Daten für Hanglage-Erkennung
+        terrain_data = None
+        try:
+            from app.services.terrain import get_terrain_service
+            terrain_service = get_terrain_service()
+            terrain_height = await terrain_service.get_height(
+                geo.coordinates.lv95_e, geo.coordinates.lv95_n
+            )
+            if terrain_height is not None:
+                terrain_data = {"terrain_height_m": terrain_height}
+        except Exception as terrain_error:
+            print(f"[Elevation] Terrain-Abfrage fehlgeschlagen: {terrain_error}")
+
         geometry = await geodienste.get_building_geometry(
             x=geo.coordinates.lv95_e,
             y=geo.coordinates.lv95_n,
@@ -2478,7 +2506,8 @@ async def visualize_elevation(
                             polygon=polygon,
                             height_data=heights_data,
                             gwr_data=gwr_data,
-                            include_orthofoto=use_orthofoto
+                            include_orthofoto=use_orthofoto,
+                            terrain_data=terrain_data
                         )
                         context_service.save_context(context)
                     except Exception as e:

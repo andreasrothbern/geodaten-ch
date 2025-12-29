@@ -16,15 +16,17 @@ import { ServerSVG, preloadAllSvgs } from './BuildingVisualization/ServerSVG'
 /**
  * Generiert einen strukturierten Prompt für Claude.ai
  * Enthält alle Gebäudedaten für hochwertige SVG-Generierung
+ * Inkl. Gebäude-Identifikation und RECHERCHE-ANWEISUNG
  */
 function generateClaudePrompt(
   data: ScaffoldingData,
   vizType: 'cross-section' | 'elevation' | 'floor-plan',
   buildingContext?: BuildingContext | null
 ): string {
-  const { dimensions, gwr_data, building, address, polygon, sides } = data
+  const { dimensions, gwr_data, building, address, polygon, sides, roof } = data
   const zones = buildingContext?.zones || []
   const isComplex = buildingContext?.complexity === 'complex' || zones.length > 1
+  const terrain = address?.terrain
 
   const vizTypeLabels = {
     'cross-section': 'Gebäudeschnitt (Querschnitt)',
@@ -32,51 +34,106 @@ function generateClaudePrompt(
     'floor-plan': 'Grundriss (Floor Plan)'
   }
 
-  // Zone-Beschreibungen generieren
-  const zoneDescriptions = zones.length > 0
-    ? zones.map(z => `- **${z.name}** (${z.type}): ${z.gebaeudehoehe_m?.toFixed(1) || '?'}m Höhe${z.traufhoehe_m ? `, Traufe ${z.traufhoehe_m.toFixed(1)}m` : ''}${z.beruesten ? '' : ' [NICHT eingerüstet]'}${z.sonderkonstruktion ? ' [Sonderkonstruktion]' : ''}`).join('\n')
-    : 'Keine Zonen definiert (einfaches Gebäude)'
+  // Gebäudetyp aus GWR-Kategorie ableiten
+  const getGebaeudetype = (): string => {
+    const category = gwr_data?.building_category?.toLowerCase() || ''
+    if (category.includes('kirche') || category.includes('religiös')) return 'Kirche/Sakralbau'
+    if (category.includes('öffentlich') || category.includes('verwaltung')) return 'Öffentliches Gebäude'
+    if (category.includes('mehrfamilien')) return 'Mehrfamilienhaus'
+    if (category.includes('einfamilien')) return 'Einfamilienhaus'
+    if (category.includes('gewerbe') || category.includes('industrie')) return 'Gewerbe/Industrie'
+    if (category.includes('landwirtschaft')) return 'Landwirtschaftsgebäude'
+    if (isComplex) return 'Komplexes Gebäude (RECHERCHIEREN)'
+    return 'Wohngebäude'
+  }
+
+  // Gebäudename aus Context oder "RECHERCHIEREN"
+  const buildingName = buildingContext?.building_name || 'RECHERCHIEREN'
+  const needsResearch = buildingName === 'RECHERCHIEREN' || isComplex
 
   return `# SVG-Generierung: ${vizTypeLabels[vizType]}
 
-## Gebäudedaten
+## 1. Gebäude-Identifikation
 
 - **Adresse:** ${address?.matched || 'Unbekannt'}
 - **EGID:** ${building?.egid || gwr_data?.egid || '-'}
-- **Koordinaten:** E ${address?.coordinates?.lv95_e?.toFixed(0) || '-'}, N ${address?.coordinates?.lv95_n?.toFixed(0) || '-'}
-- **Komplexität:** ${isComplex ? '🏛️ KOMPLEX (mehrere Zonen)' : '🏠 Einfach'}
+- **Koordinaten (LV95):** E ${address?.coordinates?.lv95_e?.toFixed(0) || '-'}, N ${address?.coordinates?.lv95_n?.toFixed(0) || '-'}
+- **Gebäudename:** ${buildingName}
+- **Gebäudetyp:** ${getGebaeudetype()}
+- **Baustil:** ${isComplex ? 'RECHERCHIEREN' : 'Standard (nicht relevant)'}
+- **Baujahr:** ${gwr_data?.construction_year || '-'}
+- **Komplexität:** ${isComplex ? 'KOMPLEX (mehrere Zonen)' : 'EINFACH'}
 
-## Dimensionen
+${needsResearch ? `## 2. RECHERCHE-ANWEISUNG
 
+> **WICHTIG:** Falls Gebäudename oder Baustil mit "RECHERCHIEREN" markiert:
+> 1. Suche das Gebäude anhand Adresse/EGID/Koordinaten
+> 2. Identifiziere den korrekten Gebäudenamen
+> 3. Bestimme Gebäudetyp und Baustil (z.B. Neugotik, Barock, Klassizismus, Modern)
+> 4. Ermittle charakteristische Architekturmerkmale (Fensterformen, Portal, Türme)
+> 5. Kläre Turmkonfiguration (Anzahl, Position, Form) falls vorhanden
+> 6. Validiere die unten angegebenen Höhenzonen gegen recherchierte Informationen
+> **Erst danach mit der SVG-Erstellung beginnen.**
+
+` : ''}## 3. Geometrische Basisdaten
+
+### Dimensionen
 - **Traufhöhe:** ${dimensions?.traufhoehe_m?.toFixed(1) || 'unbekannt'} m
 - **Firsthöhe:** ${dimensions?.firsthoehe_m?.toFixed(1) || 'unbekannt'} m
 - **Geschosse:** ${dimensions?.floors || gwr_data?.floors || '-'}
 - **Grundfläche:** ${building?.footprint_area_m2?.toFixed(0) || gwr_data?.area_m2_gwr?.toFixed(0) || '-'} m²
 
-## GWR-Daten
+${roof ? `### Dach-Analyse (heuristisch berechnet)
+- **Dachform:** ${roof.roof_type}
+- **Dachneigung:** ${roof.roof_angle_deg?.toFixed(0) || '-'}°
+- **First-Ausrichtung:** ${roof.roof_orientation || '-'}
+- **Dachfläche:** ${roof.roof_area_m2?.toFixed(0) || '-'} m²
+- **Konfidenz:** ${(roof.confidence * 100).toFixed(0)}% ${roof.confidence < 0.5 ? '(niedrig = Schätzung)' : '(hoch = verlässlich)'}
+` : ''}
+### Terrain (swissALTI3D)
+${terrain ? `- **Terrain-Höhe:** ${terrain.terrain_height_m?.toFixed(1)} m ü.M.
+- **Hanglage:** ${terrain.terrain_slope_m && terrain.terrain_slope_m > 1 ? `Ja (${terrain.terrain_slope_m.toFixed(1)}m Differenz - unterschiedliche Gerüsthöhen nötig!)` : 'Nein'}` : '- Keine Terrain-Daten verfügbar'}
 
+### Polygon
+- **Eckpunkte:** ${polygon?.coordinates?.length || 0}
+- **Koordinatensystem:** LV95 (EPSG:2056)
+
+## 4. GWR-Daten (Gebäude- und Wohnungsregister)
 - **Gebäudekategorie:** ${gwr_data?.building_category || '-'}
 - **Baujahr:** ${gwr_data?.construction_year || '-'}
-- **Geschosse:** ${gwr_data?.floors || '-'}
+- **Geschosse (GWR):** ${gwr_data?.floors || '-'}
+- **Grundfläche (GWR):** ${gwr_data?.area_m2_gwr?.toFixed(0) || '-'} m²
 
-${zones.length > 0 ? `## Höhenzonen (${zones.length} Zonen)
-
-${zoneDescriptions}
+## 5. Höhenzonen
+${zones.length > 0 ? `
+| Zone | Typ | Höhe | Traufe | Eingerüstet |
+|------|-----|------|--------|-------------|
+${zones.map(z => `| ${z.name} | ${z.type} | ${z.gebaeudehoehe_m?.toFixed(1) || '?'}m | ${z.traufhoehe_m?.toFixed(1) || '-'}m | ${z.beruesten !== false ? 'Ja' : 'Nein'} |`).join('\n')}
 
 ### Zone-Typen Legende
 - **hauptgebaeude** = Rechteckiger Hauptkörper mit Schraffur
 - **arkade** = Niedriger Bereich mit Rundbogen (Erdgeschoss)
 - **kuppel** = Halbkreis mit Kupfer-Gradient (EINZIGER Gradient!)
-- **turm** = Schmaler, hoher Turm
+- **turm** = Schmaler, hoher Turm (sonderkonstruktion)
 - **anbau** = Niedrigerer Anbau am Hauptgebäude
-` : ''}
+- **innenhof** = Nicht einrüsten (Freifläche)
+` : 'Keine Zonen definiert (einfaches Gebäude mit 1 Zone)'}
 
-## Polygon (${polygon?.coordinates?.length || 0} Punkte)
+${isComplex ? `## 6. Baustil-Merkmale
+> **RECHERCHIEREN basierend auf Gebäudetyp und Baujahr:**
+- **Fenster:** [Spitzbogen/Rundbogen/Rechteck/etc.]
+- **Portal:** [Beschreibung]
+- **Fassadengliederung:** [Strebepfeiler/Pilaster/Lisenen/etc.]
+- **Dachdetails:** [Kreuz/Wetterfahne/Gauben/Fialen/etc.]
+- **Besondere Elemente:** [Rosette/Erker/Balkon/etc.]
 
-${sides && sides.length > 0 ? `### Fassaden (${sides.length} Seiten)
-${sides.map((s, i) => `- Seite ${s.index ?? i}: ${s.length_m?.toFixed(1)}m (${s.direction || '?'})`).join('\n')}` : 'Keine Seitendaten verfügbar'}
+` : ''}## 7. Fassaden (aus Polygon)
+${sides && sides.length > 0 ? `
+| Seite | Länge (m) | Richtung |
+|-------|-----------|----------|
+${sides.map((s, i) => `| ${s.index ?? i + 1} | ${s.length_m?.toFixed(1)} | ${s.direction || '?'} |`).join('\n')}` : 'Keine Seitendaten verfügbar'}
 
-## SVG Style-Vorgaben
+## 8. SVG Style-Vorgaben
 
 \`\`\`xml
 <defs>
@@ -101,9 +158,9 @@ ${sides.map((s, i) => `- Seite ${s.index ?? i}: ${s.length_m?.toFixed(1)}m (${s.
 | Beläge | #8B4513 (braun) |
 | Verankerungen | #CC0000 gestrichelt |
 
-## Anforderungen
+## 9. Anforderungen
 
-${vizType === 'cross-section' ? `### Schnitt (Querschnitt durch Gebäude)
+${vizType === 'cross-section' ? `### Für Gebäudeschnitt:
 - Frontalansicht (2D Orthogonalprojektion)
 - Terrain-Linie bei ±0.00
 - Geschossdecken als horizontale Linien
@@ -114,7 +171,7 @@ ${isComplex ? `- WICHTIG: Verschiedene Höhen pro Zone darstellen!
 - Gerüst links und rechts (Ständer + Beläge)
 - Höhenskala links, Lagenbeschriftung rechts` : ''}
 
-${vizType === 'elevation' ? `### Ansicht (Fassadenansicht)
+${vizType === 'elevation' ? `### Für Fassadenansicht:
 - Orthogonale Frontalansicht
 - Terrain-Linie bei ±0.00
 ${isComplex ? `- WICHTIG: Verschiedene Höhenzonen darstellen!
@@ -125,15 +182,20 @@ ${isComplex ? `- WICHTIG: Verschiedene Höhenzonen darstellen!
 - Gerüst VOR der Fassade
 - Höhenskala links, Lagenbeschriftung rechts` : ''}
 
-${vizType === 'floor-plan' ? `### Grundriss (Draufsicht)
+${vizType === 'floor-plan' ? `### Für Grundriss:
 - Polygon-Form des Gebäudes
 - Fassaden beschriften (Länge + Richtung)
 - Gerüstzone um das Gebäude (gelb)
+- Nordpfeil und Massstab
 ${isComplex ? '- Zonen farblich unterscheiden' : ''}` : ''}
 
-## Output
+## 10. Output
 
-SVG mit \`viewBox="0 0 700 480"\`. NUR SVG-Code, keine Erklärungen.`
+SVG mit \`viewBox="0 0 700 480"\`. **NUR SVG-Code**, keine Erklärungen.
+
+---
+
+*Generiert mit Gerüstplanung Schweiz App - https://cooperative-commitment-production.up.railway.app*`
 }
 
 export interface ManualHeights {
@@ -270,6 +332,20 @@ export function GrunddatenCard({
               N: {address?.coordinates?.lv95_n?.toFixed(1) || '-'}
             </span>
           </div>
+          {/* Terrain-Höhe (m ü.M.) */}
+          {address?.terrain?.terrain_height_m && (
+            <div className="col-span-2">
+              <span className="text-gray-500">Terrain-Höhe:</span>
+              <span className="ml-2 font-medium">
+                {address.terrain.terrain_height_m.toFixed(1)} m ü.M.
+              </span>
+              {address.terrain.terrain_slope_m && address.terrain.terrain_slope_m > 1.0 && (
+                <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">
+                  Hanglage ({address.terrain.terrain_slope_m.toFixed(1)}m Differenz)
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -424,6 +500,51 @@ export function GrunddatenCard({
           </div>
         )}
       </section>
+
+      {/* Roof Data (Dach-Daten) */}
+      {data.roof && (
+        <section className="space-y-3">
+          <h4 className="font-medium text-gray-700">Dach-Daten (berechnet)</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={`rounded-lg p-4 ${data.roof.confidence > 0.5 ? 'bg-emerald-50 border border-emerald-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+              <p className="text-xs text-gray-500 mb-1">Dachform</p>
+              <p className="font-medium capitalize">
+                {data.roof.roof_type === 'flachdach' && '▭ Flachdach'}
+                {data.roof.roof_type === 'pultdach' && '◢ Pultdach'}
+                {data.roof.roof_type === 'satteldach' && '△ Satteldach'}
+                {data.roof.roof_type === 'walmdach' && '⬠ Walmdach'}
+                {data.roof.roof_type === 'mansarddach' && '⬡ Mansarddach'}
+                {data.roof.roof_type === 'unknown' && '? Unbekannt'}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Dachneigung</p>
+              <p className="font-medium">
+                {data.roof.roof_angle_deg !== null
+                  ? `${data.roof.roof_angle_deg.toFixed(0)}°`
+                  : '-'}
+              </p>
+            </div>
+            {data.roof.roof_orientation && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-1">Firstausrichtung</p>
+                <p className="font-medium">{data.roof.roof_orientation}</p>
+              </div>
+            )}
+            {data.roof.roof_area_m2 && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-1">Dachfläche</p>
+                <p className="font-medium">{data.roof.roof_area_m2.toFixed(0)} m²</p>
+              </div>
+            )}
+          </div>
+          {data.roof.confidence < 0.5 && (
+            <p className="text-xs text-yellow-600">
+              Geringe Konfidenz ({(data.roof.confidence * 100).toFixed(0)}%) - Werte heuristisch berechnet
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Key figures */}
       <section className="space-y-3">

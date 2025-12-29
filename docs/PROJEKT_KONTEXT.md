@@ -18,7 +18,7 @@
 
 ---
 
-## ✅ Implementierter Funktionsumfang (Stand 24.12.2025)
+## ✅ Implementierter Funktionsumfang (Stand 29.12.2025)
 
 | Feature | Status | Beschreibung |
 |---------|--------|--------------|
@@ -26,15 +26,21 @@
 | Gebäudedaten | ✅ | GWR via swisstopo (EGID, Geschosse, Fläche) |
 | Gebäudegeometrie | ✅ | Polygon von geodienste.ch WFS |
 | Höhendaten | ✅ | swissBUILDINGS3D (EGID + Koordinaten-Lookup) |
+| **Terrain-Höhe** | ✅ | swissALTI3D (m ü.M.) mit Hanglage-Erkennung |
+| **Dach-Analyse** | ✅ | Option C: Neigung, Form, Ausrichtung |
 | Douglas-Peucker | ✅ | Polygon-Vereinfachung für Fassaden |
 | SVG-Grundriss | ✅ | Interaktiv, klickbare Fassaden |
-| SVG-Ansicht | ✅ | Fassadenansicht mit Gerüst |
-| SVG-Schnitt | ✅ | Querschnitt mit Höhenkoten |
+| SVG-Ansicht | ✅ | Fassadenansicht mit Gerüst + Zonen |
+| SVG-Schnitt | ✅ | Querschnitt mit Höhenkoten + Zonen |
 | Fassaden-Auswahl | ✅ | Multi-Select im Grundriss |
 | NPK 114 Ausmass | ✅ | Berechnung nach Norm |
 | Material-Schätzung | ✅ | Layher Blitz 70 Katalog |
 | URL-Parameter | ✅ | `?address=...` für Direktaufruf |
 | Compact-Modus | ✅ | Grösseres SVG im Gerüstbau-Tab |
+| **Building Context** | ✅ | Höhenzonen für komplexe Gebäude |
+| **Claude-Analyse** | ✅ | Auto-Erkennung bei extremer Höhendifferenz |
+| **Orthofoto** | ✅ | Luftbild-Analyse für komplexe Gebäude |
+| **Building Hints** | ✅ | Bekannte Gebäude (Bundeshaus, Münster) |
 
 ---
 
@@ -201,6 +207,12 @@ GET /api/v1/ausmass/komplett?address=...&system_id=blitz70
 
 | Datum | Änderung | Von |
 |-------|----------|-----|
+| 2025-12-29 | Terrain-Höhe im Frontend + Claude API | Claude Code |
+| 2025-12-29 | Dach-Daten (Neigung, Form) im Frontend | Claude Code |
+| 2025-12-29 | Export Prompt erweitert (Terrain, Dach, Zonen) | Claude Code |
+| 2025-12-28 | Building Hints für bekannte Gebäude | Claude Code |
+| 2025-12-28 | Orthofoto-Service + Claude Vision | Claude Code |
+| 2025-12-28 | Building Context System (Höhenzonen) | Claude Code |
 | 2025-12-24 | URL-Parameter für Adresse, Compact-Modus SVG | Claude Code |
 | 2025-12-24 | Douglas-Peucker Polygon-Vereinfachung | Claude Code |
 | 2025-12-24 | PROJEKT_KONTEXT.md synchronisiert mit CLAUDE.md | Claude Code |

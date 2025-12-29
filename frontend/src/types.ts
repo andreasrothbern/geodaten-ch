@@ -54,6 +54,25 @@ export interface AddressSearchResult {
   feature_id?: string
 }
 
+// Terrain-Daten Types (swissALTI3D)
+export interface TerrainData {
+  terrain_height_m: number       // Absolute Höhe m ü.M.
+  min_terrain_m?: number         // Minimale Terrain-Höhe um Gebäude
+  max_terrain_m?: number         // Maximale Terrain-Höhe um Gebäude
+  terrain_slope_m?: number       // Differenz (Hanglage)
+}
+
+// Dach-Daten Types (Option C - heuristisch berechnet)
+export interface RoofData {
+  roof_type: 'flachdach' | 'pultdach' | 'satteldach' | 'walmdach' | 'mansarddach' | 'unknown'
+  roof_angle_deg: number | null    // Dachneigung in Grad
+  roof_orientation?: string        // z.B. "O-W" oder "N-S"
+  first_azimuth_deg?: number       // Ausrichtung des Firstes
+  roof_area_m2?: number            // Geschätzte Dachfläche
+  scaffolding_height_m?: number    // Gerüsthöhe für Dacharbeiten
+  confidence: number               // 0-1, wie verlässlich die Berechnung
+}
+
 // Gerüstbau-Daten Types
 export interface ScaffoldingSide {
   index: number
@@ -76,6 +95,7 @@ export interface ScaffoldingData {
       lv95_e: number
       lv95_n: number
     }
+    terrain?: TerrainData  // Terrain-Höhe aus swissALTI3D
   }
   gwr_data: {
     egid: number
@@ -120,6 +140,8 @@ export interface ScaffoldingData {
     coordinate_system: string
   }
   viewer_3d_url?: string
+  // Dach-Daten (Option C - heuristisch berechnet)
+  roof?: RoofData
   // Auto-Refresh Flags
   needs_height_refresh?: boolean
   height_refreshed?: boolean
@@ -199,6 +221,7 @@ export interface AccessPoint {
 export interface BuildingContext {
   egid: string
   adresse?: string
+  building_name?: string  // Name des Gebäudes (z.B. "Bundeshaus", "Berner Münster")
   zones: BuildingZone[]
   zone_adjacency?: Record<string, string[]>
   complexity: ComplexityLevel
