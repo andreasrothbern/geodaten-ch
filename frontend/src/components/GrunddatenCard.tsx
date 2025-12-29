@@ -348,16 +348,40 @@ export function GrunddatenCard({
     const prompt = generateClaudePrompt(data, buildingContext)
 
     try {
-      await navigator.clipboard.writeText(prompt)
-      setCopyFeedback('✓ Kopiert!')
-      setTimeout(() => setCopyFeedback(null), 2000)
+      // Versuche moderne Clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(prompt)
+        setCopyFeedback('✓ Kopiert!')
+        setTimeout(() => setCopyFeedback(null), 2000)
+      } else {
+        // Fallback für nicht-sichere Kontexte: execCommand
+        const textArea = document.createElement('textarea')
+        textArea.value = prompt
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-9999px'
+        textArea.style.top = '-9999px'
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+
+        const success = document.execCommand('copy')
+        document.body.removeChild(textArea)
+
+        if (success) {
+          setCopyFeedback('✓ Kopiert!')
+          setTimeout(() => setCopyFeedback(null), 2000)
+        } else {
+          throw new Error('execCommand failed')
+        }
+      }
     } catch (err) {
-      // Fallback: Open in new window
-      const blob = new Blob([prompt], { type: 'text/plain' })
+      console.warn('Clipboard copy failed:', err)
+      // Letzter Fallback: In neuem Tab anzeigen mit korrektem UTF-8
+      const blob = new Blob([prompt], { type: 'text/plain;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank')
-      setCopyFeedback('Geöffnet')
-      setTimeout(() => setCopyFeedback(null), 2000)
+      setCopyFeedback('Im neuen Tab geöffnet')
+      setTimeout(() => setCopyFeedback(null), 3000)
     }
 
     setLoadingExport(false)
