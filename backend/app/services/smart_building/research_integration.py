@@ -55,6 +55,23 @@ async def collect_building_research(
                 bundle.complexity = known.get("complexity", "complex")
                 bundle.has_towers = any(z.get("zone_type") == "turm" for z in known["zones"])
 
+            # NEU 30.12.2025: Gebaeudeform und SVG-Hints laden
+            # Kritisch fuer korrekte Grundriss-Darstellung (U-Form, Ehrenhof, etc.)
+            if known.get("building_shape"):
+                bundle.building_shape = known["building_shape"]
+                logger.debug(f"Gebaeudeform geladen: {bundle.building_shape}")
+
+            if known.get("building_shape_description"):
+                bundle.building_shape_description = known["building_shape_description"]
+
+            if known.get("special_features"):
+                bundle.special_features = known["special_features"]
+                logger.debug(f"Spezielle Features: {bundle.special_features}")
+
+            if known.get("svg_hints"):
+                bundle.svg_hints = known["svg_hints"]
+                logger.debug(f"SVG-Hints geladen fuer: {list(bundle.svg_hints.keys())}")
+
             logger.info(f"Bekanntes Gebäude erkannt: {bundle.building_name}")
             return  # Fertig, keine Claude-Recherche nötig
 

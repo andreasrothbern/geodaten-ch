@@ -1,12 +1,5 @@
 # SVG-Generierung: Grundriss + Fassadenansicht + Gebäudeschnitt
 
-> **HINWEIS:** Diese Datei ist eine Kopie der Haupt-Vorlage.
-> Die aktuelle Version liegt unter:
-> `backend/app/services/smart_building/prompts/base_template.md`
->
-> Siehe auch die aufgeteilten Templates unter:
-> `backend/app/services/smart_building/prompts/sections/`
-
 > **Hinweis:** Ein Export-Button generiert Daten für alle 3 SVG-Typen.
 
 ## 1. Gebäude-Identifikation

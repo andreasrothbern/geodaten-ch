@@ -191,6 +191,15 @@ class BuildingDataBundle:
     has_annexes: bool = False
     has_courtyards: bool = False
 
+    # === GEBÄUDEFORM (NEU 30.12.2025) ===
+    # Für korrekte SVG-Grundriss-Darstellung
+    building_shape: Optional[str] = None  # "U-Form", "L-Form", "Kreuzform", "rechteckig"
+    building_shape_description: Optional[str] = None  # Detaillierte Beschreibung
+    special_features: List[str] = field(default_factory=list)  # ["Ehrenhof", "Kuppel", ...]
+
+    # SVG-Generierungs-Hinweise pro Typ
+    svg_hints: Optional[Dict[str, str]] = None  # {"grundriss": "...", "ansicht": "...", "schnitt": "..."}
+
     # === ZUGÄNGE ===
     access_points: List[AccessPoint] = field(default_factory=list)
     suva_compliant: bool = True

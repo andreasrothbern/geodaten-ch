@@ -34,6 +34,9 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "construction_year": 1902,
         "complexity": "complex",
         "roof_type": "kuppel",  # Dachform-Override: Hauptmerkmal ist die Kuppel!
+        # NEU: Gebäudeform für korrekten Grundriss
+        "building_shape": "U-Form mit Ehrenhof",
+        "building_shape_description": "Das Gebäude hat eine U-Form mit offener Seite nach Süden. Der Ehrenhof (Innenhof) ist NICHT zu überdachen und bleibt frei.",
         "zones": [
             {
                 "name": "Arkaden",
@@ -62,6 +65,12 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         ],
         "tower_config": None,
         "special_features": ["Kuppel", "Arkaden", "Ehrenhof", "Skulpturen"],
+        # NEU: Hinweise für SVG-Generierung
+        "svg_hints": {
+            "grundriss": "U-Form zeichnen! Ehrenhof in der Mitte als Freifläche markieren (NICHT schraffieren).",
+            "ansicht": "Kuppel zentral, Arkaden im Erdgeschoss, 3 verschiedene Höhenzonen beachten.",
+            "schnitt": "Zeige alle 3 Höhenzonen: Arkaden 6m, Hauptgebäude 25m, Kuppel bis 64m."
+        },
     },
 
     # Kirche St. Peter und Paul (Rathausgasse 2)
@@ -73,6 +82,9 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "construction_year": 1864,
         "complexity": "complex",
         "roof_type": "satteldach_mit_turm",  # Kirchendach mit Spitzhelm-Turm
+        # NEU: Gebäudeform
+        "building_shape": "Kreuzform (Basilika)",
+        "building_shape_description": "Klassische Basilika-Form: Langhaus (Kirchenschiff) mit niedrigeren Seitenschiffen, Querhaus (Transept), Chor im Osten, Turm an der Westfassade.",
         "zones": [
             {
                 "name": "Kirchenschiff",
@@ -114,6 +126,12 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
             "height_m": 54.6,
         },
         "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Chorraum"],
+        # NEU: Hinweise für SVG-Generierung
+        "svg_hints": {
+            "grundriss": "Kreuzform zeichnen! Kirchenschiff länglich, Seitenschiffe schmaler und niedriger, Chor im Osten.",
+            "ansicht": "Turm an Westfassade dominant. 4 verschiedene Höhenzonen beachten: Seitenschiffe 12m, Chor 18m, Kirchenschiff 25m, Turm 54.6m.",
+            "schnitt": "Basilika-Querschnitt: Hohes Mittelschiff, niedrige Seitenschiffe. Turm als separates Element."
+        },
     },
 
     # Berner Muenster

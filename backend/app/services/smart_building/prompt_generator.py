@@ -5,16 +5,28 @@ Unified Prompt Generator
 
 Generiert einheitliche Prompts aus BuildingDataBundle.
 
-IDENTISCHER Prompt für:
+IDENTISCHER Prompt fuer:
 - SVG-Export (Claude.ai)
 - Automatische SVG-Generierung (Claude API)
 
 Features:
-- Strukturierter Aufbau nach Export_Prompt_Claude.md Template
-- Dynamische Abschnitte basierend auf verfügbaren Daten
-- Erweiterbar für neue SVG-Typen (z.B. Umgebungsplan)
-- Hanglage-Hinweise bei erkanntem Gefälle
-- Nachbargebäude-Info (TODO)
+- Strukturierter Aufbau nach Template-Vorgaben
+- Dynamische Abschnitte basierend auf verfuegbaren Daten
+- Erweiterbar fuer neue SVG-Typen (z.B. Umgebungsplan)
+- Hanglage-Hinweise bei erkanntem Gefaelle
+- Gebaeudeform-Hinweise (U-Form, L-Form, etc.)
+- SVG-Hints pro Typ (grundriss, ansicht, schnitt)
+
+Template-Referenz:
+==================
+Die Templates liegen unter: prompts/
+- base_template.md      - Haupt-Vorlage (Dokumentation)
+- sections/zones.md     - Hoehenzonen-Beschreibung
+- sections/style_guide.md - SVG Style-Vorgaben
+- sections/requirements.md - Anforderungen pro SVG-Typ
+
+Die Templates dienen als Referenz. Der Generator implementiert
+die Logik programmatisch fuer dynamische Daten.
 """
 
 import json
@@ -267,22 +279,41 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
         return "\n".join(lines)
 
     def _zones_section(self, bundle: BuildingDataBundle) -> str:
-        """Hoehenzonen"""
+        """Hoehenzonen - KRITISCH fuer korrekte SVG-Generierung"""
         lines = ["## 6. Hoehenzonen"]
+
+        # === NEU 30.12.2025: GEBAEUDEFORM (Top 3 Verbesserung #2) ===
+        # Ohne diese Info wird ein U-Form Gebaeude als Rechteck gezeichnet!
+        if bundle.building_shape:
+            lines.append("")
+            lines.append(f"### [!] GEBAEUDEFORM: {bundle.building_shape.upper()}")
+            if bundle.building_shape_description:
+                lines.append(f"> {bundle.building_shape_description}")
+            lines.append("")
+
+        # === NEU 30.12.2025: SPEZIELLE FEATURES (Top 3 Verbesserung #1) ===
+        # Ohne diese Info fehlt z.B. der Ehrenhof im Grundriss!
+        if bundle.special_features:
+            lines.append("### Spezielle Architektur-Elemente")
+            for feature in bundle.special_features:
+                lines.append(f"- **{feature}**")
+            lines.append("")
 
         if not bundle.zones:
             lines.append("Keine Zonen definiert (einfaches Gebaeude mit 1 Zone)")
             return "\n".join(lines)
 
-        # Tabelle
+        # === HOEHEN PRO ZONE (Top 3 Verbesserung #3) ===
+        # Tabelle mit ALLEN Hoehenwerten fuer korrekte Proportionen
+        lines.append("### Hoehen pro Zone (KRITISCH fuer Proportionen!)")
         lines.append("")
-        lines.append("| Zone | Typ | Hoehe | Traufe | Geruest |")
-        lines.append("|------|-----|------|--------|--------|")
+        lines.append("| Zone | Typ | Traufhoehe | Firsthoehe | Gebaeudehoehe | Geruest |")
+        lines.append("|------|-----|------------|------------|---------------|---------|")
 
         for z in bundle.zones:
-            height = z.gebaeudehoehe_m or z.firsthoehe_m or "-"
             trauf = f"{z.traufhoehe_m:.1f}m" if z.traufhoehe_m else "-"
-            height_str = f"{height:.1f}m" if isinstance(height, (int, float)) else height
+            first = f"{z.firsthoehe_m:.1f}m" if z.firsthoehe_m else "-"
+            gebaeude = f"{z.gebaeudehoehe_m:.1f}m" if z.gebaeudehoehe_m else "-"
 
             if z.sonderkonstruktion:
                 geruest = "Sonderkonstruktion"
@@ -291,7 +322,15 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
             else:
                 geruest = "Nein"
 
-            lines.append(f"| {z.name} | {z.zone_type} | {height_str} | {trauf} | {geruest} |")
+            lines.append(f"| {z.name} | {z.zone_type} | {trauf} | {first} | {gebaeude} | {geruest} |")
+
+        # Hoehen-Zusammenfassung fuer schnellen Ueberblick
+        lines.append("")
+        lines.append("**Hoehen-Zusammenfassung:**")
+        for i, z in enumerate(bundle.zones, 1):
+            height = z.gebaeudehoehe_m or z.firsthoehe_m or z.traufhoehe_m
+            if height:
+                lines.append(f"- Zone {i} ({z.name}): **{height:.1f}m**")
 
         # Legende
         lines.append("")
@@ -301,7 +340,7 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
         lines.append("- **kuppel** = Halbkreis mit Kupfer-Gradient (EINZIGER Gradient!)")
         lines.append("- **turm** = Schmaler, hoher Turm (oft Sonderkonstruktion)")
         lines.append("- **anbau** = Niedrigerer Anbau am Hauptgebaeude")
-        lines.append("- **innenhof** = Nicht einruesten (Freiflaeche)")
+        lines.append("- **innenhof** = Nicht einruesten (Freiflaeche, LEER lassen!)")
 
         return "\n".join(lines)
 
@@ -439,6 +478,10 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Geruestzone:** Rechteckige Huelle mit 1m Abstand
 - **Elemente:** Nordpfeil, Massstab, Fassaden-Beschriftung""")
 
+            # SVG-Hints fuer Grundriss (NEU 30.12.2025)
+            if bundle.svg_hints and bundle.svg_hints.get("grundriss"):
+                lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['grundriss']}")
+
             if len(bundle.zones) > 1:
                 lines.append("- **Zonen:** Farblich unterscheiden, Innenhoefe markieren")
 
@@ -456,6 +499,10 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Hoehenskala:** Links (+/-0.00, +Traufe, +First)
 - **Lagenbeschriftung:** Rechts (1. Lage, 2. Lage, ...)""")
 
+            # SVG-Hints fuer Ansicht (NEU 30.12.2025)
+            if bundle.svg_hints and bundle.svg_hints.get("ansicht"):
+                lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['ansicht']}")
+
         if svg_type in [SVGType.SCHNITT, SVGType.ALL]:
             lines.append(f"""
 ### SVG 3: Gebaeudeschnitt (Querschnitt)
@@ -468,6 +515,10 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Geschossdecken:** Horizontale Linien
 - **Geruest:** Links und rechts (Staender + Belaege)
 - **Schnittmarkierung:** A-A""")
+
+            # SVG-Hints fuer Schnitt (NEU 30.12.2025)
+            if bundle.svg_hints and bundle.svg_hints.get("schnitt"):
+                lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['schnitt']}")
 
         if svg_type == SVGType.UMGEBUNG:
             lines.append("""

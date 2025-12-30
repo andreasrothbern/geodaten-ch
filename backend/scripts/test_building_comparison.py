@@ -80,7 +80,7 @@ KNOWN_BUILDINGS = {
 
 # Unbekannte Gebaeude (NICHT in known_buildings.py)
 UNKNOWN_BUILDINGS = {
-    "Marktgasse 67, 3011 Bern": {
+    "Bahnhofplatz 11, 3011 Bern": {
         "name": "Hotel Schweizerhof (erwartet)",
         "expected_type": "Hotel",
         "is_known": False,
