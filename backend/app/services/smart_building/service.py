@@ -634,6 +634,10 @@ class SmartBuildingService:
 
     def _needs_zones_analysis(self, bundle: BuildingDataBundle) -> bool:
         """Prüft ob eine detaillierte Zonen-Analyse nötig ist"""
+        # Bekannte Gebäude haben bereits korrekte Zonen - keine Analyse nötig!
+        if hasattr(bundle, '_known_zones') and bundle._known_zones:
+            return False
+
         # Extreme Höhendifferenz
         if bundle.has_extreme_height_diff():
             return True

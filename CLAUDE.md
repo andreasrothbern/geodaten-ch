@@ -1,5 +1,13 @@
 # CLAUDE.md - Projekt-Kontext für Claude Code
 
+## Modulare Dokumentation
+
+Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
+@.claude/rules/api-standards.md
+@.claude/rules/data-sources.md
+@.claude/rules/smart-building.md
+@.claude/rules/svg-generation.md
+
 ## Projekt: Geodaten Schweiz
 
 Dieses Projekt bietet eine API und Web-App für Schweizer Geodaten (Gebäude, Adressen, Grundstücke).
