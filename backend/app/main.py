@@ -2172,7 +2172,7 @@ async def visualize_cross_section(
         if use_claude and claude_svg_available() and not traufhoehe and not firsthoehe:
             svg = await generate_svg_with_smart_service(
                 address=address,
-                svg_type="schnitt",
+                svg_type="querschnitt",  # A-A: quer durch Gebaeude
                 force_refresh=force_refresh,
             )
             if svg:
@@ -2810,6 +2810,70 @@ async def visualize_floor_plan_post(request: FloorPlanRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# LAENGSSCHNITT (NEU 30.12.2025) - Schnitt B-B laengs durch Gebaeude
+# ============================================================================
+
+@app.get("/api/v1/visualize/longitudinal-section",
+         tags=["Visualisierung"],
+         response_class=Response,
+         summary="Längsschnitt B-B (längs durch Gebäude)")
+async def visualize_longitudinal_section(
+    address: str,
+    width: int = 700,
+    height: int = 480,
+    force_refresh: bool = Query(False, description="Cache ignorieren"),
+):
+    """
+    Generiert Längsschnitt B-B (längs durch Gebäude).
+
+    **KRITISCH für Türme/Kirchen:** Zeigt ALLE Höhenzonen in einer Ansicht:
+    - Turm (komplett bis Spitze)
+    - Kirchenschiff
+    - Chor/Apsis
+
+    **Unterschied zum Querschnitt A-A:**
+    - A-A: quer durch Gebäude (zeigt Gewölbe, Seitenschiffe)
+    - B-B: längs durch Gebäude (zeigt Turm komplett!)
+    """
+    try:
+        from app.services.claude_svg_zones import (
+            generate_svg_with_smart_service,
+            is_available as claude_svg_available
+        )
+
+        if not claude_svg_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Claude API nicht verfügbar (ANTHROPIC_API_KEY fehlt)"
+            )
+
+        svg = await generate_svg_with_smart_service(
+            address=address,
+            svg_type="laengsschnitt",  # B-B: laengs durch Gebaeude
+            force_refresh=force_refresh,
+        )
+
+        if not svg:
+            raise HTTPException(
+                status_code=503,
+                detail="Längsschnitt-Generierung fehlgeschlagen"
+            )
+
+        return Response(
+            content=svg,
+            media_type="image/svg+xml",
+            headers={"X-SVG-Type": "laengsschnitt"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

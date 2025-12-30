@@ -53,7 +53,7 @@ export async function preloadAllSvgs(
 
 interface ServerSVGProps {
   /** API endpoint type */
-  type: 'cross-section' | 'elevation' | 'floor-plan'
+  type: 'cross-section' | 'longitudinal-section' | 'elevation' | 'floor-plan'
   /** Address to visualize */
   address: string
   /** API base URL */
@@ -90,8 +90,8 @@ export function ServerSVG({
   const fetchedRef = useRef<string | null>(null)
 
   // Cache key includes manual heights
-  // Claude API is always used for cross-section/elevation (unified prompt system)
-  const useClaude = type === 'cross-section' || type === 'elevation'
+  // Claude API is always used for cross-section/longitudinal-section/elevation (unified prompt system)
+  const useClaude = type === 'cross-section' || type === 'longitudinal-section' || type === 'elevation'
   const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${useClaude}`
 
   useEffect(() => {
@@ -131,8 +131,8 @@ export function ServerSVG({
         if (firsthoehe && firsthoehe > 0) {
           params.set('firsthoehe', firsthoehe.toString())
         }
-        // Always use Claude API for cross-section/elevation (unified prompt system)
-        if (type === 'cross-section' || type === 'elevation') {
+        // Always use Claude API for cross-section/longitudinal-section/elevation (unified prompt system)
+        if (type === 'cross-section' || type === 'longitudinal-section' || type === 'elevation') {
           params.set('use_claude', 'true')
         }
 
@@ -232,8 +232,8 @@ export function ServerSVG({
 }
 
 /**
- * Tabs für alle drei Visualisierungstypen
- * Claude API wird automatisch für Schnitt/Ansicht verwendet (unified prompt system)
+ * Tabs für alle vier Visualisierungstypen
+ * Claude API wird automatisch für Schnitte/Ansicht verwendet (unified prompt system)
  */
 interface VisualizationTabsProps {
   address: string
@@ -241,12 +241,13 @@ interface VisualizationTabsProps {
 }
 
 export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
-  const [activeTab, setActiveTab] = useState<'cross-section' | 'elevation' | 'floor-plan'>('cross-section')
+  const [activeTab, setActiveTab] = useState<'cross-section' | 'longitudinal-section' | 'elevation' | 'floor-plan'>('cross-section')
 
   const tabs = [
-    { id: 'cross-section' as const, label: 'Schnitt', icon: '📐' },
-    { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' },
     { id: 'floor-plan' as const, label: 'Grundriss', icon: '📋' },
+    { id: 'elevation' as const, label: 'Ansicht', icon: '🏛️' },
+    { id: 'cross-section' as const, label: 'Querschnitt', icon: '📐' },
+    { id: 'longitudinal-section' as const, label: 'Längsschnitt', icon: '↔️' },
   ]
 
   return (
@@ -283,7 +284,7 @@ export function VisualizationTabs({ address, apiUrl }: VisualizationTabsProps) {
       {/* Download Button */}
       <div className="flex justify-end">
         <a
-          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${(activeTab === 'cross-section' || activeTab === 'elevation') ? '&use_claude=true' : ''}`}
+          href={`${apiUrl}/api/v1/visualize/${activeTab}?address=${encodeURIComponent(address)}&width=1000&height=700${(activeTab === 'cross-section' || activeTab === 'longitudinal-section' || activeTab === 'elevation') ? '&use_claude=true' : ''}`}
           download={`${activeTab}_${address.replace(/[^a-zA-Z0-9]/g, '_')}.svg`}
           target="_blank"
           rel="noopener noreferrer"
