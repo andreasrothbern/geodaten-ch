@@ -1,0 +1,989 @@
+{
+  "egid": "191821074",
+  "address_input": "Rathausgasse 2, 3011 Bern",
+  "address_matched": "Rathausgasse 2 3011 Bern",
+  "lv95_e": 601009.375,
+  "lv95_n": 199736.046875,
+  "building_name": "Kirche St. Peter und Paul",
+  "building_type": "Christkatholische Kathedralkirche",
+  "architectural_style": "Neugotik",
+  "construction_year": 1864,
+  "gwr_category": "Gebäude mit teilweiser Wohnnutzung",
+  "gwr_category_code": 1060,
+  "gwr_floors": null,
+  "gwr_area_m2": 1099,
+  "polygon": [
+    [
+      2600964.212,
+      1199742.947
+    ],
+    [
+      2600969.513,
+      1199743.309
+    ],
+    [
+      2600969.783,
+      1199746.36
+    ],
+    [
+      2600976.468,
+      1199746.886
+    ],
+    [
+      2600976.381,
+      1199748.393
+    ],
+    [
+      2600977.715,
+      1199748.487
+    ],
+    [
+      2600977.824,
+      1199746.98
+    ],
+    [
+      2600985.037,
+      1199747.5
+    ],
+    [
+      2600984.955,
+      1199749.0
+    ],
+    [
+      2600986.296,
+      1199749.095
+    ],
+    [
+      2600986.403,
+      1199747.596
+    ],
+    [
+      2600990.661,
+      1199748.466
+    ],
+    [
+      2600990.902,
+      1199744.843
+    ],
+    [
+      2600993.916,
+      1199745.038
+    ],
+    [
+      2600993.831,
+      1199746.54
+    ],
+    [
+      2600994.901,
+      1199746.613
+    ],
+    [
+      2600995.0,
+      1199745.116
+    ],
+    [
+      2600997.981,
+      1199745.318
+    ],
+    [
+      2600997.884,
+      1199746.814
+    ],
+    [
+      2600998.958,
+      1199746.886
+    ],
+    [
+      2600999.069,
+      1199745.387
+    ],
+    [
+      2601002.62,
+      1199745.63
+    ],
+    [
+      2601002.536,
+      1199747.111
+    ],
+    [
+      2601006.572,
+      1199748.616
+    ],
+    [
+      2601009.891,
+      1199746.073
+    ],
+    [
+      2601009.652,
+      1199741.253
+    ],
+    [
+      2601011.888,
+      1199739.683
+    ],
+    [
+      2601012.416,
+      1199732.918
+    ],
+    [
+      2601010.364,
+      1199731.02
+    ],
+    [
+      2601011.329,
+      1199726.264
+    ],
+    [
+      2601008.324,
+      1199723.39
+    ],
+    [
+      2601004.161,
+      1199724.383
+    ],
+    [
+      2601004.069,
+      1199725.76
+    ],
+    [
+      2601000.319,
+      1199725.482
+    ],
+    [
+      2600999.475,
+      1199724.065
+    ],
+    [
+      2600999.374,
+      1199725.412
+    ],
+    [
+      2600996.281,
+      1199725.203
+    ],
+    [
+      2600996.363,
+      1199723.845
+    ],
+    [
+      2600995.319,
+      1199725.147
+    ],
+    [
+      2600992.197,
+      1199724.922
+    ],
+    [
+      2600992.41,
+      1199721.269
+    ],
+    [
+      2600974.029,
+      1199719.963
+    ],
+    [
+      2600970.932,
+      1199720.971
+    ],
+    [
+      2600970.893,
+      1199723.415
+    ],
+    [
+      2600965.054,
+      1199723.029
+    ],
+    [
+      2600964.246,
+      1199741.077
+    ],
+    [
+      2600964.212,
+      1199742.947
+    ]
+  ],
+  "polygon_simplified": false,
+  "sides": [
+    {
+      "index": 0,
+      "start": {
+        "x": 2600964.212,
+        "y": 1199742.947
+      },
+      "end": {
+        "x": 2600969.513,
+        "y": 1199743.309
+      },
+      "length_m": 5.31,
+      "direction": "O",
+      "angle_deg": 3.9
+    },
+    {
+      "index": 1,
+      "start": {
+        "x": 2600969.513,
+        "y": 1199743.309
+      },
+      "end": {
+        "x": 2600969.783,
+        "y": 1199746.36
+      },
+      "length_m": 3.06,
+      "direction": "N",
+      "angle_deg": 84.9
+    },
+    {
+      "index": 2,
+      "start": {
+        "x": 2600969.783,
+        "y": 1199746.36
+      },
+      "end": {
+        "x": 2600976.468,
+        "y": 1199746.886
+      },
+      "length_m": 6.71,
+      "direction": "O",
+      "angle_deg": 4.5
+    },
+    {
+      "index": 3,
+      "start": {
+        "x": 2600976.468,
+        "y": 1199746.886
+      },
+      "end": {
+        "x": 2600976.381,
+        "y": 1199748.393
+      },
+      "length_m": 1.51,
+      "direction": "N",
+      "angle_deg": 93.3
+    },
+    {
+      "index": 4,
+      "start": {
+        "x": 2600976.381,
+        "y": 1199748.393
+      },
+      "end": {
+        "x": 2600977.715,
+        "y": 1199748.487
+      },
+      "length_m": 1.34,
+      "direction": "O",
+      "angle_deg": 4.0
+    },
+    {
+      "index": 5,
+      "start": {
+        "x": 2600977.715,
+        "y": 1199748.487
+      },
+      "end": {
+        "x": 2600977.824,
+        "y": 1199746.98
+      },
+      "length_m": 1.51,
+      "direction": "S",
+      "angle_deg": -85.9
+    },
+    {
+      "index": 6,
+      "start": {
+        "x": 2600977.824,
+        "y": 1199746.98
+      },
+      "end": {
+        "x": 2600985.037,
+        "y": 1199747.5
+      },
+      "length_m": 7.23,
+      "direction": "O",
+      "angle_deg": 4.1
+    },
+    {
+      "index": 7,
+      "start": {
+        "x": 2600985.037,
+        "y": 1199747.5
+      },
+      "end": {
+        "x": 2600984.955,
+        "y": 1199749.0
+      },
+      "length_m": 1.5,
+      "direction": "N",
+      "angle_deg": 93.1
+    },
+    {
+      "index": 8,
+      "start": {
+        "x": 2600984.955,
+        "y": 1199749.0
+      },
+      "end": {
+        "x": 2600986.296,
+        "y": 1199749.095
+      },
+      "length_m": 1.34,
+      "direction": "O",
+      "angle_deg": 4.1
+    },
+    {
+      "index": 9,
+      "start": {
+        "x": 2600986.296,
+        "y": 1199749.095
+      },
+      "end": {
+        "x": 2600986.403,
+        "y": 1199747.596
+      },
+      "length_m": 1.5,
+      "direction": "S",
+      "angle_deg": -85.9
+    },
+    {
+      "index": 10,
+      "start": {
+        "x": 2600986.403,
+        "y": 1199747.596
+      },
+      "end": {
+        "x": 2600990.661,
+        "y": 1199748.466
+      },
+      "length_m": 4.35,
+      "direction": "O",
+      "angle_deg": 11.5
+    },
+    {
+      "index": 11,
+      "start": {
+        "x": 2600990.661,
+        "y": 1199748.466
+      },
+      "end": {
+        "x": 2600990.902,
+        "y": 1199744.843
+      },
+      "length_m": 3.63,
+      "direction": "S",
+      "angle_deg": -86.2
+    },
+    {
+      "index": 12,
+      "start": {
+        "x": 2600990.902,
+        "y": 1199744.843
+      },
+      "end": {
+        "x": 2600993.916,
+        "y": 1199745.038
+      },
+      "length_m": 3.02,
+      "direction": "O",
+      "angle_deg": 3.7
+    },
+    {
+      "index": 13,
+      "start": {
+        "x": 2600993.916,
+        "y": 1199745.038
+      },
+      "end": {
+        "x": 2600993.831,
+        "y": 1199746.54
+      },
+      "length_m": 1.5,
+      "direction": "N",
+      "angle_deg": 93.2
+    },
+    {
+      "index": 14,
+      "start": {
+        "x": 2600993.831,
+        "y": 1199746.54
+      },
+      "end": {
+        "x": 2600994.901,
+        "y": 1199746.613
+      },
+      "length_m": 1.07,
+      "direction": "O",
+      "angle_deg": 3.9
+    },
+    {
+      "index": 15,
+      "start": {
+        "x": 2600994.901,
+        "y": 1199746.613
+      },
+      "end": {
+        "x": 2600995.0,
+        "y": 1199745.116
+      },
+      "length_m": 1.5,
+      "direction": "S",
+      "angle_deg": -86.2
+    },
+    {
+      "index": 16,
+      "start": {
+        "x": 2600995.0,
+        "y": 1199745.116
+      },
+      "end": {
+        "x": 2600997.981,
+        "y": 1199745.318
+      },
+      "length_m": 2.99,
+      "direction": "O",
+      "angle_deg": 3.9
+    },
+    {
+      "index": 17,
+      "start": {
+        "x": 2600997.981,
+        "y": 1199745.318
+      },
+      "end": {
+        "x": 2600997.884,
+        "y": 1199746.814
+      },
+      "length_m": 1.5,
+      "direction": "N",
+      "angle_deg": 93.7
+    },
+    {
+      "index": 18,
+      "start": {
+        "x": 2600997.884,
+        "y": 1199746.814
+      },
+      "end": {
+        "x": 2600998.958,
+        "y": 1199746.886
+      },
+      "length_m": 1.08,
+      "direction": "O",
+      "angle_deg": 3.8
+    },
+    {
+      "index": 19,
+      "start": {
+        "x": 2600998.958,
+        "y": 1199746.886
+      },
+      "end": {
+        "x": 2600999.069,
+        "y": 1199745.387
+      },
+      "length_m": 1.5,
+      "direction": "S",
+      "angle_deg": -85.8
+    },
+    {
+      "index": 20,
+      "start": {
+        "x": 2600999.069,
+        "y": 1199745.387
+      },
+      "end": {
+        "x": 2601002.62,
+        "y": 1199745.63
+      },
+      "length_m": 3.56,
+      "direction": "O",
+      "angle_deg": 3.9
+    },
+    {
+      "index": 21,
+      "start": {
+        "x": 2601002.62,
+        "y": 1199745.63
+      },
+      "end": {
+        "x": 2601002.536,
+        "y": 1199747.111
+      },
+      "length_m": 1.48,
+      "direction": "N",
+      "angle_deg": 93.2
+    },
+    {
+      "index": 22,
+      "start": {
+        "x": 2601002.536,
+        "y": 1199747.111
+      },
+      "end": {
+        "x": 2601006.572,
+        "y": 1199748.616
+      },
+      "length_m": 4.31,
+      "direction": "O",
+      "angle_deg": 20.5
+    },
+    {
+      "index": 23,
+      "start": {
+        "x": 2601006.572,
+        "y": 1199748.616
+      },
+      "end": {
+        "x": 2601009.891,
+        "y": 1199746.073
+      },
+      "length_m": 4.18,
+      "direction": "SO",
+      "angle_deg": -37.5
+    },
+    {
+      "index": 24,
+      "start": {
+        "x": 2601009.891,
+        "y": 1199746.073
+      },
+      "end": {
+        "x": 2601009.652,
+        "y": 1199741.253
+      },
+      "length_m": 4.83,
+      "direction": "S",
+      "angle_deg": -92.8
+    },
+    {
+      "index": 25,
+      "start": {
+        "x": 2601009.652,
+        "y": 1199741.253
+      },
+      "end": {
+        "x": 2601011.888,
+        "y": 1199739.683
+      },
+      "length_m": 2.73,
+      "direction": "SO",
+      "angle_deg": -35.1
+    },
+    {
+      "index": 26,
+      "start": {
+        "x": 2601011.888,
+        "y": 1199739.683
+      },
+      "end": {
+        "x": 2601012.416,
+        "y": 1199732.918
+      },
+      "length_m": 6.79,
+      "direction": "S",
+      "angle_deg": -85.5
+    },
+    {
+      "index": 27,
+      "start": {
+        "x": 2601012.416,
+        "y": 1199732.918
+      },
+      "end": {
+        "x": 2601010.364,
+        "y": 1199731.02
+      },
+      "length_m": 2.8,
+      "direction": "SW",
+      "angle_deg": -137.2
+    },
+    {
+      "index": 28,
+      "start": {
+        "x": 2601010.364,
+        "y": 1199731.02
+      },
+      "end": {
+        "x": 2601011.329,
+        "y": 1199726.264
+      },
+      "length_m": 4.85,
+      "direction": "S",
+      "angle_deg": -78.5
+    },
+    {
+      "index": 29,
+      "start": {
+        "x": 2601011.329,
+        "y": 1199726.264
+      },
+      "end": {
+        "x": 2601008.324,
+        "y": 1199723.39
+      },
+      "length_m": 4.16,
+      "direction": "SW",
+      "angle_deg": -136.3
+    },
+    {
+      "index": 30,
+      "start": {
+        "x": 2601008.324,
+        "y": 1199723.39
+      },
+      "end": {
+        "x": 2601004.161,
+        "y": 1199724.383
+      },
+      "length_m": 4.28,
+      "direction": "W",
+      "angle_deg": 166.6
+    },
+    {
+      "index": 31,
+      "start": {
+        "x": 2601004.161,
+        "y": 1199724.383
+      },
+      "end": {
+        "x": 2601004.069,
+        "y": 1199725.76
+      },
+      "length_m": 1.38,
+      "direction": "N",
+      "angle_deg": 93.8
+    },
+    {
+      "index": 32,
+      "start": {
+        "x": 2601004.069,
+        "y": 1199725.76
+      },
+      "end": {
+        "x": 2601000.319,
+        "y": 1199725.482
+      },
+      "length_m": 3.76,
+      "direction": "W",
+      "angle_deg": -175.8
+    },
+    {
+      "index": 33,
+      "start": {
+        "x": 2601000.319,
+        "y": 1199725.482
+      },
+      "end": {
+        "x": 2600999.475,
+        "y": 1199724.065
+      },
+      "length_m": 1.65,
+      "direction": "SW",
+      "angle_deg": -120.8
+    },
+    {
+      "index": 34,
+      "start": {
+        "x": 2600999.475,
+        "y": 1199724.065
+      },
+      "end": {
+        "x": 2600999.374,
+        "y": 1199725.412
+      },
+      "length_m": 1.35,
+      "direction": "N",
+      "angle_deg": 94.3
+    },
+    {
+      "index": 35,
+      "start": {
+        "x": 2600999.374,
+        "y": 1199725.412
+      },
+      "end": {
+        "x": 2600996.281,
+        "y": 1199725.203
+      },
+      "length_m": 3.1,
+      "direction": "W",
+      "angle_deg": -176.1
+    },
+    {
+      "index": 36,
+      "start": {
+        "x": 2600996.281,
+        "y": 1199725.203
+      },
+      "end": {
+        "x": 2600996.363,
+        "y": 1199723.845
+      },
+      "length_m": 1.36,
+      "direction": "S",
+      "angle_deg": -86.5
+    },
+    {
+      "index": 37,
+      "start": {
+        "x": 2600996.363,
+        "y": 1199723.845
+      },
+      "end": {
+        "x": 2600995.319,
+        "y": 1199725.147
+      },
+      "length_m": 1.67,
+      "direction": "NW",
+      "angle_deg": 128.7
+    },
+    {
+      "index": 38,
+      "start": {
+        "x": 2600995.319,
+        "y": 1199725.147
+      },
+      "end": {
+        "x": 2600992.197,
+        "y": 1199724.922
+      },
+      "length_m": 3.13,
+      "direction": "W",
+      "angle_deg": -175.9
+    },
+    {
+      "index": 39,
+      "start": {
+        "x": 2600992.197,
+        "y": 1199724.922
+      },
+      "end": {
+        "x": 2600992.41,
+        "y": 1199721.269
+      },
+      "length_m": 3.66,
+      "direction": "S",
+      "angle_deg": -86.7
+    },
+    {
+      "index": 40,
+      "start": {
+        "x": 2600992.41,
+        "y": 1199721.269
+      },
+      "end": {
+        "x": 2600974.029,
+        "y": 1199719.963
+      },
+      "length_m": 18.43,
+      "direction": "W",
+      "angle_deg": -175.9
+    },
+    {
+      "index": 41,
+      "start": {
+        "x": 2600974.029,
+        "y": 1199719.963
+      },
+      "end": {
+        "x": 2600970.932,
+        "y": 1199720.971
+      },
+      "length_m": 3.26,
+      "direction": "W",
+      "angle_deg": 162.0
+    },
+    {
+      "index": 42,
+      "start": {
+        "x": 2600970.932,
+        "y": 1199720.971
+      },
+      "end": {
+        "x": 2600970.893,
+        "y": 1199723.415
+      },
+      "length_m": 2.44,
+      "direction": "N",
+      "angle_deg": 90.9
+    },
+    {
+      "index": 43,
+      "start": {
+        "x": 2600970.893,
+        "y": 1199723.415
+      },
+      "end": {
+        "x": 2600965.054,
+        "y": 1199723.029
+      },
+      "length_m": 5.85,
+      "direction": "W",
+      "angle_deg": -176.2
+    },
+    {
+      "index": 44,
+      "start": {
+        "x": 2600965.054,
+        "y": 1199723.029
+      },
+      "end": {
+        "x": 2600964.246,
+        "y": 1199741.077
+      },
+      "length_m": 18.07,
+      "direction": "N",
+      "angle_deg": 92.6
+    },
+    {
+      "index": 45,
+      "start": {
+        "x": 2600964.246,
+        "y": 1199741.077
+      },
+      "end": {
+        "x": 2600964.212,
+        "y": 1199742.947
+      },
+      "length_m": 1.87,
+      "direction": "N",
+      "angle_deg": 91.0
+    }
+  ],
+  "perimeter_m": 168.1,
+  "footprint_area_m2": 1099,
+  "bbox_width_m": 48.204000000376254,
+  "bbox_depth_m": 29.131999999983236,
+  "traufhoehe_m": 46.4,
+  "firsthoehe_m": 54.6,
+  "gebaeudehoehe_m": 54.59,
+  "height_source": "swissbuildings3d",
+  "height_quality": "high",
+  "estimated_height_m": 15.0,
+  "floors_estimated": null,
+  "terrain": {
+    "reference_height_m": 533.5,
+    "min_height_m": null,
+    "max_height_m": null,
+    "slope_m": null,
+    "is_sloped": false,
+    "slope_direction": null,
+    "requires_level_compensation": false
+  },
+  "roof_type": "satteldach_mit_turm",
+  "roof_angle_deg": 29.377545733236104,
+  "roof_orientation": "N-S",
+  "roof_area_m2": 120.0,
+  "roof_confidence": 1.0,
+  "zones": [
+    {
+      "id": "zone_1",
+      "name": "Kirchenschiff",
+      "zone_type": "hauptgebaeude",
+      "traufhoehe_m": 18.0,
+      "firsthoehe_m": 25.0,
+      "gebaeudehoehe_m": 25.0,
+      "fassaden_ids": [],
+      "beruesten": true,
+      "sonderkonstruktion": false,
+      "confidence": 1.0,
+      "source": "manual",
+      "notes": null
+    },
+    {
+      "id": "zone_2",
+      "name": "Seitenschiffe",
+      "zone_type": "anbau",
+      "traufhoehe_m": 9.0,
+      "firsthoehe_m": 12.0,
+      "gebaeudehoehe_m": 12.0,
+      "fassaden_ids": [],
+      "beruesten": true,
+      "sonderkonstruktion": false,
+      "confidence": 1.0,
+      "source": "manual",
+      "notes": null
+    },
+    {
+      "id": "zone_3",
+      "name": "Chor",
+      "zone_type": "anbau",
+      "traufhoehe_m": 12.0,
+      "firsthoehe_m": 18.0,
+      "gebaeudehoehe_m": 18.0,
+      "fassaden_ids": [],
+      "beruesten": true,
+      "sonderkonstruktion": false,
+      "confidence": 1.0,
+      "source": "manual",
+      "notes": null
+    },
+    {
+      "id": "zone_4",
+      "name": "Westturm",
+      "zone_type": "turm",
+      "traufhoehe_m": 25.0,
+      "firsthoehe_m": 54.6,
+      "gebaeudehoehe_m": 54.6,
+      "fassaden_ids": [],
+      "beruesten": true,
+      "sonderkonstruktion": true,
+      "confidence": 1.0,
+      "source": "manual",
+      "notes": null
+    }
+  ],
+  "complexity": "complex",
+  "has_height_variations": false,
+  "has_towers": true,
+  "has_annexes": false,
+  "has_courtyards": false,
+  "access_points": [
+    {
+      "id": "Z1",
+      "fassade_id": "O",
+      "position_percent": 0.1160092807424594,
+      "reason": "Automatisch verteilt (42.0m Abstand) → Ecke (Start)",
+      "suva_compliant": true
+    },
+    {
+      "id": "Z2",
+      "fassade_id": "SO",
+      "position_percent": 0.18315018315018314,
+      "reason": "Automatisch verteilt (42.0m Abstand) → Ecke (Start)",
+      "suva_compliant": true
+    },
+    {
+      "id": "Z3",
+      "fassade_id": "N",
+      "position_percent": 0.267379679144385,
+      "reason": "Automatisch verteilt (42.0m Abstand) → Ecke (Start)",
+      "suva_compliant": true
+    },
+    {
+      "id": "Z4",
+      "fassade_id": "W",
+      "position_percent": 0.9145299145299145,
+      "reason": "Automatisch verteilt (42.0m Abstand) → Ecke (Ende)",
+      "suva_compliant": true
+    }
+  ],
+  "suva_compliant": true,
+  "data_sources": [
+    "swisstopo_geocoding",
+    "swisstopo_gwr",
+    "swissbuildings3d",
+    "swissalti3d",
+    "geodienste_wfs",
+    "calculated",
+    "manual"
+  ],
+  "overall_quality": "high",
+  "research_confidence": 1.0,
+  "analysis_confidence": 0.0,
+  "warnings": [
+    "Zone 'Kirchenschiff' (25.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+    "Zone 'Seitenschiffe' (12.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+    "Zone 'Chor' (18.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!"
+  ],
+  "errors": []
+}

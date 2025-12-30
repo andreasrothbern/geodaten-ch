@@ -1,0 +1,260 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#000">
+    Fassadenansicht (Süd) - Kirche St. Peter und Paul
+  </text>
+
+  <!-- Terrain-Linie -->
+  <rect x="100" y="420" width="550" height="40" fill="url(#ground)"/>
+  <line x1="100" y1="420" x2="550" y2="420" stroke="#000" stroke-width="1"/>
+
+  <!-- Westturm (54.6m hoch) -->
+  <rect x="120" y="40" width="70" height="380" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Kirchenschiff (25.0m hoch) -->
+  <rect x="190" y="245" width="240" height="175" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Seitenschiff links (12.0m hoch) -->
+  <rect x="430" y="336" width="60" height="84" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Chor (18.0m hoch) -->
+  <rect x="490" y="295" width="50" height="125" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+
+  <!-- Dach Kirchenschiff -->
+  <polygon points="190,245 315,195 430,245" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Dach Westturm -->
+  <polygon points="120,40 155,20 190,40" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Dach Seitenschiff -->
+  <polygon points="430,336 460,320 490,336" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Dach Chor -->
+  <polygon points="490,295 515,275 540,295" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+
+  <!-- Gerüst Westturm -->
+  <!-- Ständer vertikal alle 2.57m = 18px -->
+  <g stroke="#0066CC" stroke-width="2" fill="none">
+    <line x1="90" y1="40" x2="90" y2="420"/>
+    <line x1="108" y1="40" x2="108" y2="420"/>
+    <line x1="126" y1="40" x2="126" y2="420"/>
+    <line x1="144" y1="40" x2="144" y2="420"/>
+    <line x1="162" y1="40" x2="162" y2="420"/>
+    <line x1="180" y1="40" x2="180" y2="420"/>
+    <line x1="198" y1="40" x2="198" y2="420"/>
+    <line x1="216" y1="40" x2="216" y2="420"/>
+  </g>
+
+  <!-- Gerüst Kirchenschiff -->
+  <g stroke="#0066CC" stroke-width="2" fill="none">
+    <line x1="160" y1="195" x2="160" y2="420"/>
+    <line x1="178" y1="195" x2="178" y2="420"/>
+    <line x1="196" y1="195" x2="196" y2="420"/>
+    <line x1="214" y1="195" x2="214" y2="420"/>
+    <line x1="232" y1="195" x2="232" y2="420"/>
+    <line x1="250" y1="195" x2="250" y2="420"/>
+    <line x1="268" y1="195" x2="268" y2="420"/>
+    <line x1="286" y1="195" x2="286" y2="420"/>
+    <line x1="304" y1="195" x2="304" y2="420"/>
+    <line x1="322" y1="195" x2="322" y2="420"/>
+    <line x1="340" y1="195" x2="340" y2="420"/>
+    <line x1="358" y1="195" x2="358" y2="420"/>
+    <line x1="376" y1="195" x2="376" y2="420"/>
+    <line x1="394" y1="195" x2="394" y2="420"/>
+    <line x1="412" y1="195" x2="412" y2="420"/>
+    <line x1="430" y1="195" x2="430" y2="420"/>
+    <line x1="448" y1="195" x2="448" y2="420"/>
+  </g>
+
+  <!-- Gerüst Chor -->
+  <g stroke="#0066CC" stroke-width="2" fill="none">
+    <line x1="460" y1="275" x2="460" y2="420"/>
+    <line x1="478" y1="275" x2="478" y2="420"/>
+    <line x1="496" y1="275" x2="496" y2="420"/>
+    <line x1="514" y1="275" x2="514" y2="420"/>
+    <line x1="532" y1="275" x2="532" y2="420"/>
+    <line x1="550" y1="275" x2="550" y2="420"/>
+  </g>
+
+  <!-- Beläge horizontal alle 2.0m = 14px -->
+  <g stroke="#8B4513" stroke-width="3">
+    <!-- Westturm Beläge -->
+    <line x1="90" y1="406" x2="216" y2="406"/>
+    <line x1="90" y1="392" x2="216" y2="392"/>
+    <line x1="90" y1="378" x2="216" y2="378"/>
+    <line x1="90" y1="364" x2="216" y2="364"/>
+    <line x1="90" y1="350" x2="216" y2="350"/>
+    <line x1="90" y1="336" x2="216" y2="336"/>
+    <line x1="90" y1="322" x2="216" y2="322"/>
+    <line x1="90" y1="308" x2="216" y2="308"/>
+    <line x1="90" y1="294" x2="216" y2="294"/>
+    <line x1="90" y1="280" x2="216" y2="280"/>
+    <line x1="90" y1="266" x2="216" y2="266"/>
+    <line x1="90" y1="252" x2="216" y2="252"/>
+    <line x1="90" y1="238" x2="216" y2="238"/>
+    <line x1="90" y1="224" x2="216" y2="224"/>
+    <line x1="90" y1="210" x2="216" y2="210"/>
+    <line x1="90" y1="196" x2="216" y2="196"/>
+    <line x1="90" y1="182" x2="216" y2="182"/>
+    <line x1="90" y1="168" x2="216" y2="168"/>
+    <line x1="90" y1="154" x2="216" y2="154"/>
+    <line x1="90" y1="140" x2="216" y2="140"/>
+    <line x1="90" y1="126" x2="216" y2="126"/>
+    <line x1="90" y1="112" x2="216" y2="112"/>
+    <line x1="90" y1="98" x2="216" y2="98"/>
+    <line x1="90" y1="84" x2="216" y2="84"/>
+    <line x1="90" y1="70" x2="216" y2="70"/>
+    <line x1="90" y1="56" x2="216" y2="56"/>
+
+    <!-- Kirchenschiff Beläge -->
+    <line x1="160" y1="406" x2="448" y2="406"/>
+    <line x1="160" y1="392" x2="448" y2="392"/>
+    <line x1="160" y1="378" x2="448" y2="378"/>
+    <line x1="160" y1="364" x2="448" y2="364"/>
+    <line x1="160" y1="350" x2="448" y2="350"/>
+    <line x1="160" y1="336" x2="448" y2="336"/>
+    <line x1="160" y1="322" x2="448" y2="322"/>
+    <line x1="160" y1="308" x2="448" y2="308"/>
+    <line x1="160" y1="294" x2="448" y2="294"/>
+    <line x1="160" y1="280" x2="448" y2="280"/>
+    <line x1="160" y1="266" x2="448" y2="266"/>
+    <line x1="160" y1="252" x2="448" y2="252"/>
+    <line x1="160" y1="238" x2="448" y2="238"/>
+    <line x1="160" y1="210" x2="448" y2="210"/>
+
+    <!-- Chor Beläge -->
+    <line x1="460" y1="406" x2="550" y2="406"/>
+    <line x1="460" y1="392" x2="550" y2="392"/>
+    <line x1="460" y1="378" x2="550" y2="378"/>
+    <line x1="460" y1="364" x2="550" y2="364"/>
+    <line x1="460" y1="350" x2="550" y2="350"/>
+    <line x1="460" y1="336" x2="550" y2="336"/>
+    <line x1="460" y1="322" x2="550" y2="322"/>
+    <line x1="460" y1="308" x2="550" y2="308"/>
+    <line x1="460" y1="294" x2="550" y2="294"/>
+  </g>
+
+  <!-- Verankerungen alle 4m -->
+  <g stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2" fill="none">
+    <line x1="120" y1="350" x2="90" y2="350"/>
+    <line x1="120" y1="322" x2="90" y2="322"/>
+    <line x1="120" y1="294" x2="90" y2="294"/>
+    <line x1="120" y1="266" x2="90" y2="266"/>
+    <line x1="120" y1="238" x2="90" y2="238"/>
+    <line x1="120" y1="210" x2="90" y2="210"/>
+    <line x1="120" y1="182" x2="90" y2="182"/>
+    <line x1="120" y1="154" x2="90" y2="154"/>
+    <line x1="120" y1="126" x2="90" y2="126"/>
+    <line x1="120" y1="98" x2="90" y2="98"/>
+    <line x1="120" y1="70" x2="90" y2="70"/>
+    
+    <line x1="190" y1="322" x2="160" y2="322"/>
+    <line x1="190" y1="294" x2="160" y2="294"/>
+    <line x1="190" y1="266" x2="160" y2="266"/>
+    <line x1="190" y1="238" x2="160" y2="238"/>
+    <line x1="190" y1="210" x2="160" y2="210"/>
+    
+    <line x1="430" y1="350" x2="460" y2="350"/>
+    <line x1="430" y1="322" x2="460" y2="322"/>
+    <line x1="430" y1="294" x2="460" y2="294"/>
+    <line x1="430" y1="266" x2="460" y2="266"/>
+    <line x1="430" y1="238" x2="460" y2="238"/>
+    <line x1="430" y1="210" x2="460" y2="210"/>
+    
+    <line x1="490" y1="350" x2="520" y2="350"/>
+    <line x1="490" y1="322" x2="520" y2="322"/>
+    <line x1="490" y1="294" x2="520" y2="294"/>
+  </g>
+
+  <!-- Höhenskala links -->
+  <g font-family="Arial" font-size="10" fill="#000">
+    <line x1="90" y1="420" x2="95" y2="420" stroke="#000"/>
+    <text x="85" y="425" text-anchor="end">±0.00</text>
+    
+    <line x1="90" y1="245" x2="95" y2="245" stroke="#000"/>
+    <text x="85" y="250" text-anchor="end">+25.0</text>
+    
+    <line x1="90" y1="195" x2="95" y2="195" stroke="#000"/>
+    <text x="85" y="200" text-anchor="end">+32.1</text>
+    
+    <line x1="90" y1="40" x2="95" y2="40" stroke="#000"/>
+    <text x="85" y="45" text-anchor="end">+54.6</text>
+  </g>
+
+  <!-- Lagenbeschriftung rechts -->
+  <g font-family="Arial" font-size="9" fill="#000">
+    <text x="555" y="410" text-anchor="start">1. Lage</text>
+    <text x="555" y="396" text-anchor="start">2. Lage</text>
+    <text x="555" y="382" text-anchor="start">3. Lage</text>
+    <text x="555" y="368" text-anchor="start">4. Lage</text>
+    <text x="555" y="354" text-anchor="start">5. Lage</text>
+    <text x="555" y="340" text-anchor="start">6. Lage</text>
+    <text x="555" y="326" text-anchor="start">7. Lage</text>
+    <text x="555" y="312" text-anchor="start">8. Lage</text>
+    <text x="555" y="298" text-anchor="start">9. Lage</text>
+    <text x="555" y="284" text-anchor="start">10. Lage</text>
+    <text x="555" y="270" text-anchor="start">11. Lage</text>
+    <text x="555" y="256" text-anchor="start">12. Lage</text>
+    <text x="555" y="242" text-anchor="start">13. Lage</text>
+    <text x="555" y="228" text-anchor="start">14. Lage</text>
+    <text x="555" y="214" text-anchor="start">15. Lage</text>
+    <text x="555" y="200" text-anchor="start">16. Lage</text>
+    <text x="555" y="186" text-anchor="start">17. Lage</text>
+    <text x="555" y="172" text-anchor="start">18. Lage</text>
+    <text x="555" y="158" text-anchor="start">19. Lage</text>
+    <text x="555" y="144" text-anchor="start">20. Lage</text>
+    <text x="555" y="130" text-anchor="start">21. Lage</text>
+    <text x="555" y="116" text-anchor="start">22. Lage</text>
+    <text x="555" y="102" text-anchor="start">23. Lage</text>
+    <text x="555" y="88" text-anchor="start">24. Lage</text>
+    <text x="555" y="74" text-anchor="start">25. Lage</text>
+    <text x="555" y="60" text-anchor="start">26. Lage</text>
+  </g>
+
+  <!-- Zugänge markieren -->
+  <g fill="#FF6600" stroke="#000" stroke-width="1">
+    <circle cx="140" cy="430" r="4"/>
+    <text x="140" y="445" text-anchor="middle" font-family="Arial" font-size="8">Z1</text>
+    
+    <circle cx="480" cy="430" r="4"/>
+    <text x="480" y="445" text-anchor="middle" font-family="Arial" font-size="8">Z2</text>
+    
+    <circle cx="300" cy="430" r="4"/>
+    <text x="300" y="445" text-anchor="middle" font-family="Arial" font-size="8">Z3</text>
+    
+    <circle cx="200" cy="430" r="4"/>
+    <text x="200" y="445" text-anchor="middle" font-family="Arial" font-size="8">Z4</text>
+  </g>
+
+  <!-- Nordpfeil -->
+  <g transform="translate(620, 80)">
+    <polygon points="0,-15 3,-3 0,0 -3,-3" fill="#000"/>
+    <text x="0" y="15" text-anchor="middle" font-family="Arial" font-size="10">N</text>
+  </g>
+</svg>

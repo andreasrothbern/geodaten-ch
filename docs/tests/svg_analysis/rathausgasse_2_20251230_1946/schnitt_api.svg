@@ -1,0 +1,160 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#000">GEBÄUDESCHNITT A-A</text>
+  <text x="350" y="42" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">Kirche St. Peter und Paul, Rathausgasse 2, Bern</text>
+
+  <!-- Terrain-Linie -->
+  <rect x="100" y="420" width="500" height="20" fill="url(#ground)"/>
+  <line x1="100" y1="420" x2="600" y2="420" stroke="#333" stroke-width="2"/>
+
+  <!-- Westturm (links) - 54.6m = 380px -->
+  <!-- Geschnittene Mauern -->
+  <rect x="150" y="40" width="15" height="380" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="215" y="40" width="15" height="380" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="165" y="40" width="50" height="380" fill="#FFFFFF" stroke="none"/>
+
+  <!-- Seitenschiff (links) - 12.0m = 84px -->
+  <!-- Geschnittene Mauern -->
+  <rect x="230" y="336" width="12" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="242" y="336" width="35" height="84" fill="#FFFFFF" stroke="none"/>
+
+  <!-- Kirchenschiff (Mitte) - 25.0m = 174px -->
+  <!-- Geschnittene Mauern -->
+  <rect x="277" y="246" width="15" height="174" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="408" y="246" width="15" height="174" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="292" y="246" width="116" height="174" fill="#FFFFFF" stroke="none"/>
+  
+  <!-- Satteldach über Kirchenschiff -->
+  <polygon points="277,246 350,196 423,246" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Seitenschiff (rechts) - 12.0m = 84px -->
+  <!-- Innenraum -->
+  <rect x="423" y="336" width="35" height="84" fill="#FFFFFF" stroke="none"/>
+  <!-- Geschnittene Mauern -->
+  <rect x="458" y="336" width="12" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Chor (rechts) - 18.0m = 125px -->
+  <!-- Geschnittene Mauern -->
+  <rect x="470" y="295" width="15" height="125" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="535" y="295" width="15" height="125" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="485" y="295" width="50" height="125" fill="#FFFFFF" stroke="none"/>
+  <!-- Chordach -->
+  <polygon points="470,295 512,270 550,295" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Geschossdecken -->
+  <line x1="165" y1="340" x2="215" y2="340" stroke="#666" stroke-width="1"/>
+  <line x1="165" y1="280" x2="215" y2="280" stroke="#666" stroke-width="1"/>
+  <line x1="165" y1="220" x2="215" y2="220" stroke="#666" stroke-width="1"/>
+  <line x1="165" y1="160" x2="215" y2="160" stroke="#666" stroke-width="1"/>
+  <line x1="165" y1="100" x2="215" y2="100" stroke="#666" stroke-width="1"/>
+
+  <!-- Gerüst links (Westturm) -->
+  <!-- Ständer -->
+  <rect x="120" y="40" width="4" height="380" fill="#0066CC"/>
+  <rect x="135" y="40" width="4" height="380" fill="#0066CC"/>
+  <!-- Beläge alle 14px (2.0m) -->
+  <rect x="115" y="54" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="68" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="82" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="96" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="110" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="124" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="138" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="152" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="166" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="180" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="194" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="208" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="222" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="236" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="250" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="264" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="278" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="292" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="306" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="320" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="334" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="348" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="362" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="376" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="390" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="404" width="30" height="3" fill="#8B4513"/>
+  <rect x="115" y="418" width="30" height="3" fill="#8B4513"/>
+
+  <!-- Gerüst rechts (Chor) -->
+  <!-- Ständer -->
+  <rect x="560" y="270" width="4" height="150" fill="#0066CC"/>
+  <rect x="575" y="270" width="4" height="150" fill="#0066CC"/>
+  <!-- Beläge -->
+  <rect x="555" y="284" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="298" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="312" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="326" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="340" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="354" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="368" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="382" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="396" width="30" height="3" fill="#8B4513"/>
+  <rect x="555" y="410" width="30" height="3" fill="#8B4513"/>
+
+  <!-- Verankerungen -->
+  <line x1="145" y1="110" x2="150" y2="110" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="145" y1="166" x2="150" y2="166" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="145" y1="222" x2="150" y2="222" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="145" y1="278" x2="150" y2="278" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="145" y1="334" x2="150" y2="334" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="145" y1="390" x2="150" y2="390" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  
+  <line x1="550" y1="312" x2="560" y2="312" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+  <line x1="550" y1="368" x2="560" y2="368" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,2"/>
+
+  <!-- Höhenskala -->
+  <line x1="80" y1="420" x2="80" y2="40" stroke="#333" stroke-width="1"/>
+  <text x="75" y="425" text-anchor="end" font-family="Arial" font-size="8" fill="#000">0.0</text>
+  <text x="75" y="350" text-anchor="end" font-family="Arial" font-size="8" fill="#000">10</text>
+  <text x="75" y="280" text-anchor="end" font-family="Arial" font-size="8" fill="#000">20</text>
+  <text x="75" y="210" text-anchor="end" font-family="Arial" font-size="8" fill="#000">30</text>
+  <text x="75" y="140" text-anchor="end" font-family="Arial" font-size="8" fill="#000">40</text>
+  <text x="75" y="70" text-anchor="end" font-family="Arial" font-size="8" fill="#000">50m</text>
+
+  <!-- Zonenbeschriftung -->
+  <text x="620" y="120" font-family="Arial" font-size="10" fill="#000" transform="rotate(90, 620, 120)">Westturm 54.6m</text>
+  <text x="630" y="350" font-family="Arial" font-size="10" fill="#000" transform="rotate(90, 630, 350)">Chor 18.0m</text>
+
+  <!-- Schnittmarkierung -->
+  <text x="120" y="460" font-family="Arial" font-size="12" font-weight="bold" fill="#000">A</text>
+  <text x="580" y="460" font-family="Arial" font-size="12" font-weight="bold" fill="#000">A</text>
+
+  <!-- Maßstab -->
+  <text x="600" y="470" text-anchor="end" font-family="Arial" font-size="8" fill="#666">M 1:143</text>
+</svg>

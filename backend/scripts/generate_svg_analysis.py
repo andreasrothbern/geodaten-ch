@@ -96,175 +96,122 @@ def fetch_svg(address: str, svg_type: str, api_base: str = RAILWAY_API) -> str:
 
 def create_claude_instructions(building_name: str, address: str) -> str:
     """Erstellt die Anweisungen für Claude.ai"""
-    return f'''# Claude.ai SVG-Analyse: {building_name}
+    return f'''# SVG-Analyse Auftrag: {building_name}
 
-## Auftrag
-
-Du erhältst:
-1. Einen **technischen Prompt** für die SVG-Generierung
-2. **3 API-generierte SVGs** (grundriss_api.svg, ansicht_api.svg, schnitt_api.svg)
-
-Deine Aufgabe ist es:
-
-1. **Eigene SVGs generieren** - Erstelle 3 SVGs basierend auf dem Prompt
-2. **Vergleichen** - Vergleiche deine SVGs mit den API-generierten
-3. **Analysieren** - Identifiziere Unterschiede und Probleme
-4. **Verbessern** - Schlage konkrete Prompt-Verbesserungen vor
-5. **Download bereitstellen** - Stelle alle Dateien zum Download bereit
+> **WICHTIG: Lies diese Anleitung KOMPLETT bevor du beginnst!**
 
 ---
 
-## Gebäude-Information
+## PHASE 1: EIGENE SVGs GENERIEREN (ZUERST!)
+
+**STOPP! Schau dir die API-SVGs noch NICHT an!**
+
+Lies NUR den Prompt (prompt.md) und generiere daraus **3 vollständige SVG-Dateien**:
+
+### 1.1 Grundriss erstellen
+
+Erstelle `grundriss_claude.svg`:
+- ViewBox: `0 0 700 480`
+- Zeige: Gebäudeumriss von oben, Gerüstzone, Nordpfeil, Massstab
+- Schraffur für Mauern: url(#hatch)
+
+**Gib mir den VOLLSTÄNDIGEN SVG-Code für den Grundriss.**
+
+### 1.2 Ansicht erstellen
+
+Erstelle `ansicht_claude.svg`:
+- ViewBox: `0 0 700 480`
+- Zeige: Fassade frontal, alle Zonen, Gerüst davor, Höhenskala links
+- Hintergrund: Weiss (#FFFFFF)
+- Gerüst: Blau (#0066CC)
+
+**Gib mir den VOLLSTÄNDIGEN SVG-Code für die Ansicht.**
+
+### 1.3 Schnitt erstellen
+
+Erstelle `schnitt_claude.svg`:
+- ViewBox: `0 0 700 480`
+- Zeige: Gebäude aufgeschnitten, Innenräume LEER, Schnittflächen schraffiert
+- Geschossdecken als horizontale Linien
+
+**Gib mir den VOLLSTÄNDIGEN SVG-Code für den Schnitt.**
+
+---
+
+## PHASE 2: VERGLEICH MIT API-SVGs
+
+**Jetzt darfst du die API-SVGs anschauen!**
+
+Vergleiche deine 3 SVGs mit den 3 API-SVGs und fülle diese Tabelle aus:
+
+| Aspekt | API-SVG | Dein SVG | Besser |
+|--------|---------|----------|--------|
+| **GRUNDRISS** | | | |
+| Gebäudeform korrekt? | ja/nein | ja/nein | API/Claude/gleich |
+| Proportionen? | | | |
+| Beschriftungen? | | | |
+| Nordpfeil? | | | |
+| **ANSICHT** | | | |
+| Zonen erkennbar? | | | |
+| Höhen korrekt? | | | |
+| Gerüst-Position? | | | |
+| Höhenskala? | | | |
+| **SCHNITT** | | | |
+| Innenräume leer? | | | |
+| Schnittflächen schraffiert? | | | |
+| Geschossdecken? | | | |
+
+---
+
+## PHASE 3: ANALYSE & VERBESSERUNGEN
+
+Für JEDEN Unterschied, dokumentiere:
+
+```
+### Problem: [Name]
+- Was ist falsch: [Beschreibung]
+- Ursache im Prompt: [Was fehlt oder ist unklar]
+- Lösung: [Konkreter Prompt-Text der hinzugefügt werden sollte]
+- SVG-Beispiel: [Code-Snippet]
+```
+
+---
+
+## PHASE 4: DATEIEN ZUM DOWNLOAD ANBIETEN
+
+**PFLICHT: Biete JEDE Datei einzeln zum Download an!**
+
+Folgende Dateien müssen erstellt und zum Download angeboten werden:
+
+1. `grundriss_claude.svg` - Dein generierter Grundriss
+2. `ansicht_claude.svg` - Deine generierte Ansicht
+3. `schnitt_claude.svg` - Dein generierter Schnitt
+4. `vergleich.md` - Deine ausgefüllte Vergleichstabelle
+5. `verbesserungen.md` - Deine Prompt-Verbesserungsvorschläge
+6. `zusammenfassung.md` - Kurze Zusammenfassung der Analyse
+
+**Biete jede Datei einzeln zum Download an (KEIN ZIP nötig)!**
+
+---
+
+## Gebäude-Daten
 
 - **Adresse:** {address}
-- **Zeitstempel:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
+- **Gebäude:** {building_name}
+- **Datum:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 ---
 
-## Schritt 1: Eigene SVGs generieren
+## Checkliste vor Abschluss
 
-Lies den Prompt in `prompt.md` und erstelle **3 separate SVG-Dateien**:
-
-1. `grundriss_claude.svg` - Draufsicht mit Gebäudeumriss und Gerüstzone
-2. `ansicht_claude.svg` - Fassadenansicht (Elevation) mit Gerüst
-3. `schnitt_claude.svg` - Gebäudeschnitt mit Innenräumen
-
-**Wichtige Vorgaben:**
-- ViewBox: `0 0 700 480`
-- Hintergrund: Weiss (#FFFFFF)
-- Gebäude: Schraffur-Pattern url(#hatch)
-- Gerüst: Blau (#0066CC)
-- Keine künstlerische Interpretation!
+- [ ] 3 eigene SVGs generiert (grundriss, ansicht, schnitt)
+- [ ] Vergleichstabelle ausgefüllt
+- [ ] Mindestens 3 Verbesserungsvorschläge dokumentiert
+- [ ] Alle 6 Dateien zum Download angeboten
 
 ---
 
-## Schritt 2: Vergleich mit API-SVGs
-
-Vergleiche deine generierten SVGs mit den API-generierten SVGs:
-
-### Vergleichs-Tabelle
-
-| Aspekt | API-SVG | Dein SVG | Bewertung |
-|--------|---------|----------|-----------|
-| **Grundriss** | | | |
-| Gebäudeform | ___ | ___ | besser/gleich/schlechter |
-| Proportionen | ___ | ___ | |
-| Beschriftungen | ___ | ___ | |
-| Gerüst-Zone | ___ | ___ | |
-| **Ansicht** | | | |
-| Zonen-Darstellung | ___ | ___ | |
-| Höhen korrekt | ___ | ___ | |
-| Gerüst-Position | ___ | ___ | |
-| **Schnitt** | | | |
-| Innenräume | ___ | ___ | |
-| Schnittflächen | ___ | ___ | |
-
-### Unterschiede dokumentieren
-
-Für jeden signifikanten Unterschied:
-
-```markdown
-### Unterschied: [Beschreibung]
-
-**API-SVG:** [Was die API generiert hat]
-**Dein SVG:** [Was du generiert hast]
-**Besser:** API / Claude.ai / Beide gleich
-**Grund:** [Warum einer besser ist]
-```
-
----
-
-## Schritt 3: Selbst-Analyse
-
-### Checkliste Grundriss
-- [ ] Gebäudeform korrekt (rechteckig/U-Form/L-Form)?
-- [ ] Innenhöfe als Freifläche markiert?
-- [ ] Fassaden beschriftet?
-- [ ] Nordpfeil vorhanden?
-- [ ] Massstab korrekt?
-
-### Checkliste Ansicht
-- [ ] Proportionen stimmen (Höhe/Breite)?
-- [ ] Zonen erkennbar (unterschiedliche Höhen)?
-- [ ] Gerüst VOR der Fassade?
-- [ ] Höhenskala links?
-- [ ] Terrain-Linie unten?
-
-### Checkliste Schnitt
-- [ ] Schnittflächen dicht schraffiert?
-- [ ] Innenräume LEER (weiss)?
-- [ ] Geschossdecken horizontal?
-- [ ] Gerüst links und rechts?
-
----
-
-## Schritt 4: Prompt-Verbesserungen
-
-Basierend auf dem Vergleich, schlage konkrete Verbesserungen vor:
-
-### Format für Verbesserungen
-
-```markdown
-### Problem: [Kurze Beschreibung]
-
-**Beobachtung:** Was ist falsch oder fehlt in beiden SVGs?
-
-**Ursache:** Was fehlt im Prompt?
-
-**Lösung (Prompt-Änderung):**
-```
-[Vorgeschlagener neuer Prompt-Abschnitt]
-```
-
-**Beispiel-Code (SVG):**
-```xml
-[Korrigierter SVG-Code-Ausschnitt]
-```
-```
-
----
-
-## Schritt 5: Download-Paket
-
-Erstelle ein ZIP-Archiv mit folgenden Dateien:
-
-```
-{building_name.lower().replace(" ", "_")}_svg_analyse/
-├── grundriss_claude.svg      # Dein generierter Grundriss
-├── ansicht_claude.svg        # Deine generierte Ansicht
-├── schnitt_claude.svg        # Dein generierter Schnitt
-├── grundriss_api.svg         # API-generierter Grundriss (Kopie)
-├── ansicht_api.svg           # API-generierte Ansicht (Kopie)
-├── schnitt_api.svg           # API-generierter Schnitt (Kopie)
-├── vergleich.md              # Deine Vergleichs-Analyse
-├── verbesserungen.md         # Prompt-Verbesserungsvorschläge
-└── prompt_original.md        # Der ursprüngliche Prompt
-```
-
----
-
-## Bewertungskriterien
-
-| Kriterium | Gewichtung |
-|-----------|------------|
-| Technische Korrektheit | 30% |
-| Vergleichs-Qualität | 25% |
-| Prompt-Verbesserungen | 25% |
-| Vollständigkeit | 20% |
-
----
-
-## Hinweise
-
-1. **Generiere ZUERST deine eigenen SVGs** bevor du die API-SVGs anschaust
-2. **Dokumentiere alle Unterschiede** - auch kleine Details
-3. **Sei kritisch** - auch gegenüber deinen eigenen SVGs
-4. **Konkrete Lösungen** - Jede Kritik braucht einen Verbesserungsvorschlag
-
----
-
-*Generiert mit Gerüstplanung Schweiz App*
-*https://cooperative-commitment-production.up.railway.app*
+**START JETZT MIT PHASE 1!**
 '''
 
 
