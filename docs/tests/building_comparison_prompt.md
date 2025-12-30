@@ -22,7 +22,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 53.2m, First 62.6m
 - **Max. Zonenhoehe:** 64.0m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 1004ms
+- **Response-Zeit:** 641ms
 
 **Zonen:**
   - Arkaden (arkade): 6.0m - 6.0m
@@ -38,7 +38,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 46.4m, First 54.6m
 - **Max. Zonenhoehe:** 54.6m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 406ms
+- **Response-Zeit:** 304ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 18.0m - 25.0m
@@ -55,7 +55,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 25.7m, First 30.3m
 - **Max. Zonenhoehe:** 100.3m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 351ms
+- **Response-Zeit:** 358ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 22.0m - 28.0m
@@ -71,7 +71,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 22.3m, First 26.2m
 - **Max. Zonenhoehe:** 26.0m
 - **Komplexitaet:** simple
-- **Response-Zeit:** 426ms
+- **Response-Zeit:** 366ms
 
 **Zonen:**
   - Hauptgebaeude (hauptgebaeude): 22.0m - 26.0m
@@ -85,7 +85,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erhalten:** Hotel Schweizerhof Bern (2 Zonen)
 - **Hoehen:** Traufe 23.1m, First 27.2m
 - **Komplexitaet:** moderate
-- **Response-Zeit:** 376ms
+- **Response-Zeit:** 394ms
 
 **Zonen:**
   - Hauptgebaeude (hauptgebaeude): 18.0m - 25.0m
@@ -98,7 +98,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erhalten:** Hauptbahnhof Bern (3 Zonen)
 - **Hoehen:** Traufe 31.3m, First 36.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 402ms
+- **Response-Zeit:** 493ms
 
 **Zonen:**
   - Baldachin (arkade): 8.0m - 12.0m
@@ -112,7 +112,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erhalten:** Kornhaus (3 Zonen)
 - **Hoehen:** Traufe 22.3m, First 26.2m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 328ms
+- **Response-Zeit:** 411ms
 
 **Zonen:**
   - Arkaden (arkade): 5.0m - 5.0m
@@ -126,7 +126,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erhalten:** Konzert Theater Bern (3 Zonen)
 - **Hoehen:** Traufe 15.1m, First 17.7m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 355ms
+- **Response-Zeit:** 379ms
 
 **Zonen:**
   - Foyer (anbau): 10.0m - 12.0m
@@ -138,23 +138,23 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 #### Hodlerstrasse 8, 3011 Bern
 - **Erwartet:** Kunstmuseum (erwartet)
 - **Erhalten:** Kunstmuseum Bern (3 Zonen)
-- **Hoehen:** Traufe 6.7m, First 7.9m
+- **Hoehen:** Traufe 15.0m, First 18.0m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 371ms
+- **Response-Zeit:** 372ms
 
 **Zonen:**
   - Altbau (hauptgebaeude): 15.0m - 18.0m
   - Neubau (Stettler) (hauptgebaeude): 12.0m - 15.0m
   - Erweiterung (anbau): 8.0m - 10.0m
 
-**Warnungen:** Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m), Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?, Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?
+**Warnungen:** Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m), Hoehen-Override aktiv: swissBUILDINGS3D misst nur Nebengebaeude (6.7m/7.9m). Reale Hoehen manuell erfasst., Zone 'Erweiterung' (10.0m) deutlich unter API-Traufhoehe (15.0m) - Zone-Daten pruefen!
 
 #### Helvetiaplatz 5, 3005 Bern
 - **Erwartet:** Historisches Museum (erwartet)
 - **Erhalten:** Bernisches Historisches Museum (3 Zonen)
 - **Hoehen:** Traufe 44.0m, First 51.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 368ms
+- **Response-Zeit:** 463ms
 
 **Zonen:**
   - Hauptbau (hauptgebaeude): 25.0m - 35.0m
@@ -172,8 +172,8 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 | Anzahl Gebaeude | 10 |
 | Erfolgreiche Abfragen | 10 |
 | Fehlgeschlagene Abfragen | 0 |
-| Gesamtzeit | 4387ms |
-| Durchschnittszeit | 439ms |
+| Gesamtzeit | 4181ms |
+| Durchschnittszeit | 418ms |
 
 ### API-Calls pro Gebaeude
 
@@ -222,7 +222,7 @@ Bitte beantworte folgende Fragen:
 
 ### 5. Kosten-Nutzen
 
-- Sind die Claude-API-Calls (Haiku + Sonnet) gerechtfertigt?
+- Sind die Claude-API-Calls (Sonnet) gerechtfertigt?
 - Wo koennte man API-Calls einsparen?
 - Welche Gebaeude benoetigen zwingend Claude-Analyse?
 

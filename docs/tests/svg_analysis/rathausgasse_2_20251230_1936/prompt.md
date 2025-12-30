@@ -87,7 +87,42 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT.
 | Z3 | N | 27% | - |
 | Z4 | W | 91% | - |
 
-## 10. SVG Style-Vorgaben (KRITISCH!)
+## 10. Proportionen (für viewBox 700×480)
+
+- **Massstab:** 1m = 7.0px (ca. 1:143)
+- **Zeichenfläche:** 550px × 380px
+- **Gebäudehöhe:** 54.6m = 380px
+- **Gebäudebreite:** 48.2m = 335px
+
+**Offsets:**
+- Links: 100px (Höhenskala)
+- Unten: 60px (Terrain)
+- Rechts: 50px (Lagenbeschriftung)
+- Oben: 40px (Titel)
+
+**Zonen-Höhen in Pixeln:**
+- Kirchenschiff: 25.0m = 174px
+- Seitenschiffe: 12.0m = 84px
+- Chor: 18.0m = 125px
+- Westturm: 54.6m = 380px
+
+## 11. Gerüst-Spezifikation (Layher Blitz 70)
+
+| Parameter | Wert | Bedeutung |
+|-----------|------|-----------|
+| **Feldbreite** | 2.57m | Standard-Feldlänge |
+| **Lagenhöhe** | 2.0m | Vertikaler Abstand |
+| **Ständerabstand** | 3.07m | Max. Ständerabstand |
+| **Fassadenabstand** | 0.30m | Abstand zur Fassade |
+| **Breitenklasse** | W09 (0.70m) | Gangbreite |
+
+**Für SVG-Zeichnung:**
+- Ständer alle 2.57m (oder kürzer bei Ecken)
+- Beläge auf jeder Lagenhöhe (2.0m)
+- Gerüst 0.30m VOR der Fassade
+- Verankerungen alle 4m horizontal/vertikal
+
+## 12. SVG Style-Vorgaben (KRITISCH!)
 
 ```xml
 <defs>
@@ -144,7 +179,7 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
                                      = weiss (Innenraum)
 ```
 
-## 11. Anforderungen pro SVG
+## 13. Anforderungen pro SVG
 
 ### SVG 1: Grundriss (Draufsicht)
 - **Perspektive:** Vogelperspektive, Blick von oben
@@ -177,7 +212,7 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Geruest:** Links und rechts (Staender + Belaege)
 - **Schnittmarkierung:** A-A
 
-## 12. Output
+## 14. Output
 
 Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
 
@@ -196,5 +231,5 @@ Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
 ---
 
 *Generiert mit Geruestplanung Schweiz App v3.0 - SmartBuildingService*
-*Zeitstempel: 2025-12-30 18:12*
+*Zeitstempel: 2025-12-30 18:36*
 *https://cooperative-commitment-production.up.railway.app*

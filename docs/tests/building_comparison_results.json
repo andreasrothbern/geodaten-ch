@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-30T14:18:23.356023",
+  "timestamp": "2025-12-30T17:12:59.305696",
   "api_base_url": "https://acceptable-trust-production.up.railway.app",
   "metrics": {
     "total_calls": 10,
@@ -7,8 +7,8 @@
       "known": 4,
       "unknown": 6
     },
-    "total_time_ms": 4387,
-    "avg_time_ms": 438.7,
+    "total_time_ms": 4181,
+    "avg_time_ms": 418.1,
     "errors": []
   },
   "results": [
@@ -60,7 +60,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 1004,
+      "response_time_ms": 641,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -738,7 +738,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 406,
+      "response_time_ms": 304,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -1780,7 +1780,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 351,
+      "response_time_ms": 358,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -2554,7 +2554,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 426,
+      "response_time_ms": 366,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -2828,7 +2828,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 376,
+      "response_time_ms": 394,
       "is_known_building": false,
       "name_match": false,
       "zones_match": true,
@@ -3246,7 +3246,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 402,
+      "response_time_ms": 493,
       "is_known_building": false,
       "name_match": true,
       "zones_match": true,
@@ -3944,7 +3944,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 328,
+      "response_time_ms": 411,
       "is_known_building": false,
       "name_match": true,
       "zones_match": true,
@@ -4304,7 +4304,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 355,
+      "response_time_ms": 379,
       "is_known_building": false,
       "name_match": false,
       "zones_match": true,
@@ -4603,15 +4603,15 @@
           "sonderkonstruktion": false
         }
       ],
-      "traufhoehe_m": 6.7,
-      "firsthoehe_m": 7.9,
+      "traufhoehe_m": 15.0,
+      "firsthoehe_m": 18.0,
       "max_zone_height": 18.0,
       "complexity": "complex",
       "data_quality": "high",
       "warnings": [
         "Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m)",
-        "Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?",
-        "Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?"
+        "Hoehen-Override aktiv: swissBUILDINGS3D misst nur Nebengebaeude (6.7m/7.9m). Reale Hoehen manuell erfasst.",
+        "Zone 'Erweiterung' (10.0m) deutlich unter API-Traufhoehe (15.0m) - Zone-Daten pruefen!"
       ],
       "api_calls_used": [
         "swisstopo_geocoding",
@@ -4622,7 +4622,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 371,
+      "response_time_ms": 372,
       "is_known_building": false,
       "name_match": false,
       "zones_match": true,
@@ -4833,10 +4833,10 @@
         "footprint_area_m2": 1190,
         "bbox_width_m": 50.34599999990314,
         "bbox_depth_m": 48.28999999980442,
-        "traufhoehe_m": 6.7,
-        "firsthoehe_m": 7.9,
+        "traufhoehe_m": 15.0,
+        "firsthoehe_m": 18.0,
         "gebaeudehoehe_m": 7.89,
-        "height_source": "swissbuildings3d",
+        "height_source": "manual",
         "height_quality": "high",
         "estimated_height_m": 15.0,
         "floors_estimated": null,
@@ -4941,8 +4941,8 @@
         "analysis_confidence": 0.0,
         "warnings": [
           "Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m)",
-          "Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?",
-          "Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?"
+          "Hoehen-Override aktiv: swissBUILDINGS3D misst nur Nebengebaeude (6.7m/7.9m). Reale Hoehen manuell erfasst.",
+          "Zone 'Erweiterung' (10.0m) deutlich unter API-Traufhoehe (15.0m) - Zone-Daten pruefen!"
         ],
         "errors": []
       }
@@ -4995,7 +4995,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 368,
+      "response_time_ms": 463,
       "is_known_building": false,
       "name_match": false,
       "zones_match": true,
