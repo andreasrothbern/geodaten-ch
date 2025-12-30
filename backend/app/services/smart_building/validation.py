@@ -101,8 +101,14 @@ def validate_zone_consistency(bundle: "BuildingDataBundle") -> List[str]:
     Prüft Zone/API-Konsistenz (BUG-012).
 
     Prüfungen:
-    1. Zone unter Traufhöhe = definitiv falsch
-    2. Zone deutlich über First = möglich (Turm), aber warnen
+    1. Bei Gebäuden MIT Turm: Nur Turm-Zone mit API-Höhe vergleichen
+    2. Bei Gebäuden OHNE Turm: Alle Zonen mit API-Höhe vergleichen
+    3. Zone deutlich über First = möglich (Turm), aber warnen
+
+    WICHTIG (P1 Fix 30.12.2025):
+    Bei Kirchen ist die API-Traufhöhe oft die TURM-Höhe (z.B. 46m),
+    während das Kirchenschiff nur 25m hoch ist. Das ist KORREKT!
+    -> Keine Warnung für niedrigere Zonen wenn Turm vorhanden.
 
     Args:
         bundle: BuildingDataBundle mit Zonen
@@ -115,18 +121,44 @@ def validate_zone_consistency(bundle: "BuildingDataBundle") -> List[str]:
     if not bundle.zones:
         return warnings
 
+    # P1 Fix: Prüfe ob Gebäude einen Turm/Kuppel hat
+    has_tower = any(z.zone_type in ["turm", "kuppel"] for z in bundle.zones)
+    is_church = bundle.gwr_category_code == 1110 or (
+        bundle.building_type and "kirche" in bundle.building_type.lower()
+    )
+
+    # Finde die höchste Zone (sollte dem API-First entsprechen)
+    max_zone = max(bundle.zones, key=lambda z: z.firsthoehe_m or z.gebaeudehoehe_m or 0)
+    max_zone_height = max_zone.firsthoehe_m or max_zone.gebaeudehoehe_m or 0
+
     for zone in bundle.zones:
         zone_first = zone.firsthoehe_m or zone.gebaeudehoehe_m or 0
 
-        # 1. Zone unter Traufhöhe = FEHLER (wie bei Einsteinhaus BUG-009)
+        # 1. Zone unter Traufhöhe prüfen
         if bundle.traufhoehe_m and zone_first > 0:
-            if zone_first < bundle.traufhoehe_m * 0.8:  # 20% Toleranz
-                warning = (
-                    f"Zone '{zone.name}' ({zone_first:.1f}m) deutlich unter "
-                    f"API-Traufhoehe ({bundle.traufhoehe_m:.1f}m) - Zone-Daten pruefen!"
-                )
-                warnings.append(warning)
-                logger.error(f"Zone validation: {warning}")
+            # P1 Fix: Bei Gebäuden mit Turm/Kuppel KEINE Warnung für niedrigere Zonen
+            if has_tower or is_church:
+                # Nur die höchste Zone (Turm) mit API vergleichen
+                if zone == max_zone:
+                    # Turm sollte ungefähr zur API-First passen
+                    if bundle.firsthoehe_m and abs(zone_first - bundle.firsthoehe_m) > 10:
+                        warning = (
+                            f"Hoechste Zone '{zone.name}' ({zone_first:.1f}m) weicht stark "
+                            f"von API-First ({bundle.firsthoehe_m:.1f}m) ab"
+                        )
+                        warnings.append(warning)
+                        logger.warning(f"Zone validation: {warning}")
+                # Andere Zonen (Kirchenschiff, Seitenschiffe) nicht warnen - die sind
+                # absichtlich niedriger als der Turm!
+            else:
+                # Standard-Validierung für Gebäude OHNE Turm
+                if zone_first < bundle.traufhoehe_m * 0.8:  # 20% Toleranz
+                    warning = (
+                        f"Zone '{zone.name}' ({zone_first:.1f}m) deutlich unter "
+                        f"API-Traufhoehe ({bundle.traufhoehe_m:.1f}m) - Zone-Daten pruefen!"
+                    )
+                    warnings.append(warning)
+                    logger.error(f"Zone validation: {warning}")
 
         # 2. Zone sehr hoch über First = möglicherweise Turm/Kuppel
         if bundle.firsthoehe_m and zone_first > 0:
