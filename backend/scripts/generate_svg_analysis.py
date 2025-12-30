@@ -190,8 +190,6 @@ Folgende Dateien müssen erstellt und zum Download angeboten werden:
 5. `verbesserungen.md` - Deine Prompt-Verbesserungsvorschläge
 6. `zusammenfassung.md` - Kurze Zusammenfassung der Analyse
 
-**Biete jede Datei einzeln zum Download an (KEIN ZIP nötig)!**
-
 ---
 
 ## Gebäude-Daten
