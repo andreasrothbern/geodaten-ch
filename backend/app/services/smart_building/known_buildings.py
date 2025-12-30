@@ -344,7 +344,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "architectural_style": "Neobarock",
         "construction_year": 1903,
         "complexity": "complex",
-        "roof_type": "kuppel",
+        "roof_type": "walmdach",  # Fix P2: Theater hat Walmdach, nicht Kuppel
         "zones": [
             {
                 "name": "Foyer",
