@@ -105,13 +105,36 @@ Screenshots der App helfen bei der Analyse!
 
 **Details:** Siehe `docs/roadmap/CURRENT_BUGS.md`
 
-### Roadmap
+---
 
-1. **Naechster Schritt:** Dokumentation korrigieren (Haiku->Sonnet)
-2. **Geplant:** ML Learning System fuer automatische Zonen-Erkennung
-3. **Langfristig:** DXF/IFC-Export fuer 3D-Modellierung
+## Offene Punkte: geodaten-ch API
 
-**Details:** Siehe `docs/roadmap/ML_LEARNING_SYSTEM.md`
+### P0 - Kritisch (blockiert Weiterentwicklung)
+
+| Task | Beschreibung | Status |
+|------|--------------|--------|
+| **CI/CD Pipeline** | Automatische Tests + Deployment bei Push | ❌ Fehlt |
+| **Tests** | Unit + Integration Tests für Backend | ❌ Fehlt |
+| **Prompt-Versionierung** | SVG-Prompts versioniert speichern | ❌ Fehlt |
+
+### P1 - Wichtig
+
+| Task | Beschreibung | Status |
+|------|--------------|--------|
+| **ML Learning System** | Feedback-Loop für SVG-Qualität | 🔜 Geplant |
+| **SVG-Prompt Optimierung** | Iterative Verbesserung mit Claude | 🔄 Laufend |
+| **Mehr bekannte Gebäude** | known_buildings.py erweitern | 🔄 Laufend |
+| **BUG-004** | Einsteinhaus langsam (7.8s) | ❌ Offen |
+
+### P2 - Nice to have
+
+| Task | Beschreibung | Status |
+|------|--------------|--------|
+| **DXF/IFC Export** | CAD-Formate für 3D-Modellierung | 🔜 Geplant |
+| **Grundrissform-Erkennung** | L/U/H-Form automatisch erkennen | 🔜 Geplant |
+| **API Rate Limiting** | Schutz vor Überlastung | ❌ Fehlt |
+
+**Details:** Siehe `docs/roadmap/CURRENT_BUGS.md` und `docs/roadmap/ML_LEARNING_SYSTEM.md`
 
 ---
 
@@ -119,7 +142,9 @@ Screenshots der App helfen bei der Analyse!
 
 **Konzept:** [`../geruestbau_app_konzept.md`](../geruestbau_app_konzept.md)
 
-Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dienen:
+Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dienen.
+
+### Module-Übersicht
 
 | Modul | Beschreibung | geodaten-ch Integration |
 |-------|--------------|------------------------|
@@ -132,7 +157,49 @@ Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dien
 | 7. Material | Layher-Katalog | ✅ Materialliste |
 | 8. Export | PDF/IFC/DXF/LayPLAN | 🔜 Geplant |
 
+### Offene Punkte: Gerüstbau-App
+
+| Task | Beschreibung | Priorität |
+|------|--------------|-----------|
+| **Projekt-Setup** | Neues Repo, Tech Stack definieren | P0 |
+| **Auth/Multi-Tenant** | Benutzer-Verwaltung, Firmen-Trennung | P0 |
+| **Projekt-DB Schema** | PostgreSQL + PostGIS Setup | P0 |
+| **CI/CD Pipeline** | Tests + Deployment | P0 |
+| **PDF Offerte** | Template-basierte PDF-Generierung | P1 |
+| **Foto-Upload** | S3/MinIO Integration | P1 |
+| **IFC Export** | ifcopenshell Integration | P2 |
+| **LayPLAN XML** | Export für Layher Software | P2 |
+| **Mobile App** | React Native iOS/Android | P3 |
+
 **Architektur:** geodaten-ch bleibt als API-Service, die Gerüstbau-App wird ein separates Frontend mit eigener Projekt-Datenbank.
+
+---
+
+## ML Learning System (Konzept)
+
+Ziel: Automatische Verbesserung der SVG-Qualität durch Feedback-Loop.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ML LEARNING SYSTEM                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. SVG generieren (Claude API)                             │
+│       ↓                                                     │
+│  2. User-Feedback sammeln (👍/👎, Korrekturen)              │
+│       ↓                                                     │
+│  3. Feedback + Prompt in DB speichern                       │
+│       ↓                                                     │
+│  4. Periodisch: Prompts analysieren, verbessern             │
+│       ↓                                                     │
+│  5. A/B Testing neuer Prompt-Versionen                      │
+│       ↓                                                     │
+│  6. Beste Version wird Default                              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Details:** Siehe `docs/roadmap/ML_LEARNING_SYSTEM.md`
 
 ---
 
