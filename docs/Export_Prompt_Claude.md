@@ -2,10 +2,10 @@
 
 > **HINWEIS:** Diese Datei ist eine Kopie der Haupt-Vorlage.
 > Die aktuelle Version liegt unter:
-> `backend/app/services/smart_building/prompts/base_template.md`
+> `backend/app/services/smart_building/prompt/base_template.md`
 >
 > Siehe auch die aufgeteilten Templates unter:
-> `backend/app/services/smart_building/prompts/sections/`
+> `backend/app/services/smart_building/prompt/sections/`
 
 > **Hinweis:** Ein Export-Button generiert Daten für alle 3 SVG-Typen.
 

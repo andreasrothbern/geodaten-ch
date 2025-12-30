@@ -1,4 +1,4 @@
-# backend/app/services/smart_building/prompts/__init__.py
+# backend/app/services/smart_building/prompt/__init__.py
 """
 Prompt-Templates fuer SVG-Generierung.
 
