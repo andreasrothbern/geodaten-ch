@@ -251,6 +251,13 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "construction_year": 1879,
         "complexity": "complex",
         "roof_type": "flachdach",
+        # KRITISCH: API-Hoehen sind FALSCH - manueller Override
+        "height_override": {
+            "enabled": True,
+            "reason": "swissBUILDINGS3D misst nur Nebengebaeude (6.7m/7.9m). Reale Hoehen manuell erfasst.",
+            "traufhoehe_m": 15.0,
+            "firsthoehe_m": 18.0,
+        },
         "zones": [
             {
                 "name": "Altbau",

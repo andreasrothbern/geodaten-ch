@@ -49,6 +49,25 @@ async def collect_building_research(
                 bundle.roof_confidence = 1.0  # 100% Konfidenz
                 logger.info(f"Dachform-Override: {known['roof_type']} fuer {bundle.building_name}")
 
+            # NEU 30.12.2025: Hoehen-Override fuer Gebaeude mit falschen API-Daten
+            height_override = known.get("height_override", {})
+            if height_override.get("enabled", False):
+                old_trauf = bundle.traufhoehe_m
+                old_first = bundle.firsthoehe_m
+
+                bundle.traufhoehe_m = height_override.get("traufhoehe_m", bundle.traufhoehe_m)
+                bundle.firsthoehe_m = height_override.get("firsthoehe_m", bundle.firsthoehe_m)
+                bundle.height_source = DataSource.MANUAL
+
+                reason = height_override.get("reason", "Manueller Override ohne Begruendung")
+                bundle.add_warning(f"Hoehen-Override aktiv: {reason}")
+
+                logger.info(
+                    f"Height override applied for {bundle.building_name}: "
+                    f"Traufe {old_trauf}m -> {bundle.traufhoehe_m}m, "
+                    f"First {old_first}m -> {bundle.firsthoehe_m}m"
+                )
+
             # Zonen aus bekannten Gebaeuden fuer spaetere Verwendung speichern
             if known.get("zones"):
                 bundle._known_zones = known["zones"]
