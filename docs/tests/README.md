@@ -532,5 +532,140 @@ Münsterplatz 1, 3011 Bern
 
 ---
 
+## Claude.ai Analyse-Optionen
+
+Nach dem Testlauf stehen **3 Analyse-Dateien** zur Verfuegung, die an Claude.ai uebergeben werden koennen:
+
+### Option 1: Pipeline-Schritte analysieren
+
+**Datei:** `docs/tests/pipeline_analyse.md`
+
+**Inhalt:**
+- Dokumentation aller 10 Pipeline-Schritte
+- API-Aufrufe und Response-Beispiele
+- Identifizierte Probleme pro Schritt
+- Empfehlungen zur Optimierung
+
+**Geeignet fuer:**
+- Verstaendnis der Datenfluss-Architektur
+- Identifikation von Bottlenecks
+- Optimierung einzelner Schritte
+
+### Option 2: SVG generieren und bewerten
+
+**Datei:** `docs/tests/svg_generation_analysis.md`
+
+**Inhalt:**
+- Vollstaendiger Prompt fuer ein Gebaeude (Bundeshaus)
+- Bewertungskriterien (U-Form, Ehrenhof, Proportionen)
+- Checklisten fuer Grundriss, Ansicht, Schnitt
+- Feedback-Format Vorlage
+
+**Geeignet fuer:**
+- SVG-Generierung testen
+- Prompt-Qualitaet bewerten
+- Verbesserungsvorschlaege sammeln
+
+### Option 3: Datenqualitaet pruefen
+
+**Datei:** `docs/tests/svg_datenqualitaet_vergleich.md`
+
+**Inhalt:**
+- Vergleich API-Daten vs. Zonen-Hoehen
+- Konsistenz-Analyse (Zone > API-First?)
+- Fehlerhafte Daten identifizieren
+- Priorisierte Empfehlungen
+
+**Geeignet fuer:**
+- Datenqualitaets-Audit
+- known_buildings.py Korrekturen
+- Hoehen-Validierung verbessern
+
+### Workflow mit Claude.ai
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 ANALYSE-WORKFLOW                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. Test ausfuehren                                         │
+│     python scripts/test_building_comparison.py              │
+│                                                              │
+│  2. Option waehlen                                          │
+│     → Pipeline-Analyse     (Architektur verstehen)          │
+│     → SVG-Generierung      (Visualisierung testen)          │
+│     → Datenqualitaet       (Fehler finden)                  │
+│                                                              │
+│  3. Datei an Claude.ai senden                               │
+│     Kopiere Inhalt der gewaehlten .md Datei                 │
+│                                                              │
+│  4. Ergebnisse auswerten                                    │
+│     → Bugs in CURRENT_BUGS.md erfassen                      │
+│     → Fixes implementieren                                  │
+│     → Tests wiederholen                                     │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Geplant: ML Learning System
+
+> **Status:** In Planung
+> **Dokumentation:** [docs/roadmap/ML_LEARNING_SYSTEM.md](../roadmap/ML_LEARNING_SYSTEM.md)
+
+### Motivation
+
+Aktuell werden Gebaeude entweder:
+- **Bekannt:** Manuell in `known_buildings.py` definiert (kostenlos, sofort)
+- **Unbekannt:** Via Claude API recherchiert (~$0.05-0.15, 10-20s)
+
+**Problem:** Manuelle Pflege skaliert nicht. Claude-Calls sind teuer bei vielen Abfragen.
+
+### Loesung: Automatisches Lernen
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  ML LEARNING SYSTEM                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Phase 1: Datensammlung (0-500 Gebaeude)                    │
+│  ────────────────────────────────────────                   │
+│  - Claude analysiert neue Gebaeude                          │
+│  - Ergebnisse werden in training_data.parquet gespeichert   │
+│  - Manuelles Review fuer Qualitaetssicherung               │
+│                                                              │
+│  Phase 2: ML-Training (500+ Gebaeude)                       │
+│  ────────────────────────────────────────                   │
+│  - XGBoost / Random Forest Classifier                       │
+│  - Features: GKAT, Hoehen, Polygon-Form, Flaeche            │
+│  - Target: Zone-Template (z.B. "kirche_mit_turm")           │
+│                                                              │
+│  Phase 3: Production (1000+ Gebaeude)                       │
+│  ────────────────────────────────────────                   │
+│  - ML-Inference fuer 95% der Anfragen                       │
+│  - Claude nur bei confidence < 0.8                          │
+│  - Kontinuierliches Lernen aus Korrekturen                 │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Kosten-Vergleich (Prognose)
+
+| Szenario | Aktuell (Claude) | Mit ML |
+|----------|------------------|--------|
+| 100 Gebaeude | $5-15 | $0.50 (Training) |
+| 1000 Gebaeude | $50-150 | $0.50 |
+| 10000 Gebaeude | $500-1500 | $0.50 |
+
+### Naechste Schritte
+
+1. ✅ Bugs beheben (BUG-001 bis BUG-009)
+2. ⏳ Trainingsdaten aus aktuellen Tests exportieren
+3. ⏳ Feature-Branch `feature/ml-learning-system` erstellen
+4. ⏳ TrainingDataCollector implementieren
+
+---
+
 *Stand: 30.12.2025*
-*Letzte Aktualisierung: Nach BUG-001, BUG-002, BUG-003 Fixes*
+*Letzte Aktualisierung: Claude.ai Analyse-Optionen + ML-Roadmap hinzugefuegt*
