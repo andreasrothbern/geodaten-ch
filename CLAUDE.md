@@ -8,6 +8,13 @@ Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
 @.claude/rules/smart-building.md
 @.claude/rules/svg-generation.md
 
+### Test-Dokumentation
+@docs/tests/README.md - Building Comparison Teststrategie
+
+### Roadmap
+@docs/roadmap/CURRENT_BUGS.md - Aktuelle Bugs und Fixes
+@docs/roadmap/ML_LEARNING_SYSTEM.md - ML Learning System (geplant)
+
 ## Projekt: Geodaten Schweiz
 
 Dieses Projekt bietet eine API und Web-App für Schweizer Geodaten (Gebäude, Adressen, Grundstücke).

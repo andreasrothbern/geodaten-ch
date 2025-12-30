@@ -8,9 +8,13 @@ Liefert Gebäudegeometrien (Grundriss-Polygone)
 
 import httpx
 import math
+import asyncio
+import logging
 import xml.etree.ElementTree as ET
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -200,8 +204,46 @@ class GeodiensteService:
     COLLINEAR_ANGLE_TOLERANCE = 8.0  # Grad Toleranz für Segment-Verschmelzung
     MIN_SIDE_LENGTH = 1.0  # Minimale Seitenlänge in Metern
 
+    # Retry-Konfiguration
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # Sekunden
+
     def __init__(self):
-        self.timeout = httpx.Timeout(20.0, connect=5.0)
+        # Timeout erhoeht: 30s total, 10s connect
+        self.timeout = httpx.Timeout(30.0, connect=10.0)
+
+    async def _wfs_request(self, params: Dict) -> str:
+        """WFS Request mit Retry-Logik"""
+        last_error = None
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(self.WFS_BASE_URL, params=params)
+                    response.raise_for_status()
+                    return response.text
+            except httpx.ConnectTimeout as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"geodienste.ch ConnectTimeout (Versuch {attempt + 1}/{self.MAX_RETRIES})")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+            except httpx.ReadTimeout as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"geodienste.ch ReadTimeout (Versuch {attempt + 1}/{self.MAX_RETRIES})")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500 and attempt < self.MAX_RETRIES - 1:
+                    last_error = e
+                    logger.warning(f"geodienste.ch HTTP {e.response.status_code} (Versuch {attempt + 1}/{self.MAX_RETRIES})")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+                raise
+
+        logger.error(f"geodienste.ch nicht erreichbar nach {self.MAX_RETRIES} Versuchen")
+        raise last_error or httpx.ConnectTimeout("geodienste.ch nicht erreichbar")
 
     async def get_building_geometry(
         self,
@@ -244,35 +286,37 @@ class GeodiensteService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(self.WFS_BASE_URL, params=params)
-                response.raise_for_status()
+            # WFS Request mit Retry-Logik
+            response_text = await self._wfs_request(params)
 
-                # GML parsen
-                features = self._parse_gml_response(response.text)
+            # GML parsen
+            features = self._parse_gml_response(response_text)
 
-                # Nach Gebäuden filtern (Art = "Gebaeude")
-                buildings = [f for f in features if f.get("art") == "Gebaeude"]
+            # Nach Gebäuden filtern (Art = "Gebaeude")
+            buildings = [f for f in features if f.get("art") == "Gebaeude"]
 
-                # Falls EGID angegeben, danach filtern
-                if egid and buildings:
-                    buildings = [b for b in buildings if b.get("gwr_egid") == egid]
+            # Falls EGID angegeben, danach filtern
+            if egid and buildings:
+                buildings = [b for b in buildings if b.get("gwr_egid") == egid]
 
-                # Nächstes Gebäude zur Koordinate finden
-                if not buildings:
-                    return None
+            # Nächstes Gebäude zur Koordinate finden
+            if not buildings:
+                return None
 
-                # Das nächste Gebäude wählen (oder das mit der EGID)
-                best_building = self._find_nearest_building(buildings, x, y)
+            # Das nächste Gebäude wählen (oder das mit der EGID)
+            best_building = self._find_nearest_building(buildings, x, y)
 
-                if not best_building or not best_building.get("polygon"):
-                    return None
+            if not best_building or not best_building.get("polygon"):
+                return None
 
-                # Geometrie berechnen mit optionalem epsilon
-                return self._calculate_geometry(best_building, simplify_epsilon)
+            # Geometrie berechnen mit optionalem epsilon
+            return self._calculate_geometry(best_building, simplify_epsilon)
 
+        except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            logger.error(f"geodienste.ch Timeout: {e}")
+            return None
         except Exception as e:
-            print(f"WFS Error: {e}")
+            logger.error(f"WFS Error: {e}")
             return None
 
     def _parse_gml_response(self, xml_text: str) -> List[Dict]:

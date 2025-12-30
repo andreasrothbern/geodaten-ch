@@ -8,6 +8,9 @@ Adapter für die swisstopo REST API (api3.geo.admin.ch)
 import httpx
 from typing import Optional, List, Dict, Any
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.schemas import (
     AddressSearchResult,
@@ -70,20 +73,53 @@ ENERGY_SOURCES = {
 
 class SwisstopoService:
     """Service für swisstopo API Zugriff"""
-    
+
     BASE_URL = "https://api3.geo.admin.ch"
     GWR_LAYER = "ch.bfs.gebaeude_wohnungs_register"
-    
+
+    # Retry-Konfiguration
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # Sekunden
+
     def __init__(self):
-        self.timeout = httpx.Timeout(15.0, connect=5.0)
-    
+        # Timeout erhoeht: 30s total, 10s connect
+        self.timeout = httpx.Timeout(30.0, connect=10.0)
+
     async def _request(self, endpoint: str, params: Dict = None) -> Dict:
-        """HTTP Request an swisstopo API"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            url = f"{self.BASE_URL}{endpoint}"
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
+        """HTTP Request an swisstopo API mit Retry-Logik"""
+        url = f"{self.BASE_URL}{endpoint}"
+        last_error = None
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(url, params=params)
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.ConnectTimeout as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"swisstopo ConnectTimeout (Versuch {attempt + 1}/{self.MAX_RETRIES}): {endpoint}")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+            except httpx.ReadTimeout as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    logger.warning(f"swisstopo ReadTimeout (Versuch {attempt + 1}/{self.MAX_RETRIES}): {endpoint}")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+            except httpx.HTTPStatusError as e:
+                # Bei HTTP-Fehlern nicht retrien (ausser 5xx)
+                if e.response.status_code >= 500 and attempt < self.MAX_RETRIES - 1:
+                    last_error = e
+                    logger.warning(f"swisstopo HTTP {e.response.status_code} (Versuch {attempt + 1}/{self.MAX_RETRIES}): {endpoint}")
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+                    continue
+                raise
+
+        # Alle Retries fehlgeschlagen
+        logger.error(f"swisstopo API nicht erreichbar nach {self.MAX_RETRIES} Versuchen: {endpoint}")
+        raise last_error or httpx.ConnectTimeout("swisstopo API nicht erreichbar")
     
     # ========================================================================
     # Adresssuche
