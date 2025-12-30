@@ -29,10 +29,11 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
     "2242547": {
         "egid": "2242547",
         "building_name": "Bundeshaus",
-        "building_type": "Parlamentsgebäude",
+        "building_type": "Parlamentsgebaeude",
         "architectural_style": "Neorenaissance / Historismus",
         "construction_year": 1902,
         "complexity": "complex",
+        "roof_type": "kuppel",  # Dachform-Override: Hauptmerkmal ist die Kuppel!
         "zones": [
             {
                 "name": "Arkaden",
@@ -71,6 +72,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "architectural_style": "Neugotik",
         "construction_year": 1864,
         "complexity": "complex",
+        "roof_type": "satteldach_mit_turm",  # Kirchendach mit Spitzhelm-Turm
         "zones": [
             {
                 "name": "Kirchenschiff",
@@ -106,14 +108,15 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade"],
     },
 
-    # Berner Münster
+    # Berner Muenster
     "1230337": {
         "egid": "1230337",
-        "building_name": "Berner Münster",
+        "building_name": "Berner Muenster",
         "building_type": "Reformierte Stadtkirche",
-        "architectural_style": "Spätgotik",
+        "architectural_style": "Spaetgotik",
         "construction_year": 1421,  # Baubeginn, vollendet 1893
         "complexity": "complex",
+        "roof_type": "satteldach_mit_turm",  # Gotisches Dach mit Kirchturm
         "zones": [
             {
                 "name": "Kirchenschiff",
@@ -176,8 +179,9 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "building_name": "Zytglogge",
         "building_type": "Uhrturm / Stadttor",
         "architectural_style": "Gotik / Renaissance",
-        "construction_year": 1218,  # Erste Erwähnung
+        "construction_year": 1218,  # Erste Erwaehnung
         "complexity": "complex",
+        "roof_type": "pyramidendach",  # Turm mit Pyramidendach
         "zones": [
             {
                 "name": "Torhaus",

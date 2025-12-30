@@ -40,10 +40,16 @@ async def collect_building_research(
             bundle.building_type = known.get("building_type")
             bundle.architectural_style = known.get("architectural_style")
             bundle.construction_year = known.get("construction_year") or bundle.construction_year
-            bundle.research_confidence = 1.0  # 100% Konfidenz für bekannte Gebäude
+            bundle.research_confidence = 1.0  # 100% Konfidenz fuer bekannte Gebaeude
             bundle.add_source(DataSource.MANUAL)
 
-            # Zonen aus bekannten Gebäuden für spätere Verwendung speichern
+            # Dachform-Override fuer bekannte Gebaeude (z.B. Kuppel statt Pultdach)
+            if known.get("roof_type"):
+                bundle.roof_type = known["roof_type"]
+                bundle.roof_confidence = 1.0  # 100% Konfidenz
+                logger.info(f"Dachform-Override: {known['roof_type']} fuer {bundle.building_name}")
+
+            # Zonen aus bekannten Gebaeuden fuer spaetere Verwendung speichern
             if known.get("zones"):
                 bundle._known_zones = known["zones"]
                 bundle.complexity = known.get("complexity", "complex")
