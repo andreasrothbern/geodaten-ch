@@ -772,25 +772,73 @@ class SmartBuildingService:
             self._create_default_zone(bundle)
 
     def _create_default_zone(self, bundle: BuildingDataBundle):
-        """Erstellt Standard-Zone für einfache Gebäude"""
+        """Erstellt Standard-Zone(n) basierend auf Höhendaten
+
+        Bei extremer Höhendifferenz (First - Trauf > 15m) werden automatisch
+        mehrere Zonen erstellt (Hauptgebäude + Turm), da dies typisch für
+        Kirchen, Rathäuser, etc. ist.
+        """
         if bundle.zones:
             return  # Bereits Zonen vorhanden
 
-        zone = ZoneInfo(
-            id="zone_1",
-            name="Hauptgebäude",
-            zone_type="hauptgebaeude",
-            traufhoehe_m=bundle.traufhoehe_m,
-            firsthoehe_m=bundle.firsthoehe_m,
-            gebaeudehoehe_m=bundle.gebaeudehoehe_m or bundle.estimated_height_m,
-            beruesten=True,
-            sonderkonstruktion=False,
-            confidence=1.0,
-            source=DataSource.CALCULATED,
-        )
+        # Prüfe auf extreme Höhendifferenz (typisch für Kirchen mit Turm)
+        if bundle.has_extreme_height_diff():
+            height_diff = (bundle.firsthoehe_m or 0) - (bundle.traufhoehe_m or 0)
 
-        bundle.zones.append(zone)
-        bundle.complexity = "simple"
+            # Zone 1: Hauptgebäude (Kirchenschiff, Gebäudekörper)
+            hauptgebaeude = ZoneInfo(
+                id="zone_1",
+                name="Hauptgebäude",
+                zone_type="hauptgebaeude",
+                traufhoehe_m=bundle.traufhoehe_m,
+                firsthoehe_m=bundle.traufhoehe_m,  # Traufhöhe als "First" des Hauptgebäudes
+                gebaeudehoehe_m=bundle.traufhoehe_m,
+                beruesten=True,
+                sonderkonstruktion=False,
+                confidence=0.7,
+                source=DataSource.CALCULATED,
+                notes=f"Automatisch aus Höhendifferenz ({height_diff:.1f}m) abgeleitet"
+            )
+            bundle.zones.append(hauptgebaeude)
+
+            # Zone 2: Turm (bei sehr grosser Differenz wahrscheinlich Kirchturm)
+            turm = ZoneInfo(
+                id="zone_2",
+                name="Turm",
+                zone_type="turm",
+                traufhoehe_m=bundle.traufhoehe_m,  # Turm startet bei Traufhöhe
+                firsthoehe_m=bundle.firsthoehe_m,
+                gebaeudehoehe_m=bundle.firsthoehe_m,
+                beruesten=True,
+                sonderkonstruktion=True,  # Türme brauchen oft Sonderkonstruktion
+                confidence=0.6,
+                source=DataSource.CALCULATED,
+                notes=f"Turm erkannt aus extremer Höhendifferenz ({height_diff:.1f}m)"
+            )
+            bundle.zones.append(turm)
+
+            bundle.complexity = "complex"
+            bundle.has_towers = True
+            bundle.has_height_variations = True
+
+            logger.info(f"Automatisch 2 Zonen erstellt: Hauptgebäude ({bundle.traufhoehe_m:.1f}m) + Turm ({bundle.firsthoehe_m:.1f}m)")
+
+        else:
+            # Einfaches Gebäude: 1 Zone
+            zone = ZoneInfo(
+                id="zone_1",
+                name="Hauptgebäude",
+                zone_type="hauptgebaeude",
+                traufhoehe_m=bundle.traufhoehe_m,
+                firsthoehe_m=bundle.firsthoehe_m,
+                gebaeudehoehe_m=bundle.gebaeudehoehe_m or bundle.estimated_height_m,
+                beruesten=True,
+                sonderkonstruktion=False,
+                confidence=1.0,
+                source=DataSource.CALCULATED,
+            )
+            bundle.zones.append(zone)
+            bundle.complexity = "simple"
 
     def _calculate_access_points(self, bundle: BuildingDataBundle):
         """Berechnet Gerüst-Zugänge nach SUVA"""

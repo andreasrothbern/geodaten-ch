@@ -504,26 +504,46 @@ Erstelle **1 SVG** mit `viewBox="0 0 700 480"`:
 *https://cooperative-commitment-production.up.railway.app*"""
 
     def _infer_building_type(self, bundle: BuildingDataBundle) -> str:
-        """Leitet Gebäudetyp aus GWR-Kategorie ab"""
-        if not bundle.gwr_category:
-            return "Gebäude"
+        """Leitet Gebäudetyp aus GWR-Kategorie und Höhendaten ab
 
-        cat = bundle.gwr_category.lower()
+        WICHTIG: Bei extremer Höhendifferenz (First - Trauf > 15m) wird
+        Sakralbau/Turmbau angenommen, da dies typisch für Kirchen ist.
+        """
+        # 1. ZUERST: Extreme Höhendifferenz prüfen (höchste Priorität!)
+        # Wenn First 45m höher als Traufe → sehr wahrscheinlich Kirche mit Turm
+        if bundle.has_extreme_height_diff():
+            height_diff = (bundle.firsthoehe_m or 0) - (bundle.traufhoehe_m or 0)
+            if height_diff > 30:  # Sehr grosse Differenz
+                return "Sakralbau (Kirche mit Turm)"
+            elif height_diff > 15:  # Moderate Differenz
+                return "Turmbau/Sakralbau"
 
-        if 'kirche' in cat or 'religiös' in cat:
-            return "Sakralbau"
-        if 'öffentlich' in cat or 'verwaltung' in cat:
-            return "Öffentliches Gebäude"
-        if 'mehrfamilien' in cat:
-            return "Mehrfamilienhaus"
-        if 'einfamilien' in cat:
-            return "Einfamilienhaus"
-        if 'gewerbe' in cat or 'industrie' in cat:
-            return "Gewerbe/Industrie"
-        if 'landwirtschaft' in cat:
-            return "Landwirtschaftsgebäude"
+        # 2. Dann: Hat Turm-Zonen?
+        if bundle.has_towers:
+            return "Turmbau"
 
-        return "Wohngebäude"
+        # 3. Dann: GWR-Kategorie auswerten
+        if bundle.gwr_category:
+            cat = bundle.gwr_category.lower()
+
+            if 'kirche' in cat or 'religiös' in cat:
+                return "Sakralbau"
+            if 'öffentlich' in cat or 'verwaltung' in cat:
+                return "Öffentliches Gebäude"
+            if 'mehrfamilien' in cat:
+                return "Mehrfamilienhaus"
+            if 'einfamilien' in cat:
+                return "Einfamilienhaus"
+            if 'gewerbe' in cat or 'industrie' in cat:
+                return "Gewerbe/Industrie"
+            if 'landwirtschaft' in cat:
+                return "Landwirtschaftsgebäude"
+
+        # 4. Default: Nur wenn keine anderen Indikatoren
+        if bundle.gwr_category:
+            return "Wohngebäude"
+
+        return "Gebäude"
 
 
 # Singleton
