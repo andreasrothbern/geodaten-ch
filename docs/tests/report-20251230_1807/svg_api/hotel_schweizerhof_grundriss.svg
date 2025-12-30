@@ -1,0 +1,125 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">GRUNDRISS - Hotel Schweizerhof Bern</text>
+  <text x="350" y="40" text-anchor="middle" font-family="Arial" font-size="10">Bahnhofplatz 11, 3011 Bern - EGID: 1230691</text>
+
+  <!-- Geruestzone (aeussere Begrenzung) -->
+  <rect x="150" y="80" width="400" height="280" fill="none" stroke="#0066CC" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="155" y="95" font-family="Arial" font-size="8" fill="#0066CC">Gerüstzone (1m Abstand)</text>
+
+  <!-- Hauptgebäude Zone 1 (25.0m hoch) -->
+  <rect x="160" y="90" width="250" height="180" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+  <text x="285" y="185" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">Hauptgebäude</text>
+  <text x="285" y="200" text-anchor="middle" font-family="Arial" font-size="8">H: 25.0m</text>
+
+  <!-- Dachaufbau Zone 2 (30.0m hoch) -->
+  <rect x="180" y="110" width="210" height="80" fill="url(#cut-hatch)" stroke="#000" stroke-width="2"/>
+  <text x="285" y="150" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold">Dachaufbau</text>
+  <text x="285" y="165" text-anchor="middle" font-family="Arial" font-size="7">H: 30.0m</text>
+
+  <!-- Fassadenlängen Beschriftung -->
+  <!-- Ostfassade -->
+  <line x1="160" y1="85" x2="410" y2="85" stroke="#666" stroke-width="0.5"/>
+  <text x="285" y="80" text-anchor="middle" font-family="Arial" font-size="8">68.5m (O)</text>
+
+  <!-- Nordfassade -->
+  <line x1="155" y1="90" x2="155" y2="270" stroke="#666" stroke-width="0.5"/>
+  <text x="145" y="180" text-anchor="middle" font-family="Arial" font-size="8" transform="rotate(-90 145 180)">40.0m (N)</text>
+
+  <!-- Südfassade -->
+  <line x1="415" y1="90" x2="415" y2="270" stroke="#666" stroke-width="0.5"/>
+  <text x="425" y="180" text-anchor="middle" font-family="Arial" font-size="8" transform="rotate(90 425 180)">40.0m (S)</text>
+
+  <!-- Westfassade -->
+  <line x1="160" y1="275" x2="410" y2="275" stroke="#666" stroke-width="0.5"/>
+  <text x="285" y="285" text-anchor="middle" font-family="Arial" font-size="8">68.5m (W)</text>
+
+  <!-- Gerüst-Zugänge -->
+  <!-- Z1: Ostfassade 39% -->
+  <circle cx="257" cy="90" r="4" fill="#CC0000"/>
+  <text x="257" y="105" text-anchor="middle" font-family="Arial" font-size="7" fill="#CC0000">Z1</text>
+
+  <!-- Z2: Südfassade 98% -->
+  <circle cx="410" cy="266" r="4" fill="#CC0000"/>
+  <text x="420" y="270" text-anchor="start" font-family="Arial" font-size="7" fill="#CC0000">Z2</text>
+
+  <!-- Z3: Westfassade 4% -->
+  <circle cx="167" cy="270" r="4" fill="#CC0000"/>
+  <text x="167" y="280" text-anchor="middle" font-family="Arial" font-size="7" fill="#CC0000">Z3</text>
+
+  <!-- Z4: Nordfassade 90% -->
+  <circle cx="160" cy="126" r="4" fill="#CC0000"/>
+  <text x="145" y="130" text-anchor="end" font-family="Arial" font-size="7" fill="#CC0000">Z4</text>
+
+  <!-- Nordpfeil -->
+  <g transform="translate(600,100)">
+    <path d="M0,0 L10,20 L0,15 L-10,20 Z" fill="#000"/>
+    <text x="0" y="35" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">N</text>
+  </g>
+
+  <!-- Maßstab -->
+  <g transform="translate(50,400)">
+    <line x1="0" y1="0" x2="100" y2="0" stroke="#000" stroke-width="2"/>
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#000" stroke-width="1"/>
+    <line x1="100" y1="-5" x2="100" y2="5" stroke="#000" stroke-width="1"/>
+    <text x="50" y="15" text-anchor="middle" font-family="Arial" font-size="8">20m</text>
+    <text x="50" y="25" text-anchor="middle" font-family="Arial" font-size="7">Maßstab 1:500</text>
+  </g>
+
+  <!-- Legende -->
+  <g transform="translate(500,300)">
+    <text x="0" y="0" font-family="Arial" font-size="10" font-weight="bold">Legende:</text>
+    
+    <rect x="0" y="10" width="15" height="10" fill="url(#hatch)" stroke="#000"/>
+    <text x="20" y="18" font-family="Arial" font-size="8">Hauptgebäude</text>
+    
+    <rect x="0" y="25" width="15" height="10" fill="url(#cut-hatch)" stroke="#000"/>
+    <text x="20" y="33" font-family="Arial" font-size="8">Dachaufbau</text>
+    
+    <line x1="0" y1="45" x2="15" y2="45" stroke="#0066CC" stroke-dasharray="3,3"/>
+    <text x="20" y="48" font-family="Arial" font-size="8">Gerüstzone</text>
+    
+    <circle cx="7" cy="55" r="3" fill="#CC0000"/>
+    <text x="20" y="58" font-family="Arial" font-size="8">Zugang</text>
+  </g>
+
+  <!-- Gebäudedaten -->
+  <g transform="translate(50,300)">
+    <text x="0" y="0" font-family="Arial" font-size="9" font-weight="bold">Gebäudedaten:</text>
+    <text x="0" y="15" font-family="Arial" font-size="8">Grundfläche: 1591 m²</text>
+    <text x="0" y="25" font-family="Arial" font-size="8">Geschosse: 6</text>
+    <text x="0" y="35" font-family="Arial" font-size="8">Baujahr: 1859</text>
+    <text x="0" y="45" font-family="Arial" font-size="8">Dachform: Mansarddach</text>
+    <text x="0" y="55" font-family="Arial" font-size="8">Max. Höhe: 30.0m</text>
+    <text x="0" y="65" font-family="Arial" font-size="8">Umfang: 187.2m</text>
+  </g>
+
+  <!-- Koordinaten -->
+  <text x="50" y="460" font-family="Arial" font-size="8">LV95: E 600174, N 199743 | Höhe: 540.9 m ü.M.</text>
+</svg>

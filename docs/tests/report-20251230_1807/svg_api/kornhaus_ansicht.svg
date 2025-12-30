@@ -1,0 +1,126 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+  
+  <!-- Terrain/Boden -->
+  <rect x="0" y="380" width="700" height="20" fill="url(#ground)"/>
+  <line x1="80" y1="380" x2="600" y2="380" stroke="#333" stroke-width="1.5"/>
+  
+  <!-- Arkaden Zone (5.0m) -->
+  <!-- Rundbogen -->
+  <g transform="translate(150,350)">
+    <rect x="0" y="0" width="80" height="30" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+    <path d="M10,30 A10,10 0 0,1 30,30 M30,30 A10,10 0 0,1 50,30 M50,30 A10,10 0 0,1 70,30" fill="none" stroke="#333" stroke-width="1"/>
+  </g>
+  <g transform="translate(230,350)">
+    <rect x="0" y="0" width="80" height="30" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+    <path d="M10,30 A10,10 0 0,1 30,30 M30,30 A10,10 0 0,1 50,30 M50,30 A10,10 0 0,1 70,30" fill="none" stroke="#333" stroke-width="1"/>
+  </g>
+  <g transform="translate(310,350)">
+    <rect x="0" y="0" width="80" height="30" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+    <path d="M10,30 A10,10 0 0,1 30,30 M30,30 A10,10 0 0,1 50,30 M50,30 A10,10 0 0,1 70,30" fill="none" stroke="#333" stroke-width="1"/>
+  </g>
+  
+  <!-- Hauptgebäude (25.0m) -->
+  <rect x="150" y="180" width="240" height="170" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Mansarddach -->
+  <polygon points="150,180 270,150 390,180" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Dachreiter/Turm (32.0m) -->
+  <rect x="240" y="100" width="60" height="80" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <polygon points="240,100 270,80 300,100" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Fenster im Hauptgebäude -->
+  <rect x="170" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="200" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="230" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="260" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="290" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="320" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="350" y="200" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  
+  <rect x="170" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="200" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="230" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="260" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="290" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="320" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="350" y="240" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  
+  <rect x="170" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="200" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="230" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="260" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="290" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="320" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="350" y="280" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  
+  <rect x="170" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="200" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="230" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="260" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="290" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="320" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  <rect x="350" y="320" width="15" height="25" fill="#FFFFFF" stroke="#333" stroke-width="1"/>
+  
+  <!-- Gerüst-Ständer -->
+  <line x1="120" y1="380" x2="120" y2="80" stroke="#0066CC" stroke-width="3"/>
+  <line x1="140" y1="380" x2="140" y2="80" stroke="#0066CC" stroke-width="3"/>
+  <line x1="410" y1="380" x2="410" y2="80" stroke="#0066CC" stroke-width="3"/>
+  <line x1="430" y1="380" x2="430" y2="80" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Gerüst-Beläge -->
+  <line x1="120" y1="365" x2="430" y2="365" stroke="#8B4513" stroke-width="4"/>
+  <line x1="120" y1="315" x2="430" y2="315" stroke="#8B4513" stroke-width="4"/>
+  <line x1="120" y1="265" x2="430" y2="265" stroke="#8B4513" stroke-width="4"/>
+  <line x1="120" y1="215" x2="430" y2="215" stroke="#8B4513" stroke-width="4"/>
+  <line x1="120" y1="165" x2="430" y2="165" stroke="#8B4513" stroke-width="4"/>
+  <line x1="120" y1="115" x2="430" y2="115" stroke="#8B4513" stroke-width="4"/>
+  
+  <!-- Verankerungen -->
+  <line x1="140" y1="200" x2="150" y2="200" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3"/>
+  <line x1="140" y1="240" x2="150" y2="240" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3"/>
+  <line x1="140" y1="280" x2="150" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3"/>
+  <line x1="140" y1="320" x2="150" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,3"/>
+  
+  <!-- Höhenskala links -->
+  <line x1="50" y1="380" x2="50" y2="80" stroke="#333" stroke-width="1"/>
+  <line x1="45" y1="380" x2="55" y2="380" stroke="#333" stroke-width="1"/>
+  <line x1="45" y1="180" x2="55" y2="180" stroke="#333" stroke-width="1"/>
+  <line x1="45" y1="150" x2="55" y2="150" stroke="#333" stroke-width="1"/>
+  <line x1="45" y1="80" x2="55" y2="80" stroke="#333" stroke-width="1"/>
+  
+  <text x="30" y="385" font-family="Arial" font-size="10" fill="#333">+/-0.00</text>
+  <text x="30" y="185" font-family="Arial" font-size="10" fill="#333">+22.3</text>
+  <text x="30" y="155" font-family="Arial" font-size="10" fill="#333">+26.2</text>
+  <text x="30" y="85" font-family="Arial" font-size="10" fill="#333">+32.0</text>
+  
+  <!-- Lagenbeschriftung rechts -->
+  <text x="450" y="370" font-family="Arial" font-size="10" fill="#333">1. Lage</text>
+  <text x="450" y="320" font-family="Arial" font-size="10" fill="#333">2. Lage</text>
+  <text x="450" y="270" font-family="Arial" font-size="10" fill="#333">3. Lage</text>
+  <text x="450" y="220" font-family="Arial" font-size="10" fill="#333">4. Lage</text>
+  <text x="450" y="170" font-family="Arial" font-size="10" fill="#333">5. Lage</text>
+  <text x="450" y="120" font-family="Arial" font-size="10" fill="#333">6. Lage</text>
+  
+  <!-- Titel -->
+  <text x="350" y="30" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">FASSADENANSICHT - Kornhaus Bern</text>
+  <text x="350" y="45" font-family="Arial" font-size="10" text-anchor="middle" fill="#666">Kornhausplatz 18, 3011 Bern | EGID: 1230631</text>
+</svg>

@@ -1,0 +1,121 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Terrain-Linie -->
+  <line x1="80" y1="400" x2="620" y2="400" stroke="#666" stroke-width="2"/>
+  <rect x="80" y="400" width="540" height="60" fill="url(#ground)"/>
+
+  <!-- Zone 1: Baldachin (arkade) - 12.0m -->
+  <path d="M100,400 L180,400 L180,280 Q180,260 200,260 L260,260 Q280,260 280,280 L280,400 L360,400 L360,280 Q360,260 380,260 L440,260 Q460,260 460,280 L460,400 L540,400 L540,320 L100,320 Z" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Zone 2: Bahnhofshalle (hauptgebaeude) - 22.0m -->
+  <rect x="120" y="180" width="400" height="140" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Zone 3: Bueroturm (turm) - 40.0m -->
+  <rect x="280" y="40" width="140" height="140" fill="url(#hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Geruest Zone 1 (Baldachin) -->
+  <!-- Staender -->
+  <line x1="90" y1="400" x2="90" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="180" y1="400" x2="180" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="360" y1="400" x2="360" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="460" y1="400" x2="460" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="550" y1="400" x2="550" y2="300" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Belaege Zone 1 -->
+  <line x1="90" y1="380" x2="550" y2="380" stroke="#8B4513" stroke-width="4"/>
+  <line x1="90" y1="350" x2="550" y2="350" stroke="#8B4513" stroke-width="4"/>
+  <line x1="90" y1="320" x2="550" y2="320" stroke="#8B4513" stroke-width="4"/>
+
+  <!-- Geruest Zone 2 (Bahnhofshalle) -->
+  <!-- Staender -->
+  <line x1="110" y1="320" x2="110" y2="160" stroke="#0066CC" stroke-width="3"/>
+  <line x1="200" y1="320" x2="200" y2="160" stroke="#0066CC" stroke-width="3"/>
+  <line x1="350" y1="320" x2="350" y2="160" stroke="#0066CC" stroke-width="3"/>
+  <line x1="440" y1="320" x2="440" y2="160" stroke="#0066CC" stroke-width="3"/>
+  <line x1="530" y1="320" x2="530" y2="160" stroke="#0066CC" stroke-width="3"/>
+
+  <!-- Belaege Zone 2 -->
+  <line x1="110" y1="300" x2="530" y2="300" stroke="#8B4513" stroke-width="4"/>
+  <line x1="110" y1="260" x2="530" y2="260" stroke="#8B4513" stroke-width="4"/>
+  <line x1="110" y1="220" x2="530" y2="220" stroke="#8B4513" stroke-width="4"/>
+  <line x1="110" y1="180" x2="530" y2="180" stroke="#8B4513" stroke-width="4"/>
+
+  <!-- Geruest Zone 3 (Bueroturm - Sonderkonstruktion) -->
+  <!-- Staender -->
+  <line x1="270" y1="180" x2="270" y2="20" stroke="#0066CC" stroke-width="3"/>
+  <line x1="320" y1="180" x2="320" y2="20" stroke="#0066CC" stroke-width="3"/>
+  <line x1="380" y1="180" x2="380" y2="20" stroke="#0066CC" stroke-width="3"/>
+  <line x1="430" y1="180" x2="430" y2="20" stroke="#0066CC" stroke-width="3"/>
+
+  <!-- Belaege Zone 3 -->
+  <line x1="270" y1="160" x2="430" y2="160" stroke="#8B4513" stroke-width="4"/>
+  <line x1="270" y1="120" x2="430" y2="120" stroke="#8B4513" stroke-width="4"/>
+  <line x1="270" y1="80" x2="430" y2="80" stroke="#8B4513" stroke-width="4"/>
+  <line x1="270" y1="40" x2="430" y2="40" stroke="#8B4513" stroke-width="4"/>
+
+  <!-- Verankerungen -->
+  <line x1="180" y1="280" x2="200" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="360" y1="280" x2="350" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="460" y1="280" x2="440" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="520" y1="180" x2="500" y2="180" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="280" y1="180" x2="270" y2="180" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="420" y1="40" x2="430" y2="40" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Hoehenskala links -->
+  <g font-family="Arial" font-size="12" fill="#333">
+    <line x1="60" y1="400" x2="70" y2="400" stroke="#333" stroke-width="1"/>
+    <text x="55" y="405" text-anchor="end">±0.00</text>
+    
+    <line x1="60" y1="320" x2="70" y2="320" stroke="#333" stroke-width="1"/>
+    <text x="55" y="325" text-anchor="end">+12.0</text>
+    
+    <line x1="60" y1="180" x2="70" y2="180" stroke="#333" stroke-width="1"/>
+    <text x="55" y="185" text-anchor="end">+22.0</text>
+    
+    <line x1="60" y1="40" x2="70" y2="40" stroke="#333" stroke-width="1"/>
+    <text x="55" y="45" text-anchor="end">+40.0</text>
+  </g>
+
+  <!-- Lagenbeschriftung rechts -->
+  <g font-family="Arial" font-size="11" fill="#333">
+    <text x="560" y="385" text-anchor="start">1. Lage</text>
+    <text x="560" y="355" text-anchor="start">2. Lage</text>
+    <text x="560" y="325" text-anchor="start">3. Lage</text>
+    <text x="560" y="305" text-anchor="start">4. Lage</text>
+    <text x="560" y="265" text-anchor="start">5. Lage</text>
+    <text x="560" y="225" text-anchor="start">6. Lage</text>
+    <text x="560" y="185" text-anchor="start">7. Lage</text>
+    <text x="560" y="165" text-anchor="start">8. Lage</text>
+    <text x="560" y="125" text-anchor="start">9. Lage</text>
+    <text x="560" y="85" text-anchor="start">10. Lage</text>
+    <text x="560" y="45" text-anchor="start">11. Lage</text>
+  </g>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#333">Fassadenansicht - Hauptbahnhof Bern</text>
+</svg>

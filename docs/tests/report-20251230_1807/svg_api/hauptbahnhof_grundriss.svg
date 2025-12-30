@@ -1,0 +1,130 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+  
+  <!-- Gerüstzone Umriss (1m Abstand) -->
+  <rect x="98" y="78" width="504" height="204" fill="none" stroke="#0066CC" stroke-width="1" stroke-dasharray="3,3"/>
+  
+  <!-- Zone 1: Baldachin (Arkade) - links -->
+  <rect x="100" y="80" width="150" height="80" fill="url(#hatch)" stroke="#333" stroke-width="1.5"/>
+  <text x="175" y="125" text-anchor="middle" font-size="10" fill="#333">Baldachin</text>
+  <text x="175" y="135" text-anchor="middle" font-size="8" fill="#666">12.0m</text>
+  
+  <!-- Rundbogen für Arkade -->
+  <path d="M 100,140 Q 125,150 150,140" fill="none" stroke="#333" stroke-width="1"/>
+  <path d="M 150,140 Q 175,150 200,140" fill="none" stroke="#333" stroke-width="1"/>
+  <path d="M 200,140 Q 225,150 250,140" fill="none" stroke="#333" stroke-width="1"/>
+  
+  <!-- Zone 2: Bahnhofshalle (Hauptgebäude) - mitte -->
+  <rect x="250" y="80" width="250" height="200" fill="url(#hatch)" stroke="#333" stroke-width="1.5"/>
+  <text x="375" y="185" text-anchor="middle" font-size="12" fill="#333">Bahnhofshalle</text>
+  <text x="375" y="195" text-anchor="middle" font-size="9" fill="#666">22.0m</text>
+  
+  <!-- Zone 3: Büroturm (rechts) -->
+  <rect x="500" y="80" width="100" height="200" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="550" y="185" text-anchor="middle" font-size="10" fill="#333">Büroturm</text>
+  <text x="550" y="195" text-anchor="middle" font-size="8" fill="#666">40.0m</text>
+  <text x="550" y="205" text-anchor="middle" font-size="7" fill="#CC0000">Sonderkonstruktion</text>
+  
+  <!-- Gerüst-Stände -->
+  <circle cx="110" cy="90" r="2" fill="#0066CC"/>
+  <circle cx="240" cy="90" r="2" fill="#0066CC"/>
+  <circle cx="260" cy="90" r="2" fill="#0066CC"/>
+  <circle cx="490" cy="90" r="2" fill="#0066CC"/>
+  <circle cx="510" cy="90" r="2" fill="#0066CC"/>
+  <circle cx="590" cy="90" r="2" fill="#0066CC"/>
+  
+  <circle cx="110" cy="270" r="2" fill="#0066CC"/>
+  <circle cx="240" cy="270" r="2" fill="#0066CC"/>
+  <circle cx="260" cy="270" r="2" fill="#0066CC"/>
+  <circle cx="490" cy="270" r="2" fill="#0066CC"/>
+  <circle cx="510" cy="270" r="2" fill="#0066CC"/>
+  <circle cx="590" cy="270" r="2" fill="#0066CC"/>
+  
+  <!-- Beläge (braun) -->
+  <rect x="105" y="85" width="140" height="4" fill="#8B4513"/>
+  <rect x="255" y="85" width="240" height="4" fill="#8B4513"/>
+  <rect x="505" y="85" width="90" height="4" fill="#8B4513"/>
+  
+  <!-- Fassadenlängen -->
+  <line x1="100" y1="60" x2="250" y2="60" stroke="#666" stroke-width="0.5"/>
+  <text x="175" y="55" text-anchor="middle" font-size="8" fill="#666">150m</text>
+  
+  <line x1="250" y1="60" x2="500" y2="60" stroke="#666" stroke-width="0.5"/>
+  <text x="375" y="55" text-anchor="middle" font-size="8" fill="#666">250m</text>
+  
+  <line x1="500" y1="60" x2="600" y2="60" stroke="#666" stroke-width="0.5"/>
+  <text x="550" y="55" text-anchor="middle" font-size="8" fill="#666">100m</text>
+  
+  <!-- Gerüst-Zugänge -->
+  <rect x="580" y="120" width="8" height="12" fill="#0066CC"/>
+  <text x="595" y="130" font-size="7" fill="#0066CC">Z1</text>
+  
+  <rect x="320" y="75" width="12" height="8" fill="#0066CC"/>
+  <text x="330" y="70" font-size="7" fill="#0066CC">Z2</text>
+  
+  <rect x="120" y="75" width="12" height="8" fill="#0066CC"/>
+  <text x="130" y="70" font-size="7" fill="#0066CC">Z3</text>
+  
+  <rect x="350" y="275" width="12" height="8" fill="#0066CC"/>
+  <text x="360" y="290" font-size="7" fill="#0066CC">Z5</text>
+  
+  <rect x="110" y="180" width="8" height="12" fill="#0066CC"/>
+  <text x="95" y="190" font-size="7" fill="#0066CC">Z9</text>
+  
+  <!-- Nordpfeil -->
+  <g transform="translate(50,350)">
+    <path d="M 0,-15 L -5,5 L 0,0 L 5,5 Z" fill="#333"/>
+    <text x="0" y="20" text-anchor="middle" font-size="10" fill="#333">N</text>
+  </g>
+  
+  <!-- Maßstab -->
+  <g transform="translate(50,400)">
+    <line x1="0" y1="0" x2="50" y2="0" stroke="#333" stroke-width="2"/>
+    <line x1="0" y1="-3" x2="0" y2="3" stroke="#333" stroke-width="1"/>
+    <line x1="50" y1="-3" x2="50" y2="3" stroke="#333" stroke-width="1"/>
+    <text x="25" y="15" text-anchor="middle" font-size="8" fill="#333">50m</text>
+  </g>
+  
+  <!-- Titel und Koordinaten -->
+  <text x="350" y="30" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Hauptbahnhof Bern - Grundriss</text>
+  <text x="350" y="45" text-anchor="middle" font-size="8" fill="#666">EGID: 2241912 | LV95: 600107/199722</text>
+  
+  <!-- Legende -->
+  <g transform="translate(520,320)">
+    <rect x="0" y="0" width="150" height="120" fill="none" stroke="#999" stroke-width="0.5"/>
+    <text x="5" y="15" font-size="10" font-weight="bold" fill="#333">Legende:</text>
+    
+    <rect x="5" y="25" width="12" height="8" fill="url(#hatch)" stroke="#333" stroke-width="0.5"/>
+    <text x="20" y="32" font-size="8" fill="#333">Gebäude</text>
+    
+    <circle cx="11" cy="45" r="2" fill="#0066CC"/>
+    <text x="20" y="48" font-size="8" fill="#333">Gerüstständer</text>
+    
+    <rect x="5" y="55" width="12" height="3" fill="#8B4513"/>
+    <text x="20" y="62" font-size="8" fill="#333">Beläge</text>
+    
+    <rect x="5" y="70" width="8" height="8" fill="#0066CC"/>
+    <text x="20" y="77" font-size="8" fill="#333">Zugang</text>
+    
+    <text x="5" y="95" font-size="7" fill="#666">Grundfläche: 7713 m²</text>
+    <text x="5" y="105" font-size="7" fill="#666">Umfang: 530.7 m</text>
+    <text x="5" y="115" font-size="7" fill="#666">Max. Höhe: 40.0 m</text>
+  </g>
+</svg>

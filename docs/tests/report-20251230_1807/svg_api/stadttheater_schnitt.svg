@@ -1,0 +1,188 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+  <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+    <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- DICHTE Schraffur fuer Schnittflaechen -->
+  <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+    <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+  </pattern>
+
+  <!-- Terrain/Boden -->
+  <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+  <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" style="stop-color:#7CB9A5"/>
+    <stop offset="100%" style="stop-color:#4A8A77"/>
+  </linearGradient>
+</defs>
+
+<!-- Hintergrund -->
+<rect width="700" height="480" fill="#FFFFFF"/>
+
+<!-- Titel -->
+<text x="350" y="25" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#000">Konzert Theater Bern - Gebäudeschnitt A-A</text>
+<text x="350" y="40" font-family="Arial" font-size="10" text-anchor="middle" fill="#666">Theaterplatz 7, 3011 Bern</text>
+
+<!-- Terrain-Linie -->
+<rect x="60" y="370" width="580" height="20" fill="url(#ground)" stroke="#666" stroke-width="1"/>
+<text x="50" y="385" font-family="Arial" font-size="9" text-anchor="end" fill="#000">±0.00</text>
+
+<!-- Zone 1: Foyer (Anbau) - 12.0m -->
+<g>
+  <!-- Schnittflaeche - linke Wand -->
+  <rect x="80" y="290" width="15" height="80" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Innenraum (LEER/WEISS) -->
+  <rect x="95" y="290" width="120" height="80" fill="#FFFFFF" stroke="none"/>
+  
+  <!-- Schnittflaeche - rechte Wand -->
+  <rect x="215" y="290" width="15" height="80" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Dach (Walmdach 12°) -->
+  <polygon points="75,290 120,270 190,270 235,290" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Geschossdecken -->
+  <line x1="95" y1="330" x2="215" y2="330" stroke="#333" stroke-width="0.5"/>
+  <line x1="95" y1="350" x2="215" y2="350" stroke="#333" stroke-width="0.5"/>
+</g>
+
+<!-- Zone 2: Zuschauerhaus (Hauptgebäude) - 22.0m -->
+<g>
+  <!-- Schnittflaeche - linke Wand -->
+  <rect x="230" y="190" width="20" height="180" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Innenraum (LEER/WEISS) -->
+  <rect x="250" y="190" width="200" height="180" fill="#FFFFFF" stroke="none"/>
+  
+  <!-- Schnittflaeche - rechte Wand -->
+  <rect x="450" y="190" width="20" height="180" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Dach (Walmdach 12°) -->
+  <polygon points="225,190 280,150 420,150 475,190" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Geschossdecken -->
+  <line x1="250" y1="230" x2="450" y2="230" stroke="#333" stroke-width="0.5"/>
+  <line x1="250" y1="270" x2="450" y2="270" stroke="#333" stroke-width="0.5"/>
+  <line x1="250" y1="310" x2="450" y2="310" stroke="#333" stroke-width="0.5"/>
+  <line x1="250" y1="350" x2="450" y2="350" stroke="#333" stroke-width="0.5"/>
+</g>
+
+<!-- Zone 3: Bühnenturm (Turm) - 32.0m -->
+<g>
+  <!-- Schnittflaeche - linke Wand -->
+  <rect x="470" y="90" width="20" height="280" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Innenraum (LEER/WEISS) -->
+  <rect x="490" y="90" width="120" height="280" fill="#FFFFFF" stroke="none"/>
+  
+  <!-- Schnittflaeche - rechte Wand -->
+  <rect x="610" y="90" width="20" height="280" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Flaches Dach -->
+  <rect x="465" y="85" width="170" height="10" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  
+  <!-- Geschossdecken -->
+  <line x1="490" y1="130" x2="610" y2="130" stroke="#333" stroke-width="0.5"/>
+  <line x1="490" y1="170" x2="610" y2="170" stroke="#333" stroke-width="0.5"/>
+  <line x1="490" y1="210" x2="610" y2="210" stroke="#333" stroke-width="0.5"/>
+  <line x1="490" y1="250" x2="610" y2="250" stroke="#333" stroke-width="0.5"/>
+  <line x1="490" y1="290" x2="610" y2="290" stroke="#333" stroke-width="0.5"/>
+  <line x1="490" y1="330" x2="610" y2="330" stroke="#333" stroke-width="0.5"/>
+</g>
+
+<!-- Gerüst links -->
+<g stroke="#0066CC" stroke-width="2" fill="none">
+  <!-- Ständer -->
+  <line x1="30" y1="80" x2="30" y2="380"/>
+  <line x1="50" y1="80" x2="50" y2="380"/>
+  
+  <!-- Riegel -->
+  <line x1="30" y1="100" x2="50" y2="100"/>
+  <line x1="30" y1="140" x2="50" y2="140"/>
+  <line x1="30" y1="180" x2="50" y2="180"/>
+  <line x1="30" y1="220" x2="50" y2="220"/>
+  <line x1="30" y1="260" x2="50" y2="260"/>
+  <line x1="30" y1="300" x2="50" y2="300"/>
+  <line x1="30" y1="340" x2="50" y2="340"/>
+  
+  <!-- Beläge -->
+  <rect x="30" y="98" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="138" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="178" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="218" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="258" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="298" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="30" y="338" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+</g>
+
+<!-- Gerüst rechts -->
+<g stroke="#0066CC" stroke-width="2" fill="none">
+  <!-- Ständer -->
+  <line x1="650" y1="80" x2="650" y2="380"/>
+  <line x1="670" y1="80" x2="670" y2="380"/>
+  
+  <!-- Riegel -->
+  <line x1="650" y1="100" x2="670" y2="100"/>
+  <line x1="650" y1="140" x2="670" y2="140"/>
+  <line x1="650" y1="180" x2="670" y2="180"/>
+  <line x1="650" y1="220" x2="670" y2="220"/>
+  <line x1="650" y1="260" x2="670" y2="260"/>
+  <line x1="650" y1="300" x2="670" y2="300"/>
+  <line x1="650" y1="340" x2="670" y2="340"/>
+  
+  <!-- Beläge -->
+  <rect x="650" y="98" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="138" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="178" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="218" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="258" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="298" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+  <rect x="650" y="338" width="20" height="4" fill="#8B4513" stroke="#8B4513"/>
+</g>
+
+<!-- Verankerungen -->
+<line x1="50" y1="200" x2="80" y2="200" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+<line x1="50" y1="280" x2="80" y2="280" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+<line x1="650" y1="150" x2="630" y2="150" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+<line x1="650" y1="250" x2="630" y2="250" stroke="#CC0000" stroke-width="1" stroke-dasharray="3,2"/>
+
+<!-- Höhenangaben -->
+<g font-family="Arial" font-size="9" fill="#000">
+  <text x="20" y="288" text-anchor="end">12.0m</text>
+  <text x="20" y="188" text-anchor="end">22.0m</text>
+  <text x="20" y="88" text-anchor="end">32.0m</text>
+</g>
+
+<!-- Schnittmarkierung -->
+<g font-family="Arial" font-size="12" font-weight="bold" fill="#000">
+  <circle cx="80" cy="60" r="12" fill="none" stroke="#000" stroke-width="1"/>
+  <text x="80" y="65" text-anchor="middle">A</text>
+  <circle cx="620" cy="60" r="12" fill="none" stroke="#000" stroke-width="1"/>
+  <text x="620" y="65" text-anchor="middle">A</text>
+</g>
+
+<!-- Legende -->
+<g font-family="Arial" font-size="8" fill="#333">
+  <text x="60" y="420">Foyer</text>
+  <text x="340" y="420">Zuschauerhaus</text>
+  <text x="540" y="420">Bühnenturm</text>
+  
+  <rect x="60" y="435" width="15" height="8" fill="#0066CC"/>
+  <text x="80" y="442">Gerüst</text>
+  
+  <rect x="150" y="435" width="15" height="8" fill="url(#cut-hatch)"/>
+  <text x="170" y="442">Schnittfläche</text>
+  
+  <line x1="260" y1="439" x2="275" y2="439" stroke="#CC0000" stroke-width="1" stroke-dasharray="2,1"/>
+  <text x="280" y="442">Verankerung</text>
+</g>
+
+<!-- Maßstab -->
+<text x="560" y="465" font-family="Arial" font-size="9" fill="#666">Maßstab 1:200</text>
+</svg>

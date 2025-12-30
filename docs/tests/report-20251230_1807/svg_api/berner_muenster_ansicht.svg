@@ -1,0 +1,116 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+    
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+    
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+  
+  <!-- Terrain-Linie bei +/-0.00 -->
+  <line x1="50" y1="400" x2="650" y2="400" stroke="#666" stroke-width="2"/>
+  <pattern id="ground-fill" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+  <rect x="50" y="400" width="600" height="80" fill="url(#ground-fill)"/>
+  
+  <!-- Seitenkapellen Links (15.0m) -->
+  <rect x="120" y="325" width="80" height="75" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  <!-- Dach Seitenkapelle Links -->
+  <polygon points="115,325 125,315 195,315 205,325" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Kirchenschiff Hauptgebäude (28.0m) -->
+  <rect x="200" y="260" width="200" height="140" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  <!-- Satteldach Kirchenschiff -->
+  <polygon points="195,260 300,230 405,260" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Seitenkapellen Rechts (15.0m) -->
+  <rect x="400" y="325" width="80" height="75" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  <!-- Dach Seitenkapelle Rechts -->
+  <polygon points="395,325 405,315 475,315 485,325" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Turm (100.3m) -->
+  <rect x="270" y="50" width="60" height="210" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  <!-- Turmspitze -->
+  <polygon points="270,50 300,20 330,50" fill="url(#hatch)" stroke="#000" stroke-width="1"/>
+  
+  <!-- Gerüst Kirchenschiff -->
+  <!-- Vertikale Ständer -->
+  <line x1="190" y1="260" x2="190" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="240" y1="260" x2="240" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="300" y1="260" x2="300" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="360" y1="260" x2="360" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="410" y1="260" x2="410" y2="410" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Horizontale Beläge -->
+  <rect x="185" y="370" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="340" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="310" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="280" width="230" height="4" fill="#8B4513"/>
+  
+  <!-- Gerüst Seitenkapellen -->
+  <line x1="110" y1="315" x2="110" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="210" y1="315" x2="210" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <rect x="105" y="360" width="110" height="4" fill="#8B4513"/>
+  
+  <line x1="490" y1="315" x2="490" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="390" y1="315" x2="390" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <rect x="385" y="360" width="110" height="4" fill="#8B4513"/>
+  
+  <!-- Turm Sondergerüst -->
+  <line x1="260" y1="50" x2="260" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <line x1="340" y1="50" x2="340" y2="410" stroke="#0066CC" stroke-width="3"/>
+  <rect x="255" y="80" width="90" height="4" fill="#8B4513"/>
+  <rect x="255" y="120" width="90" height="4" fill="#8B4513"/>
+  <rect x="255" y="160" width="90" height="4" fill="#8B4513"/>
+  <rect x="255" y="200" width="90" height="4" fill="#8B4513"/>
+  <rect x="255" y="240" width="90" height="4" fill="#8B4513"/>
+  
+  <!-- Verankerungen -->
+  <line x1="190" y1="300" x2="200" y2="300" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,2"/>
+  <line x1="240" y1="320" x2="250" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,2"/>
+  <line x1="300" y1="280" x2="310" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,2"/>
+  <line x1="360" y1="320" x2="370" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,2"/>
+  <line x1="410" y1="300" x2="400" y2="300" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,2"/>
+  
+  <!-- Höhenskala Links -->
+  <line x1="30" y1="400" x2="40" y2="400" stroke="#000" stroke-width="1"/>
+  <text x="25" y="405" font-family="Arial" font-size="10" text-anchor="end">±0.00</text>
+  
+  <line x1="30" y1="325" x2="40" y2="325" stroke="#000" stroke-width="1"/>
+  <text x="25" y="330" font-family="Arial" font-size="10" text-anchor="end">+15.0m</text>
+  
+  <line x1="30" y1="260" x2="40" y2="260" stroke="#000" stroke-width="1"/>
+  <text x="25" y="265" font-family="Arial" font-size="10" text-anchor="end">+28.0m</text>
+  
+  <line x1="30" y1="50" x2="40" y2="50" stroke="#000" stroke-width="1"/>
+  <text x="25" y="55" font-family="Arial" font-size="10" text-anchor="end">+100.3m</text>
+  
+  <!-- Lagenbeschriftung Rechts -->
+  <text x="520" y="375" font-family="Arial" font-size="10">1. Lage</text>
+  <text x="520" y="345" font-family="Arial" font-size="10">2. Lage</text>
+  <text x="520" y="315" font-family="Arial" font-size="10">3. Lage</text>
+  <text x="520" y="285" font-family="Arial" font-size="10">4. Lage</text>
+  
+  <!-- Titel -->
+  <text x="350" y="30" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle">Fassadenansicht Ost - Berner Münster</text>
+  <text x="350" y="45" font-family="Arial" font-size="10" text-anchor="middle">Münsterplatz 1, 3011 Bern - EGID: 1230337</text>
+</svg>

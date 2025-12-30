@@ -1,0 +1,92 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Terrain-Linie -->
+  <rect x="100" y="400" width="400" height="30" fill="url(#ground)" stroke="#666" stroke-width="1"/>
+  <line x1="100" y1="400" x2="500" y2="400" stroke="#333" stroke-width="2"/>
+
+  <!-- Hauptgebaeude (21.2m breit, 26.0m hoch) -->
+  <rect x="150" y="140" width="300" height="260" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Satteldach (16° Neigung, First O-W) -->
+  <polygon points="150,140 225,120 375,120 450,140" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Geruest vor Fassade -->
+  <!-- Vertikale Staender -->
+  <line x1="130" y1="400" x2="130" y2="100" stroke="#0066CC" stroke-width="3"/>
+  <line x1="200" y1="400" x2="200" y2="100" stroke="#0066CC" stroke-width="3"/>
+  <line x1="270" y1="400" x2="270" y2="100" stroke="#0066CC" stroke-width="3"/>
+  <line x1="340" y1="400" x2="340" y2="100" stroke="#0066CC" stroke-width="3"/>
+  <line x1="410" y1="400" x2="410" y2="100" stroke="#0066CC" stroke-width="3"/>
+  <line x1="470" y1="400" x2="470" y2="100" stroke="#0066CC" stroke-width="3"/>
+
+  <!-- Horizontale Belaege -->
+  <rect x="130" y="390" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="350" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="310" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="270" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="230" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="190" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="150" width="340" height="4" fill="#8B4513"/>
+  <rect x="130" y="110" width="340" height="4" fill="#8B4513"/>
+
+  <!-- Verankerungen -->
+  <line x1="150" y1="370" x2="180" y2="370" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="150" y1="290" x2="180" y2="290" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="150" y1="210" x2="180" y2="210" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="420" y1="370" x2="450" y2="370" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="420" y1="290" x2="450" y2="290" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="420" y1="210" x2="450" y2="210" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Zugang Z1 Süd (91% Position) -->
+  <rect x="420" y="395" width="15" height="10" fill="#FFD700" stroke="#333"/>
+  <text x="438" y="404" font-family="Arial" font-size="8" fill="#333">Z1</text>
+
+  <!-- Hoehenskala links -->
+  <line x1="80" y1="100" x2="80" y2="430" stroke="#333" stroke-width="1"/>
+  <line x1="75" y1="400" x2="85" y2="400" stroke="#333" stroke-width="1"/>
+  <line x1="75" y1="140" x2="85" y2="140" stroke="#333" stroke-width="1"/>
+  <line x1="75" y1="120" x2="85" y2="120" stroke="#333" stroke-width="1"/>
+
+  <text x="70" y="405" font-family="Arial" font-size="10" fill="#333" text-anchor="end">+/-0.00</text>
+  <text x="70" y="145" font-family="Arial" font-size="10" fill="#333" text-anchor="end">+22.0</text>
+  <text x="70" y="125" font-family="Arial" font-size="10" fill="#333" text-anchor="end">+26.0</text>
+
+  <!-- Lagenbeschriftung rechts -->
+  <text x="520" y="385" font-family="Arial" font-size="10" fill="#333">1. Lage</text>
+  <text x="520" y="345" font-family="Arial" font-size="10" fill="#333">2. Lage</text>
+  <text x="520" y="305" font-family="Arial" font-size="10" fill="#333">3. Lage</text>
+  <text x="520" y="265" font-family="Arial" font-size="10" fill="#333">4. Lage</text>
+  <text x="520" y="225" font-family="Arial" font-size="10" fill="#333">5. Lage</text>
+  <text x="520" y="185" font-family="Arial" font-size="10" fill="#333">6. Lage</text>
+  <text x="520" y="145" font-family="Arial" font-size="10" fill="#333">7. Lage</text>
+
+  <!-- Titel -->
+  <text x="300" y="30" font-family="Arial" font-size="16" font-weight="bold" fill="#333" text-anchor="middle">FASSADENANSICHT SÜD</text>
+  <text x="300" y="50" font-family="Arial" font-size="12" fill="#333" text-anchor="middle">Kramgasse 49, 3011 Bern - Einsteinhaus</text>
+  <text x="300" y="470" font-family="Arial" font-size="10" fill="#666" text-anchor="middle">Massstab 1:200 - Fassadenlänge: 21.2m</text>
+</svg>

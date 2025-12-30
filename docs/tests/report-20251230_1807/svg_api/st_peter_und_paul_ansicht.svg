@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 480">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Terrain-Linie -->
+  <line x1="80" y1="400" x2="620" y2="400" stroke="#333" stroke-width="2"/>
+  <rect x="80" y="400" width="540" height="80" fill="url(#ground)"/>
+
+  <!-- Hauptkirchenschiff (25.0m) -->
+  <rect x="200" y="280" width="200" height="120" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Dach Hauptschiff -->
+  <polygon points="200,280 300,240 400,280" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Seitenschiffe links (12.0m) -->
+  <rect x="150" y="352" width="50" height="48" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <polygon points="150,352 175,340 200,352" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Seitenschiffe rechts (12.0m) -->
+  <rect x="400" y="352" width="50" height="48" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <polygon points="400,352 425,340 450,352" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Chor (18.0m) -->
+  <rect x="450" y="328" width="80" height="72" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <polygon points="450,328 490,308 530,328" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Westturm (54.6m) -->
+  <rect x="120" y="182" width="80" height="218" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Turmspitze -->
+  <polygon points="120,182 160,120 200,182" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Geruest Hauptfassade -->
+  <!-- Vertikale Staender -->
+  <line x1="185" y1="400" x2="185" y2="240" stroke="#0066CC" stroke-width="3"/>
+  <line x1="215" y1="400" x2="215" y2="240" stroke="#0066CC" stroke-width="3"/>
+  <line x1="285" y1="400" x2="285" y2="240" stroke="#0066CC" stroke-width="3"/>
+  <line x1="315" y1="400" x2="315" y2="240" stroke="#0066CC" stroke-width="3"/>
+  <line x1="385" y1="400" x2="385" y2="240" stroke="#0066CC" stroke-width="3"/>
+  <line x1="415" y1="400" x2="415" y2="240" stroke="#0066CC" stroke-width="3"/>
+
+  <!-- Horizontale Belaege -->
+  <rect x="185" y="390" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="365" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="340" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="315" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="290" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="265" width="230" height="4" fill="#8B4513"/>
+  <rect x="185" y="240" width="230" height="4" fill="#8B4513"/>
+
+  <!-- Geruest Turm (Sonderkonstruktion) -->
+  <!-- Vertikale Staender Turm -->
+  <line x1="105" y1="400" x2="105" y2="120" stroke="#0066CC" stroke-width="4"/>
+  <line x1="135" y1="400" x2="135" y2="120" stroke="#0066CC" stroke-width="4"/>
+  <line x1="165" y1="400" x2="165" y2="120" stroke="#0066CC" stroke-width="4"/>
+  <line x1="195" y1="400" x2="195" y2="120" stroke="#0066CC" stroke-width="4"/>
+  <line x1="215" y1="400" x2="215" y2="120" stroke="#0066CC" stroke-width="4"/>
+
+  <!-- Horizontale Belaege Turm -->
+  <rect x="105" y="120" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="150" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="180" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="210" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="240" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="270" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="300" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="330" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="360" width="110" height="4" fill="#8B4513"/>
+  <rect x="105" y="390" width="110" height="4" fill="#8B4513"/>
+
+  <!-- Verankerungen -->
+  <line x1="200" y1="350" x2="215" y2="350" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="300" y1="320" x2="315" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="400" y1="350" x2="415" y2="350" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="120" y1="300" x2="105" y2="300" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="120" y1="200" x2="105" y2="200" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Hoehenskala links -->
+  <line x1="60" y1="120" x2="60" y2="400" stroke="#333" stroke-width="1"/>
+  <line x1="55" y1="400" x2="65" y2="400" stroke="#333" stroke-width="1"/>
+  <line x1="55" y1="280" x2="65" y2="280" stroke="#333" stroke-width="1"/>
+  <line x1="55" y1="240" x2="65" y2="240" stroke="#333" stroke-width="1"/>
+  <line x1="55" y1="120" x2="65" y2="120" stroke="#333" stroke-width="1"/>
+
+  <text x="45" y="405" font-family="Arial, sans-serif" font-size="10" text-anchor="end" fill="#333">±0.00</text>
+  <text x="45" y="285" font-family="Arial, sans-serif" font-size="10" text-anchor="end" fill="#333">+25.0m</text>
+  <text x="45" y="245" font-family="Arial, sans-serif" font-size="10" text-anchor="end" fill="#333">+32.0m</text>
+  <text x="45" y="125" font-family="Arial, sans-serif" font-size="10" text-anchor="end" fill="#333">+54.6m</text>
+
+  <!-- Lagenbeschriftung rechts -->
+  <text x="640" y="395" font-family="Arial, sans-serif" font-size="10" fill="#333">1. Lage</text>
+  <text x="640" y="370" font-family="Arial, sans-serif" font-size="10" fill="#333">2. Lage</text>
+  <text x="640" y="345" font-family="Arial, sans-serif" font-size="10" fill="#333">3. Lage</text>
+  <text x="640" y="320" font-family="Arial, sans-serif" font-size="10" fill="#333">4. Lage</text>
+  <text x="640" y="295" font-family="Arial, sans-serif" font-size="10" fill="#333">5. Lage</text>
+  <text x="640" y="270" font-family="Arial, sans-serif" font-size="10" fill="#333">6. Lage</text>
+  <text x="640" y="245" font-family="Arial, sans-serif" font-size="10" fill="#333">7. Lage</text>
+
+  <!-- Titel -->
+  <text x="350" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#333">Fassadenansicht Süd - Kirche St. Peter und Paul</text>
+  <text x="350" y="50" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#666">Rathausgasse 2, 3011 Bern - EGID: 191821074</text>
+</svg>

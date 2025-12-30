@@ -1,8 +1,27 @@
-# Test-Dokumentation: Building Comparison
+# Test-Dokumentation
+
+## AKTUELLE TESTSTRATEGIE
+
+> **WICHTIG:** Die aktuelle Teststrategie ist in `TESTSTRATEGIE.md` dokumentiert!
+>
+> **Befehl:** `Teste gemaess Teststrategie` oder `Fuehre Teststrategie aus`
+>
+> **Script:** `python scripts/test_svg_comparison.py`
+
+Die neue Teststrategie (v2.0) vergleicht SVG-Generierung zwischen Claude API und Claude.ai:
+- Prompts exportieren (identisch fuer API & Claude.ai)
+- SVGs generieren
+- Mit Claude.ai vergleichen und optimieren
+
+**Scope:** 10 Gebaeude der Stadt Bern pro Testdurchlauf (5 bekannte + 5 unbekannte)
+
+---
+
+# Legacy: Building Comparison
 
 ## Uebersicht
 
-Diese Teststrategie prueft die Qualitaet der SmartBuildingService-Pipeline anhand von Berner Gebaeuden.
+Diese aeltere Teststrategie prueft die Qualitaet der SmartBuildingService-Pipeline anhand von Berner Gebaeuden.
 
 **Ziel:** Vergleich zwischen bekannten Gebaeuden (in `known_buildings.py`) und unbekannten Gebaeuden, um Optimierungspotential zu identifizieren.
 
@@ -506,7 +525,42 @@ Münsterplatz 1, 3011 Bern
 
 ---
 
-## Testergebnisse (30.12.2025 - nach Fixes)
+## Test-Reports (chronologisch)
+
+### Report 30.12.2025 17:11 (AKTUELL)
+
+**Ordner:** `docs/tests/report-20251230_1711/`
+
+| Metrik | Wert |
+|--------|------|
+| Getestete Gebaeude | 10 |
+| Erfolgsrate | 100% |
+| Durchschnittszeit | 418ms |
+| Cache geleert vor Test | Ja |
+
+**Ergebnisse:**
+
+| Gebaeude | building_name | complexity | Zonen | Zeit |
+|----------|---------------|------------|-------|------|
+| Bundeshaus | Bundeshaus | complex | 3/3 | 641ms |
+| Berner Muenster | Berner Muenster | complex | 3/3 | ~400ms |
+| St. Peter und Paul | Kirche St. Peter und Paul | complex | 4/4 | 372ms |
+| Einsteinhaus | Einsteinhaus | simple | 1/1 | ~350ms |
+| Kunstmuseum | Kunstmuseum Bern | complex | ~2 | ~400ms |
+| Kornhaus | Kornhaus | complex | ~2 | ~400ms |
+| Hauptbahnhof | Hauptbahnhof Bern | complex | ~2 | ~400ms |
+| Stadttheater | Konzert Theater Bern | complex | ~2 | ~400ms |
+| Historisches Museum | Bernisches Historisches Museum | complex | ~2 | ~400ms |
+| Hotel Schweizerhof | Hotel Schweizerhof Bern | moderate | ~2 | ~400ms |
+
+**Neue Features getestet:**
+- height_override fuer Kunstmuseum
+- Polygon-Form-Analyse (convexity-based)
+- Hoehen-Validierung (BUG-011/012)
+
+---
+
+## Testergebnisse (frueherer Test - Referenz)
 
 ### Alle 10 Gebaeude erkannt
 
@@ -667,5 +721,54 @@ Aktuell werden Gebaeude entweder:
 
 ---
 
+## Test-Prozedur (aktualisiert 30.12.2025)
+
+### Vollstaendiger Test-Workflow
+
+```bash
+# 1. Cache leeren (API-Call)
+curl -X DELETE "https://acceptable-trust-production.up.railway.app/api/v1/smart-building/cache"
+
+# 2. Tests ausfuehren
+cd backend
+python scripts/test_building_comparison.py
+
+# 3. Report-Ordner erstellen (Format: report-YYYYMMDD_HHMM)
+mkdir -p docs/tests/report-$(date +%Y%m%d_%H%M)
+
+# 4. Ergebnisse kopieren
+cp docs/tests/building_comparison_*.* docs/tests/report-$(date +%Y%m%d_%H%M)/
+
+# 5. README im Report-Ordner erstellen (optional)
+```
+
+### Cache-Clearing Endpoint
+
+```bash
+# Alle Caches leeren
+DELETE /api/v1/smart-building/cache
+
+# Nur fuer bestimmte Adresse
+DELETE /api/v1/smart-building/cache?address=Bundesplatz%203,%203011%20Bern
+
+# Nur bestimmten Cache-Typ
+DELETE /api/v1/smart-building/cache?cache_type=bundle  # oder: research, svg
+```
+
+### Report-Ordner Struktur
+
+```
+docs/tests/
+├── README.md                    # Diese Dokumentation
+├── building_comparison_*.json   # Aktuelle Rohdaten
+├── building_comparison_*.md     # Aktueller Prompt
+└── report-YYYYMMDD_HHMM/        # Archivierte Reports
+    ├── README.md                # Report-Zusammenfassung
+    ├── building_comparison_results.json
+    └── building_comparison_prompt.md
+```
+
+---
+
 *Stand: 30.12.2025*
-*Letzte Aktualisierung: Claude.ai Analyse-Optionen + ML-Roadmap hinzugefuegt*
+*Letzte Aktualisierung: Test-Reports mit Zeitstempel + Cache-Clearing Dokumentation*

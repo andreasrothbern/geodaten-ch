@@ -1,0 +1,117 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Terrain-Linie -->
+  <rect x="0" y="410" width="700" height="70" fill="url(#ground)" stroke="#666" stroke-width="1"/>
+
+  <!-- Gerüst links -->
+  <!-- Staender -->
+  <rect x="60" y="160" width="8" height="250" fill="#0066CC"/>
+  <rect x="80" y="160" width="8" height="250" fill="#0066CC"/>
+  
+  <!-- Belaege -->
+  <rect x="50" y="180" width="48" height="6" fill="#8B4513"/>
+  <rect x="50" y="220" width="48" height="6" fill="#8B4513"/>
+  <rect x="50" y="260" width="48" height="6" fill="#8B4513"/>
+  <rect x="50" y="300" width="48" height="6" fill="#8B4513"/>
+  <rect x="50" y="340" width="48" height="6" fill="#8B4513"/>
+  <rect x="50" y="380" width="48" height="6" fill="#8B4513"/>
+
+  <!-- Hauptbau (35m) - Seitenfluegel -->
+  <!-- Äußere Wand links -->
+  <rect x="100" y="270" width="20" height="140" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="120" y="270" width="60" height="140" fill="#FFFFFF"/>
+  <!-- Innenwand -->
+  <rect x="180" y="270" width="15" height="140" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Hauptgebäude (35m) - Zentral -->
+  <!-- Äußere Wand links -->
+  <rect x="195" y="210" width="20" height="200" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum -->
+  <rect x="215" y="210" width="120" height="200" fill="#FFFFFF"/>
+  <!-- Innenwand -->
+  <rect x="335" y="210" width="15" height="200" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Turm (50m) - Rechts -->
+  <!-- Äußere Wand links -->
+  <rect x="350" y="110" width="20" height="300" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Turmraum -->
+  <rect x="370" y="110" width="50" height="300" fill="#FFFFFF"/>
+  <!-- Äußere Wand rechts -->
+  <rect x="420" y="110" width="20" height="300" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Geschossdecken im Hauptgebäude -->
+  <line x1="195" y1="270" x2="350" y2="270" stroke="#333" stroke-width="1"/>
+  <line x1="195" y1="330" x2="350" y2="330" stroke="#333" stroke-width="1"/>
+
+  <!-- Geschossdecken im Turm -->
+  <line x1="350" y1="180" x2="440" y2="180" stroke="#333" stroke-width="1"/>
+  <line x1="350" y1="250" x2="440" y2="250" stroke="#333" stroke-width="1"/>
+  <line x1="350" y1="320" x2="440" y2="320" stroke="#333" stroke-width="1"/>
+
+  <!-- Dach Seitenfluegel -->
+  <polygon points="100,270 110,250 180,250 195,270" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Dach Hauptgebäude -->
+  <polygon points="195,210 225,180 325,180 350,210" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Dach Turm -->
+  <polygon points="350,110 395,80 440,110" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Gerüst rechts -->
+  <!-- Staender -->
+  <rect x="500" y="80" width="8" height="330" fill="#0066CC"/>
+  <rect x="520" y="80" width="8" height="330" fill="#0066CC"/>
+  
+  <!-- Belaege -->
+  <rect x="490" y="100" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="140" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="180" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="220" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="260" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="300" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="340" width="48" height="6" fill="#8B4513"/>
+  <rect x="490" y="380" width="48" height="6" fill="#8B4513"/>
+
+  <!-- Verankerungen -->
+  <line x1="88" y1="280" x2="100" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,4"/>
+  <line x1="88" y1="320" x2="100" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,4"/>
+  <line x1="490" y1="200" x2="440" y2="200" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,4"/>
+  <line x1="490" y1="280" x2="440" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- Beschriftung -->
+  <text x="20" y="35" font-family="Arial" font-size="18" font-weight="bold" fill="#333">GEBÄUDESCHNITT A-A</text>
+  <text x="20" y="55" font-family="Arial" font-size="12" fill="#666">Bernisches Historisches Museum</text>
+  
+  <!-- Höhenangaben -->
+  <text x="450" y="95" font-family="Arial" font-size="10" fill="#333">50.0m</text>
+  <text x="280" y="195" font-family="Arial" font-size="10" fill="#333">35.0m</text>
+  <text x="130" y="255" font-family="Arial" font-size="10" fill="#333">25.0m</text>
+  
+  <!-- Schnittmarkierung -->
+  <text x="50" y="430" font-family="Arial" font-size="12" font-weight="bold" fill="#333">A</text>
+  <text x="620" y="430" font-family="Arial" font-size="12" font-weight="bold" fill="#333">A</text>
+  
+  <!-- Referenzhöhe -->
+  <line x1="30" y1="410" x2="40" y2="410" stroke="#333" stroke-width="1"/>
+  <text x="5" y="415" font-family="Arial" font-size="8" fill="#333">±0.00</text>
+</svg>

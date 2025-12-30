@@ -1,0 +1,141 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Terrain-Linie -->
+  <rect x="0" y="350" width="700" height="15" fill="url(#ground)" stroke="#666" stroke-width="1"/>
+
+  <!-- Zone 1: Baldachin (Arkade) - 12.0m -->
+  <g>
+    <!-- Geschnittene Mauern -->
+    <rect x="80" y="290" width="15" height="60" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+    <rect x="185" y="290" width="15" height="60" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+    <!-- Rundbogen -->
+    <path d="M95,290 Q140,270 185,290" fill="none" stroke="#333" stroke-width="2"/>
+    <!-- Geschossdecke -->
+    <line x1="95" y1="350" x2="185" y2="350" stroke="#333" stroke-width="1"/>
+  </g>
+
+  <!-- Zone 2: Bahnhofshalle (Hauptgebaeude) - 22.0m -->
+  <g>
+    <!-- Geschnittene Mauern -->
+    <rect x="200" y="240" width="20" height="110" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+    <rect x="480" y="240" width="20" height="110" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+    <!-- Dach -->
+    <line x1="220" y1="240" x2="480" y2="240" stroke="#333" stroke-width="2"/>
+    <!-- Geschossdecken -->
+    <line x1="220" y1="280" x2="480" y2="280" stroke="#333" stroke-width="1"/>
+    <line x1="220" y1="315" x2="480" y2="315" stroke="#333" stroke-width="1"/>
+    <line x1="220" y1="350" x2="480" y2="350" stroke="#333" stroke-width="1"/>
+  </g>
+
+  <!-- Zone 3: Bueroturm - 40.0m -->
+  <g>
+    <!-- Geschnittene Mauern -->
+    <rect x="520" y="150" width="20" height="200" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+    <rect x="620" y="150" width="20" height="200" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+    <!-- Dach -->
+    <line x1="540" y1="150" x2="620" y2="150" stroke="#333" stroke-width="2"/>
+    <!-- Geschossdecken -->
+    <line x1="540" y1="200" x2="620" y2="200" stroke="#333" stroke-width="1"/>
+    <line x1="540" y1="250" x2="620" y2="250" stroke="#333" stroke-width="1"/>
+    <line x1="540" y1="300" x2="620" y2="300" stroke="#333" stroke-width="1"/>
+    <line x1="540" y1="350" x2="620" y2="350" stroke="#333" stroke-width="1"/>
+  </g>
+
+  <!-- Geruest Links -->
+  <g>
+    <!-- Staender -->
+    <line x1="50" y1="140" x2="50" y2="360" stroke="#0066CC" stroke-width="3"/>
+    <line x1="50" y1="140" x2="75" y2="140" stroke="#0066CC" stroke-width="2"/>
+    <!-- Belaege -->
+    <rect x="45" y="180" width="35" height="4" fill="#8B4513"/>
+    <rect x="45" y="220" width="35" height="4" fill="#8B4513"/>
+    <rect x="45" y="260" width="35" height="4" fill="#8B4513"/>
+    <rect x="45" y="300" width="35" height="4" fill="#8B4513"/>
+    <rect x="45" y="340" width="35" height="4" fill="#8B4513"/>
+    <!-- Verankerung -->
+    <line x1="75" y1="200" x2="80" y2="200" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  </g>
+
+  <!-- Geruest Mitte -->
+  <g>
+    <!-- Staender -->
+    <line x1="170" y1="140" x2="170" y2="360" stroke="#0066CC" stroke-width="3"/>
+    <line x1="170" y1="140" x2="195" y2="140" stroke="#0066CC" stroke-width="2"/>
+    <!-- Belaege -->
+    <rect x="165" y="180" width="35" height="4" fill="#8B4513"/>
+    <rect x="165" y="220" width="35" height="4" fill="#8B4513"/>
+    <rect x="165" y="260" width="35" height="4" fill="#8B4513"/>
+    <rect x="165" y="300" width="35" height="4" fill="#8B4513"/>
+    <rect x="165" y="340" width="35" height="4" fill="#8B4513"/>
+  </g>
+
+  <!-- Geruest Rechts (Sonderkonstruktion fuer Turm) -->
+  <g>
+    <!-- Staender -->
+    <line x1="650" y1="130" x2="650" y2="360" stroke="#0066CC" stroke-width="4"/>
+    <line x1="650" y1="130" x2="675" y2="130" stroke="#0066CC" stroke-width="3"/>
+    <!-- Belaege -->
+    <rect x="645" y="160" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="190" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="220" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="250" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="280" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="310" width="35" height="4" fill="#8B4513"/>
+    <rect x="645" y="340" width="35" height="4" fill="#8B4513"/>
+    <!-- Verankerung -->
+    <line x1="645" y1="180" x2="620" y2="180" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="645" y1="280" x2="620" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  </g>
+
+  <!-- Schnittmarkierung -->
+  <g>
+    <text x="30" y="400" font-family="Arial" font-size="14" font-weight="bold" fill="#333">A</text>
+    <line x1="40" y1="395" x2="660" y2="395" stroke="#333" stroke-width="1" stroke-dasharray="5,5"/>
+    <text x="670" y="400" font-family="Arial" font-size="14" font-weight="bold" fill="#333">A</text>
+  </g>
+
+  <!-- Hoehenkoten -->
+  <g font-family="Arial" font-size="10" fill="#333">
+    <text x="10" y="355">±0.00</text>
+    <text x="10" y="295">+12.0m</text>
+    <text x="10" y="245">+22.0m</text>
+    <text x="10" y="155">+40.0m</text>
+  </g>
+
+  <!-- Titel -->
+  <text x="350" y="30" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#333">
+    GEBÄUDESCHNITT A-A
+  </text>
+  <text x="350" y="50" font-family="Arial" font-size="12" text-anchor="middle" fill="#666">
+    Hauptbahnhof Bern - Bahnhofplatz 10, 3011 Bern
+  </text>
+
+  <!-- Legende -->
+  <g font-family="Arial" font-size="9" fill="#333">
+    <rect x="20" y="420" width="12" height="8" fill="url(#cut-hatch)"/>
+    <text x="35" y="428">Schnittfläche</text>
+    <line x1="120" y1="424" x2="135" y2="424" stroke="#0066CC" stroke-width="3"/>
+    <text x="140" y="428">Gerüst</text>
+    <line x1="200" y1="424" x2="215" y2="424" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+    <text x="220" y="428">Verankerung</text>
+  </g>
+</svg>

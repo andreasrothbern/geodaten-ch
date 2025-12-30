@@ -1,0 +1,128 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-size="14" font-weight="bold">GEBÄUDESCHNITT A-A</text>
+  <text x="350" y="42" text-anchor="middle" font-size="11">Kunstmuseum Bern - Hodlerstrasse 8</text>
+
+  <!-- Terrain-Linie -->
+  <rect x="50" y="400" width="600" height="30" fill="url(#ground)"/>
+  <line x1="50" y1="400" x2="650" y2="400" stroke="#333" stroke-width="2"/>
+
+  <!-- Zone 1: Altbau (18.0m) -->
+  <!-- Geschnittene Mauern -->
+  <rect x="100" y="220" width="15" height="180" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="235" y="220" width="15" height="180" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Decken -->
+  <rect x="115" y="340" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="115" y="280" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="115" y="220" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Dach -->
+  <polygon points="100,220 175,200 250,220 235,220 175,205 115,220" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Zone 2: Neubau Stettler (15.0m) -->
+  <!-- Geschnittene Mauern -->
+  <rect x="280" y="250" width="15" height="150" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="415" y="250" width="15" height="150" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Decken -->
+  <rect x="295" y="350" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="295" y="300" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="295" y="250" width="120" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Zone 3: Erweiterung (10.0m) -->
+  <!-- Geschnittene Mauern -->
+  <rect x="460" y="320" width="15" height="80" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="575" y="320" width="15" height="80" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Decken -->
+  <rect x="475" y="360" width="100" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <rect x="475" y="320" width="100" height="8" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+
+  <!-- Geruest links -->
+  <!-- Staender -->
+  <rect x="40" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="52" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="64" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="76" y="180" width="8" height="220" fill="#0066CC"/>
+  <!-- Belaege -->
+  <rect x="35" y="190" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="220" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="250" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="280" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="310" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="340" width="50" height="6" fill="#8B4513"/>
+  <rect x="35" y="370" width="50" height="6" fill="#8B4513"/>
+
+  <!-- Geruest rechts -->
+  <!-- Staender -->
+  <rect x="610" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="622" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="634" y="180" width="8" height="220" fill="#0066CC"/>
+  <rect x="646" y="180" width="8" height="220" fill="#0066CC"/>
+  <!-- Belaege -->
+  <rect x="605" y="190" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="220" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="250" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="280" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="310" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="340" width="50" height="6" fill="#8B4513"/>
+  <rect x="605" y="370" width="50" height="6" fill="#8B4513"/>
+
+  <!-- Verankerungen -->
+  <line x1="85" y1="250" x2="100" y2="250" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="85" y1="320" x2="100" y2="320" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="590" y1="280" x2="610" y2="280" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="590" y1="350" x2="610" y2="350" stroke="#CC0000" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Höhenangaben -->
+  <line x1="25" y1="400" x2="25" y2="200" stroke="#333" stroke-width="1"/>
+  <line x1="20" y1="400" x2="30" y2="400" stroke="#333" stroke-width="1"/>
+  <line x1="20" y1="320" x2="30" y2="320" stroke="#333" stroke-width="1"/>
+  <line x1="20" y1="250" x2="30" y2="250" stroke="#333" stroke-width="1"/>
+  <line x1="20" y1="200" x2="30" y2="200" stroke="#333" stroke-width="1"/>
+
+  <text x="15" y="405" text-anchor="middle" font-size="10">0.0</text>
+  <text x="15" y="325" text-anchor="middle" font-size="10">10.0</text>
+  <text x="15" y="255" text-anchor="middle" font-size="10">15.0</text>
+  <text x="15" y="205" text-anchor="middle" font-size="10">18.0</text>
+
+  <!-- Schnittmarkierung -->
+  <circle cx="80" cy="450" r="15" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="80" y="455" text-anchor="middle" font-size="12" font-weight="bold">A</text>
+
+  <circle cx="620" cy="450" r="15" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="620" y="455" text-anchor="middle" font-size="12" font-weight="bold">A</text>
+
+  <!-- Legende -->
+  <text x="550" y="80" font-size="12" font-weight="bold">LEGENDE:</text>
+  <rect x="550" y="90" width="15" height="10" fill="url(#cut-hatch)"/>
+  <text x="570" y="99" font-size="10">Schnittfläche</text>
+  <rect x="550" y="105" width="15" height="10" fill="#0066CC"/>
+  <text x="570" y="114" font-size="10">Gerüst-Ständer</text>
+  <rect x="550" y="120" width="15" height="6" fill="#8B4513"/>
+  <text x="570" y="128" font-size="10">Beläge</text>
+  <line x1="550" y1="135" x2="565" y2="135" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <text x="570" y="139" font-size="10">Verankerung</text>
+
+  <!-- Zonenbeschriftung -->
+  <text x="175" y="180" text-anchor="middle" font-size="11" font-weight="bold">ALTBAU</text>
+  <text x="175" y="195" text-anchor="middle" font-size="9">18.0m</text>
+
+  <text x="350" y="240" text-anchor="middle" font-size="11" font-weight="bold">NEUBAU</text>
+  <text x="350" y="255" text-anchor="middle" font-size="9">15.0m</text>
+
+  <text x="525" y="310" text-anchor="middle" font-size="11" font-weight="bold">ERWEITERUNG</text>
+  <text x="525" y="325" text-anchor="middle" font-size="9">10.0m</text>
+</svg>

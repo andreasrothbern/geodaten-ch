@@ -1,0 +1,122 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">GRUNDRISS - KORNHAUS BERN</text>
+  <text x="350" y="45" text-anchor="middle" font-family="Arial" font-size="12">Kornhausplatz 18, 3011 Bern | EGID: 1230631</text>
+
+  <!-- Geruestzone (1m Abstand) -->
+  <rect x="180" y="80" width="340" height="280" fill="none" stroke="#0066CC" stroke-width="2" stroke-dasharray="5,5"/>
+  <text x="185" y="95" font-family="Arial" font-size="10" fill="#0066CC">Gerüstzone</text>
+
+  <!-- Zone 1: Arkaden (Westseite) -->
+  <rect x="200" y="100" width="40" height="240" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="220" y="225" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">ARKADEN</text>
+  <text x="220" y="235" text-anchor="middle" font-family="Arial" font-size="8">5.0m</text>
+
+  <!-- Zone 2: Hauptbau -->
+  <rect x="240" y="100" width="240" height="240" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="360" y="220" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">HAUPTGEBÄUDE</text>
+  <text x="360" y="235" text-anchor="middle" font-family="Arial" font-size="10">25.0m Höhe</text>
+
+  <!-- Zone 3: Dachreiter (Zentral) -->
+  <rect x="340" y="180" width="60" height="80" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <text x="370" y="218" text-anchor="middle" font-family="Arial" font-size="8" font-weight="bold">DACHREITER</text>
+  <text x="370" y="228" text-anchor="middle" font-family="Arial" font-size="7">32.0m</text>
+
+  <!-- Fassadenbeschriftung -->
+  <!-- Nord (oben) -->
+  <line x1="240" y1="95" x2="480" y2="95" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="280" y="90" font-family="Arial" font-size="9">N: 19.3m</text>
+  <text x="400" y="90" font-family="Arial" font-size="9">N: 19.2m</text>
+
+  <!-- Ost (rechts) -->
+  <line x1="485" y1="100" x2="485" y2="340" stroke="#666" stroke-width="1"/>
+  <text x="490" y="180" font-family="Arial" font-size="9">O: 21.2m</text>
+
+  <!-- Süd (unten) -->
+  <line x1="200" y1="345" x2="480" y2="345" stroke="#666" stroke-width="1"/>
+  <text x="340" y="360" font-family="Arial" font-size="9">S: 59.3m</text>
+
+  <!-- West (links) -->
+  <line x1="195" y1="100" x2="195" y2="340" stroke="#666" stroke-width="1"/>
+  <text x="150" y="220" font-family="Arial" font-size="9" transform="rotate(-90 150 220)">W: 19.1m</text>
+
+  <!-- Gerüst-Zugänge -->
+  <circle cx="200" cy="158" r="5" fill="#CC0000"/>
+  <text x="180" y="155" font-family="Arial" font-size="8">Z1</text>
+
+  <circle cx="432" cy="95" r="5" fill="#CC0000"/>
+  <text x="435" y="92" font-family="Arial" font-size="8">Z2</text>
+
+  <circle cx="282" cy="345" r="5" fill="#CC0000"/>
+  <text x="285" y="355" font-family="Arial" font-size="8">Z3</text>
+
+  <circle cx="200" cy="158" r="5" fill="#CC0000"/>
+  <text x="180" y="170" font-family="Arial" font-size="8">Z4</text>
+
+  <!-- Nordpfeil -->
+  <g transform="translate(550, 120)">
+    <line x1="0" y1="20" x2="0" y2="0" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="5" y="15" font-family="Arial" font-size="12" font-weight="bold">N</text>
+  </g>
+
+  <!-- Maßstab -->
+  <g transform="translate(50, 400)">
+    <line x1="0" y1="0" x2="100" y2="0" stroke="#333" stroke-width="2"/>
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#333" stroke-width="2"/>
+    <line x1="100" y1="-5" x2="100" y2="5" stroke="#333" stroke-width="2"/>
+    <text x="50" y="15" text-anchor="middle" font-family="Arial" font-size="10">10m</text>
+  </g>
+
+  <!-- Legende -->
+  <g transform="translate(520, 200)">
+    <rect x="0" y="0" width="15" height="15" fill="url(#hatch)" stroke="#333"/>
+    <text x="20" y="12" font-family="Arial" font-size="9">Gebäude</text>
+    
+    <rect x="0" y="20" width="15" height="15" fill="url(#cut-hatch)" stroke="#333"/>
+    <text x="20" y="32" font-family="Arial" font-size="9">Dachreiter</text>
+    
+    <line x1="0" y1="45" x2="15" y2="45" stroke="#0066CC" stroke-width="2" stroke-dasharray="3,3"/>
+    <text x="20" y="49" font-family="Arial" font-size="9">Gerüstzone</text>
+    
+    <circle cx="7" cy="60" r="3" fill="#CC0000"/>
+    <text x="20" y="65" font-family="Arial" font-size="9">Zugang</text>
+  </g>
+
+  <!-- Gebäudedaten -->
+  <text x="50" y="430" font-family="Arial" font-size="10">Grundfläche: 1275 m² | Umfang: 168.6 m | Baujahr: 1718</text>
+  <text x="50" y="445" font-family="Arial" font-size="10">Koordinaten: E 600646, N 199751 | Höhe: 539.3 m ü.M.</text>
+  <text x="50" y="460" font-family="Arial" font-size="10">Komplexität: COMPLEX | 10 Eckpunkte | 4 Geschosse</text>
+
+  <!-- Pfeil-Marker Definition -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>

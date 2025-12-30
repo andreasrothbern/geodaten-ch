@@ -1,0 +1,145 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">
+    GRUNDRISS - KONZERT THEATER BERN
+  </text>
+  <text x="350" y="45" text-anchor="middle" font-family="Arial" font-size="12">
+    Theaterplatz 7, 3011 Bern | EGID: 1230414 | M 1:500
+  </text>
+
+  <!-- Geruestzone (äussere Begrenzung) -->
+  <rect x="150" y="100" width="300" height="220" fill="none" stroke="#0066CC" stroke-width="2" stroke-dasharray="5,5"/>
+  <text x="155" y="95" font-family="Arial" font-size="10" fill="#0066CC">Gerüstzone</text>
+
+  <!-- Gebäude Zonen -->
+  
+  <!-- Zone 1: Foyer (Anbau, 12.0m) -->
+  <rect x="170" y="120" width="80" height="60" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="210" y="155" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">FOYER</text>
+  <text x="210" y="165" text-anchor="middle" font-family="Arial" font-size="8">12.0m</text>
+
+  <!-- Zone 2: Zuschauerhaus (Hauptgebäude, 22.0m) -->
+  <rect x="250" y="120" width="120" height="100" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="310" y="170" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold">ZUSCHAUERHAUS</text>
+  <text x="310" y="180" text-anchor="middle" font-family="Arial" font-size="8">22.0m</text>
+
+  <!-- Zone 3: Bühnenturm (Turm, 32.0m) -->
+  <rect x="370" y="140" width="60" height="120" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+  <text x="400" y="200" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">BÜHNEN-</text>
+  <text x="400" y="210" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">TURM</text>
+  <text x="400" y="220" text-anchor="middle" font-family="Arial" font-size="8">32.0m</text>
+
+  <!-- Fassadenlängen -->
+  <!-- Fassade 0: 14.3m O -->
+  <line x1="430" y1="140" x2="430" y2="180" stroke="#666" stroke-width="1"/>
+  <text x="435" y="165" font-family="Arial" font-size="8">14.3m</text>
+
+  <!-- Fassade 1: 21.7m O -->
+  <line x1="430" y1="180" x2="430" y2="260" stroke="#666" stroke-width="1"/>
+  <text x="435" y="225" font-family="Arial" font-size="8">21.7m</text>
+
+  <!-- Fassade 2: 20.1m S -->
+  <line x1="430" y1="260" x2="370" y2="260" stroke="#666" stroke-width="1"/>
+  <text x="400" y="275" text-anchor="middle" font-family="Arial" font-size="8">20.1m</text>
+
+  <!-- Fassade 3: 19.1m W -->
+  <line x1="370" y1="260" x2="250" y2="260" stroke="#666" stroke-width="1"/>
+  <text x="310" y="275" text-anchor="middle" font-family="Arial" font-size="8">19.1m</text>
+
+  <!-- Fassade 4: 16.0m W -->
+  <line x1="250" y1="220" x2="170" y2="220" stroke="#666" stroke-width="1"/>
+  <text x="210" y="235" text-anchor="middle" font-family="Arial" font-size="8">16.0m</text>
+
+  <!-- Fassade 5: 16.0m N -->
+  <line x1="170" y1="180" x2="250" y2="180" stroke="#666" stroke-width="1"/>
+  <text x="210" y="195" text-anchor="middle" font-family="Arial" font-size="8">16.0m</text>
+
+  <!-- Fassade 6: 6.4m N -->
+  <line x1="250" y1="120" x2="280" y2="120" stroke="#666" stroke-width="1"/>
+  <text x="265" y="110" text-anchor="middle" font-family="Arial" font-size="8">6.4m</text>
+
+  <!-- Gerüst-Zugänge -->
+  <!-- Z1: Ost, 21% -->
+  <circle cx="430" y="185" r="3" fill="#CC0000"/>
+  <text x="435" y="190" font-family="Arial" font-size="8" fill="#CC0000">Z1</text>
+
+  <!-- Z2: West, 3% -->
+  <circle cx="170" y="183" r="3" fill="#CC0000"/>
+  <text x="175" y="188" font-family="Arial" font-size="8" fill="#CC0000">Z2</text>
+
+  <!-- Z3: Nord, 92% -->
+  <circle cx="275" y="120" r="3" fill="#CC0000"/>
+  <text x="280" y="125" font-family="Arial" font-size="8" fill="#CC0000">Z3</text>
+
+  <!-- Nordpfeil -->
+  <g transform="translate(550, 150)">
+    <line x1="0" y1="0" x2="0" y2="-30" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="5" y="-10" font-family="Arial" font-size="12" font-weight="bold">N</text>
+  </g>
+
+  <!-- Pfeilspitze -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+
+  <!-- Massstab -->
+  <g transform="translate(50, 400)">
+    <line x1="0" y1="0" x2="50" y2="0" stroke="#333" stroke-width="2"/>
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#333" stroke-width="1"/>
+    <line x1="50" y1="-5" x2="50" y2="5" stroke="#333" stroke-width="1"/>
+    <text x="25" y="15" text-anchor="middle" font-family="Arial" font-size="10">25m</text>
+    <text x="25" y="30" text-anchor="middle" font-family="Arial" font-size="8">M 1:500</text>
+  </g>
+
+  <!-- Legende -->
+  <g transform="translate(500, 250)">
+    <rect x="0" y="0" width="150" height="120" fill="none" stroke="#333" stroke-width="1"/>
+    <text x="5" y="15" font-family="Arial" font-size="10" font-weight="bold">LEGENDE</text>
+    
+    <rect x="5" y="25" width="15" height="10" fill="url(#hatch)" stroke="#333"/>
+    <text x="25" y="33" font-family="Arial" font-size="8">Gebäudemauern</text>
+    
+    <rect x="5" y="40" width="15" height="10" fill="none" stroke="#0066CC" stroke-dasharray="3,3"/>
+    <text x="25" y="48" font-family="Arial" font-size="8">Gerüstzone</text>
+    
+    <circle cx="12" cy="60" r="3" fill="#CC0000"/>
+    <text x="25" y="63" font-family="Arial" font-size="8">Gerüst-Zugang</text>
+    
+    <text x="5" y="80" font-family="Arial" font-size="8">Grundfläche: 761 m²</text>
+    <text x="5" y="92" font-family="Arial" font-size="8">Umfang: 113.5 m</text>
+    <text x="5" y="104" font-family="Arial" font-size="8">Eckpunkte: 8</text>
+  </g>
+
+  <!-- Technische Angaben -->
+  <text x="50" y="460" font-family="Arial" font-size="8" fill="#666">
+    Koordinaten LV95: E 600689, N 199605 | Terrain: 540.9 m ü.M. | Walmdach 12°
+  </text>
+</svg>

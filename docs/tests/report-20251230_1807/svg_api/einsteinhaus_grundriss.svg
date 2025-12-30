@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 480">
+  <defs>
+    <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- DICHTE Schraffur fuer Schnittflaechen -->
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Terrain/Boden -->
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+    <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7CB9A5"/>
+      <stop offset="100%" style="stop-color:#4A8A77"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">GRUNDRISS - Einsteinhaus</text>
+  <text x="350" y="45" text-anchor="middle" font-family="Arial" font-size="12">Kramgasse 49, 3011 Bern | EGID: 1230393</text>
+
+  <!-- Geruestzone (aeussere Begrenzung) -->
+  <rect x="200" y="100" width="300" height="250" fill="none" stroke="#0066CC" stroke-width="2" stroke-dasharray="5,5"/>
+  <text x="350" y="95" text-anchor="middle" font-family="Arial" font-size="10" fill="#0066CC">Gerüstzone (1m Abstand)</text>
+
+  <!-- Gebaeude-Grundriss (8 Eckpunkte) -->
+  <path d="M220,120 L270,120 L270,140 L290,140 L290,260 L250,260 L250,320 L220,320 Z" 
+        fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+
+  <!-- Fassaden-Beschriftungen -->
+  <!-- Seite 0: 5.0m O -->
+  <text x="275" y="135" font-family="Arial" font-size="9" text-anchor="middle">5.0m</text>
+  <text x="285" y="135" font-family="Arial" font-size="8" fill="#666">O</text>
+
+  <!-- Seite 1: 21.2m S -->
+  <text x="255" y="275" font-family="Arial" font-size="9" text-anchor="middle">21.2m</text>
+  <text x="275" y="275" font-family="Arial" font-size="8" fill="#666">S</text>
+
+  <!-- Seite 2: 1.7m O -->
+  <text x="275" y="150" font-family="Arial" font-size="9" text-anchor="middle">1.7m</text>
+
+  <!-- Seite 3: 5.5m S -->
+  <text x="270" y="205" font-family="Arial" font-size="9" text-anchor="middle">5.5m</text>
+
+  <!-- Seite 4: 7.3m W -->
+  <text x="235" y="295" font-family="Arial" font-size="9" text-anchor="middle">7.3m</text>
+  <text x="225" y="295" font-family="Arial" font-size="8" fill="#666">W</text>
+
+  <!-- Seite 5: 6.2m N -->
+  <text x="235" y="110" font-family="Arial" font-size="9" text-anchor="middle">6.2m</text>
+
+  <!-- Seite 6: 21.1m N -->
+  <text x="245" y="115" font-family="Arial" font-size="9" text-anchor="middle">21.1m</text>
+  <text x="265" y="115" font-family="Arial" font-size="8" fill="#666">N</text>
+
+  <!-- Geruest-Zugaenge -->
+  <!-- Z1: Süd 91% -->
+  <circle cx="285" cy="250" r="4" fill="#CC0000"/>
+  <text x="295" y="255" font-family="Arial" font-size="10" fill="#CC0000">Z1</text>
+
+  <!-- Z2: Nord 19% -->
+  <circle cx="235" cy="125" r="4" fill="#CC0000"/>
+  <text x="245" y="130" font-family="Arial" font-size="10" fill="#CC0000">Z2</text>
+
+  <!-- Geruest-Staender (vereinfacht) -->
+  <rect x="195" y="115" width="4" height="4" fill="#0066CC"/>
+  <rect x="495" y="115" width="4" height="4" fill="#0066CC"/>
+  <rect x="195" y="345" width="4" height="4" fill="#0066CC"/>
+  <rect x="495" y="345" width="4" height="4" fill="#0066CC"/>
+
+  <!-- Nordpfeil -->
+  <g transform="translate(550,150)">
+    <path d="M0,-20 L-8,0 L-3,0 L-3,20 L3,20 L3,0 L8,0 Z" fill="#333"/>
+    <text x="0" y="35" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">N</text>
+  </g>
+
+  <!-- Massstab -->
+  <g transform="translate(50,400)">
+    <line x1="0" y1="0" x2="100" y2="0" stroke="#333" stroke-width="2"/>
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#333" stroke-width="2"/>
+    <line x1="50" y1="-3" x2="50" y2="3" stroke="#333" stroke-width="1"/>
+    <line x1="100" y1="-5" x2="100" y2="5" stroke="#333" stroke-width="2"/>
+    <text x="50" y="20" text-anchor="middle" font-family="Arial" font-size="10">10m</text>
+  </g>
+
+  <!-- Gebaeudedaten -->
+  <g transform="translate(520,300)">
+    <text x="0" y="0" font-family="Arial" font-size="11" font-weight="bold">Gebäudedaten:</text>
+    <text x="0" y="15" font-family="Arial" font-size="10">Grundfläche: 147 m²</text>
+    <text x="0" y="30" font-family="Arial" font-size="10">Umfang: 68.0 m</text>
+    <text x="0" y="45" font-family="Arial" font-size="10">Geschosse: 5</text>
+    <text x="0" y="60" font-family="Arial" font-size="10">Traufhöhe: 22.3 m</text>
+    <text x="0" y="75" font-family="Arial" font-size="10">Firsthöhe: 26.2 m</text>
+    <text x="0" y="90" font-family="Arial" font-size="10">Baujahr: 1720</text>
+    <text x="0" y="105" font-family="Arial" font-size="10">Baustil: Barock</text>
+  </g>
+
+  <!-- Koordinaten -->
+  <text x="20" y="460" font-family="Arial" font-size="9" fill="#666">LV95: E 600864, N 199640 | Höhe: 537.7 m ü.M.</text>
+</svg>

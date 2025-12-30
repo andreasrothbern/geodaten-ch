@@ -1,0 +1,121 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <!-- LOCKERE Schraffur fuer Aussenflaechen -->
+  <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+    <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- DICHTE Schraffur fuer Schnittflaechen -->
+  <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+    <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+  </pattern>
+
+  <!-- Terrain/Boden -->
+  <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+
+  <!-- Kupfer-Gradient NUR fuer Kuppeln -->
+  <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" style="stop-color:#7CB9A5"/>
+    <stop offset="100%" style="stop-color:#4A8A77"/>
+  </linearGradient>
+</defs>
+
+<!-- Hintergrund -->
+<rect width="700" height="480" fill="#FFFFFF"/>
+
+<!-- Titel -->
+<text x="20" y="30" font-family="Arial" font-size="16" font-weight="bold">GRUNDRISS - Bernisches Historisches Museum</text>
+<text x="20" y="50" font-family="Arial" font-size="12">Helvetiaplatz 5, 3005 Bern - EGID: 2243518</text>
+
+<!-- Geruestzone (aeussere Grenze) -->
+<rect x="100" y="100" width="420" height="280" fill="none" stroke="#0066CC" stroke-width="2" stroke-dasharray="5,5"/>
+<text x="102" y="95" font-family="Arial" font-size="10" fill="#0066CC">Geruestzone (1m Abstand)</text>
+
+<!-- Hauptbau (35m Hoehe) -->
+<rect x="150" y="140" width="280" height="160" fill="url(#hatch)" stroke="#333" stroke-width="2"/>
+<text x="280" y="225" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle">Hauptbau</text>
+<text x="280" y="240" font-family="Arial" font-size="10" text-anchor="middle">35.0m</text>
+
+<!-- Seitenfluegel links (25m Hoehe) -->
+<rect x="110" y="180" width="40" height="80" fill="url(#hatch)" stroke="#666" stroke-width="1.5"/>
+<text x="125" y="215" font-family="Arial" font-size="9" text-anchor="middle" transform="rotate(-90 125 215)">Seitenfluegel</text>
+<text x="125" y="235" font-family="Arial" font-size="8" text-anchor="middle" transform="rotate(-90 125 235)">25.0m</text>
+
+<!-- Seitenfluegel rechts (25m Hoehe) -->
+<rect x="430" y="170" width="40" height="100" fill="url(#hatch)" stroke="#666" stroke-width="1.5"/>
+<text x="455" y="215" font-family="Arial" font-size="9" text-anchor="middle" transform="rotate(90 455 215)">Seitenfluegel</text>
+<text x="455" y="235" font-family="Arial" font-size="8" text-anchor="middle" transform="rotate(90 455 235)">25.0m</text>
+
+<!-- Eckturm (50m Hoehe) -->
+<rect x="480" y="120" width="30" height="40" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+<text x="495" y="135" font-family="Arial" font-size="8" text-anchor="middle">Turm</text>
+<text x="495" y="145" font-family="Arial" font-size="7" text-anchor="middle">50.0m</text>
+
+<!-- Geruest-Zugaenge -->
+<circle cx="290" cy="135" r="4" fill="#CC0000"/>
+<text x="295" y="130" font-family="Arial" font-size="8" fill="#CC0000">Z1 (N)</text>
+
+<circle cx="480" cy="145" r="4" fill="#CC0000"/>
+<text x="485" y="140" font-family="Arial" font-size="8" fill="#CC0000">Z2 (NO)</text>
+
+<circle cx="435" y="305" r="4" fill="#CC0000"/>
+<text x="440" y="320" font-family="Arial" font-size="8" fill="#CC0000">Z3 (O)</text>
+
+<circle cx="105" y="220" r="4" fill="#CC0000"/>
+<text x="70" y="215" font-family="Arial" font-size="8" fill="#CC0000">Z4 (W)</text>
+
+<circle cx="180" cy="305" r="4" fill="#CC0000"/>
+<text x="155" y="320" font-family="Arial" font-size="8" fill="#CC0000">Z5 (SW)</text>
+
+<circle cx="380" cy="135" r="4" fill="#CC0000"/>
+<text x="385" y="130" font-family="Arial" font-size="8" fill="#CC0000">Z6 (N)</text>
+
+<circle cx="310" cy="305" r="4" fill="#CC0000"/>
+<text x="315" y="320" font-family="Arial" font-size="8" fill="#CC0000">Z7 (S)</text>
+
+<circle cx="105" cy="160" r="4" fill="#CC0000"/>
+<text x="70" y="155" font-family="Arial" font-size="8" fill="#CC0000">Z8 (W)</text>
+
+<!-- Fassadenlaengen -->
+<line x1="150" y1="125" x2="430" y2="125" stroke="#666" stroke-width="1"/>
+<text x="290" y="120" font-family="Arial" font-size="9" text-anchor="middle">93.9m</text>
+
+<line x1="85" y1="140" x2="85" y2="300" stroke="#666" stroke-width="1"/>
+<text x="80" y="220" font-family="Arial" font-size="9" text-anchor="middle" transform="rotate(-90 80 220)">71.8m</text>
+
+<!-- Nordpfeil -->
+<g transform="translate(580,350)">
+  <path d="M0,-20 L8,0 L0,20 L-8,0 Z" fill="#333"/>
+  <text x="0" y="35" font-family="Arial" font-size="12" text-anchor="middle" font-weight="bold">N</text>
+</g>
+
+<!-- Massstab -->
+<g transform="translate(540,420)">
+  <line x1="0" y1="0" x2="100" y2="0" stroke="#333" stroke-width="2"/>
+  <line x1="0" y1="-5" x2="0" y2="5" stroke="#333" stroke-width="2"/>
+  <line x1="100" y1="-5" x2="100" y2="5" stroke="#333" stroke-width="2"/>
+  <text x="50" y="-10" font-family="Arial" font-size="10" text-anchor="middle">20m</text>
+</g>
+
+<!-- Legende -->
+<g transform="translate(20,330)">
+  <text x="0" y="0" font-family="Arial" font-size="12" font-weight="bold">Legende:</text>
+  <rect x="0" y="10" width="15" height="10" fill="url(#hatch)" stroke="#333"/>
+  <text x="20" y="20" font-family="Arial" font-size="9">Gebaeudewand</text>
+  <circle cx="7" cy="35" r="3" fill="#CC0000"/>
+  <text x="20" y="40" font-family="Arial" font-size="9">Geruest-Zugang</text>
+  <rect x="0" y="50" width="15" height="10" fill="none" stroke="#0066CC" stroke-dasharray="2,2"/>
+  <text x="20" y="60" font-family="Arial" font-size="9">Geruestzone</text>
+</g>
+
+<!-- Gebaeudedaten -->
+<g transform="translate(20,400)">
+  <text x="0" y="0" font-family="Arial" font-size="10" font-weight="bold">Gebaeudedaten:</text>
+  <text x="0" y="15" font-family="Arial" font-size="9">Grundflaeche: 2115 m²</text>
+  <text x="0" y="30" font-family="Arial" font-size="9">Umfang: 397.4 m</text>
+  <text x="0" y="45" font-family="Arial" font-size="9">Max. Hoehe: 51.8 m</text>
+</g>
+
+</svg>
