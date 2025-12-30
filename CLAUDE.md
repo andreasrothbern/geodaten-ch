@@ -3,17 +3,22 @@
 ## Modulare Dokumentation
 
 Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
-@.claude/rules/api-standards.md
-@.claude/rules/data-sources.md
-@.claude/rules/smart-building.md
-@.claude/rules/svg-generation.md
 
-### Test-Dokumentation
-@docs/tests/README.md - Building Comparison Teststrategie
+| Datei | Inhalt |
+|-------|--------|
+| `.claude/rules/formatting.md` | Umlaute, Encoding, Code-Stil, Commits |
+| `.claude/rules/api-standards.md` | API-Endpunkte, Response-Format |
+| `.claude/rules/data-sources.md` | swisstopo, geodienste.ch, swissBUILDINGS3D |
+| `.claude/rules/smart-building.md` | 10-Schritte Pipeline, Zonen-Erkennung |
+| `.claude/rules/svg-generation.md` | SVG-Stil, Farben, Zonen-Typen |
 
-### Roadmap
-@docs/roadmap/CURRENT_BUGS.md - Aktuelle Bugs und Fixes
-@docs/roadmap/ML_LEARNING_SYSTEM.md - ML Learning System (geplant)
+### Weitere Dokumentation
+
+| Datei | Inhalt |
+|-------|--------|
+| `docs/tests/README.md` | Building Comparison Teststrategie |
+| `docs/roadmap/CURRENT_BUGS.md` | Aktuelle Bugs und Fixes |
+| `docs/roadmap/ML_LEARNING_SYSTEM.md` | ML Learning System (geplant) |
 
 ## Claude Rules
 
@@ -1697,191 +1702,24 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: 30.12.2025)
+## Status
 
-### Fertig ✅
-- [x] Backend + Frontend Deployment
-- [x] swissBUILDINGS3D On-Demand Import via STAC API
-- [x] Railway Volume für persistente Daten
-- [x] SVG-Visualisierungen (Schnitt, Ansicht, Grundriss)
-- [x] Fassaden-Auswahl mit interaktivem Grundriss
-- [x] NPK 114 Ausmass-Berechnung
-- [x] Material-Schätzung (Layher Blitz 70)
-- [x] Koordinaten-basierter Höhen-Lookup (für Gebäude ohne EGID)
-- [x] Douglas-Peucker Polygon-Vereinfachung
-- [x] URL-Parameter für Adresse (?address=...)
-- [x] Compact-Modus für Grundriss-SVG
-- [x] **Building Context System** (poc_bundeshaus_mvp Branch → main)
-  - Pydantic Models (BuildingZone, BuildingContext)
-  - SQLite Speicherung (building_contexts.db)
-  - Komplexitäts-Erkennung (simple/moderate/complex)
-  - Auto-Context für einfache Gebäude
-  - Claude API Integration für komplexe Gebäude
-  - API Endpoints (GET/POST/PUT/DELETE)
-  - Frontend TypeScript Types
-  - **Mehrzonenerkennung** bei extremer Höhendifferenz (>15m)
-  - **Frontend Zonen-Editor** mit Bearbeitung
-- [x] **Gerüstbau-SVG Features** (poc_bundeshaus_mvp Branch → main)
-  - Ständerpositionen (alle 2.57m, Layher Blitz 70)
-  - Verankerungen (Ecken + alle 4m)
-  - Zugänge (Z1-Zn) nach SUVA-Vorschriften (max 50m)
-  - Zonen-Farbcodierung im Grundriss
-  - Professional-Mode mit Schraffur
-- [x] **Claude API SVG-Generierung mit Zonen** (NEU 28.12.2025)
-  - Prompt-Selektor System (SIMPLE vs COMPLEX)
-  - Building-Hints für bekannte Gebäude
-  - Echte Höhendaten aus swissBUILDINGS3D
-  - Getestet mit: Bundeshaus, Kramgasse, Münster, St. Peter & Paul
-- [x] **swissALTI3D Terrain-Integration** (NEU 28.12.2025)
-  - TerrainService in `backend/app/services/terrain.py`
-  - Terrain-Höhe bei Geocoding (automatisch, m ü.M.)
-  - API Endpoints: `/api/v1/terrain/height`, `/api/v1/terrain/profile`
-  - In SVG-Prompts: Absolute Höhenkoten (m ü.M.)
-- [x] **Dachneigung-Berechnung Option C** (NEU 28.12.2025)
-  - RoofService in `backend/app/services/roof.py`
-  - Heuristische Berechnung aus Trauf-/Firsthöhe
-  - Dachform-Klassifikation (Flach, Sattel, Walm, Pult)
-  - Dachausrichtung aus Polygon-Geometrie
-  - Im Scaffolding-Response als `roof` Objekt
-- [x] **Orthofoto-Service & Claude-Analyse Integration** (NEU 28.12.2025)
-  - OrthofotoService in `backend/app/services/orthofoto.py`
-  - swisstopo WMS für Luftbilder
-  - Integration in Claude-Analyse (`include_orthofoto=True`)
-  - Neuer ZoneType: `INNENHOF` (nicht einrüsten)
-  - Orthofoto-spezifische Analyse (Dachaufbauten, Innenhöfe, Zugangsprobleme)
-  - Kosten: ~$0.01-0.02 ohne, ~$0.05-0.10 mit Orthofoto
-- [x] **SVG Prompt-System V2.0** (NEU 29.12.2025)
-  - Separate Prompts: `terrain_prompt.py`, `environment_prompt.py`
-  - Zwei Schraffur-Typen: `url(#hatch)` vs. `url(#cut-hatch)`
-  - ASCII-Diagramme für Fassade vs. Schnitt Unterscheidung
-  - Verdeckungsregel: Vorne verdeckt hinten
-  - Bounding-Box Berechnung für komplexe Polygone
-  - Terrain-Höhe in m ü.M. Referenz
-- [x] **Intelligente Datenbank** (NEU 29.12.2025)
-  - `intelligent_db.py` Service für erweiterte DB-Funktionen
-  - Smarte Suche: Alias-Match → FTS5 → Geocoding-Fallback
-  - SVG-Cache mit Versionierung und Cache-Invalidierung
-  - Umgebungsdaten-Cache (Nachbargebäude, blockierte Fassaden)
-  - Claude-Recherche-Cache (Wiederverwendung von API-Ergebnissen)
-  - Landmark-Buildings Seed-Daten (Bundeshaus, Münster, etc.)
-  - API-Endpoints: `/api/v1/search`, `/api/v1/building/{egid}/svg/*`, `/api/v1/db/stats`
-- [x] **Einheitliches Prompt-System v3.0** (NEU 29.12.2025)
-  - `research_service.py` - Dynamische Gebäude-Recherche via Claude Sonnet
-  - `prompt_builder.py` - Template-basiert nach `Export_Prompt_Claude.md`
-  - `claude_svg_zones.py` - Nutzt jetzt PromptBuilder (identische Prompts)
-  - Ersetzt statische `building_hints.py` durch dynamische Recherche
-  - 30 Tage Cache für Recherche-Ergebnisse (~$0.03-0.05 pro Gebäude)
-  - Frontend Export nutzt Backend-API für konsistente Prompts
-  - **"Professional" Toggle entfernt** - Claude wird immer für Schnitt/Ansicht verwendet
-  - Backend `use_claude` Default geändert auf `True`
-  - API-Endpoints: `/api/v1/prompt/generate`, `/api/v1/prompt/research/stats`
-- [x] **SmartBuildingService** (NEU 29.12.2025)
-  - Zentraler Service für schrittweise Gebäudedaten-Sammlung
-  - 10-Schritte Pipeline: Geocoding → GWR → Höhen → Terrain → Polygon → Dach → Recherche → Zonen → Zugänge → Qualität
-  - `smart_building/models.py` - BuildingDataBundle, ZoneInfo, TerrainProfile
-  - `smart_building/service.py` - Orchestrierung aller Datenquellen
-  - `smart_building/prompt_generator.py` - Einheitliche Prompt-Generierung
-  - `smart_building/known_buildings.py` - Bekannte Gebäude-Cache (NEU 30.12.2025)
-  - `smart_building/research_integration.py` - Kirchen-Zonen + bekannte Gebäude Integration (NEU 30.12.2025)
-  - Bundle-Caching (24h TTL) in SQLite
-  - Komplexitäts-Erkennung: simple → auto-zone, complex → Claude Sonnet Analyse
-  - SUVA-konforme Zugangspunkt-Berechnung
-  - API-Endpoints: `/api/v1/smart-building/data`, `/api/v1/smart-building/prompt`, `/api/v1/smart-building/cache/stats`
-  - Integration in `claude_svg_zones.py`: `generate_svg_with_smart_service()`
-- [x] **Frontend SmartService Integration** (NEU 29.12.2025)
-  - Frontend ruft direkt `/api/v1/smart-building/data` auf (statt `/api/v1/scaffolding`)
-  - TypeScript: `SmartBuildingData` Interface in `types.ts`
-  - Konverter-Funktion: `smartToScaffoldingData()` für Abwärtskompatibilität
-  - Visualisierungs-Endpunkte nutzen SmartService Cache
-  - `/api/v1/scaffolding` als **deprecated** markiert
-- [x] **5 Claude.ai Analyse-Fixes** (NEU 30.12.2025)
-  - Fix 1: UTF-8 Encoding (FastAPI Standard)
-  - Fix 2: Prompt-Konsolidierung mit SVGType.ALL
-  - Fix 3: "RECHERCHIEREN" entfernt, sinnvoller Fallback in prompt_generator.py
-  - Fix 4: Kirchen-spezifische Zonen (Seitenschiffe, Kirchenschiff, Turm)
-  - Fix 5: Bekannte Gebäude-Cache (known_buildings.py)
-  - Bundeshaus, Münster, Zytglogge, St. Peter & Paul mit korrekten Höhenzonen
-  - Priorisierung: Bekannte Gebäude → Claude Recherche → Standard-Zonen
+> **Aktueller Stand:** Siehe `PROJEKT_KONTEXT.md`
+> **Offene Bugs:** Siehe `docs/roadmap/CURRENT_BUGS.md`
+> **Roadmap:** Siehe `docs/roadmap/ML_LEARNING_SYSTEM.md`
 
-### API Migration (29.12.2025)
+### Kurzübersicht
 
-| Alt (deprecated) | Neu (empfohlen) |
-|------------------|-----------------|
-| `GET /api/v1/scaffolding?address=...` | `GET /api/v1/smart-building/data?address=...` |
-| `GET /api/v1/scaffolding/by-egid/{egid}` | `GET /api/v1/smart-building/data?address=...` |
-| Separate Datensammlung pro Endpunkt | Einheitlicher Bundle-Cache (24h) |
+| Bereich | Status |
+|---------|--------|
+| SmartBuildingService | Produktiv (10-Schritte Pipeline) |
+| Claude SVG-Generierung | Sonnet 4 |
+| Bekannte Gebäude | 10+ in known_buildings.py |
+| Deployment | Railway.app |
 
-### In Arbeit 🔨
-- [ ] SVG-Visualisierung: Qualität wie Claude.ai Referenz-SVGs
-  - Separate Gebäudeteile statt 1 Polygon (teilweise gelöst durch Zonen)
-  - Ehrenhof/Innenhöfe markieren
-  - Masslinien mit Pfeilen
-  - Detaillierte Legende
+### Offene P1-Bugs
 
-### Geplant 🔜
-- [ ] **Sonnendach-Import (Option A)** - Dachneigung/Ausrichtung aus BFE-Daten
-- [ ] **swissBUILDINGS3D 3D-Analyse (Option B)** - Präzise Dachgeometrie
-- [ ] **DXF/IFC-Export** - 3D-Modellierung
-- [ ] Custom Domain
-
-## ACHTUNG: Technische Schulden
-
-### Höhendatenbank - Drei Tabellen
-
-Es gibt **drei** SQLite-Tabellen für Höhendaten in `building_heights.db`:
-
-1. **`building_heights`** (Legacy, EGID-basiert)
-   - Felder: `egid`, `height_m`, `height_type`, `source`
-   - Einfache Struktur, nur eine Höhe pro Gebäude
-   - **Status:** Wird noch unterstützt als Fallback
-
-2. **`building_heights_detailed`** (EGID-basiert)
-   - Felder: `egid`, `traufhoehe_m`, `firsthoehe_m`, `gebaeudehoehe_m`, `dach_max_m`, `dach_min_m`, `terrain_m`, `source`
-   - Detaillierte Struktur für Gerüstbau
-   - **Status:** Primäre Tabelle für EGID-Lookups
-
-3. **`building_heights_by_coord`** (Koordinaten-basiert, NEU)
-   - Felder: `lv95_e`, `lv95_n`, `uuid`, `traufhoehe_m`, `firsthoehe_m`, `gebaeudehoehe_m`, ...
-   - Für Gebäude ohne EGID in swissBUILDINGS3D
-   - **Status:** Fallback wenn EGID-Lookup fehlschlägt
-
-**Lookup-Reihenfolge in `geodienste.py`:**
-1. `building_heights_detailed` (per EGID)
-2. `building_heights` (per EGID, Legacy)
-3. `building_heights_by_coord` (per Koordinaten ±25m)
-
-**TODO (optional):** Legacy-Tabelle `building_heights` kann entfernt werden, sobald alle Daten in `_detailed` migriert sind.
-
-### Debug-Code (Stand 23.12.2025)
-
-Debug-Code aus Backend entfernt:
-- ✅ `_height_debug` aus API Response entfernt (`geodienste.py`)
-- ✅ Debug-Prints aus `height_fetcher.py` entfernt
-- `[DEBUG]` Console-Logs im Frontend (`App.tsx`) können optional entfernt werden
-
-### 3D-Viewer-URL Format (Stand 23.12.2025)
-
-**Entscheidung:** LV95-Format mit `sr=2056` verwenden.
-
-```
-https://map.geo.admin.ch/#/map?lang=de&sr=2056&center={E},{N}&z=13&bgLayer=ch.swisstopo.pixelkarte-farbe&3d
-```
-
-**Getestete Alternativen (funktionieren NICHT zuverlässig):**
-
-| Format | Problem |
-|--------|---------|
-| `camera=lon,lat,height,pitch` | Ungültiges Format laut map.geo.admin.ch |
-| `center=...&z=20&3d=true` | z=20 ungültig (max z=13), `3d=true` statt `3d` |
-| `camera=lon,lat,elevation,pitch,,&3d` | Browser-abhängige Probleme, Koordinaten werden verfälscht |
-
-**Warum LV95 (`sr=2056`):**
-- Zuverlässig in allen Browsern (getestet normal + Inkognito)
-- Offizielle Schweizer Koordinaten (EPSG:2056)
-- Zoom z=13 ist Maximum laut docs.geo.admin.ch
-- `&3d` aktiviert 3D-Modus (nicht `&3d=true`)
-
-**Nachteil:** Keine Kontrolle über Kamera-Winkel (immer Draufsicht). Das `camera`-Format würde schräge Ansichten erlauben, funktioniert aber nicht zuverlässig.
+- **BUG-004:** Einsteinhaus langsam (7.8s statt <1s)
 
 ## Lokale Entwicklung
 
