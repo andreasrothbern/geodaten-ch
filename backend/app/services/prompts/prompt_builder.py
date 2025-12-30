@@ -78,9 +78,34 @@ class PromptData:
 
 
 class PromptBuilder:
-    """Builder für strukturierte Claude-Prompts"""
+    """
+    DEPRECATED: Verwende UnifiedPromptGenerator aus smart_building/ stattdessen.
+
+    Diese Klasse wird nicht mehr verwendet. Alle Prompt-Generierung läuft
+    jetzt über SmartBuildingService + UnifiedPromptGenerator für einheitliche
+    Prompts bei Export UND automatischer SVG-Generierung.
+
+    Migration:
+        # Alt:
+        from app.services.prompts import get_prompt_builder
+        builder = get_prompt_builder()
+        prompt = await builder.build_svg_prompt(...)
+
+        # Neu:
+        from app.services.smart_building import get_smart_building_service, get_prompt_generator
+        service = get_smart_building_service()
+        bundle = await service.collect_all_data(address)
+        generator = get_prompt_generator()
+        prompt = generator.generate(bundle, svg_type=SVGType.ALL)
+    """
 
     def __init__(self):
+        import warnings
+        warnings.warn(
+            "PromptBuilder ist deprecated. Verwende UnifiedPromptGenerator aus smart_building/.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.research_service = get_research_service()
 
     async def build_svg_prompt(

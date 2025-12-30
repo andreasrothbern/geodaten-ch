@@ -201,10 +201,17 @@ async def _build_unified_prompt(
     building_data: Optional[dict] = None
 ) -> str:
     """
-    Baut den einheitlichen Prompt via PromptBuilder.
+    DEPRECATED: Verwende generate_svg_with_smart_service() stattdessen.
 
-    IDENTISCHER Prompt für Export UND automatische SVG-Generierung!
+    Diese Funktion wird nicht mehr verwendet, da alle SVG-Generierung
+    jetzt über SmartBuildingService + UnifiedPromptGenerator läuft.
     """
+    import warnings
+    warnings.warn(
+        "_build_unified_prompt ist deprecated. Verwende generate_svg_with_smart_service().",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if not PROMPT_BUILDER_AVAILABLE:
         return _generate_fallback_prompt(svg_type, address, egid, width_m, floors, zones)
 
@@ -333,50 +340,26 @@ async def generate_cross_section_with_zones(
     """
     Generiert professionellen Gebäudeschnitt mit Höhenzonen via Claude API.
 
-    Verwendet den EINHEITLICHEN PromptBuilder - identischer Prompt wie Export!
+    HINWEIS: Diese Funktion leitet auf generate_svg_with_smart_service() um,
+    welches SmartBuildingService + UnifiedPromptGenerator verwendet.
+    Die Parameter (width_m, floors, zones, building_data) werden ignoriert -
+    alle Daten werden frisch vom SmartBuildingService gesammelt.
 
     Args:
-        address: Gebäudeadresse
-        egid: Eidg. Gebäudeidentifikator (optional)
-        width_m: Gebäudebreite in Metern
-        floors: Anzahl Geschosse
-        zones: Liste der Höhenzonen
-        svg_width: SVG-Breite in Pixel (für Kompatibilität, wird ignoriert)
-        svg_height: SVG-Höhe in Pixel (für Kompatibilität, wird ignoriert)
-        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, terrain, etc.)
+        address: Gebäudeadresse (EINZIGER benötigter Parameter)
+        egid: (deprecated) Wird ignoriert - SmartService findet EGID selbst
+        width_m: (deprecated) Wird ignoriert
+        floors: (deprecated) Wird ignoriert
+        zones: (deprecated) Wird ignoriert - SmartService erstellt Zonen
+        svg_width: (deprecated) Wird ignoriert
+        svg_height: (deprecated) Wird ignoriert
+        building_data: (deprecated) Wird ignoriert
 
     Returns:
         SVG-String oder None bei Fehler
     """
-    # Cache initialisieren
-    _init_cache_db()
-
-    # Cache-Key generieren
-    cache_key = _generate_cache_key("schnitt", address, egid, zones, building_data)
-
-    # Aus Cache laden
-    cached = _get_cached_svg(cache_key)
-    if cached:
-        return cached
-
-    logger.info(f"Generiere Schnitt für: {address}")
-    logger.info(f"Zonen-Input: {zones}")
-
-    # Einheitlichen Prompt generieren (async)
-    prompt = await _build_unified_prompt("schnitt", address, egid, width_m, floors, zones, building_data)
-
-    logger.info(f"Prompt generiert ({len(prompt)} chars)")
-
-    # Claude API aufrufen
-    svg = _call_claude(prompt)
-
-    # Im Cache speichern
-    if svg:
-        complexity = "unified"  # Neues System
-        _save_to_cache(cache_key, "schnitt", str(egid) if egid else None,
-                       address, svg, complexity)
-
-    return svg
+    logger.info(f"generate_cross_section_with_zones -> SmartService für: {address}")
+    return await generate_svg_with_smart_service(address, svg_type="schnitt")
 
 
 async def generate_elevation_with_zones(
@@ -392,50 +375,25 @@ async def generate_elevation_with_zones(
     """
     Generiert professionelle Fassadenansicht mit Höhenzonen via Claude API.
 
-    Verwendet den EINHEITLICHEN PromptBuilder - identischer Prompt wie Export!
+    HINWEIS: Diese Funktion leitet auf generate_svg_with_smart_service() um,
+    welches SmartBuildingService + UnifiedPromptGenerator verwendet.
+    Die Parameter werden ignoriert - alle Daten werden frisch gesammelt.
 
     Args:
-        address: Gebäudeadresse
-        egid: Eidg. Gebäudeidentifikator (optional)
-        width_m: Fassadenbreite in Metern
-        floors: Anzahl Geschosse
-        zones: Liste der Höhenzonen
-        svg_width: SVG-Breite in Pixel (für Kompatibilität, wird ignoriert)
-        svg_height: SVG-Höhe in Pixel (für Kompatibilität, wird ignoriert)
-        building_data: Zusätzliche Gebäudedaten (gkat, area_m2, terrain, etc.)
+        address: Gebäudeadresse (EINZIGER benötigter Parameter)
+        egid: (deprecated) Wird ignoriert
+        width_m: (deprecated) Wird ignoriert
+        floors: (deprecated) Wird ignoriert
+        zones: (deprecated) Wird ignoriert
+        svg_width: (deprecated) Wird ignoriert
+        svg_height: (deprecated) Wird ignoriert
+        building_data: (deprecated) Wird ignoriert
 
     Returns:
         SVG-String oder None bei Fehler
     """
-    # Cache initialisieren
-    _init_cache_db()
-
-    # Cache-Key generieren
-    cache_key = _generate_cache_key("ansicht", address, egid, zones, building_data)
-
-    # Aus Cache laden
-    cached = _get_cached_svg(cache_key)
-    if cached:
-        return cached
-
-    logger.info(f"Generiere Ansicht für: {address}")
-    logger.info(f"Zonen-Input: {zones}")
-
-    # Einheitlichen Prompt generieren (async)
-    prompt = await _build_unified_prompt("ansicht", address, egid, width_m, floors, zones, building_data)
-
-    logger.info(f"Prompt generiert ({len(prompt)} chars)")
-
-    # Claude API aufrufen
-    svg = _call_claude(prompt)
-
-    # Im Cache speichern
-    if svg:
-        complexity = "unified"  # Neues System
-        _save_to_cache(cache_key, "ansicht", str(egid) if egid else None,
-                       address, svg, complexity)
-
-    return svg
+    logger.info(f"generate_elevation_with_zones -> SmartService für: {address}")
+    return await generate_svg_with_smart_service(address, svg_type="ansicht")
 
 
 def clear_svg_cache(egid: Optional[str] = None, svg_type: Optional[str] = None):

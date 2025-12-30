@@ -3310,146 +3310,72 @@ async def seed_landmark_buildings():
 async def generate_claude_prompt(
     address: str,
     svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, schnitt"),
-    include_research: bool = Query(True, description="Dynamische Claude-Recherche durchführen")
+    include_research: bool = Query(True, description="Dynamische Claude-Recherche durchführen"),
+    force_refresh: bool = Query(False, description="Cache ignorieren")
 ):
     """
     Generiert einen strukturierten Prompt für Claude SVG-Generierung.
 
-    Dieser Endpoint sammelt alle verfügbaren Daten (Geocoding, GWR, Höhen,
-    Terrain, Polygon) und erstellt einen Prompt basierend auf der
-    zentralen Vorlage (Export_Prompt_Claude.md).
+    Verwendet SmartBuildingService + UnifiedPromptGenerator für
+    IDENTISCHE Prompts bei Export und automatischer SVG-Generierung.
 
     **Features:**
-    - Dynamische Gebäude-Recherche via Claude API (gecacht, 30 Tage TTL)
-    - Automatische Komplexitäts-Erkennung
-    - Terrain-Höhen (m ü.M.) aus swissALTI3D
+    - 10-Schritte Datenpipeline (Geocoding, GWR, Höhen, Terrain, etc.)
+    - Automatische Turm-Erkennung bei extremer Höhendifferenz
+    - Dynamische Gebäude-Recherche via Claude API (gecacht)
     - Höhenzonen für komplexe Gebäude
 
     **Kosten:**
-    - Gecachte Recherche: $0.00
-    - Neue Recherche: ca. $0.01-0.02 (Haiku)
+    - Gecachtes Bundle: $0.00
+    - Neues Bundle mit Recherche: ca. $0.01-0.02
 
     **Verwendung:**
     - Frontend Export-Button → Clipboard → Claude.ai
-    - Backend use_claude=true → Automatische SVG-Generierung
+    - Backend SVG-Generierung → Identischer Prompt
     """
     try:
-        from app.services.prompts import get_prompt_builder
+        from app.services.smart_building import get_smart_building_service, get_prompt_generator, SVGType
 
-        # Geocoding
-        geo = await swisstopo.geocode(address)
-        if not geo:
+        # SVG-Typ parsen
+        svg_type_enum = SVGType.ALL
+        if svg_type.lower() == "grundriss":
+            svg_type_enum = SVGType.GRUNDRISS
+        elif svg_type.lower() == "ansicht":
+            svg_type_enum = SVGType.ANSICHT
+        elif svg_type.lower() == "schnitt":
+            svg_type_enum = SVGType.SCHNITT
+
+        # Daten sammeln via SmartBuildingService
+        service = get_smart_building_service()
+        bundle = await service.collect_all_data(
+            address=address,
+            force_refresh=force_refresh,
+            include_research=include_research,
+            include_zones_analysis=True,
+            include_terrain=True
+        )
+
+        if not bundle.address_matched:
             raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
 
-        coordinates = (geo.coordinates.lv95_e, geo.coordinates.lv95_n)
-
-        # Gebäude identifizieren
-        buildings = await swisstopo.identify_buildings(
-            geo.coordinates.lv95_e, geo.coordinates.lv95_n, tolerance=15
-        )
-        building = buildings[0] if buildings else None
-
-        # GWR-Daten
-        gwr_data = None
-        if building:
-            gwr_data = {
-                "building_category": building.building_category,
-                "construction_year": building.construction_year,
-                "floors": building.floors,
-                "area_m2_gwr": building.area_m2
-            }
-
-        # Geometrie
-        geometry = await geodienste.get_building_geometry(
-            x=geo.coordinates.lv95_e,
-            y=geo.coordinates.lv95_n,
-            tolerance=50,
-            egid=building.egid if building else None
-        )
-
-        polygon = None
-        sides = None
-        if geometry:
-            if hasattr(geometry, 'polygon') and geometry.polygon:
-                polygon = [[p[0], p[1]] for p in geometry.polygon]
-            if hasattr(geometry, 'sides'):
-                sides = geometry.sides
-
-        # Höhendaten
-        dimensions = {
-            "traufhoehe_m": None,
-            "firsthoehe_m": None,
-            "floors": building.floors if building else None,
-            "footprint_area_m2": geometry.area_m2 if geometry else (building.area_m2 if building else None)
-        }
-
-        if building and building.egid:
-            from app.services.height_db import get_building_heights_detailed
-            heights = get_building_heights_detailed(building.egid)
-            if heights:
-                dimensions["traufhoehe_m"] = heights.get("traufhoehe_m")
-                dimensions["firsthoehe_m"] = heights.get("firsthoehe_m")
-                if heights.get("gebaeudehoehe_m") and not dimensions["traufhoehe_m"]:
-                    dimensions["traufhoehe_m"] = heights["gebaeudehoehe_m"] * 0.85
-
-        # Terrain
-        terrain = None
-        if geo.terrain:
-            terrain = {
-                "terrain_height_m": geo.terrain.terrain_height_m,
-                "terrain_slope_m": geo.terrain.terrain_slope_m if hasattr(geo.terrain, 'terrain_slope_m') else None
-            }
-
-        # Dach-Daten
-        roof = None
-        if dimensions["traufhoehe_m"] and dimensions["firsthoehe_m"]:
-            from app.services.roof import get_roof_service
-            roof_service = get_roof_service()
-            roof_result = roof_service.calculate(
-                traufhoehe_m=dimensions["traufhoehe_m"],
-                firsthoehe_m=dimensions["firsthoehe_m"],
-                building_depth_m=geometry.depth_m if geometry else 10,
-                polygon=polygon
-            )
-            if roof_result:
-                roof = {
-                    "roof_type": roof_result.roof_type.value if hasattr(roof_result.roof_type, 'value') else str(roof_result.roof_type),
-                    "roof_angle_deg": roof_result.roof_angle_deg,
-                    "roof_orientation": roof_result.roof_orientation,
-                    "roof_area_m2": roof_result.roof_area_m2,
-                    "confidence": roof_result.confidence
-                }
-
-        # Prompt generieren
-        builder = get_prompt_builder()
-        prompt = await builder.build_svg_prompt(
-            adresse=geo.matched_address,
-            egid=str(building.egid) if building else None,
-            coordinates=coordinates,
-            dimensions=dimensions,
-            gwr_data=gwr_data,
-            terrain=terrain,
-            roof=roof,
-            polygon=polygon,
-            sides=sides,
-            svg_type=svg_type,
-            include_research=include_research
+        # Prompt generieren via UnifiedPromptGenerator
+        generator = get_prompt_generator()
+        prompt = generator.generate(
+            bundle=bundle,
+            svg_type=svg_type_enum,
+            include_style_guide=True
         )
 
         return {
             "prompt": prompt,
-            "address": geo.matched_address,
-            "egid": building.egid if building else None,
+            "address": bundle.address_matched,
+            "egid": bundle.egid,
             "svg_type": svg_type,
             "research_included": include_research,
-            "data_sources": {
-                "geocoding": True,
-                "gwr": gwr_data is not None,
-                "heights": dimensions["traufhoehe_m"] is not None,
-                "terrain": terrain is not None,
-                "polygon": polygon is not None,
-                "roof": roof is not None
-            }
+            "complexity": bundle.complexity,
+            "zones_count": len(bundle.zones),
+            "building_type": bundle.building_type,
+            "data_sources": [s.value for s in bundle.data_sources]
         }
 
     except HTTPException:
