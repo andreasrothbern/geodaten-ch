@@ -115,6 +115,27 @@ Screenshots der App helfen bei der Analyse!
 
 ---
 
+## Naechstes Projekt: Geruestbau-App
+
+**Konzept:** [`../geruestbau_app_konzept.md`](../geruestbau_app_konzept.md)
+
+Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dienen:
+
+| Modul | Beschreibung | geodaten-ch Integration |
+|-------|--------------|------------------------|
+| 1. Erfassung | PDF/Foto/simap.ch Import | - |
+| 2. Geodaten | Automatische Anreicherung | ✅ SmartBuildingService |
+| 3. Fotos | KI-Analyse Blickrichtung | ✅ Claude Vision |
+| 4. Kontrolle | Daten-Validierung | ✅ Höhenzonen-Erkennung |
+| 5. Fassaden | Interaktive Auswahl | ✅ Polygon + Zonen |
+| 6. Editor | Gerüst-Konfiguration | ✅ NPK 114 Berechnung |
+| 7. Material | Layher-Katalog | ✅ Materialliste |
+| 8. Export | PDF/IFC/DXF/LayPLAN | 🔜 Geplant |
+
+**Architektur:** geodaten-ch bleibt als API-Service, die Gerüstbau-App wird ein separates Frontend mit eigener Projekt-Datenbank.
+
+---
+
 ## Letzte Aenderungen
 
 | Datum | Aenderung |
