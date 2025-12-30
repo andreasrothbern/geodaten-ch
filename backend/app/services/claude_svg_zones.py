@@ -359,7 +359,7 @@ async def generate_cross_section_with_zones(
         SVG-String oder None bei Fehler
     """
     logger.info(f"generate_cross_section_with_zones -> SmartService für: {address}")
-    return await generate_svg_with_smart_service(address, svg_type="schnitt")
+    return await generate_svg_with_smart_service(address, svg_type="querschnitt")
 
 
 async def generate_elevation_with_zones(
@@ -402,7 +402,7 @@ def clear_svg_cache(egid: Optional[str] = None, svg_type: Optional[str] = None):
 
     Args:
         egid: Nur für dieses Gebäude löschen (optional)
-        svg_type: Nur diesen Typ löschen: 'schnitt', 'ansicht' (optional)
+        svg_type: Nur diesen Typ löschen: 'querschnitt', 'laengsschnitt', 'ansicht', 'grundriss' (optional)
     """
     try:
         conn = sqlite3.connect(str(CACHE_DB_PATH))
@@ -446,7 +446,7 @@ except ImportError as e:
 
 async def generate_svg_with_smart_service(
     address: str,
-    svg_type: str = "schnitt",
+    svg_type: str = "querschnitt",
     force_refresh: bool = False,
 ) -> Optional[str]:
     """
@@ -457,7 +457,7 @@ async def generate_svg_with_smart_service(
 
     Args:
         address: Schweizer Adresse
-        svg_type: "schnitt", "ansicht", "grundriss", "umgebung", oder "all"
+        svg_type: "grundriss", "ansicht", "querschnitt", "laengsschnitt", "umgebung", oder "all"
         force_refresh: Cache ignorieren
 
     Returns:
@@ -475,11 +475,15 @@ async def generate_svg_with_smart_service(
     _init_cache_db()
 
     # SVG-Typ parsen
-    svg_type_enum = SVGType.SCHNITT
+    svg_type_enum = SVGType.QUERSCHNITT  # Default
     if svg_type.lower() == "ansicht":
         svg_type_enum = SVGType.ANSICHT
     elif svg_type.lower() == "grundriss":
         svg_type_enum = SVGType.GRUNDRISS
+    elif svg_type.lower() in ["schnitt", "querschnitt"]:
+        svg_type_enum = SVGType.QUERSCHNITT
+    elif svg_type.lower() == "laengsschnitt":
+        svg_type_enum = SVGType.LAENGSSCHNITT
     elif svg_type.lower() == "umgebung":
         svg_type_enum = SVGType.UMGEBUNG
     elif svg_type.lower() == "all":
@@ -560,13 +564,18 @@ def _generate_smart_cache_key(svg_type: str, bundle) -> str:
 
 def generate_svg_smart_sync(
     address: str,
-    svg_type: str = "schnitt",
+    svg_type: str = "querschnitt",
     force_refresh: bool = False,
 ) -> Optional[str]:
     """
     Synchrone Wrapper-Funktion für generate_svg_with_smart_service.
 
     Für Verwendung in nicht-async Kontexten.
+
+    Args:
+        address: Schweizer Adresse
+        svg_type: "grundriss", "ansicht", "querschnitt", "laengsschnitt", "umgebung", oder "all"
+        force_refresh: Cache ignorieren
     """
     try:
         loop = asyncio.get_event_loop()

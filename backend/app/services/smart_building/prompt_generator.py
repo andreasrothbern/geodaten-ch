@@ -41,9 +41,12 @@ class SVGType(str, Enum):
     """Verfügbare SVG-Typen"""
     GRUNDRISS = "grundriss"
     ANSICHT = "ansicht"
-    SCHNITT = "schnitt"
-    UMGEBUNG = "umgebung"  # NEU: Umgebungsplan mit Nachbarn, Hanglage
-    ALL = "all"  # Alle 3 Standard-SVGs
+    QUERSCHNITT = "querschnitt"      # NEU: Querschnitt A-A (quer durch Gebaeude)
+    LAENGSSCHNITT = "laengsschnitt"  # NEU: Laengsschnitt B-B (laengs durch Gebaeude)
+    UMGEBUNG = "umgebung"            # Umgebungsplan mit Nachbarn, Hanglage
+    ALL = "all"                      # Alle 4 Standard-SVGs
+    # Deprecated alias (fuer Abwaertskompatibilitaet)
+    SCHNITT = "querschnitt"          # Alias -> QUERSCHNITT
 
 
 class UnifiedPromptGenerator:
@@ -167,9 +170,10 @@ class UnifiedPromptGenerator:
         type_names = {
             SVGType.GRUNDRISS: "Grundriss (Draufsicht)",
             SVGType.ANSICHT: "Fassadenansicht (Elevation)",
-            SVGType.SCHNITT: "Gebaeudeschnitt (Querschnitt)",
+            SVGType.QUERSCHNITT: "Querschnitt A-A (quer durch Gebaeude)",
+            SVGType.LAENGSSCHNITT: "Laengsschnitt B-B (laengs durch Gebaeude)",
             SVGType.UMGEBUNG: "Umgebungsplan (Kontext)",
-            SVGType.ALL: "Grundriss + Fassadenansicht + Gebaeudeschnitt",
+            SVGType.ALL: "Grundriss + Ansicht + Querschnitt + Laengsschnitt",
         }
         return f"""# SVG-Generierung: {type_names.get(svg_type, 'Gebaeude-Visualisierung')}
 
@@ -590,26 +594,58 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
             if bundle.svg_hints and bundle.svg_hints.get("ansicht"):
                 lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['ansicht']}")
 
-        if svg_type in [SVGType.SCHNITT, SVGType.ALL]:
+        if svg_type in [SVGType.QUERSCHNITT, SVGType.SCHNITT, SVGType.ALL]:
             lines.append(f"""
-### SVG 3: Gebaeudeschnitt (Querschnitt)
-- **Perspektive:** Gebaeude AUFGESCHNITTEN entlang Schnittlinie A-A
-- **Zeigt:** Innenraeume, Konstruktion, Raumhoehen
+### SVG 3: Querschnitt A-A (quer durch Gebaeude)
+- **Perspektive:** Gebaeude AUFGESCHNITTEN entlang Schnittlinie A-A (QUER)
+- **Schnittebene:** Quer durch Hauptgebaeude/Kirchenschiff
+- **Zeigt:** Seitenschiffe, Mittelschiff, Gewoelbestruktur, Raumhoehen
 - **WICHTIG - Schraffur-Regel:**
   - Geschnittene Mauern = DICHTE Schraffur url(#cut-hatch)
   - Innenraeume = WEISS/LEER (KEINE Schraffur!)
 - **Terrain-Linie:** bei {terrain_ref} mit url(#ground) Pattern
 - **Geschossdecken:** Horizontale Linien
 - **Geruest:** Links und rechts (Staender + Belaege)
-- **Schnittmarkierung:** A-A""")
+- **Schnittmarkierung:** A-A (quer)""")
 
-            # SVG-Hints fuer Schnitt (NEU 30.12.2025)
-            if bundle.svg_hints and bundle.svg_hints.get("schnitt"):
+            # SVG-Hints fuer Querschnitt (NEU 30.12.2025)
+            if bundle.svg_hints and bundle.svg_hints.get("querschnitt"):
+                lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['querschnitt']}")
+            elif bundle.svg_hints and bundle.svg_hints.get("schnitt"):
+                # Fallback auf altes "schnitt" Feld
                 lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['schnitt']}")
+
+        if svg_type in [SVGType.LAENGSSCHNITT, SVGType.ALL]:
+            # Finde die hoechste Zone (meist Turm)
+            max_height = 0
+            max_zone_name = "Gebaeude"
+            for z in bundle.zones:
+                h = z.gebaeudehoehe_m or z.firsthoehe_m or 0
+                if h > max_height:
+                    max_height = h
+                    max_zone_name = z.name
+
+            lines.append(f"""
+### SVG 4: Laengsschnitt B-B (laengs durch Gebaeude)
+- **Perspektive:** Gebaeude AUFGESCHNITTEN entlang Laengsachse B-B
+- **Schnittebene:** Laengs durch Hauptachse (z.B. West-Ost bei Kirchen)
+- **Zeigt:** ALLE Hoehenzonen in einer Ansicht!
+- **KRITISCH:** Turm/Kuppel vollstaendig darstellen (Geruesthoehe bis {max_height:.1f}m)
+- **Elemente:** Glockengeschoss, Geschossdecken, Triumphbogen, Apsis, Gewoelbe
+- **WICHTIG - Schraffur-Regel:**
+  - Geschnittene Mauern = DICHTE Schraffur url(#cut-hatch)
+  - Innenraeume = WEISS/LEER (KEINE Schraffur!)
+- **Terrain-Linie:** bei {terrain_ref} mit url(#ground) Pattern
+- **Geruest:** Komplette Einruestung inkl. Turm/Sonderkonstruktion
+- **Schnittmarkierung:** B-B (laengs)""")
+
+            # SVG-Hints fuer Laengsschnitt (NEU 30.12.2025)
+            if bundle.svg_hints and bundle.svg_hints.get("laengsschnitt"):
+                lines.append(f"\n> **[!] WICHTIG:** {bundle.svg_hints['laengsschnitt']}")
 
         if svg_type == SVGType.UMGEBUNG:
             lines.append("""
-### SVG 4: Umgebungsplan (Kontext)
+### SVG 5: Umgebungsplan (Kontext)
 - **Perspektive:** Vogelperspektive, groesserer Massstab
 - **Zeigt:** Gebaeude im Kontext mit Nachbarn
 - **Terrain:** Hoehenlinien bei Hanglage
@@ -624,14 +660,22 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
         if svg_type == SVGType.ALL:
             return """## 14. Output
 
-Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
+Erstelle **4 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
 
-1. **grundriss.svg** - Draufsicht mit Gebaeudeumriss und Geruestzone
+1. **grundriss.svg** - Draufsicht mit Gebaeudeumriss und Geruestzone (kreuzfoermig!)
 2. **fassadenansicht.svg** - Aussenansicht, vordere Elemente verdecken hintere
-3. **gebaeudeschnitt.svg** - Aufgeschnitten, Innenraeume sichtbar und LEER
+3. **querschnitt_A-A.svg** - Quer durch Gebaeude (Gewoelbe, Seitenschiffe)
+4. **laengsschnitt_B-B.svg** - Laengs durch Gebaeude (Turm, Schiff, Chor) - KRITISCH!
+
+**Dateinamen-Konvention:**
+`{egid}_{ansicht}_{version}.svg`
+Beispiel: `191821074_laengsschnitt_v1.svg`
 
 **NUR SVG-Code**, keine Erklaerungen. Trenne die SVGs mit Kommentar:
-`<!-- SVG 1: Grundriss -->`"""
+`<!-- SVG 1: Grundriss -->`
+`<!-- SVG 2: Fassadenansicht -->`
+`<!-- SVG 3: Querschnitt A-A -->`
+`<!-- SVG 4: Laengsschnitt B-B -->`"""
 
         else:
             return f"""## 14. Output

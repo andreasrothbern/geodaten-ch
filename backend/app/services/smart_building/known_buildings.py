@@ -67,9 +67,12 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "special_features": ["Kuppel", "Arkaden", "Ehrenhof", "Skulpturen"],
         # NEU: Hinweise für SVG-Generierung
         "svg_hints": {
-            "grundriss": "U-Form zeichnen! Ehrenhof in der Mitte als Freifläche markieren (NICHT schraffieren).",
-            "ansicht": "Kuppel zentral, Arkaden im Erdgeschoss, 3 verschiedene Höhenzonen beachten.",
-            "schnitt": "Zeige alle 3 Höhenzonen: Arkaden 6m, Hauptgebäude 25m, Kuppel bis 64m."
+            "grundriss": "U-Form zeichnen! Ehrenhof in der Mitte als Freifläche markieren (NICHT schraffieren). GERUESTZONE: U-foermige Offset-Kontur mit 1m Abstand, Ehrenhof FREI lassen!",
+            "ansicht": "Kuppel zentral, Arkaden im Erdgeschoss, 3 verschiedene Hoehenzonen beachten. Suedfassade mit Ehrenhof-Blick.",
+            "querschnitt": "QUERSCHNITT A-A (NORD-SUED): Zeigt Seitenfluegel mit Arkaden (6m), Hauptgebaeude (25m). U-Form erkennbar machen.",
+            "laengsschnitt": "LAENGSSCHNITT B-B (OST-WEST, durch Kuppel): KRITISCH - Zeigt alle 3 Hoehenzonen! Arkaden 6m, Hauptgebaeude 25-30m, Kuppel bis 64m. Kuppel-Einruestung = SONDERKONSTRUKTION!",
+            # Fallback
+            "schnitt": "Zeige alle 3 Hoehenzonen: Arkaden 6m, Hauptgebaeude 25m, Kuppel bis 64m."
         },
     },
 
@@ -140,7 +143,10 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "svg_hints": {
             "grundriss": "KREUZFORM zeichnen! Westturm OBEN (quadratisch), Kirchenschiff MITTE (laenglich), Seitenschiffe LINKS+RECHTS (schmaler), Chor UNTEN. Norden nach oben. GERUESTZONE: Kreuzfoermige Offset-Kontur mit 1m Abstand - folgt der Gebaeudeform, KEIN Rechteck!",
             "ansicht": "WESTANSICHT - ANORDNUNG IM SVG (von links nach rechts): [1] Seitenschiff links (12m hoch) | [2] TURM IN DER MITTE (54.6m mit Spitzhelm) | [3] Seitenschiff rechts (12m hoch). Das Kirchenschiff (25m) ist HINTER dem Turm und teilweise verdeckt. Der Turm muss EXAKT in der horizontalen Mitte des SVG stehen (x=350 bei viewBox 700)!",
-            "schnitt": "Querschnitt Ost-West: Turm LINKS (54.6m), Kirchenschiff RECHTS (25m). Basilika-Profil zeigen: Hohes Mittelschiff mit niedrigen Seitenschiffen."
+            "querschnitt": "QUERSCHNITT A-A (NORD-SUED, quer durch Kirchenschiff): Zeigt Basilika-Profil mit hohem Mittelschiff (25m First) und niedrigen Seitenschiffen (12m). Kreuzrippengewoelbe andeuten. Obergaden-Fenster zwischen Mittelschiff und Seitenschiffen. Geruest links und rechts der Aussenfassade.",
+            "laengsschnitt": "LAENGSSCHNITT B-B (WEST-OST, durch Hauptachse): KRITISCH - alle Hoehenzonen! Von links nach rechts: [1] Turm 54.6m (mit Glockengeschoss, Schallarkaden, Spitzhelm), [2] Kirchenschiff 25m (mit Gewoelbe), [3] Chor 18m (mit Apsis). Turm-Einruestung vollstaendig zeigen = 27 Lagen = SONDERKONSTRUKTION! Geschossdecken im Turm einzeichnen.",
+            # Fallback fuer alte Implementierungen
+            "schnitt": "LAENGSSCHNITT B-B (West-Ost): Turm LINKS (54.6m), Kirchenschiff MITTE (25m), Chor RECHTS (18m). Alle Hoehenzonen in einer Ansicht!"
         },
     },
 

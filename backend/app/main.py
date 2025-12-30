@@ -3309,7 +3309,7 @@ async def seed_landmark_buildings():
          summary="Generiert Claude-Prompt für SVG-Erstellung")
 async def generate_claude_prompt(
     address: str,
-    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, schnitt"),
+    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, querschnitt, laengsschnitt"),
     include_research: bool = Query(True, description="Dynamische Claude-Recherche durchführen"),
     force_refresh: bool = Query(False, description="Cache ignorieren")
 ):
@@ -3342,8 +3342,10 @@ async def generate_claude_prompt(
             svg_type_enum = SVGType.GRUNDRISS
         elif svg_type.lower() == "ansicht":
             svg_type_enum = SVGType.ANSICHT
-        elif svg_type.lower() == "schnitt":
-            svg_type_enum = SVGType.SCHNITT
+        elif svg_type.lower() in ["schnitt", "querschnitt"]:
+            svg_type_enum = SVGType.QUERSCHNITT
+        elif svg_type.lower() == "laengsschnitt":
+            svg_type_enum = SVGType.LAENGSSCHNITT
 
         # Daten sammeln via SmartBuildingService
         service = get_smart_building_service()
@@ -3592,7 +3594,7 @@ async def get_smart_building_data(
          summary="Generiert einheitlichen Prompt aus SmartBuildingService")
 async def get_smart_building_prompt(
     address: str,
-    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, schnitt, umgebung"),
+    svg_type: str = Query("all", description="SVG-Typ: all, grundriss, ansicht, querschnitt, laengsschnitt, umgebung"),
     force_refresh: bool = Query(False, description="Cache ignorieren"),
     include_style_guide: bool = Query(True, description="Style-Vorgaben im Prompt"),
 ):
@@ -3622,8 +3624,10 @@ async def get_smart_building_prompt(
             svg_type_enum = SVGType.GRUNDRISS
         elif svg_type.lower() == "ansicht":
             svg_type_enum = SVGType.ANSICHT
-        elif svg_type.lower() == "schnitt":
-            svg_type_enum = SVGType.SCHNITT
+        elif svg_type.lower() in ["schnitt", "querschnitt"]:
+            svg_type_enum = SVGType.QUERSCHNITT
+        elif svg_type.lower() == "laengsschnitt":
+            svg_type_enum = SVGType.LAENGSSCHNITT
         elif svg_type.lower() == "umgebung":
             svg_type_enum = SVGType.UMGEBUNG
 
@@ -3723,7 +3727,7 @@ async def get_smart_building_cache_stats():
          summary="Generiert SVG via SmartBuildingService")
 async def generate_smart_building_svg(
     address: str,
-    svg_type: str = Query("schnitt", description="SVG-Typ: schnitt, ansicht, grundriss"),
+    svg_type: str = Query("querschnitt", description="SVG-Typ: grundriss, ansicht, querschnitt, laengsschnitt"),
     force_refresh: bool = Query(False, description="ALLE Caches ignorieren (Bundle, Recherche, SVG)"),
 ):
     """
