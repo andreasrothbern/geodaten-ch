@@ -9,6 +9,28 @@ Dieses Projekt bietet eine API und Web-App für Schweizer Geodaten (Gebäude, Ad
 - Backend: https://acceptable-trust-production.up.railway.app/
 - Mit Adresse: `?address=Bundesplatz%203,%203011%20Bern`
 
+## Development Workflow
+
+### Branching-Strategie
+
+**WICHTIG:** Neue Features IMMER auf einem Feature-Branch entwickeln!
+
+```bash
+# Feature-Branch erstellen
+git checkout -b feature/neues-feature
+
+# Nach Fertigstellung
+git push -u origin feature/neues-feature
+# Dann PR erstellen
+```
+
+**Branch-Namenskonventionen:**
+- `feature/` - Neue Features (z.B. `feature/svg-export`)
+- `fix/` - Bugfixes (z.B. `fix/height-calculation`)
+- `chore/` - Wartung (z.B. `chore/update-deps`)
+
+Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert automatisch, falls du auf `main` bist.
+
 ## Datenfluss (SmartBuildingService)
 
 Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeline:
