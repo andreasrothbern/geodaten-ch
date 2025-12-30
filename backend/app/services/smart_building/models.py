@@ -47,6 +47,9 @@ class ZoneInfo:
     firsthoehe_m: Optional[float] = None
     gebaeudehoehe_m: Optional[float] = None
 
+    # Position in der Ansicht (für Claude SVG-Generierung)
+    position: Optional[str] = None  # "zentral", "links", "rechts", "aussen", "verdeckt"
+
     # Zuordnung
     fassaden_ids: List[str] = field(default_factory=list)
     polygon_point_indices: Optional[List[int]] = None
@@ -190,6 +193,9 @@ class BuildingDataBundle:
     has_towers: bool = False
     has_annexes: bool = False
     has_courtyards: bool = False
+
+    # Turm-Konfiguration (für Kirchen, etc.)
+    tower_config: Optional[Dict[str, Any]] = None  # {"count": 1, "position": "zentral", "form": "Spitzhelm", "height_m": 54.6}
 
     # === GEBÄUDEFORM (NEU 30.12.2025) ===
     # Für korrekte SVG-Grundriss-Darstellung

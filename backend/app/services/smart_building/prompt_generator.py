@@ -335,6 +335,18 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
                 lines.append(f"- **{feature}**")
             lines.append("")
 
+        # === NEU: TURM-KONFIGURATION ===
+        # Wichtig für Kirchen und andere Gebäude mit Türmen
+        if bundle.tower_config:
+            tc = bundle.tower_config
+            lines.append("### Turm-Konfiguration")
+            lines.append(f"- **Anzahl Türme:** {tc.get('count', 1)}")
+            lines.append(f"- **Position:** {tc.get('position', 'unbekannt')}")
+            lines.append(f"- **Form:** {tc.get('form', 'unbekannt')}")
+            if tc.get('height_m'):
+                lines.append(f"- **Höhe:** {tc.get('height_m')}m")
+            lines.append("")
+
         # === Quick Win #4: INNENHOF-KOORDINATEN ===
         courtyard_bbox = self._calculate_courtyard_bbox(bundle)
         if courtyard_bbox:
@@ -353,8 +365,16 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
         # Tabelle mit ALLEN Hoehenwerten fuer korrekte Proportionen
         lines.append("### Hoehen pro Zone (KRITISCH fuer Proportionen!)")
         lines.append("")
-        lines.append("| Zone | Typ | Traufhoehe | Firsthoehe | Gebaeudehoehe | Geruest |")
-        lines.append("|------|-----|------------|------------|---------------|---------|")
+
+        # Prüfe ob mindestens eine Zone eine Position hat
+        has_positions = any(z.position for z in bundle.zones)
+
+        if has_positions:
+            lines.append("| Zone | Typ | Traufhoehe | Firsthoehe | Position (Ansicht) | Geruest |")
+            lines.append("|------|-----|------------|------------|-------------------|---------|")
+        else:
+            lines.append("| Zone | Typ | Traufhoehe | Firsthoehe | Gebaeudehoehe | Geruest |")
+            lines.append("|------|-----|------------|------------|---------------|---------|")
 
         for z in bundle.zones:
             trauf = f"{z.traufhoehe_m:.1f}m" if z.traufhoehe_m else "-"
@@ -368,7 +388,12 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
             else:
                 geruest = "Nein"
 
-            lines.append(f"| {z.name} | {z.zone_type} | {trauf} | {first} | {gebaeude} | {geruest} |")
+            # Position für Ansicht (wichtig für Claude)
+            if has_positions:
+                pos = z.position.upper() if z.position else "-"
+                lines.append(f"| {z.name} | {z.zone_type} | {trauf} | {first} | {pos} | {geruest} |")
+            else:
+                lines.append(f"| {z.name} | {z.zone_type} | {trauf} | {first} | {gebaeude} | {geruest} |")
 
         # Hoehen-Zusammenfassung fuer schnellen Ueberblick
         lines.append("")

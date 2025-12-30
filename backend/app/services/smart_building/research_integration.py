@@ -95,6 +95,10 @@ async def collect_building_research(
                 bundle.preferred_view = known["preferred_view"]
                 logger.debug(f"Bevorzugte Ansicht: {bundle.preferred_view.get('direction', 'default')}")
 
+            if known.get("tower_config"):
+                bundle.tower_config = known["tower_config"]
+                logger.debug(f"Turm-Konfiguration: {bundle.tower_config.get('form', 'unbekannt')}")
+
             logger.info(f"Bekanntes Gebäude erkannt: {bundle.building_name}")
             return  # Fertig, keine Claude-Recherche nötig
 
@@ -163,6 +167,7 @@ def create_zones_from_known_building(bundle: BuildingDataBundle) -> bool:
             traufhoehe_m=z.get("traufhoehe_m"),
             firsthoehe_m=z.get("firsthoehe_m"),
             gebaeudehoehe_m=z.get("gebaeudehoehe_m") or z.get("firsthoehe_m"),
+            position=z.get("position"),  # NEU: Position für SVG-Anordnung
             beruesten=z.get("beruesten", True),
             sonderkonstruktion=z.get("sonderkonstruktion", False),
             confidence=1.0,  # Bekannte Gebäude haben 100% Konfidenz
