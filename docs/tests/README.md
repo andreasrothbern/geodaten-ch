@@ -261,4 +261,276 @@ API_BASE_URL = "http://localhost:8000"  # Statt Railway
 
 ---
 
+## Manuelles Testverfahren (curl + Claude.ai)
+
+Dieses Verfahren ermoeglicht schnelle Tests ohne Python-Umgebung.
+
+### Schritt 1: Test-Adressen definieren
+
+```
+# Bekannte Gebaeude (in known_buildings.py)
+Bundesplatz 3, 3011 Bern          # Bundeshaus
+Muensterplatz 1, 3011 Bern        # Berner Muenster
+Rathausgasse 2, 3011 Bern         # St. Peter und Paul
+Kramgasse 49, 3011 Bern           # Einsteinhaus
+Hodlerstrasse 8, 3011 Bern        # Kunstmuseum
+Kornhausplatz 18, 3011 Bern       # Kornhaus
+Bahnhofplatz 10, 3011 Bern        # Hauptbahnhof
+Theaterplatz 7, 3011 Bern         # Stadttheater
+Helvetiaplatz 5, 3005 Bern        # Historisches Museum
+Bahnhofplatz 11, 3011 Bern        # Hotel Schweizerhof
+
+# Unbekannte Gebaeude (zum Testen der Claude-Recherche)
+Marktgasse 10, 3011 Bern          # Wohnhaus
+Spitalgasse 4, 3011 Bern          # Geschaeftshaus
+```
+
+### Schritt 2: API-Daten abrufen
+
+**Basis-URL:**
+```
+# Production (Railway)
+https://acceptable-trust-production.up.railway.app
+
+# Lokal
+http://localhost:8000
+```
+
+**Einzelnes Gebaeude testen:**
+```bash
+# Ersetze ADRESSE mit URL-encodierter Adresse
+# z.B. "Bundesplatz%203%2C%203011%20Bern"
+
+curl -s "https://acceptable-trust-production.up.railway.app/api/v1/smart-building/data?address=ADRESSE"
+```
+
+**Schnelltest (nur Name und Zonen):**
+```bash
+curl -s "https://acceptable-trust-production.up.railway.app/api/v1/smart-building/data?address=Bundesplatz%203%2C%203011%20Bern" | grep -o '"building_name":"[^"]*"\|"complexity":"[^"]*"'
+```
+
+### Schritt 3: Batch-Test Script
+
+Kopiere dieses Script in eine Datei `test_batch.sh`:
+
+```bash
+#!/bin/bash
+# Batch-Test fuer Berner Gebaeude
+
+API="https://acceptable-trust-production.up.railway.app/api/v1/smart-building/data"
+
+echo "=== GEBAEUDE-TEST $(date) ==="
+echo ""
+
+# Funktion zum Testen
+test_building() {
+    local name="$1"
+    local addr="$2"
+    echo -n "$name: "
+    result=$(curl -s "$API?address=$addr" 2>/dev/null)
+    building_name=$(echo "$result" | grep -o '"building_name":"[^"]*"' | cut -d'"' -f4)
+    complexity=$(echo "$result" | grep -o '"complexity":"[^"]*"' | cut -d'"' -f4)
+    echo "$building_name | $complexity"
+}
+
+# Tests ausfuehren
+test_building "Bundeshaus" "Bundesplatz%203%2C%203011%20Bern"
+test_building "Muenster" "Muensterplatz%201%2C%203011%20Bern"
+test_building "St. Peter" "Rathausgasse%202%2C%203011%20Bern"
+test_building "Kunstmuseum" "Hodlerstrasse%208%2C%203011%20Bern"
+test_building "Kornhaus" "Kornhausplatz%2018%2C%203011%20Bern"
+test_building "Bahnhof" "Bahnhofplatz%2010%2C%203011%20Bern"
+test_building "Theater" "Theaterplatz%207%2C%203011%20Bern"
+test_building "Hist.Museum" "Helvetiaplatz%205%2C%203005%20Bern"
+test_building "Schweizerhof" "Bahnhofplatz%2011%2C%203011%20Bern"
+
+echo ""
+echo "=== ENDE ==="
+```
+
+### Schritt 4: Vollstaendige JSON-Daten sammeln
+
+Fuer eine detaillierte Analyse, sammle die kompletten JSON-Responses:
+
+```bash
+#!/bin/bash
+# Sammelt vollstaendige API-Responses in eine Datei
+
+API="https://acceptable-trust-production.up.railway.app/api/v1/smart-building/data"
+OUTPUT="test_results_$(date +%Y%m%d_%H%M%S).json"
+
+echo "[" > "$OUTPUT"
+
+addresses=(
+    "Bundesplatz%203%2C%203011%20Bern"
+    "Muensterplatz%201%2C%203011%20Bern"
+    "Rathausgasse%202%2C%203011%20Bern"
+    "Hodlerstrasse%208%2C%203011%20Bern"
+    "Kornhausplatz%2018%2C%203011%20Bern"
+    "Bahnhofplatz%2010%2C%203011%20Bern"
+    "Theaterplatz%207%2C%203011%20Bern"
+    "Helvetiaplatz%205%2C%203005%20Bern"
+    "Bahnhofplatz%2011%2C%203011%20Bern"
+)
+
+first=true
+for addr in "${addresses[@]}"; do
+    echo "Fetching: $addr"
+    if [ "$first" = true ]; then
+        first=false
+    else
+        echo "," >> "$OUTPUT"
+    fi
+    curl -s "$API?address=$addr" >> "$OUTPUT"
+done
+
+echo "]" >> "$OUTPUT"
+echo "Results saved to: $OUTPUT"
+```
+
+### Schritt 5: Prompt fuer Claude.ai
+
+Kopiere den folgenden Prompt und fuege die JSON-Daten ein:
+
+---
+
+```markdown
+# Gebaeude-Datenanalyse
+
+## Kontext
+
+Ich teste die SmartBuildingService API fuer Schweizer Gebaeude.
+Die API sammelt Daten aus verschiedenen Quellen:
+- Geocoding (swisstopo)
+- GWR (Gebaeuderegister)
+- swissBUILDINGS3D (Hoehendaten)
+- geodienste.ch (Polygon)
+- known_buildings.py (vordefinierte Gebaeude)
+
+## Erwartungen
+
+Bekannte Gebaeude sollten:
+- `building_name` aus known_buildings.py haben
+- Korrekte Hoehenzonen (z.B. Kunstmuseum: 3 Zonen)
+- `complexity: "complex"` bei oeffentlichen Gebaeuden
+
+## Test-Daten
+
+Hier sind die API-Responses fuer 10 Berner Gebaeude:
+
+```json
+[HIER JSON-DATEN EINFUEGEN]
+```
+
+## Analyse-Aufgaben
+
+Bitte analysiere die Daten und beantworte:
+
+1. **Erkennungsrate:**
+   - Wie viele Gebaeude haben einen `building_name`?
+   - Bei welchen fehlt der Name?
+
+2. **Hoehendaten:**
+   - Sind die Hoehen plausibel?
+   - Gibt es Ausreisser (z.B. zu niedrig/hoch)?
+
+3. **Zonen-Qualitaet:**
+   - Haben komplexe Gebaeude mehrere Zonen?
+   - Stimmen die Zonen-Typen (arkade, hauptgebaeude, turm)?
+
+4. **Probleme:**
+   - Welche Gebaeude haben fehlerhafte Daten?
+   - Was sind moegliche Ursachen?
+
+5. **Empfehlungen:**
+   - Welche Gebaeude sollten zu known_buildings.py hinzugefuegt werden?
+   - Welche Optimierungen sind sinnvoll?
+
+## Format
+
+Bitte antworte mit:
+- Zusammenfassungs-Tabelle
+- Detaillierte Analyse pro Problemfall
+- Priorisierte Empfehlungen
+```
+
+---
+
+### Schritt 6: Ergebnisse interpretieren
+
+**Erfolgreicher Test:**
+```
+Bundeshaus: Bundeshaus | complex
+Muenster: Berner Muenster | complex
+St. Peter: Kirche St. Peter und Paul | complex
+Kunstmuseum: Kunstmuseum Bern | complex
+```
+
+**Fehlgeschlagener Test:**
+```
+Unbekannt: null | simple
+```
+→ Gebaeude nicht in known_buildings.py und Claude-Recherche fehlgeschlagen
+
+### Schritt 7: Fixes dokumentieren
+
+Nach der Analyse von Claude.ai:
+
+1. **Bugs in `docs/roadmap/CURRENT_BUGS.md` erfassen**
+2. **Fixes implementieren**
+3. **Tests wiederholen**
+4. **Commit mit Referenz zum Bug**
+
+---
+
+## URL-Encoding Referenz
+
+| Zeichen | Encoded |
+|---------|---------|
+| Leerzeichen | `%20` |
+| Komma | `%2C` |
+| Punkt | `.` (kein Encoding) |
+| Umlaut ae | `%C3%A4` |
+| Umlaut oe | `%C3%B6` |
+| Umlaut ue | `%C3%BC` |
+
+**Beispiele:**
+```
+Bundesplatz 3, 3011 Bern
+→ Bundesplatz%203%2C%203011%20Bern
+
+Münsterplatz 1, 3011 Bern
+→ M%C3%BCnsterplatz%201%2C%203011%20Bern
+(oder einfach: Muensterplatz%201%2C%203011%20Bern)
+```
+
+---
+
+## Testergebnisse (30.12.2025 - nach Fixes)
+
+### Alle 10 Gebaeude erkannt
+
+| Gebaeude | building_name | complexity | Status |
+|----------|---------------|------------|--------|
+| Bundeshaus | Bundeshaus | complex | ✅ |
+| Berner Muenster | Berner Muenster | complex | ✅ |
+| St. Peter und Paul | Kirche St. Peter und Paul | complex | ✅ |
+| Einsteinhaus | Einsteinhaus | simple | ✅ |
+| Kunstmuseum | Kunstmuseum Bern | complex | ✅ |
+| Kornhaus | Kornhaus | complex | ✅ |
+| Hauptbahnhof | Hauptbahnhof Bern | complex | ✅ |
+| Stadttheater | Konzert Theater Bern | complex | ✅ |
+| Historisches Museum | Bernisches Historisches Museum | complex | ✅ |
+| Hotel Schweizerhof | Hotel Schweizerhof Bern | moderate | ✅ |
+
+### Implementierte Fixes
+
+1. **BUG-001:** Kunstmuseum Hoehendaten korrigiert (known_buildings.py)
+2. **BUG-002:** 6 Berner Gebaeude hinzugefuegt (known_buildings.py)
+3. **BUG-003:** Request-Deduplizierung (service.py)
+4. **Address-Matching:** Komma-Toleranz (known_buildings.py)
+
+---
+
 *Stand: 30.12.2025*
+*Letzte Aktualisierung: Nach BUG-001, BUG-002, BUG-003 Fixes*
