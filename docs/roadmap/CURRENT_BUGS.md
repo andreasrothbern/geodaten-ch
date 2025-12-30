@@ -110,20 +110,27 @@ INFO:httpx: GET .../height?easting=601009... (6x!)
 
 ## Mittlere Prioritaet (P2)
 
-### BUG-005: Stadttheater Hoehen fragwuerdig
+### BUG-005: Stadttheater Hoehen + Dachform ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P2
 
-**Problem:**
+**Problem 1 (Hoehen):**
 ```
 Erhalten:  15-17m
 Erwartet:  ~25m (Theater mit Buehnenturm)
 ```
 
+**Problem 2 (Dachform - P2 aus Claude.ai Analyse):**
+```
+roof_type: "kuppel" (falsch)
+Erwartet:  "walmdach"
+```
+
 **Loesung:**
-- Hoehendaten validieren
-- Zu `known_buildings.py` hinzufuegen mit korrekten Zonen
+- Stadttheater zu `known_buildings.py` hinzugefuegt (BUG-002)
+- Korrekte Zonen: Foyer 12m, Zuschauerhaus 22m, Buehnenturm 32m
+- roof_type korrigiert: "walmdach" (Commit c219246)
 
 ---
 
@@ -195,6 +202,21 @@ Erwartet:  ~25m (Theater mit Buehnenturm)
 
 ---
 
+### BUG-005: Stadttheater Dachform ✅
+
+**Status:** Gefixt (30.12.2025)
+**Commit:** c219246
+
+**Problem:**
+- roof_type war "kuppel" (falsch)
+- Identifiziert in Claude.ai Batch-Test Analyse
+
+**Loesung:**
+- roof_type auf "walmdach" korrigiert
+- Stadttheater wurde mit BUG-002 bereits hinzugefuegt
+
+---
+
 ### BUG-008: ConnectTimeout ohne Retry ✅
 
 **Status:** Gefixt (30.12.2025)
@@ -235,7 +257,7 @@ git push -u origin feature/ml-learning-system
 2. ~~**BUG-002** - 6 Gebaeude zu known_buildings.py~~ ✅ Gefixt
 3. ~~**BUG-003** - Doppelte API-Calls~~ ✅ Gefixt
 4. **BUG-004** - Einsteinhaus langsam (Performance)
-5. **BUG-005** - Stadttheater Hoehen (Datenqualitaet)
+5. ~~**BUG-005** - Stadttheater Hoehen + Dachform~~ ✅ Gefixt
 6. **BUG-006** - Zonen bei Unbekannten (UX)
 7. **BUG-007** - Encoding (Kosmetik)
 
