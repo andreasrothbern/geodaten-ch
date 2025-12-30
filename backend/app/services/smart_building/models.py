@@ -200,6 +200,9 @@ class BuildingDataBundle:
     # SVG-Generierungs-Hinweise pro Typ
     svg_hints: Optional[Dict[str, str]] = None  # {"grundriss": "...", "ansicht": "...", "schnitt": "..."}
 
+    # Bevorzugte Ansichtsrichtung (für Fassadenansicht)
+    preferred_view: Optional[Dict[str, str]] = None  # {"direction": "west", "description": "...", "reason": "..."}
+
     # === ZUGÄNGE ===
     access_points: List[AccessPoint] = field(default_factory=list)
     suva_compliant: bool = True

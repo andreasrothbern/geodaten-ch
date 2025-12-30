@@ -1422,7 +1422,7 @@ class SVGGenerator:
 
         return svg
 
-    def generate_floor_plan(self, building: BuildingData, width: int = 600, height: int = 500, compact: bool = False, professional: bool = False) -> str:
+    def generate_floor_plan(self, building: BuildingData, width: int = 700, height: int = 480, compact: bool = False, professional: bool = False) -> str:
         """
         Generiert sauberen technischen Grundriss.
         Verwendet echte Polygon-Daten falls vorhanden.
@@ -1465,8 +1465,8 @@ class SVGGenerator:
         else:
             svg = self._svg_header(width, height, f"Grundriss - {building.address}")
 
-        # Hintergrund
-        svg += f'  <rect width="{width}" height="{height}" fill="#f8f9fa"/>\n'
+        # Hintergrund - weiss wie Ansicht/Schnitt
+        svg += f'  <rect width="{width}" height="{height}" fill="#FFFFFF"/>\n'
 
         # Anzahl Seiten für Titel
         num_sides = len(building.sides) if building.sides else 4

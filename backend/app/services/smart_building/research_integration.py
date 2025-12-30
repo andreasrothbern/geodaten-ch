@@ -91,6 +91,10 @@ async def collect_building_research(
                 bundle.svg_hints = known["svg_hints"]
                 logger.debug(f"SVG-Hints geladen fuer: {list(bundle.svg_hints.keys())}")
 
+            if known.get("preferred_view"):
+                bundle.preferred_view = known["preferred_view"]
+                logger.debug(f"Bevorzugte Ansicht: {bundle.preferred_view.get('direction', 'default')}")
+
             logger.info(f"Bekanntes Gebäude erkannt: {bundle.building_name}")
             return  # Fertig, keine Claude-Recherche nötig
 

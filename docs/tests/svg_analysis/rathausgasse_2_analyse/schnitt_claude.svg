@@ -1,0 +1,170 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+      <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+
+  <!-- Titel -->
+  <text x="350" y="22" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">GEBÄUDESCHNITT A-A - Kirche St. Peter und Paul</text>
+  <text x="350" y="38" font-family="Arial" font-size="10" text-anchor="middle" fill="#666">Querschnitt Ost-West durch Turm und Kirchenschiff</text>
+
+  <!-- Schnittmarkierung A -->
+  <circle cx="50" cy="55" r="10" fill="none" stroke="#CC0000" stroke-width="2"/>
+  <text x="50" y="60" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#CC0000">A</text>
+  <circle cx="650" cy="55" r="10" fill="none" stroke="#CC0000" stroke-width="2"/>
+  <text x="650" y="60" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#CC0000">A</text>
+  <line x1="65" y1="55" x2="635" y2="55" stroke="#CC0000" stroke-width="1" stroke-dasharray="10,5"/>
+
+  <!-- Terrain -->
+  <rect x="40" y="420" width="620" height="35" fill="url(#ground)"/>
+  <line x1="40" y1="420" x2="660" y2="420" stroke="#333" stroke-width="2"/>
+
+  <!-- Höhenskala links -->
+  <line x1="55" y1="420" x2="55" y2="40" stroke="#333" stroke-width="1"/>
+  
+  <line x1="50" y1="420" x2="60" y2="420" stroke="#333" stroke-width="1"/>
+  <text x="45" y="424" font-family="Arial" font-size="8" text-anchor="end" fill="#333">±0.00</text>
+  
+  <line x1="50" y1="336" x2="60" y2="336" stroke="#333" stroke-width="1"/>
+  <text x="45" y="340" font-family="Arial" font-size="7" text-anchor="end" fill="#666">+12m</text>
+  
+  <line x1="50" y1="294" x2="60" y2="294" stroke="#333" stroke-width="1"/>
+  <text x="45" y="298" font-family="Arial" font-size="7" text-anchor="end" fill="#666">+18m</text>
+  
+  <line x1="50" y1="246" x2="60" y2="246" stroke="#333" stroke-width="1"/>
+  <text x="45" y="250" font-family="Arial" font-size="7" text-anchor="end" fill="#666">+25m</text>
+  
+  <line x1="50" y1="40" x2="60" y2="40" stroke="#333" stroke-width="1"/>
+  <text x="45" y="44" font-family="Arial" font-size="8" text-anchor="end" fill="#333">+54.6m</text>
+
+  <!-- WESTTURM (links) - geschnitten -->
+  <rect x="80" y="40" width="20" height="380" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <rect x="160" y="40" width="20" height="380" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <!-- Turmspitze -->
+  <polygon points="80,40 130,20 180,40" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <!-- Innenraum Turm (LEER) -->
+  <rect x="100" y="40" width="60" height="380" fill="#FFFFFF"/>
+  <!-- Geschossdecken Turm -->
+  <line x1="80" y1="340" x2="180" y2="340" stroke="#333" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="80" y1="260" x2="180" y2="260" stroke="#333" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="80" y1="180" x2="180" y2="180" stroke="#333" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="80" y1="100" x2="180" y2="100" stroke="#333" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- SEITENSCHIFF LINKS - geschnitten -->
+  <rect x="180" y="336" width="15" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <rect x="235" y="336" width="10" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <!-- Dach Seitenschiff -->
+  <polygon points="180,336 215,305 245,336" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum (LEER) -->
+  <rect x="195" y="336" width="40" height="84" fill="#FFFFFF"/>
+
+  <!-- KIRCHENSCHIFF (Mittelschiff) - geschnitten -->
+  <rect x="245" y="246" width="15" height="174" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <rect x="440" y="246" width="15" height="174" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <!-- Dach Kirchenschiff (hohes Gewölbe) -->
+  <polygon points="245,246 350,190 455,246" fill="url(#cut-hatch)" stroke="#333" stroke-width="2"/>
+  <!-- Innenraum Kirchenschiff (LEER - hoher Raum) -->
+  <rect x="260" y="246" width="180" height="174" fill="#FFFFFF"/>
+  <!-- Gewölbeandeutung -->
+  <path d="M260,246 Q350,200 440,246" fill="none" stroke="#999" stroke-width="1" stroke-dasharray="4,2"/>
+
+  <!-- SEITENSCHIFF RECHTS - geschnitten -->
+  <rect x="455" y="336" width="10" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <rect x="505" y="336" width="15" height="84" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <!-- Dach Seitenschiff -->
+  <polygon points="455,336 485,305 520,336" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum (LEER) -->
+  <rect x="465" y="336" width="40" height="84" fill="#FFFFFF"/>
+
+  <!-- CHOR (rechts) - geschnitten -->
+  <rect x="520" y="294" width="15" height="126" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <rect x="590" y="294" width="15" height="126" fill="url(#cut-hatch)" stroke="#333" stroke-width="1.5"/>
+  <!-- Dach Chor -->
+  <polygon points="520,294 562,258 605,294" fill="url(#cut-hatch)" stroke="#333" stroke-width="1"/>
+  <!-- Innenraum Chor (LEER) -->
+  <rect x="535" y="294" width="55" height="126" fill="#FFFFFF"/>
+
+  <!-- Gerüst links -->
+  <g stroke="#0066CC" stroke-width="2.5">
+    <line x1="50" y1="420" x2="50" y2="20"/>
+    <line x1="68" y1="420" x2="68" y2="20"/>
+  </g>
+  <!-- Beläge -->
+  <g fill="#8B4513">
+    <rect x="48" y="406" width="22" height="3"/>
+    <rect x="48" y="378" width="22" height="3"/>
+    <rect x="48" y="350" width="22" height="3"/>
+    <rect x="48" y="322" width="22" height="3"/>
+    <rect x="48" y="294" width="22" height="3"/>
+    <rect x="48" y="266" width="22" height="3"/>
+    <rect x="48" y="238" width="22" height="3"/>
+    <rect x="48" y="210" width="22" height="3"/>
+    <rect x="48" y="182" width="22" height="3"/>
+    <rect x="48" y="154" width="22" height="3"/>
+    <rect x="48" y="126" width="22" height="3"/>
+    <rect x="48" y="98" width="22" height="3"/>
+    <rect x="48" y="70" width="22" height="3"/>
+    <rect x="48" y="42" width="22" height="3"/>
+  </g>
+
+  <!-- Gerüst rechts (niedriger, nur bis Chor-Höhe) -->
+  <g stroke="#0066CC" stroke-width="2.5">
+    <line x1="620" y1="420" x2="620" y2="258"/>
+    <line x1="638" y1="420" x2="638" y2="258"/>
+  </g>
+  <!-- Beläge rechts -->
+  <g fill="#8B4513">
+    <rect x="618" y="406" width="22" height="3"/>
+    <rect x="618" y="378" width="22" height="3"/>
+    <rect x="618" y="350" width="22" height="3"/>
+    <rect x="618" y="322" width="22" height="3"/>
+    <rect x="618" y="294" width="22" height="3"/>
+    <rect x="618" y="266" width="22" height="3"/>
+  </g>
+
+  <!-- Verankerungen -->
+  <g stroke="#CC0000" stroke-width="1.5" stroke-dasharray="4,3">
+    <line x1="68" y1="340" x2="80" y2="340"/>
+    <line x1="68" y1="260" x2="80" y2="260"/>
+    <line x1="68" y1="180" x2="80" y2="180"/>
+    <line x1="68" y1="100" x2="80" y2="100"/>
+    <line x1="605" y1="350" x2="620" y2="350"/>
+    <line x1="605" y1="300" x2="620" y2="300"/>
+  </g>
+
+  <!-- Zonenbeschriftung unten -->
+  <g font-family="Arial" font-size="9" text-anchor="middle" fill="#333">
+    <text x="130" y="450">Westturm</text>
+    <text x="130" y="462" font-size="8" fill="#666">(54.6m)</text>
+    
+    <text x="215" y="450">Seitenschiff</text>
+    <text x="215" y="462" font-size="8" fill="#666">(12m)</text>
+    
+    <text x="350" y="450">Kirchenschiff</text>
+    <text x="350" y="462" font-size="8" fill="#666">(25m)</text>
+    
+    <text x="485" y="450">Seitenschiff</text>
+    <text x="485" y="462" font-size="8" fill="#666">(12m)</text>
+    
+    <text x="562" y="450">Chor</text>
+    <text x="562" y="462" font-size="8" fill="#666">(18m)</text>
+  </g>
+
+  <!-- Legende -->
+  <g transform="translate(520, 70)">
+    <rect x="0" y="0" width="15" height="10" fill="url(#cut-hatch)" stroke="#333"/>
+    <text x="20" y="9" font-family="Arial" font-size="7" fill="#333">Schnittfläche</text>
+    <rect x="0" y="15" width="15" height="10" fill="#FFFFFF" stroke="#333"/>
+    <text x="20" y="24" font-family="Arial" font-size="7" fill="#333">Innenraum (leer)</text>
+  </g>
+</svg>

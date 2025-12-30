@@ -85,14 +85,30 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         # NEU: Gebäudeform
         "building_shape": "Kreuzform (Basilika)",
         "building_shape_description": "Klassische Basilika-Form: Langhaus (Kirchenschiff) mit niedrigeren Seitenschiffen, Querhaus (Transept), Chor im Osten, Turm an der Westfassade.",
+        # ANSICHT-KONFIGURATION: Von Westen mit Turm zentriert
+        "preferred_view": {
+            "direction": "west",
+            "description": "Westfassade mit zentriertem Turm",
+            "reason": "Der neugotische Westturm (54.6m) ist das Hauptmerkmal der Kirche und sollte im Mittelpunkt der Ansicht stehen.",
+        },
         "zones": [
+            {
+                "name": "Westturm",
+                "zone_type": "turm",
+                "traufhoehe_m": 25.0,  # Turm startet ueber Kirchenschiff
+                "firsthoehe_m": 54.6,
+                "beruesten": True,
+                "sonderkonstruktion": True,
+                "position": "zentral",  # Turm ist zentriert in der Westansicht
+            },
             {
                 "name": "Kirchenschiff",
                 "zone_type": "hauptgebaeude",
-                "traufhoehe_m": 18.0,  # Kirchenschiff ist HOEHER als die gemessene Traufe!
+                "traufhoehe_m": 18.0,
                 "firsthoehe_m": 25.0,
                 "beruesten": True,
                 "sonderkonstruktion": False,
+                "position": "links_rechts_vom_turm",  # Flanken den Turm
             },
             {
                 "name": "Seitenschiffe",
@@ -101,6 +117,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "firsthoehe_m": 12.0,
                 "beruesten": True,
                 "sonderkonstruktion": False,
+                "position": "aussen",  # Aeussere Flanken
             },
             {
                 "name": "Chor",
@@ -109,14 +126,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "firsthoehe_m": 18.0,
                 "beruesten": True,
                 "sonderkonstruktion": False,
-            },
-            {
-                "name": "Westturm",
-                "zone_type": "turm",
-                "traufhoehe_m": 25.0,  # Turm startet ueber Kirchenschiff
-                "firsthoehe_m": 54.6,
-                "beruesten": True,
-                "sonderkonstruktion": True,
+                "position": "verdeckt",  # Hinter dem Hauptschiff, in Westansicht nicht sichtbar
             },
         ],
         "tower_config": {
@@ -125,12 +135,12 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
             "form": "Spitzhelm (neugotisch)",
             "height_m": 54.6,
         },
-        "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Chorraum"],
-        # NEU: Hinweise für SVG-Generierung
+        "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Rosettenfenster", "Portal"],
+        # SVG-Hinweise für korrekte Darstellung
         "svg_hints": {
-            "grundriss": "Kreuzform zeichnen! Kirchenschiff länglich, Seitenschiffe schmaler und niedriger, Chor im Osten.",
-            "ansicht": "Turm an Westfassade dominant. 4 verschiedene Höhenzonen beachten: Seitenschiffe 12m, Chor 18m, Kirchenschiff 25m, Turm 54.6m.",
-            "schnitt": "Basilika-Querschnitt: Hohes Mittelschiff, niedrige Seitenschiffe. Turm als separates Element."
+            "grundriss": "Kreuzform zeichnen! Westturm links (quadratisch), Kirchenschiff laenglich, Seitenschiffe schmaler, Chor rechts. Norden nach oben.",
+            "ansicht": "WESTANSICHT mit Turm ZENTRIERT! Von links nach rechts: Seitenschiff (12m) | Turm (54.6m, ZENTRAL) | Seitenschiff (12m). Kirchenschiff (25m) hinter Turm. Gotische Spitzboegen im Turm. Rosettenfenster ueber Portal.",
+            "schnitt": "Querschnitt Ost-West: Links Turm (54.6m), rechts Kirchenschiff+Chor. Basilika-Profil: Hohes Mittelschiff, niedrige Seitenschiffe."
         },
     },
 

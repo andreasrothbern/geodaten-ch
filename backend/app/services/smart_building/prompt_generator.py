@@ -515,9 +515,16 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
                 lines.append("- **Zonen:** Farblich unterscheiden, Innenhoefe markieren")
 
         if svg_type in [SVGType.ANSICHT, SVGType.ALL]:
+            # Bevorzugte Blickrichtung (wenn definiert)
+            view_direction = ""
+            if bundle.preferred_view:
+                view_direction = f" von {bundle.preferred_view.get('direction', 'Sueden').upper()}"
+                view_desc = bundle.preferred_view.get('description', '')
+                view_reason = bundle.preferred_view.get('reason', '')
+
             lines.append(f"""
 ### SVG 2: Fassadenansicht (Elevation)
-- **Perspektive:** Frontalansicht von AUSSEN, orthogonal (2D)
+- **Perspektive:** Frontalansicht{view_direction}, orthogonal (2D)
 - **Zeigt:** NUR die sichtbare Aussenflaeche
 - **WICHTIG - Verdeckungsregel:**
   - Vordere Elemente VERDECKEN hintere Elemente
@@ -527,6 +534,12 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Geruest:** VOR der Fassade (Staender blau, Belaege braun)
 - **Hoehenskala:** Links (+/-0.00, +Traufe, +First)
 - **Lagenbeschriftung:** Rechts (1. Lage, 2. Lage, ...)""")
+
+            # Bevorzugte Ansichtsrichtung (NEU 30.12.2025)
+            if bundle.preferred_view:
+                lines.append(f"\n> **[!] ANSICHTSRICHTUNG:** {bundle.preferred_view.get('description', 'Standard')}")
+                if bundle.preferred_view.get('reason'):
+                    lines.append(f"> Grund: {bundle.preferred_view['reason']}")
 
             # SVG-Hints fuer Ansicht (NEU 30.12.2025)
             if bundle.svg_hints and bundle.svg_hints.get("ansicht"):
