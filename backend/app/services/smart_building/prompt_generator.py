@@ -53,7 +53,20 @@ class UnifiedPromptGenerator:
     Verwendung:
         generator = get_prompt_generator()
         prompt = generator.generate(bundle, svg_type=SVGType.ALL)
+
+    Quick Wins (30.12.2025):
+    - Proportionen-Berechnung (viewBox 700×480)
+    - Gerüst-Spezifikation (Layher Blitz 70)
+    - Innenhof-Koordinaten (U-Form)
     """
+
+    # ViewBox Konstanten (Quick Win #1)
+    VIEWBOX_WIDTH = 700
+    VIEWBOX_HEIGHT = 480
+    OFFSET_LEFT = 100    # Höhenskala
+    OFFSET_BOTTOM = 60   # Terrain
+    OFFSET_RIGHT = 50    # Lagenbeschriftung
+    OFFSET_TOP = 40      # Titel
 
     def generate(
         self,
@@ -112,14 +125,20 @@ class UnifiedPromptGenerator:
         if bundle.neighbors:
             sections.append(self._neighbors_section(bundle))
 
-        # ## 10. Style-Guide
+        # ## 10. Proportionen (Quick Win #1)
+        sections.append(self._proportions_section(bundle))
+
+        # ## 11. Gerüst-Spezifikation (Quick Win #3)
+        sections.append(self._scaffolding_spec_section())
+
+        # ## 12. Style-Guide
         if include_style_guide:
             sections.append(self._style_guide())
 
-        # ## 11. Anforderungen pro SVG
+        # ## 13. Anforderungen pro SVG
         sections.append(self._svg_requirements(bundle, svg_type))
 
-        # ## 12. Output
+        # ## 14. Output
         sections.append(self._output_format(svg_type))
 
         # Warnungen (optional, nicht nummeriert)
@@ -299,6 +318,16 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
                 lines.append(f"- **{feature}**")
             lines.append("")
 
+        # === Quick Win #4: INNENHOF-KOORDINATEN ===
+        courtyard_bbox = self._calculate_courtyard_bbox(bundle)
+        if courtyard_bbox:
+            lines.append("### [!] INNENHOF-KOORDINATEN (nicht einrüsten!)")
+            lines.append(f"- **E-Bereich:** {courtyard_bbox['min_e']:.0f} - {courtyard_bbox['max_e']:.0f}")
+            lines.append(f"- **N-Bereich:** {courtyard_bbox['min_n']:.0f} - {courtyard_bbox['max_n']:.0f}")
+            lines.append(f"- **Fläche:** {courtyard_bbox['area_m2']:.0f} m²")
+            lines.append("> **WICHTIG:** Innenhof als FREIFLÄCHE markieren, NICHT einrüsten!")
+            lines.append("")
+
         if not bundle.zones:
             lines.append("Keine Zonen definiert (einfaches Gebaeude mit 1 Zone)")
             return "\n".join(lines)
@@ -404,7 +433,7 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
 
     def _style_guide(self) -> str:
         """SVG Style-Vorgaben"""
-        return """## 10. SVG Style-Vorgaben (KRITISCH!)
+        return """## 12. SVG Style-Vorgaben (KRITISCH!)
 
 ```xml
 <defs>
@@ -463,7 +492,7 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 
     def _svg_requirements(self, bundle: BuildingDataBundle, svg_type: SVGType) -> str:
         """SVG-spezifische Anforderungen"""
-        lines = ["## 11. Anforderungen pro SVG"]
+        lines = ["## 13. Anforderungen pro SVG"]
 
         terrain_ref = "+/-0.00"
         if bundle.terrain:
@@ -535,7 +564,7 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
     def _output_format(self, svg_type: SVGType) -> str:
         """Output-Format Anweisung"""
         if svg_type == SVGType.ALL:
-            return """## 12. Output
+            return """## 14. Output
 
 Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
 
@@ -547,7 +576,7 @@ Erstelle **3 separate SVGs**, jeweils mit `viewBox="0 0 700 480"`:
 `<!-- SVG 1: Grundriss -->`"""
 
         else:
-            return f"""## 12. Output
+            return f"""## 14. Output
 
 Erstelle **1 SVG** mit `viewBox="0 0 700 480"`:
 - Typ: {svg_type.value}
@@ -613,6 +642,104 @@ Erstelle **1 SVG** mit `viewBox="0 0 700 480"`:
             return "Wohngebaeude"
 
         return "Gebaeude"
+
+    def _proportions_section(self, bundle: BuildingDataBundle) -> str:
+        """Quick Win #1: Proportionen-Berechnung für viewBox 700×480"""
+        lines = ["## 10. Proportionen (für viewBox 700×480)"]
+
+        # Zeichenfläche berechnen
+        draw_width = self.VIEWBOX_WIDTH - self.OFFSET_LEFT - self.OFFSET_RIGHT  # 550px
+        draw_height = self.VIEWBOX_HEIGHT - self.OFFSET_TOP - self.OFFSET_BOTTOM  # 380px
+
+        # Gebäudehöhe bestimmen (höchste Zone oder First)
+        max_height = bundle.firsthoehe_m or bundle.traufhoehe_m or 10.0
+        if bundle.zones:
+            zone_heights = [z.gebaeudehoehe_m or z.firsthoehe_m or z.traufhoehe_m or 0 for z in bundle.zones]
+            if zone_heights:
+                max_height = max(max_height, max(zone_heights))
+
+        # Gebäudebreite aus Polygon-BoundingBox
+        building_width = bundle.bbox_width_m or 30.0
+
+        # Massstab berechnen (1m = X Pixel)
+        scale_height = draw_height / max_height if max_height > 0 else 1.0
+        scale_width = draw_width / building_width if building_width > 0 else 1.0
+        scale = min(scale_height, scale_width)  # Passender Massstab
+
+        lines.append("")
+        lines.append(f"- **Massstab:** 1m = {scale:.1f}px (ca. 1:{int(1000/scale)})")
+        lines.append(f"- **Zeichenfläche:** {draw_width}px × {draw_height}px")
+        lines.append(f"- **Gebäudehöhe:** {max_height:.1f}m = {max_height * scale:.0f}px")
+        lines.append(f"- **Gebäudebreite:** {building_width:.1f}m = {building_width * scale:.0f}px")
+        lines.append("")
+        lines.append("**Offsets:**")
+        lines.append(f"- Links: {self.OFFSET_LEFT}px (Höhenskala)")
+        lines.append(f"- Unten: {self.OFFSET_BOTTOM}px (Terrain)")
+        lines.append(f"- Rechts: {self.OFFSET_RIGHT}px (Lagenbeschriftung)")
+        lines.append(f"- Oben: {self.OFFSET_TOP}px (Titel)")
+
+        # Zonen-Höhen in Pixeln
+        if bundle.zones and len(bundle.zones) > 1:
+            lines.append("")
+            lines.append("**Zonen-Höhen in Pixeln:**")
+            for z in bundle.zones:
+                h = z.gebaeudehoehe_m or z.firsthoehe_m or z.traufhoehe_m
+                if h:
+                    lines.append(f"- {z.name}: {h:.1f}m = {h * scale:.0f}px")
+
+        return "\n".join(lines)
+
+    def _scaffolding_spec_section(self) -> str:
+        """Quick Win #3: Layher Blitz 70 Gerüst-Spezifikation"""
+        return """## 11. Gerüst-Spezifikation (Layher Blitz 70)
+
+| Parameter | Wert | Bedeutung |
+|-----------|------|-----------|
+| **Feldbreite** | 2.57m | Standard-Feldlänge |
+| **Lagenhöhe** | 2.0m | Vertikaler Abstand |
+| **Ständerabstand** | 3.07m | Max. Ständerabstand |
+| **Fassadenabstand** | 0.30m | Abstand zur Fassade |
+| **Breitenklasse** | W09 (0.70m) | Gangbreite |
+
+**Für SVG-Zeichnung:**
+- Ständer alle 2.57m (oder kürzer bei Ecken)
+- Beläge auf jeder Lagenhöhe (2.0m)
+- Gerüst 0.30m VOR der Fassade
+- Verankerungen alle 4m horizontal/vertikal"""
+
+    def _calculate_courtyard_bbox(self, bundle: BuildingDataBundle) -> Optional[dict]:
+        """Quick Win #4: Innenhof-BoundingBox für U-Form berechnen"""
+        if not bundle.polygon or len(bundle.polygon) < 6:
+            return None
+
+        # Nur bei U-Form oder komplexer Form
+        if not bundle.building_shape or bundle.building_shape.lower() not in ['u-form', 'h-form', 'komplex']:
+            return None
+
+        try:
+            from shapely.geometry import Polygon as ShapelyPolygon
+
+            poly = ShapelyPolygon(bundle.polygon)
+            if not poly.is_valid:
+                return None
+
+            convex_hull = poly.convex_hull
+            courtyard = convex_hull.difference(poly)
+
+            if courtyard.is_empty or courtyard.area < 10:  # Min 10m² für Innenhof
+                return None
+
+            # BoundingBox des Innenhofs
+            minx, miny, maxx, maxy = courtyard.bounds
+            return {
+                "min_e": minx,
+                "max_e": maxx,
+                "min_n": miny,
+                "max_n": maxy,
+                "area_m2": courtyard.area,
+            }
+        except Exception:
+            return None
 
 
 # Singleton
