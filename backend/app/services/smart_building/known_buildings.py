@@ -218,22 +218,290 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
     },
 
     # ========================================
-    # WEITERE STÄDTE
+    # BERN - Weitere wichtige Gebaeude
     # ========================================
 
-    # Grossmünster Zürich (Beispiel)
+    # Kunstmuseum Bern (Hodlerstrasse 8)
+    # HINWEIS: swissBUILDINGS3D liefert falsche Hoehen (7.9m) - hier korrigiert!
+    "kunstmuseum_bern": {
+        "egid": None,  # EGID muss noch recherchiert werden
+        "building_name": "Kunstmuseum Bern",
+        "building_type": "Museum",
+        "architectural_style": "Neorenaissance / Moderne",
+        "construction_year": 1879,
+        "complexity": "complex",
+        "roof_type": "flachdach",
+        "zones": [
+            {
+                "name": "Altbau",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 15.0,
+                "firsthoehe_m": 18.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Neubau (Stettler)",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 12.0,
+                "firsthoehe_m": 15.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Erweiterung",
+                "zone_type": "anbau",
+                "traufhoehe_m": 8.0,
+                "firsthoehe_m": 10.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+        ],
+        "special_features": ["Saeulenfassade", "Oberlicht-Saele", "Skulpturenhof"],
+    },
+
+    # Kornhaus Bern (Kornhausplatz 18)
+    "kornhaus_bern": {
+        "egid": None,
+        "building_name": "Kornhaus",
+        "building_type": "Kulturzentrum / Restaurant",
+        "architectural_style": "Barock",
+        "construction_year": 1718,
+        "complexity": "complex",
+        "roof_type": "mansarddach",
+        "zones": [
+            {
+                "name": "Arkaden",
+                "zone_type": "arkade",
+                "traufhoehe_m": 5.0,
+                "firsthoehe_m": 5.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Hauptbau",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 25.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Dachreiter",
+                "zone_type": "turm",
+                "traufhoehe_m": 25.0,
+                "firsthoehe_m": 32.0,
+                "beruesten": True,
+                "sonderkonstruktion": True,
+            },
+        ],
+        "special_features": ["Barocke Fassade", "Arkaden", "Kellergewoelbe"],
+    },
+
+    # Hauptbahnhof Bern (Bahnhofplatz 10)
+    "hauptbahnhof_bern": {
+        "egid": None,
+        "building_name": "Hauptbahnhof Bern",
+        "building_type": "Bahnhof",
+        "architectural_style": "Moderne / Brutalismus",
+        "construction_year": 1974,
+        "complexity": "complex",
+        "roof_type": "flachdach",
+        "zones": [
+            {
+                "name": "Baldachin",
+                "zone_type": "arkade",
+                "traufhoehe_m": 8.0,
+                "firsthoehe_m": 12.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Bahnhofshalle",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 22.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Bueroturm",
+                "zone_type": "turm",
+                "traufhoehe_m": 30.0,
+                "firsthoehe_m": 40.0,
+                "beruesten": True,
+                "sonderkonstruktion": True,
+            },
+        ],
+        "special_features": ["Glasfassade", "Unterfuehrung", "Baldachin"],
+    },
+
+    # Stadttheater Bern (Theaterplatz 7)
+    "stadttheater_bern": {
+        "egid": None,
+        "building_name": "Konzert Theater Bern",
+        "building_type": "Theater / Oper",
+        "architectural_style": "Neobarock",
+        "construction_year": 1903,
+        "complexity": "complex",
+        "roof_type": "kuppel",
+        "zones": [
+            {
+                "name": "Foyer",
+                "zone_type": "anbau",
+                "traufhoehe_m": 10.0,
+                "firsthoehe_m": 12.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Zuschauerhaus",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 22.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Buehnenturm",
+                "zone_type": "turm",
+                "traufhoehe_m": 22.0,
+                "firsthoehe_m": 32.0,
+                "beruesten": True,
+                "sonderkonstruktion": True,
+            },
+        ],
+        "tower_config": {
+            "count": 1,
+            "position": "zentral (Buehne)",
+            "form": "Buehnenturm",
+            "height_m": 32.0,
+        },
+        "special_features": ["Buehnenturm", "Barocke Fassade", "Kuppel"],
+    },
+
+    # Bernisches Historisches Museum (Helvetiaplatz 5)
+    "historisches_museum_bern": {
+        "egid": None,
+        "building_name": "Bernisches Historisches Museum",
+        "building_type": "Museum",
+        "architectural_style": "Historismus (Schloss)",
+        "construction_year": 1894,
+        "complexity": "complex",
+        "roof_type": "satteldach_mit_turm",
+        "zones": [
+            {
+                "name": "Hauptbau",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 25.0,
+                "firsthoehe_m": 35.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Seitenfluegel",
+                "zone_type": "anbau",
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 25.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Eckturm",
+                "zone_type": "turm",
+                "traufhoehe_m": 35.0,
+                "firsthoehe_m": 50.0,
+                "beruesten": True,
+                "sonderkonstruktion": True,
+            },
+        ],
+        "tower_config": {
+            "count": 4,
+            "position": "Ecken",
+            "form": "Spitzdach",
+            "height_m": 50.0,
+        },
+        "special_features": ["Schlossarchitektur", "Ecktuerme", "Einstein-Museum"],
+    },
+
+    # Hotel Schweizerhof Bern (Marktgasse 67 / Bahnhofplatz 11)
+    "hotel_schweizerhof_bern": {
+        "egid": None,
+        "building_name": "Hotel Schweizerhof Bern",
+        "building_type": "Hotel",
+        "architectural_style": "Historismus",
+        "construction_year": 1859,
+        "complexity": "moderate",
+        "roof_type": "mansarddach",
+        "zones": [
+            {
+                "name": "Hauptgebaeude",
+                "zone_type": "hauptgebaeude",
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 25.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Dachaufbau",
+                "zone_type": "anbau",
+                "traufhoehe_m": 25.0,
+                "firsthoehe_m": 30.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+        ],
+        "special_features": ["Historische Fassade", "Mansarddach", "Grandhotel"],
+    },
+
+    # ========================================
+    # WEITERE STAEDTE
+    # ========================================
+
+    # Grossmuenster Zuerich (Beispiel)
     # "..." : { ... }
 }
 
 # Alias-Mapping: Adresse → EGID
 ADDRESS_TO_EGID: Dict[str, str] = {
+    # Bundeshaus
     "bundesplatz 3, 3011 bern": "2242547",
     "bundesplatz 3, bern": "2242547",
+    # St. Peter und Paul
     "rathausgasse 2, 3011 bern": "191821074",
     "rathausgasse 2, bern": "191821074",
+    # Berner Muenster
     "münsterplatz 1, 3011 bern": "1230337",
     "münsterplatz 1, bern": "1230337",
+    "muensterplatz 1, 3011 bern": "1230337",
+    "muensterplatz 1, bern": "1230337",
+    # Einsteinhaus
     "kramgasse 49, 3011 bern": "1234567",
+    "kramgasse 49, bern": "1234567",
+    # Zytglogge
+    "kramgasse 52, 3011 bern": "1017961",
+    "kramgasse 52, bern": "1017961",
+    # ========================================
+    # Neue Gebaeude (BUG-002 Fix 30.12.2025)
+    # ========================================
+    # Kunstmuseum Bern
+    "hodlerstrasse 8, 3011 bern": "kunstmuseum_bern",
+    "hodlerstrasse 8, bern": "kunstmuseum_bern",
+    # Kornhaus
+    "kornhausplatz 18, 3011 bern": "kornhaus_bern",
+    "kornhausplatz 18, bern": "kornhaus_bern",
+    # Hauptbahnhof Bern
+    "bahnhofplatz 10, 3011 bern": "hauptbahnhof_bern",
+    "bahnhofplatz 10, bern": "hauptbahnhof_bern",
+    # Stadttheater / Konzert Theater Bern
+    "theaterplatz 7, 3011 bern": "stadttheater_bern",
+    "theaterplatz 7, bern": "stadttheater_bern",
+    # Bernisches Historisches Museum
+    "helvetiaplatz 5, 3005 bern": "historisches_museum_bern",
+    "helvetiaplatz 5, bern": "historisches_museum_bern",
+    # Hotel Schweizerhof
+    "bahnhofplatz 11, 3011 bern": "hotel_schweizerhof_bern",
+    "bahnhofplatz 11, bern": "hotel_schweizerhof_bern",
 }
 
 

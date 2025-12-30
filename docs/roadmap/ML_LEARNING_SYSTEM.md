@@ -211,21 +211,138 @@ joblib>=1.3.0
 
 ---
 
+## Ergaenzung: Dynamische Alias-Datenbank
+
+### Idee
+
+Aktuell verwendet `known_buildings.py` ein statisches ADDRESS_TO_EGID Mapping.
+Die Idee ist, dieses Mapping dynamisch zu erweitern:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 DYNAMISCHE ALIAS-DB                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Benutzer sucht: "Bundeshaus"                               │
+│       │                                                      │
+│       ▼                                                      │
+│  1. Alias-DB Check                                          │
+│     → "Bundeshaus" → EGID 2242547 (Hit!)                    │
+│       │                                                      │
+│       ▼                                                      │
+│  2. Daten aus known_buildings.py laden                      │
+│     → Zonen, Hoehen, etc.                                   │
+│                                                              │
+│  ────────────────────────────────────────────────           │
+│                                                              │
+│  Benutzer sucht: "Rotes Rathaus Bern"                       │
+│       │                                                      │
+│       ▼                                                      │
+│  1. Alias-DB Check                                          │
+│     → Kein Treffer                                          │
+│       │                                                      │
+│       ▼                                                      │
+│  2. Claude Recherche (Haiku)                                │
+│     → Findet: "Rathaus Bern, Rathausgasse 4"               │
+│       │                                                      │
+│       ▼                                                      │
+│  3. Alias in DB speichern                                   │
+│     → "rotes rathaus bern" → "Rathausgasse 4, 3011 Bern"   │
+│       │                                                      │
+│       ▼                                                      │
+│  4. Naechste Suche nach "Rotes Rathaus"                    │
+│     → Alias-Hit! Sofortige Adress-Aufloesung               │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Vorteile
+
+| Aspekt | Statisch (aktuell) | Dynamisch (geplant) |
+|--------|-------------------|---------------------|
+| Pflege | Manuell in Code | Automatisch lernend |
+| Abdeckung | ~15 Gebaeude | Unbegrenzt |
+| Kosten | $0 | ~$0.01 pro neuem Alias |
+| Latenz | Sofort | Erster Aufruf: 1-2s |
+
+### Technische Umsetzung (Skizze)
+
+```python
+# Neue Tabelle in building_contexts.db
+CREATE TABLE building_aliases (
+    alias TEXT PRIMARY KEY,           -- Normalisiert (lowercase, stripped)
+    resolved_address TEXT NOT NULL,   -- Vollstaendige Adresse
+    egid TEXT,                        -- Falls bekannt
+    source TEXT,                      -- 'manual', 'claude', 'ml'
+    confidence REAL DEFAULT 1.0,
+    created_at TEXT,
+    used_count INTEGER DEFAULT 0      -- Fuer Popularitaet
+);
+
+CREATE INDEX idx_alias_egid ON building_aliases(egid);
+```
+
+### Integration mit ML-System
+
+Das Alias-Feature kann VOR dem ML-System implementiert werden:
+
+1. **Phase 0.5: Alias-DB** (vor ML)
+   - Dynamisches Speichern von Recherche-Ergebnissen
+   - Autocomplete-Vorschlaege aus Alias-DB
+   - Popularitaets-Tracking
+
+2. **Phase 1-3: ML-System** (wie geplant)
+   - ML nutzt Alias-DB als zusaetzliche Feature-Quelle
+   - Bekannte Aliase → Hoeheres Konfidenz-Signal
+
+### Analyse-Fragen
+
+Vor Implementierung zu klaeren:
+
+1. **Alias-Qualitaet**: Wie sicherstellen, dass Claude-generierte Aliase korrekt sind?
+   - Manuelles Review?
+   - Konfidenz-Schwellwert?
+
+2. **Duplikat-Handling**: Was wenn Alias mehrdeutig?
+   - "Museum" → Kunstmuseum ODER Historisches Museum?
+   - Loesung: Top-N Vorschlaege mit Ranking
+
+3. **Update-Strategie**: Wann Alias aktualisieren?
+   - TTL wie bei anderen Caches?
+   - Oder permanent (Gebaeude aendern sich selten)?
+
+4. **Deployment**: Wie Alias-DB auf Railway bereitstellen?
+   - SQLite im Volume (wie andere DBs)
+   - Seed-Daten aus Tests exportieren
+
+---
+
 ## Naechste Schritte
 
-1. **Bugs beheben** (aktuell)
-   - Siehe `docs/roadmap/CURRENT_BUGS.md`
+1. **Bugs beheben** ✅ (erledigt 30.12.2025)
+   - BUG-001, BUG-002, BUG-003 gefixt
 
-2. **Feature-Branch erstellen**
+2. **Tests auf Railway deployen**
+   - Aktuelle Fixes pushen
+   - Test-Daten exportieren
+
+3. **Alias-Feature analysieren**
+   - Analyse-Fragen oben klaeren
+   - Entscheidung: Vor oder mit ML?
+
+4. **Feature-Branch erstellen**
    ```bash
    git checkout -b feature/ml-learning-system
+   # oder
+   git checkout -b feature/dynamic-alias-db
    ```
 
-3. **Phase 1a implementieren**
+5. **Phase 1a implementieren**
    - TrainingDataCollector Service
    - Erste 50 Gebaeude sammeln
 
 ---
 
 *Dokument erstellt: 30.12.2025*
+*Letzte Aktualisierung: 30.12.2025*
 *Autor: Claude Code + User*

@@ -7,9 +7,9 @@
 
 ## Kritische Bugs (P0)
 
-### BUG-001: Kunstmuseum Hoehendaten falsch
+### BUG-001: Kunstmuseum Hoehendaten falsch ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P0 (Kritisch)
 **Adresse:** Hodlerstrasse 8, 3011 Bern
 
@@ -19,23 +19,22 @@ Erhalten:  7.9m First, 6.7m Traufe
 Erwartet:  ~18m (Museumsgebaeude)
 ```
 
-**Ursache (vermutlich):**
-- Falsches Gebaeude via EGID zugeordnet
-- Neubau vs. Altbau verwechselt
-- Koordinaten-Mismatch
+**Ursache:**
+- swissBUILDINGS3D liefert falschen Wert (vermutlich Nebengebaeude)
 
 **Loesung:**
-1. EGID fuer Kunstmuseum recherchieren
-2. Hoehendaten in swissBUILDINGS3D pruefen
-3. Falls Fehler in Quelldaten: zu `known_buildings.py` hinzufuegen
+- Kunstmuseum zu `known_buildings.py` hinzugefuegt mit korrekten Hoehenzonen:
+  - Altbau: 15-18m
+  - Neubau (Stettler): 12-15m
+  - Erweiterung: 8-10m
 
 ---
 
 ## Hohe Prioritaet (P1)
 
-### BUG-002: Unbekannte Gebaeude ohne Namen
+### BUG-002: Unbekannte Gebaeude ohne Namen ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P1
 
 **Problem:**
@@ -43,23 +42,29 @@ Erwartet:  ~18m (Museumsgebaeude)
 - Claude-Recherche findet keine Namen
 
 **Betroffene Gebaeude:**
-- Hotel Schweizerhof (Marktgasse 67)
-- Hauptbahnhof Bern (Bahnhofplatz 10)
-- Kornhaus (Kornhausplatz 18)
-- Stadttheater (Theaterplatz 7)
-- Kunstmuseum (Hodlerstrasse 8)
-- Historisches Museum (Helvetiaplatz 5)
+- Hotel Schweizerhof (Bahnhofplatz 11) ✅
+- Hauptbahnhof Bern (Bahnhofplatz 10) ✅
+- Kornhaus (Kornhausplatz 18) ✅
+- Stadttheater (Theaterplatz 7) ✅
+- Kunstmuseum (Hodlerstrasse 8) ✅
+- Historisches Museum (Helvetiaplatz 5) ✅
 
 **Loesung:**
-1. Diese 6 Gebaeude zu `known_buildings.py` hinzufuegen
-2. Korrekte EGIDs recherchieren
-3. Hoehenzonen definieren
+- Alle 6 Gebaeude zu `known_buildings.py` hinzugefuegt
+- ADDRESS_TO_EGID Mappings ergaenzt
+- Hoehenzonen definiert:
+  - Kunstmuseum: 3 Zonen (Altbau, Neubau, Erweiterung)
+  - Kornhaus: 3 Zonen (Arkaden, Hauptbau, Dachreiter)
+  - Hauptbahnhof: 3 Zonen (Baldachin, Bahnhofshalle, Bueroturm)
+  - Stadttheater: 3 Zonen (Foyer, Zuschauerhaus, Buehnenturm)
+  - Historisches Museum: 3 Zonen (Hauptbau, Seitenfluegel, Eckturm)
+  - Hotel Schweizerhof: 2 Zonen (Hauptgebaeude, Dachaufbau)
 
 ---
 
-### BUG-003: Doppelte API-Calls
+### BUG-003: Doppelte API-Calls ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P1
 
 **Problem (aus Log):**
@@ -73,9 +78,14 @@ INFO:httpx: GET .../height?easting=601009... (6x!)
 - Fehlende Deduplizierung
 
 **Loesung:**
-1. Request-Deduplication in SmartBuildingService
-2. Shared Cache fuer aktive Requests
-3. Mutex/Lock fuer gleiche Adressen
+- Request-Deduplizierung in `SmartBuildingService` implementiert:
+  - `_address_locks: Dict[str, asyncio.Lock]` - Ein Lock pro Adresse
+  - `_get_address_lock()` - Thread-safe Lock-Erstellung
+  - Double-Check Pattern nach Lock-Erwerb
+- Bei parallelen Anfragen fuer dieselbe Adresse:
+  - Erste Anfrage sammelt Daten
+  - Folgende Anfragen warten und erhalten Cache-Ergebnis
+- Logging erweitert: "waited for other request"
 
 ---
 
@@ -155,6 +165,36 @@ Erwartet:  ~25m (Theater mit Buehnenturm)
 
 ## Gefixt (Erledigt)
 
+### BUG-001: Kunstmuseum Hoehendaten ✅
+
+**Status:** Gefixt (30.12.2025)
+
+**Loesung:**
+- Kunstmuseum zu `known_buildings.py` hinzugefuegt
+- Korrekte Hoehenzonen: Altbau 18m, Neubau 15m, Erweiterung 10m
+
+---
+
+### BUG-002: 6 Berner Gebaeude ✅
+
+**Status:** Gefixt (30.12.2025)
+
+**Loesung:**
+- Alle 6 Gebaeude mit korrekten Zonen hinzugefuegt
+- ADDRESS_TO_EGID Mappings ergaenzt
+
+---
+
+### BUG-003: Doppelte API-Calls ✅
+
+**Status:** Gefixt (30.12.2025)
+
+**Loesung:**
+- Request-Deduplizierung mit asyncio.Lock pro Adresse
+- Double-Check Pattern nach Lock-Erwerb
+
+---
+
 ### BUG-008: ConnectTimeout ohne Retry ✅
 
 **Status:** Gefixt (30.12.2025)
@@ -191,9 +231,9 @@ git push -u origin feature/ml-learning-system
 
 ## Priorisierte Reihenfolge
 
-1. **BUG-001** - Kunstmuseum Hoehen (kritisch, Datenqualitaet)
-2. **BUG-002** - 6 Gebaeude zu known_buildings.py
-3. **BUG-003** - Doppelte API-Calls (Performance)
+1. ~~**BUG-001** - Kunstmuseum Hoehen~~ ✅ Gefixt
+2. ~~**BUG-002** - 6 Gebaeude zu known_buildings.py~~ ✅ Gefixt
+3. ~~**BUG-003** - Doppelte API-Calls~~ ✅ Gefixt
 4. **BUG-004** - Einsteinhaus langsam (Performance)
 5. **BUG-005** - Stadttheater Hoehen (Datenqualitaet)
 6. **BUG-006** - Zonen bei Unbekannten (UX)

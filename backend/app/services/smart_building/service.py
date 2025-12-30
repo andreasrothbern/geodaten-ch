@@ -66,11 +66,18 @@ class SmartBuildingService:
         service = get_smart_building_service()
         bundle = await service.collect_all_data("Bundesplatz 3, 3011 Bern")
         prompt = service.generate_prompt(bundle, svg_type="all")
+
+    Request-Deduplizierung:
+        Parallele Anfragen für dieselbe Adresse werden dedupliziert.
+        Nur eine Anfrage wird tatsächlich ausgeführt, andere warten auf das Ergebnis.
     """
 
     def __init__(self):
         self._ensure_tables()
         self._services_cache = {}
+        # Request-Deduplizierung: Locks pro Adresse verhindern doppelte API-Calls
+        self._address_locks: Dict[str, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()  # Für Lock-Erstellung
 
     def _ensure_tables(self):
         """Erstellt Cache-Tabelle für Bundles"""
@@ -296,6 +303,13 @@ class SmartBuildingService:
 
         return bundle
 
+    async def _get_address_lock(self, cache_key: str) -> asyncio.Lock:
+        """Holt oder erstellt Lock für eine Adresse (thread-safe)"""
+        async with self._global_lock:
+            if cache_key not in self._address_locks:
+                self._address_locks[cache_key] = asyncio.Lock()
+            return self._address_locks[cache_key]
+
     async def collect_all_data(
         self,
         address: str,
@@ -318,76 +332,94 @@ class SmartBuildingService:
 
         Returns:
             BuildingDataBundle mit allen gesammelten Daten
+
+        Request-Deduplizierung:
+            Bei parallelen Anfragen für dieselbe Adresse wartet die zweite
+            Anfrage auf das Ergebnis der ersten (via asyncio.Lock).
+            Dies verhindert doppelte API-Calls zu swisstopo/geodienste.ch.
         """
         cache_key = self._cache_key(address)
 
-        # 1. Cache prüfen
+        # 1. Quick Cache Check (ohne Lock - read-only)
         if not force_refresh:
             cached = self._get_cached_bundle(cache_key)
             if cached:
                 logger.info(f"Using cached bundle for {address}")
                 return cached
 
-        # 2. Neues Bundle erstellen
-        bundle = BuildingDataBundle(
-            address_input=address,
-            collection_timestamp=datetime.now(),
-        )
+        # 2. Request-Deduplizierung: Lock pro Adresse
+        address_lock = await self._get_address_lock(cache_key)
 
-        # 3. Daten sammeln (OPTIMIERT: Parallelisierung wo möglich)
+        async with address_lock:
+            # Double-Check nach Lock-Erwerb (andere Anfrage könnte fertig sein)
+            if not force_refresh:
+                cached = self._get_cached_bundle(cache_key)
+                if cached:
+                    logger.info(f"Using cached bundle for {address} (waited for other request)")
+                    return cached
 
-        # PHASE 1: Geocoding MUSS zuerst (liefert Koordinaten + EGID)
-        await self._collect_geocoding(bundle)
+            logger.info(f"Collecting data for {address} (holding lock)")
 
-        if not bundle.lv95_e or not bundle.lv95_n:
-            logger.error(f"Geocoding failed for {address}, cannot proceed")
-            bundle.add_error("Geocoding fehlgeschlagen - keine weiteren Daten verfügbar")
+            # 3. Neues Bundle erstellen
+            bundle = BuildingDataBundle(
+                address_input=address,
+                collection_timestamp=datetime.now(),
+            )
+
+            # 4. Daten sammeln (OPTIMIERT: Parallelisierung wo möglich)
+
+            # PHASE 1: Geocoding MUSS zuerst (liefert Koordinaten + EGID)
+            await self._collect_geocoding(bundle)
+
+            if not bundle.lv95_e or not bundle.lv95_n:
+                logger.error(f"Geocoding failed for {address}, cannot proceed")
+                bundle.add_error("Geocoding fehlgeschlagen - keine weiteren Daten verfügbar")
+                return bundle
+
+            # PHASE 2a: GWR zuerst (setzt EGID, die Heights braucht)
+            await self._collect_gwr_data(bundle)
+
+            # PHASE 2b: Parallel - Heights braucht EGID von GWR
+            phase2_tasks = [
+                self._collect_height_data(bundle),
+                self._collect_polygon_data(bundle),
+            ]
+            if include_terrain:
+                phase2_tasks.append(self._collect_terrain_data(bundle))
+
+            await asyncio.gather(*phase2_tasks, return_exceptions=True)
+            logger.info(f"Phase 2 complete: GWR, Heights, Polygon, Terrain")
+
+            # PHASE 3: Parallel - brauchen Ergebnisse aus Phase 2
+            phase3_tasks = [
+                self._calculate_roof_data(bundle),  # braucht Höhen + Polygon
+            ]
+            if include_research:
+                phase3_tasks.append(self._collect_research_data(bundle, force_refresh))  # braucht GWR
+
+            await asyncio.gather(*phase3_tasks, return_exceptions=True)
+            logger.info(f"Phase 3 complete: Roof, Research")
+
+            # PHASE 4: Sequentiell - braucht alles vorher
+            if include_zones_analysis and self._needs_zones_analysis(bundle):
+                await self._collect_zones_analysis(bundle)
+            else:
+                self._create_default_zone(bundle)
+
+            # PHASE 5: Berechnungen (synchron, schnell)
+            self._calculate_access_points(bundle)
+
+            if include_neighbors:
+                await self._collect_neighbor_data(bundle)
+
+            # 5. Qualität bewerten
+            self._assess_data_quality(bundle)
+
+            # 6. Cache speichern
+            self._save_bundle_cache(cache_key, bundle)
+
+            logger.info(f"Collected data from {len(bundle.data_sources)} sources for {address}")
             return bundle
-
-        # PHASE 2a: GWR zuerst (setzt EGID, die Heights braucht)
-        await self._collect_gwr_data(bundle)
-
-        # PHASE 2b: Parallel - Heights braucht EGID von GWR
-        phase2_tasks = [
-            self._collect_height_data(bundle),
-            self._collect_polygon_data(bundle),
-        ]
-        if include_terrain:
-            phase2_tasks.append(self._collect_terrain_data(bundle))
-
-        await asyncio.gather(*phase2_tasks, return_exceptions=True)
-        logger.info(f"Phase 2 complete: GWR, Heights, Polygon, Terrain")
-
-        # PHASE 3: Parallel - brauchen Ergebnisse aus Phase 2
-        phase3_tasks = [
-            self._calculate_roof_data(bundle),  # braucht Höhen + Polygon
-        ]
-        if include_research:
-            phase3_tasks.append(self._collect_research_data(bundle, force_refresh))  # braucht GWR
-
-        await asyncio.gather(*phase3_tasks, return_exceptions=True)
-        logger.info(f"Phase 3 complete: Roof, Research")
-
-        # PHASE 4: Sequentiell - braucht alles vorher
-        if include_zones_analysis and self._needs_zones_analysis(bundle):
-            await self._collect_zones_analysis(bundle)
-        else:
-            self._create_default_zone(bundle)
-
-        # PHASE 5: Berechnungen (synchron, schnell)
-        self._calculate_access_points(bundle)
-
-        if include_neighbors:
-            await self._collect_neighbor_data(bundle)
-
-        # 4. Qualität bewerten
-        self._assess_data_quality(bundle)
-
-        # 5. Cache speichern
-        self._save_bundle_cache(cache_key, bundle)
-
-        logger.info(f"Collected data from {len(bundle.data_sources)} sources for {address}")
-        return bundle
 
     async def _collect_geocoding(self, bundle: BuildingDataBundle):
         """Schritt 1: Geocoding"""
