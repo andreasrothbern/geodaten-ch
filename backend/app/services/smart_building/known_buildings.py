@@ -505,6 +505,21 @@ ADDRESS_TO_EGID: Dict[str, str] = {
 }
 
 
+def _normalize_address(address: str) -> str:
+    """Normalisiert eine Adresse fuer Vergleiche.
+
+    Entfernt Satzzeichen und doppelte Leerzeichen.
+    """
+    import re
+    # Lowercase und strip
+    addr = address.lower().strip()
+    # Kommas, Punkte etc. entfernen
+    addr = re.sub(r'[,.\-;:]', ' ', addr)
+    # Doppelte Leerzeichen entfernen
+    addr = re.sub(r'\s+', ' ', addr)
+    return addr.strip()
+
+
 def get_known_building(
     egid: Optional[str] = None,
     address: Optional[str] = None
@@ -523,19 +538,21 @@ def get_known_building(
     if egid and egid in KNOWN_BUILDINGS:
         return KNOWN_BUILDINGS[egid]
 
-    # 2. Adress-Suche
+    # 2. Adress-Suche (mit verbessertem Matching)
     if address:
-        normalized = address.lower().strip()
+        normalized = _normalize_address(address)
 
-        # Exakte Übereinstimmung
-        if normalized in ADDRESS_TO_EGID:
-            egid = ADDRESS_TO_EGID[normalized]
-            return KNOWN_BUILDINGS.get(egid)
+        # Exakte Übereinstimmung (nach Normalisierung)
+        for addr_pattern, building_id in ADDRESS_TO_EGID.items():
+            pattern_normalized = _normalize_address(addr_pattern)
+            if normalized == pattern_normalized:
+                return KNOWN_BUILDINGS.get(building_id)
 
-        # Teilübereinstimmung
-        for addr_pattern, egid in ADDRESS_TO_EGID.items():
-            if addr_pattern in normalized or normalized in addr_pattern:
-                return KNOWN_BUILDINGS.get(egid)
+        # Teilübereinstimmung (nach Normalisierung)
+        for addr_pattern, building_id in ADDRESS_TO_EGID.items():
+            pattern_normalized = _normalize_address(addr_pattern)
+            if pattern_normalized in normalized or normalized in pattern_normalized:
+                return KNOWN_BUILDINGS.get(building_id)
 
     return None
 
