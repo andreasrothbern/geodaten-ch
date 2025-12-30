@@ -64,7 +64,7 @@ export interface TerrainData {
 
 // Dach-Daten Types (Option C - heuristisch berechnet)
 export interface RoofData {
-  roof_type: 'flachdach' | 'pultdach' | 'satteldach' | 'walmdach' | 'mansarddach' | 'unknown'
+  roof_type: 'flachdach' | 'pultdach' | 'satteldach' | 'satteldach_mit_turm' | 'walmdach' | 'mansarddach' | 'kuppel' | 'unknown'
   roof_angle_deg: number | null    // Dachneigung in Grad
   roof_orientation?: string        // z.B. "O-W" oder "N-S"
   first_azimuth_deg?: number       // Ausrichtung des Firstes

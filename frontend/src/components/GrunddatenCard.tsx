@@ -718,9 +718,15 @@ export function GrunddatenCard({
                 {data.roof.roof_type === 'flachdach' && '▭ Flachdach'}
                 {data.roof.roof_type === 'pultdach' && '◢ Pultdach'}
                 {data.roof.roof_type === 'satteldach' && '△ Satteldach'}
+                {data.roof.roof_type === 'satteldach_mit_turm' && '⛪ Satteldach mit Turm'}
                 {data.roof.roof_type === 'walmdach' && '⬠ Walmdach'}
                 {data.roof.roof_type === 'mansarddach' && '⬡ Mansarddach'}
+                {data.roof.roof_type === 'kuppel' && '🔵 Kuppel'}
                 {data.roof.roof_type === 'unknown' && '? Unbekannt'}
+                {/* Fallback für unbekannte Dachformen */}
+                {!['flachdach', 'pultdach', 'satteldach', 'satteldach_mit_turm', 'walmdach', 'mansarddach', 'kuppel', 'unknown'].includes(data.roof.roof_type || '') && data.roof.roof_type && (
+                  <span>{data.roof.roof_type}</span>
+                )}
               </p>
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
