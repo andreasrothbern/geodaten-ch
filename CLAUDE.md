@@ -15,6 +15,30 @@ Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
 @docs/roadmap/CURRENT_BUGS.md - Aktuelle Bugs und Fixes
 @docs/roadmap/ML_LEARNING_SYSTEM.md - ML Learning System (geplant)
 
+## Claude Rules
+
+### Sprache & Formatierung
+- **Umlaute:** äöü verwenden (NICHT ae/oe/ue)
+- **Sonderzeichen:** ±, →, ✅ sind OK
+- **Encoding:** UTF-8 für alle Dateien
+- **Zeilenenden:** LF (Unix-Style)
+
+### Dokumentation
+- **Sprache:** Deutsch
+- **Markdown:** Standard GitHub-Flavored
+- **Diagramme:** ASCII-Art oder Mermaid
+
+### Code
+- **Python:** PEP 8, Type Hints, Docstrings
+- **TypeScript:** ESLint + Prettier Konfiguration
+- **Kommentare:** Englisch (für internationale Lesbarkeit)
+- **Variablen:** snake_case (Python), camelCase (TypeScript)
+
+### Commits
+- Format: `type(scope): description`
+- Types: feat, fix, chore, docs, refactor, test
+- Beispiel: `feat(smart-building): add height validation`
+
 ## Projekt: Geodaten Schweiz
 
 Dieses Projekt bietet eine API und Web-App für Schweizer Geodaten (Gebäude, Adressen, Grundstücke).
