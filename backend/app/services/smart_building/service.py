@@ -15,7 +15,7 @@ PHASE 2 (parallel - brauchen nur Koordinaten):
 
 PHASE 3 (parallel - brauchen Phase 2 Ergebnisse):
   - Dach-Analyse (berechnet aus Höhen + Polygon)
-  - Gebäude-Recherche (Claude Haiku)
+  - Gebäude-Recherche (Claude Sonnet)
 
 PHASE 4 (sequentiell - braucht alles):
   - Zonen-Analyse (Claude Sonnet - nur bei komplexen Gebäuden)
@@ -47,6 +47,10 @@ from .models import (
     TerrainProfile,
     AccessPoint,
 )
+from .validation import validate_heights, validate_zone_consistency
+
+# BuildingContext Integration - für konsistente Zonen zwischen Frontend und Prompt
+from app.models.building_context import BuildingZone, ZoneType, BuildingContext
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +394,9 @@ class SmartBuildingService:
             await asyncio.gather(*phase2_tasks, return_exceptions=True)
             logger.info(f"Phase 2 complete: GWR, Heights, Polygon, Terrain")
 
+            # VALIDIERUNG: Höhen-Plausibilität prüfen (BUG-011)
+            validate_heights(bundle)
+
             # PHASE 3: Parallel - brauchen Ergebnisse aus Phase 2
             phase3_tasks = [
                 self._calculate_roof_data(bundle),  # braucht Höhen + Polygon
@@ -405,6 +412,9 @@ class SmartBuildingService:
                 await self._collect_zones_analysis(bundle)
             else:
                 self._create_default_zone(bundle)
+
+            # VALIDIERUNG: Zone/API-Konsistenz prüfen (BUG-012)
+            validate_zone_consistency(bundle)
 
             # PHASE 5: Berechnungen (synchron, schnell)
             self._calculate_access_points(bundle)
@@ -772,26 +782,185 @@ class SmartBuildingService:
             bundle.add_warning(f"Zonen-Analyse fehlgeschlagen: {str(e)}")
             self._create_default_zone(bundle)
 
+    # ========================================================================
+    # BuildingContext Integration - Konsistente Zonen für Frontend & Prompt
+    # ========================================================================
+
+    def _load_zones_from_building_context(self, egid: str) -> Optional[List[ZoneInfo]]:
+        """
+        Lädt validierte Zonen aus building_contexts.db.
+
+        Wenn der Benutzer die Zonen im Frontend bearbeitet und gespeichert hat,
+        werden diese Zonen hier geladen und für das Prompt verwendet.
+
+        Returns:
+            List[ZoneInfo] wenn validierte Zonen existieren, sonst None
+        """
+        if not egid:
+            return None
+
+        try:
+            from app.services.building_context import get_building_context_service
+            context_service = get_building_context_service()
+            context = context_service.get_context(egid)
+
+            if not context:
+                return None
+
+            # Nur validierte Kontexte verwenden
+            if not context.validated_by_user:
+                logger.debug(f"BuildingContext for {egid} exists but is not validated by user")
+                return None
+
+            if not context.zones:
+                return None
+
+            # BuildingZone → ZoneInfo konvertieren
+            zones = []
+            for bz in context.zones:
+                zone = ZoneInfo(
+                    id=bz.id,
+                    name=bz.name,
+                    zone_type=bz.type.value if isinstance(bz.type, ZoneType) else str(bz.type),
+                    traufhoehe_m=bz.traufhoehe_m,
+                    firsthoehe_m=bz.firsthoehe_m,
+                    gebaeudehoehe_m=bz.gebaeudehoehe_m,
+                    beruesten=bz.beruesten if bz.beruesten is not None else True,
+                    sonderkonstruktion=bz.sonderkonstruktion if bz.sonderkonstruktion is not None else False,
+                    confidence=bz.confidence if bz.confidence else 1.0,
+                    source=DataSource.MANUAL,  # Aus BuildingContext = manuell validiert
+                    notes=bz.notes,
+                )
+                zones.append(zone)
+
+            logger.info(f"Loaded {len(zones)} validated zones from BuildingContext for EGID {egid}")
+            return zones
+
+        except Exception as e:
+            logger.error(f"Error loading zones from BuildingContext: {e}")
+            return None
+
+    def _save_zones_to_building_context(self, bundle: BuildingDataBundle):
+        """
+        Speichert die Zonen aus dem Bundle in building_contexts.db.
+
+        Dies stellt sicher, dass das Frontend dieselben Zonen anzeigt,
+        die auch für das Prompt verwendet wurden.
+        """
+        if not bundle.egid or not bundle.zones:
+            return
+
+        try:
+            from app.services.building_context import get_building_context_service
+            context_service = get_building_context_service()
+
+            # Prüfen ob bereits ein validierter Kontext existiert
+            existing = context_service.get_context(bundle.egid)
+            if existing and existing.validated_by_user:
+                logger.debug(f"BuildingContext for {bundle.egid} already validated by user, not overwriting")
+                return
+
+            # ZoneInfo → BuildingZone konvertieren
+            building_zones = []
+            for zi in bundle.zones:
+                # ZoneType enum aus string
+                zone_type = ZoneType.HAUPTGEBAEUDE
+                try:
+                    zone_type = ZoneType(zi.zone_type)
+                except ValueError:
+                    # Fallback für unbekannte Typen
+                    if "turm" in zi.zone_type.lower():
+                        zone_type = ZoneType.TURM
+                    elif "kuppel" in zi.zone_type.lower():
+                        zone_type = ZoneType.KUPPEL
+                    elif "arkade" in zi.zone_type.lower():
+                        zone_type = ZoneType.ARKADE
+                    elif "anbau" in zi.zone_type.lower():
+                        zone_type = ZoneType.ANBAU
+
+                bz = BuildingZone(
+                    id=zi.id,
+                    name=zi.name,
+                    type=zone_type,
+                    traufhoehe_m=zi.traufhoehe_m,
+                    firsthoehe_m=zi.firsthoehe_m,
+                    gebaeudehoehe_m=zi.gebaeudehoehe_m,
+                    beruesten=zi.beruesten,
+                    sonderkonstruktion=zi.sonderkonstruktion,
+                    confidence=zi.confidence,
+                    notes=zi.notes,
+                )
+                building_zones.append(bz)
+
+            # BuildingContext erstellen oder aktualisieren
+            from app.models.building_context import ComplexityLevel, ContextSource
+
+            # Complexity zu enum konvertieren
+            complexity_level = ComplexityLevel.SIMPLE
+            if bundle.complexity:
+                try:
+                    complexity_level = ComplexityLevel(bundle.complexity)
+                except ValueError:
+                    pass
+
+            context = BuildingContext(
+                egid=bundle.egid,
+                adresse=bundle.address_matched,
+                building_name=bundle.building_name,
+                zones=building_zones,
+                complexity=complexity_level,
+                has_height_variations=bundle.has_height_variations,
+                has_towers=bundle.has_towers,
+                has_annexes=bundle.has_annexes,
+                validated_by_user=False,  # Nicht automatisch validiert - User muss bestätigen
+                source=ContextSource.AUTO,  # Automatisch erstellt
+            )
+
+            context_service.save_context(context)
+            logger.info(f"Saved {len(building_zones)} zones to BuildingContext for EGID {bundle.egid}")
+
+        except Exception as e:
+            logger.error(f"Error saving zones to BuildingContext: {e}")
+
+    # ========================================================================
+
     def _create_default_zone(self, bundle: BuildingDataBundle):
         """Erstellt Standard-Zone(n) basierend auf Höhendaten
 
         PRIORITÄT:
+        0. Validierte Zonen aus BuildingContext (User-editiert)
         1. Zonen aus bekannten Gebäuden (_known_zones)
         2. Kirchen-spezifische Zonen bei Sakralbauten
         3. Standard-Zonen bei extremer Höhendifferenz
         4. Einfache Zone für normale Gebäude
+
+        Nach Erstellung werden die Zonen in BuildingContext gespeichert,
+        damit das Frontend dieselben Daten anzeigt.
         """
         if bundle.zones:
             return  # Bereits Zonen vorhanden
 
+        # 0. NEUE PRIORITÄT: Validierte Zonen aus BuildingContext laden
+        # Falls der User die Zonen im Frontend editiert und gespeichert hat
+        if bundle.egid:
+            validated_zones = self._load_zones_from_building_context(bundle.egid)
+            if validated_zones:
+                bundle.zones = validated_zones
+                logger.info(f"Using {len(validated_zones)} validated zones from BuildingContext")
+                return
+
         # 1. Bekannte Gebäude-Zonen
         from .research_integration import create_zones_from_known_building
         if create_zones_from_known_building(bundle):
+            # Zonen in BuildingContext speichern für Frontend-Konsistenz
+            self._save_zones_to_building_context(bundle)
             return
 
         # 2. Kirchen-spezifische Zonen
         from .research_integration import create_church_zones
         if create_church_zones(bundle):
+            # Zonen in BuildingContext speichern für Frontend-Konsistenz
+            self._save_zones_to_building_context(bundle)
             return
 
         # Prüfe auf extreme Höhendifferenz (typisch für Kirchen mit Turm)
@@ -836,6 +1005,9 @@ class SmartBuildingService:
 
             logger.info(f"Automatisch 2 Zonen erstellt: Hauptgebäude ({bundle.traufhoehe_m:.1f}m) + Turm ({bundle.firsthoehe_m:.1f}m)")
 
+            # Zonen in BuildingContext speichern für Frontend-Konsistenz
+            self._save_zones_to_building_context(bundle)
+
         else:
             # Einfaches Gebäude: 1 Zone
             zone = ZoneInfo(
@@ -852,6 +1024,9 @@ class SmartBuildingService:
             )
             bundle.zones.append(zone)
             bundle.complexity = "simple"
+
+            # Zonen in BuildingContext speichern für Frontend-Konsistenz
+            self._save_zones_to_building_context(bundle)
 
     def _calculate_access_points(self, bundle: BuildingDataBundle):
         """Berechnet Gerüst-Zugänge nach SUVA"""

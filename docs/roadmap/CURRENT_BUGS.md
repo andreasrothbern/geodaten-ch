@@ -108,6 +108,113 @@ INFO:httpx: GET .../height?easting=601009... (6x!)
 
 ---
 
+### BUG-010: Dokumentation sagt "Haiku" aber Code verwendet Sonnet
+
+**Status:** Offen
+**Prioritaet:** P1
+**Identifiziert durch:** Claude.ai Pipeline-Analyse (30.12.2025)
+
+**Problem:**
+- Dokumentation (CLAUDE.md, README.md, etc.) sagt "Claude Haiku fuer Recherche"
+- Code verwendet ueberall `claude-sonnet-4-20250514`:
+  - `research_service.py:47`: `RESEARCH_MODEL = "claude-sonnet-4-20250514"`
+  - `claude_svg_zones.py:140`: `model="claude-sonnet-4-20250514"`
+  - `building_context.py:403`: `model="claude-sonnet-4-20250514"`
+
+**Auswirkung:**
+- Kosten sind hoeher als dokumentiert (~$0.05 statt ~$0.01 pro Recherche)
+- Verwirrung bei Analyse und Debugging
+
+**Loesung:**
+- Option A: Dokumentation korrigieren (Sonnet ueberall)
+- Option B: Recherche auf Haiku umstellen (guenstiger, ggf. weniger genau)
+- Empfehlung: Option A - Sonnet liefert bessere Ergebnisse
+
+---
+
+### BUG-011: Hoehen-Validierung fehlt (Schritt 3/8)
+
+**Status:** Offen
+**Prioritaet:** P1
+**Identifiziert durch:** Claude.ai Pipeline-Analyse (30.12.2025)
+
+**Problem:**
+- Keine Plausibilitaetspruefung bei Hoehendaten
+- swissBUILDINGS3D kann falsche Werte liefern (z.B. Kunstmuseum 7.9m statt 18m)
+- Fehler werden erst bei SVG-Generierung sichtbar
+
+**Beispiele:**
+```
+Kunstmuseum:  API 7.9m, Real 18m (Nebengebaeude gemessen)
+Einsteinhaus: Zone 16m, API 26m (Zone war falsch definiert)
+```
+
+**Loesung:**
+```python
+# In SmartBuildingService, nach Schritt 3 (Hoehendaten)
+def _validate_heights(self, bundle: BuildingDataBundle) -> List[str]:
+    warnings = []
+
+    # 1. Minimalhoehe nach GKAT
+    min_heights = {1020: 6, 1030: 9, 1060: 12, 1110: 15}
+    min_h = min_heights.get(bundle.gkat, 6)
+    if bundle.firsthoehe_m and bundle.firsthoehe_m < min_h:
+        warnings.append(f"Firsthoehe {bundle.firsthoehe_m}m unplausibel fuer GKAT {bundle.gkat}")
+
+    # 2. Geschoss-Plausibilitaet
+    if bundle.geschosse and bundle.firsthoehe_m:
+        expected_min = bundle.geschosse * 2.5
+        expected_max = bundle.geschosse * 4.0
+        if not (expected_min <= bundle.firsthoehe_m <= expected_max):
+            warnings.append(f"Hoehe {bundle.firsthoehe_m}m passt nicht zu {bundle.geschosse} Geschossen")
+
+    return warnings
+```
+
+---
+
+### BUG-012: Zone/API-Konsistenz Warnung fehlt
+
+**Status:** Offen
+**Prioritaet:** P1
+**Identifiziert durch:** Claude.ai Datenqualitaets-Analyse (30.12.2025)
+
+**Problem:**
+- Bei 5 von 10 Testgebaeuden ist max. Zonenhoehe > API-Firsthoehe
+- Keine Warnung wenn Zone-Daten inkonsistent mit API-Daten
+- Kann zu falschen SVG-Darstellungen fuehren
+
+**Beispiele:**
+```
+Bundeshaus:        Zone 64m > First 62.6m (OK - Kuppel)
+Hotel Schweizerhof: Zone 30m > First 27.2m (OK - Dachaufbau)
+Einsteinhaus:      Zone 16m < Traufe 22.3m (FEHLER - war falsch!)
+```
+
+**Loesung:**
+```python
+# In SmartBuildingService, nach Schritt 8 (Zonen-Analyse)
+def _validate_zone_consistency(self, bundle: BuildingDataBundle) -> List[str]:
+    warnings = []
+
+    for zone in bundle.zones:
+        # Zone unter Traufhoehe = definitiv falsch
+        if zone.firsthoehe_m < bundle.traufhoehe_m:
+            warnings.append(
+                f"Zone '{zone.name}' ({zone.firsthoehe_m}m) unter Traufhoehe ({bundle.traufhoehe_m}m)!"
+            )
+
+        # Zone deutlich ueber First = moeglich (Turm), aber warnen
+        if zone.firsthoehe_m > bundle.firsthoehe_m * 1.5:
+            warnings.append(
+                f"Zone '{zone.name}' ({zone.firsthoehe_m}m) deutlich ueber API-First ({bundle.firsthoehe_m}m)"
+            )
+
+    return warnings
+```
+
+---
+
 ### BUG-009: Einsteinhaus Zone-Hoehe falsch ✅
 
 **Status:** Gefixt (30.12.2025)
@@ -172,6 +279,56 @@ Erwartet:  "walmdach"
 **Loesung:**
 - Claude-Analyse verbessern
 - Oder: zu `known_buildings.py` hinzufuegen
+
+---
+
+### FEATURE-001: Grundrissform-Erkennung (U/L/H-Form)
+
+**Status:** Geplant
+**Prioritaet:** P2
+**Identifiziert durch:** Claude.ai Pipeline-Analyse (30.12.2025)
+
+**Problem:**
+- SVG-Prompts enthalten keine Grundrissform
+- Bundeshaus: U-Form mit Ehrenhof fehlt im Prompt
+- Claude muss Form aus Polygon-Koordinaten erraten
+
+**Auswirkung:**
+- Grundriss-SVGs zeigen nicht korrekt U-Form, Ehrenhof, etc.
+- Qualitaet der SVGs bei komplexen Gebaeuden eingeschraenkt
+
+**Loesung:**
+```python
+# In SmartBuildingService oder neuer polygon_analyzer.py
+def analyze_polygon_shape(polygon: List[Tuple[float, float]]) -> Dict:
+    """Analysiert Polygon-Form fuer SVG-Generierung."""
+
+    # 1. Konvexitaet pruefen
+    hull = compute_convex_hull(polygon)
+    convexity_ratio = polygon_area(polygon) / polygon_area(hull)
+
+    # 2. Form-Erkennung
+    if convexity_ratio > 0.95:
+        shape = "rechteckig"
+    elif convexity_ratio > 0.7:
+        shape = detect_u_l_h_form(polygon, hull)
+    else:
+        shape = "komplex"
+
+    # 3. Ehrenhof-Erkennung
+    courtyard = detect_courtyard(polygon)
+
+    return {
+        "building_shape": shape,
+        "convexity_ratio": convexity_ratio,
+        "has_courtyard": courtyard is not None,
+        "courtyard_position": courtyard,
+    }
+```
+
+**Bezug zu ML-Roadmap:**
+- Polygon-Form ist guter Praediktor fuer Gebaeudetyp
+- Kann als Feature fuer ML-Modell verwendet werden
 
 ---
 
@@ -275,14 +432,28 @@ git push -u origin feature/ml-learning-system
 
 ## Priorisierte Reihenfolge
 
-1. ~~**BUG-001** - Kunstmuseum Hoehen~~ ✅ Gefixt
-2. ~~**BUG-002** - 6 Gebaeude zu known_buildings.py~~ ✅ Gefixt
-3. ~~**BUG-003** - Doppelte API-Calls~~ ✅ Gefixt
+### P1 (Kritisch - als naechstes fixen)
+1. **BUG-010** - Dokumentation Haiku→Sonnet korrigieren
+2. **BUG-011** - Hoehen-Validierung implementieren
+3. **BUG-012** - Zone/API-Konsistenz Warnung
 4. **BUG-004** - Einsteinhaus langsam (Performance)
-5. ~~**BUG-005** - Stadttheater Hoehen + Dachform~~ ✅ Gefixt
-6. **BUG-006** - Zonen bei Unbekannten (UX)
+
+### P2 (Wichtig - nach P1)
+5. **BUG-006** - Zonen bei Unbekannten (UX)
+6. **FEATURE-001** - Grundrissform-Erkennung (U/L/H)
+
+### P3 (Kosmetik)
 7. **BUG-007** - Encoding (Kosmetik)
+
+### Erledigt ✅
+- ~~**BUG-001** - Kunstmuseum Hoehen~~ ✅
+- ~~**BUG-002** - 6 Gebaeude zu known_buildings.py~~ ✅
+- ~~**BUG-003** - Doppelte API-Calls~~ ✅
+- ~~**BUG-005** - Stadttheater Hoehen + Dachform~~ ✅
+- ~~**BUG-008** - ConnectTimeout ohne Retry~~ ✅
+- ~~**BUG-009** - Einsteinhaus Zone-Hoehe~~ ✅
 
 ---
 
 *Dokument erstellt: 30.12.2025*
+*Letzte Aktualisierung: 30.12.2025 - Claude.ai Pipeline-Analyse Bugs hinzugefuegt*
