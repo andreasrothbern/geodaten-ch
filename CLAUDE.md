@@ -1179,6 +1179,44 @@ MIN_SIDE_LENGTH = 1.0            # Meter - minimale Seitenlänge
 2. **Kollineare Punkte entfernen**: Punkte mit Winkel ≈ 180° (Toleranz ANGLE_TOL) werden entfernt
 3. **Kurze Segmente zusammenfassen**: Segmente < MIN_SIDE_LENGTH werden vereint
 
+## Polygon-Form-Analyse (NEU 30.12.2025)
+
+Automatische Erkennung der Gebäudegrundform basierend auf Konvexitäts-Analyse.
+Implementiert in `backend/app/services/smart_building/polygon_analysis.py`.
+
+### Erkannte Formen
+
+| Form | Konvexität | Beschreibung | Innenhof |
+|------|------------|--------------|----------|
+| rechteckig | > 95% | Einfacher Grundriss | Nein |
+| L-Form | 85-95% | Eine Einbuchtung | Nein |
+| U-Form | 70-85% | Ehrenhof/Innenhof | Ja |
+| H-Form | 55-70% | Zwei Innenhöfe | Ja |
+| komplex | < 55% | Mehrere Einbuchtungen | Ja |
+
+### Integration
+
+Die Form-Analyse wird automatisch nach dem Polygon-Laden ausgeführt:
+
+```python
+# In SmartBuildingService._collect_polygon_data():
+from .polygon_analysis import enrich_bundle_with_shape_analysis
+enrich_bundle_with_shape_analysis(bundle)
+
+# Ergebnis im Bundle:
+bundle.building_shape        # "U-Form"
+bundle.concavity_ratio       # 0.78
+bundle.has_courtyard         # True
+bundle.svg_hints             # {"grundriss": "U-Form zeichnen...", ...}
+```
+
+### SVG-Hinweise
+
+Die Analyse generiert automatisch SVG-Hinweise für komplexe Formen:
+- **U-Form**: "Innenhof als FREIFLÄCHE markieren"
+- **H-Form**: "Zwei Innenhöfe, komplexe Gerüstführung"
+- **komplex**: "Vor-Ort-Begehung empfohlen"
+
 ## NPK 114 Konstanten
 
 Ausmass-Berechnung gemäss NPK 114 D/2012. Implementiert in `backend/app/services/npk114_calculator.py`.

@@ -641,6 +641,15 @@ class SmartBuildingService:
                     bundle.bbox_width_m = max(xs) - min(xs)
                     bundle.bbox_depth_m = max(ys) - min(ys)
 
+                    # NEU 30.12.2025: Polygon-Form-Analyse (TASK 5)
+                    # Erkennt automatisch U-Form, L-Form, etc.
+                    try:
+                        from .polygon_analysis import enrich_bundle_with_shape_analysis
+                        enrich_bundle_with_shape_analysis(bundle)
+                        logger.debug(f"Shape analysis: {bundle.building_shape} (concavity={getattr(bundle, 'concavity_ratio', 'N/A')})")
+                    except Exception as shape_error:
+                        logger.warning(f"Shape analysis failed: {shape_error}")
+
         except Exception as e:
             logger.error(f"Polygon error: {e}")
             bundle.add_warning(f"Gebäudegeometrie nicht verfügbar: {str(e)}")
