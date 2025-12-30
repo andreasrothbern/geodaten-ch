@@ -22,7 +22,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 53.2m, First 62.6m
 - **Max. Zonenhoehe:** 64.0m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 816ms
+- **Response-Zeit:** 143ms
 
 **Zonen:**
   - Arkaden (arkade): 6.0m - 6.0m
@@ -36,7 +36,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 46.4m, First 54.6m
 - **Max. Zonenhoehe:** 54.6m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 329ms
+- **Response-Zeit:** 479ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 18.0m - 25.0m
@@ -51,7 +51,7 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 25.7m, First 30.3m
 - **Max. Zonenhoehe:** 100.3m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 483ms
+- **Response-Zeit:** 285ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 22.0m - 28.0m
@@ -63,75 +63,85 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erwartet:** Einsteinhaus (1 Zonen)
 - **Erhalten:** Einsteinhaus (1 Zonen)
 - **Hoehen:** Traufe 22.3m, First 26.2m
-- **Max. Zonenhoehe:** 26.2m
+- **Max. Zonenhoehe:** 16.0m
 - **Komplexitaet:** simple
-- **Response-Zeit:** 7822ms
+- **Response-Zeit:** 301ms
 
 **Zonen:**
-  - Hauptgebäude (hauptgebaeude): 22.3m - 26.2m
+  - Hauptgebäude (hauptgebaeude): 12.0m - 16.0m
 
 ### Unbekannte Gebaeude (NICHT in known_buildings.py)
 
-#### Marktgasse 67, 3011 Bern
+#### Bahnhofplatz 11, 3011 Bern
 - **Erwartet:** Hotel Schweizerhof (erwartet)
-- **Erhalten:** N/A (1 Zonen)
-- **Hoehen:** Traufe 17.1m, First 20.1m
-- **Komplexitaet:** simple
-- **Response-Zeit:** 11225ms
+- **Erhalten:** Hotel Schweizerhof Bern (2 Zonen)
+- **Hoehen:** Traufe 23.1m, First 27.2m
+- **Komplexitaet:** moderate
+- **Response-Zeit:** 332ms
 
 **Zonen:**
-  - Hauptgebäude (hauptgebaeude): 17.1m - 20.1m
+  - Hauptgebaeude (hauptgebaeude): 18.0m - 25.0m
+  - Dachaufbau (anbau): 25.0m - 30.0m
 
 #### Bahnhofplatz 10, 3011 Bern
 - **Erwartet:** Hauptbahnhof Bern (erwartet)
-- **Erhalten:** N/A (1 Zonen)
+- **Erhalten:** Hauptbahnhof Bern (3 Zonen)
 - **Hoehen:** Traufe 31.3m, First 36.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 18514ms
+- **Response-Zeit:** 329ms
 
 **Zonen:**
-  - Hauptgebäude Süd (hauptgebaeude): 31.3m - 36.8m
+  - Baldachin (arkade): 8.0m - 12.0m
+  - Bahnhofshalle (hauptgebaeude): 18.0m - 22.0m
+  - Bueroturm (turm): 30.0m - 40.0m
 
 #### Kornhausplatz 18, 3011 Bern
 - **Erwartet:** Kornhaus (erwartet)
-- **Erhalten:** N/A (2 Zonen)
+- **Erhalten:** Kornhaus (3 Zonen)
 - **Hoehen:** Traufe 22.3m, First 26.2m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 15563ms
+- **Response-Zeit:** 279ms
 
 **Zonen:**
-  - Hauptgebäude Süd (hauptgebaeude): 22.3m - 26.2m
-  - Nordflügel (hauptgebaeude): 22.3m - 26.2m
+  - Arkaden (arkade): 5.0m - 5.0m
+  - Hauptbau (hauptgebaeude): 18.0m - 25.0m
+  - Dachreiter (turm): 25.0m - 32.0m
 
 #### Theaterplatz 7, 3011 Bern
 - **Erwartet:** Stadttheater (erwartet)
-- **Erhalten:** N/A (1 Zonen)
+- **Erhalten:** Konzert Theater Bern (3 Zonen)
 - **Hoehen:** Traufe 15.1m, First 17.7m
-- **Komplexitaet:** simple
-- **Response-Zeit:** 13470ms
+- **Komplexitaet:** complex
+- **Response-Zeit:** 294ms
 
 **Zonen:**
-  - Hauptgebäude (hauptgebaeude): 15.1m - 17.7m
+  - Foyer (anbau): 10.0m - 12.0m
+  - Zuschauerhaus (hauptgebaeude): 18.0m - 22.0m
+  - Buehnenturm (turm): 22.0m - 32.0m
 
 #### Hodlerstrasse 8, 3011 Bern
 - **Erwartet:** Kunstmuseum (erwartet)
-- **Erhalten:** N/A (1 Zonen)
+- **Erhalten:** Kunstmuseum Bern (3 Zonen)
 - **Hoehen:** Traufe 6.7m, First 7.9m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 15292ms
+- **Response-Zeit:** 263ms
 
 **Zonen:**
-  - Hauptgebäude (hauptgebaeude): 6.7m - 7.9m
+  - Altbau (hauptgebaeude): 15.0m - 18.0m
+  - Neubau (Stettler) (hauptgebaeude): 12.0m - 15.0m
+  - Erweiterung (anbau): 8.0m - 10.0m
 
 #### Helvetiaplatz 5, 3005 Bern
 - **Erwartet:** Historisches Museum (erwartet)
-- **Erhalten:** N/A (1 Zonen)
+- **Erhalten:** Bernisches Historisches Museum (3 Zonen)
 - **Hoehen:** Traufe 44.0m, First 51.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 19060ms
+- **Response-Zeit:** 281ms
 
 **Zonen:**
-  - Hauptgebäude Süd (hauptgebaeude): 44.0m - 51.8m
+  - Hauptbau (hauptgebaeude): 25.0m - 35.0m
+  - Seitenfluegel (anbau): 18.0m - 25.0m
+  - Eckturm (turm): 35.0m - 50.0m
 
 ---
 
@@ -140,10 +150,10 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 | Metrik | Wert |
 |--------|------|
 | Anzahl Gebaeude | 10 |
-| Erfolgreiche Abfragen | 4 |
-| Fehlgeschlagene Abfragen | 6 |
-| Gesamtzeit | 102574ms |
-| Durchschnittszeit | 10257ms |
+| Erfolgreiche Abfragen | 10 |
+| Fehlgeschlagene Abfragen | 0 |
+| Gesamtzeit | 2986ms |
+| Durchschnittszeit | 299ms |
 
 ### API-Calls pro Gebaeude
 

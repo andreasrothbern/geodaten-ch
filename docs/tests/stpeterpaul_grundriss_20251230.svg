@@ -1,0 +1,145 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+    <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+  </pattern>
+  <pattern id="cut-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+    <path d="M0,0 l4,4 M0,4 l4,-4" stroke="#666" stroke-width="0.8"/>
+  </pattern>
+  <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+    <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+  </pattern>
+  <linearGradient id="copper" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" style="stop-color:#7CB9A5"/>
+    <stop offset="100%" style="stop-color:#4A8A77"/>
+  </linearGradient>
+</defs>
+
+<!-- Hintergrund -->
+<rect width="700" height="480" fill="#FFFFFF"/>
+
+<!-- Gerüstzone (äußere Hülle mit 1m Abstand) -->
+<rect x="200" y="120" width="290" height="175" fill="none" stroke="#0066CC" stroke-width="2" stroke-dasharray="5,5"/>
+
+<!-- Hauptgebäude: Kirchenschiff -->
+<rect x="210" y="130" width="210" height="70" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+
+<!-- Seitenschiffe -->
+<rect x="210" y="200" width="210" height="40" fill="url(#hatch)" stroke="#000" stroke-width="1.5"/>
+<rect x="210" y="240" width="210" height="40" fill="url(#hatch)" stroke="#000" stroke-width="1.5"/>
+
+<!-- Chor -->
+<rect x="340" y="280" width="80" height="50" fill="url(#hatch)" stroke="#000" stroke-width="1.5"/>
+
+<!-- Westturm -->
+<rect x="240" y="100" width="20" height="30" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+
+<!-- Gerüstzugänge -->
+<circle cx="480" cy="165" r="4" fill="#CC0000"/>
+<text x="490" y="169" font-family="Arial" font-size="10" fill="#CC0000">Z1</text>
+
+<circle cx="450" cy="295" r="4" fill="#CC0000"/>
+<text x="460" y="299" font-family="Arial" font-size="10" fill="#CC0000">Z2</text>
+
+<circle cx="270" cy="125" r="4" fill="#CC0000"/>
+<text x="280" y="129" font-family="Arial" font-size="10" fill="#CC0000">Z3</text>
+
+<circle cx="205" cy="260" r="4" fill="#CC0000"/>
+<text x="180" y="264" font-family="Arial" font-size="10" fill="#CC0000">Z4</text>
+
+<!-- Gerüstständer -->
+<rect x="205" y="125" width="3" height="3" fill="#0066CC"/>
+<rect x="225" y="125" width="3" height="3" fill="#0066CC"/>
+<rect x="245" y="125" width="3" height="3" fill="#0066CC"/>
+<rect x="265" y="125" width="3" height="3" fill="#0066CC"/>
+<rect x="285" y="125" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="145" width="3" height="3" fill="#0066CC"/>
+<rect x="425" y="145" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="145" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="165" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="165" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="185" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="185" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="205" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="205" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="225" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="225" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="245" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="245" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="265" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="265" width="3" height="3" fill="#0066CC"/>
+
+<rect x="205" y="285" width="3" height="3" fill="#0066CC"/>
+<rect x="485" y="285" width="3" height="3" fill="#0066CC"/>
+<rect x="425" y="295" width="3" height="3" fill="#0066CC"/>
+
+<!-- Beläge -->
+<rect x="208" y="128" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="148" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="168" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="188" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="208" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="228" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="248" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="268" width="274" height="2" fill="#8B4513"/>
+<rect x="208" y="288" width="274" height="2" fill="#8B4513"/>
+
+<!-- Fassadenbeschriftung -->
+<text x="315" y="120" font-family="Arial" font-size="10" fill="#000" text-anchor="middle">N-Fassade</text>
+<text x="495" y="215" font-family="Arial" font-size="10" fill="#000" text-anchor="middle" transform="rotate(90 495 215)">O-Fassade</text>
+<text x="315" y="315" font-family="Arial" font-size="10" fill="#000" text-anchor="middle">S-Fassade</text>
+<text x="195" y="215" font-family="Arial" font-size="10" fill="#000" text-anchor="middle" transform="rotate(-90 195 215)">W-Fassade</text>
+
+<!-- Maße -->
+<line x1="210" y1="110" x2="420" y2="110" stroke="#000" stroke-width="1" marker-end="url(#arrowhead)"/>
+<line x1="210" y1="108" x2="210" y2="112" stroke="#000" stroke-width="1"/>
+<line x1="420" y1="108" x2="420" y2="112" stroke="#000" stroke-width="1"/>
+<text x="315" y="107" font-family="Arial" font-size="10" fill="#000" text-anchor="middle">48.2 m</text>
+
+<line x1="190" y1="130" x2="190" y2="280" stroke="#000" stroke-width="1"/>
+<line x1="188" y1="130" x2="192" y2="130" stroke="#000" stroke-width="1"/>
+<line x1="188" y1="280" x2="192" y2="280" stroke="#000" stroke-width="1"/>
+<text x="185" y="205" font-family="Arial" font-size="10" fill="#000" text-anchor="middle" transform="rotate(-90 185 205)">29.1 m</text>
+
+<!-- Nordpfeil -->
+<g transform="translate(550,50)">
+  <path d="M0,0 L-5,15 L0,10 L5,15 Z" fill="#000"/>
+  <text x="0" y="30" font-family="Arial" font-size="12" fill="#000" text-anchor="middle">N</text>
+</g>
+
+<!-- Maßstab -->
+<g transform="translate(50,400)">
+  <line x1="0" y1="0" x2="50" y2="0" stroke="#000" stroke-width="2"/>
+  <line x1="0" y1="-3" x2="0" y2="3" stroke="#000" stroke-width="1"/>
+  <line x1="25" y1="-3" x2="25" y2="3" stroke="#000" stroke-width="1"/>
+  <line x1="50" y1="-3" x2="50" y2="3" stroke="#000" stroke-width="1"/>
+  <text x="25" y="15" font-family="Arial" font-size="10" fill="#000" text-anchor="middle">10 m</text>
+</g>
+
+<!-- Titel -->
+<text x="350" y="30" font-family="Arial" font-size="16" font-weight="bold" fill="#000" text-anchor="middle">Grundriss - Kirche St. Peter und Paul</text>
+<text x="350" y="45" font-family="Arial" font-size="12" fill="#000" text-anchor="middle">Rathausgasse 2, 3011 Bern - EGID: 191821074</text>
+
+<!-- Legende -->
+<g transform="translate(500,350)">
+  <rect x="0" y="0" width="15" height="10" fill="url(#hatch)" stroke="#000"/>
+  <text x="20" y="8" font-family="Arial" font-size="9" fill="#000">Gebäude</text>
+
+  <rect x="0" y="15" width="15" height="3" fill="#0066CC"/>
+  <text x="20" y="23" font-family="Arial" font-size="9" fill="#000">Gerüst</text>
+
+  <rect x="0" y="30" width="15" height="2" fill="#8B4513"/>
+  <text x="20" y="38" font-family="Arial" font-size="9" fill="#000">Beläge</text>
+
+  <circle cx="7" cy="50" r="3" fill="#CC0000"/>
+  <text x="20" y="53" font-family="Arial" font-size="9" fill="#000">Zugänge</text>
+</g>
+
+</svg>

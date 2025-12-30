@@ -98,13 +98,35 @@ INFO:httpx: GET .../height?easting=601009... (6x!)
 - Bekanntes Gebaeude, aber 7822ms Response-Zeit
 - Andere bekannte Gebaeude: 329-816ms
 
-**Ursache:**
+**Ursache (vermutet):**
 - Moeglicherweise Cache-Miss
 - Oder On-Demand Hoehendaten-Fetch
 
 **Loesung:**
 1. Logging verbessern um Ursache zu identifizieren
 2. Cache-Warmup fuer bekannte Gebaeude
+
+---
+
+### BUG-009: Einsteinhaus Zone-Hoehe falsch ✅
+
+**Status:** Gefixt (30.12.2025)
+**Prioritaet:** P1
+**Identifiziert durch:** Claude.ai Datenqualitaets-Analyse
+
+**Problem:**
+```
+API-Hoehen:   Traufe 22.3m, First 26.2m
+Zone (ALT):   12.0m - 16.0m (FALSCH!)
+```
+
+**Ursache:**
+- Manuell definierte Zone in known_buildings.py war falsch
+- Zone war niedriger als API-Traufhoehe
+
+**Loesung:**
+- Zone korrigiert auf 22.0m - 26.0m (passend zu API)
+- Kommentar hinzugefuegt zur Dokumentation
 
 ---
 

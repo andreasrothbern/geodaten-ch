@@ -179,6 +179,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
     },
 
     # Einsteinhaus
+    # FIX 30.12.2025: Zone-Hoehe korrigiert (war 12-16m, API sagt 22-26m)
     "1234567": {  # Beispiel-EGID
         "egid": "1234567",
         "building_name": "Einsteinhaus",
@@ -186,17 +187,18 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "architectural_style": "Barock",
         "construction_year": 1720,
         "complexity": "simple",
+        "roof_type": "satteldach",
         "zones": [
             {
-                "name": "Hauptgebäude",
+                "name": "Hauptgebaeude",
                 "zone_type": "hauptgebaeude",
-                "traufhoehe_m": 12.0,
-                "firsthoehe_m": 16.0,
+                "traufhoehe_m": 22.0,  # Korrigiert von 12.0 (API: 22.3m)
+                "firsthoehe_m": 26.0,  # Korrigiert von 16.0 (API: 26.2m)
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
         ],
-        "special_features": ["Laubengang", "Historische Fassade"],
+        "special_features": ["Laubengang", "Historische Fassade", "Einstein-Wohnung 2. Stock"],
     },
 
     # Zytglogge
