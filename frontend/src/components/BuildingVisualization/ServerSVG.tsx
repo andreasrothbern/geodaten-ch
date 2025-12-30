@@ -17,21 +17,33 @@ export function clearSvgCache(address?: string) {
   }
 }
 
-// Preload all visualization types for an address
+// Preload all 4 visualization types for an address (parallel)
+// WICHTIG: Parameter müssen mit ServerSVG Komponente übereinstimmen!
 export async function preloadAllSvgs(
   address: string,
   apiUrl: string,
   width = 650,
-  heights = { 'cross-section': 400, 'elevation': 400, 'floor-plan': 450 }
+  heights = { 'floor-plan': 450, 'elevation': 400, 'cross-section': 400, 'longitudinal-section': 400 },
+  traufhoehe?: number,
+  firsthoehe?: number
 ) {
-  const types: Array<'cross-section' | 'elevation' | 'floor-plan'> = ['cross-section', 'elevation', 'floor-plan']
+  const types: Array<'floor-plan' | 'elevation' | 'cross-section' | 'longitudinal-section'> = [
+    'floor-plan', 'elevation', 'cross-section', 'longitudinal-section'
+  ]
+
+  console.log(`[Preload] Starting preload for ${address} - 4 SVG types in parallel`)
 
   await Promise.all(types.map(async (type) => {
     const height = heights[type]
-    const cacheKey = `${type}|${address}|${width}|${height}`
+    // Cache key must match ServerSVG component's cache key format EXACTLY
+    const useClaude = type !== 'floor-plan'
+    const cacheKey = `${type}|${address}|${width}|${height}|${traufhoehe || ''}|${firsthoehe || ''}|${useClaude}`
 
     // Skip if already cached
-    if (svgCache.has(cacheKey)) return
+    if (svgCache.has(cacheKey)) {
+      console.log(`[Preload] ${type}: cache HIT`)
+      return
+    }
 
     try {
       const params = new URLSearchParams({
@@ -39,16 +51,33 @@ export async function preloadAllSvgs(
         width: width.toString(),
         height: height.toString()
       })
-      // Note: Claude API only used in professional mode (set in main fetch)
+      // Add manual heights if provided
+      if (traufhoehe && traufhoehe > 0) {
+        params.set('traufhoehe', traufhoehe.toString())
+      }
+      if (firsthoehe && firsthoehe > 0) {
+        params.set('firsthoehe', firsthoehe.toString())
+      }
+      // Claude API for elevation, cross-section, longitudinal-section
+      if (useClaude) {
+        params.set('use_claude', 'true')
+      }
+
+      console.log(`[Preload] ${type}: fetching...`)
       const response = await fetch(`${apiUrl}/api/v1/visualize/${type}?${params}`)
       if (response.ok) {
         const svgText = await response.text()
         svgCache.set(cacheKey, svgText)
+        console.log(`[Preload] ${type}: cached (${svgText.length} chars)`)
+      } else {
+        console.error(`[Preload] ${type}: HTTP ${response.status}`)
       }
     } catch (err) {
-      console.error(`Failed to preload ${type}:`, err)
+      console.error(`[Preload] ${type}: failed`, err)
     }
   }))
+
+  console.log(`[Preload] Completed for ${address}`)
 }
 
 interface ServerSVGProps {

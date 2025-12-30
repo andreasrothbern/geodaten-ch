@@ -1,0 +1,170 @@
+<svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path d="M0,0 l8,8" stroke="#999" stroke-width="0.5"/>
+    </pattern>
+    
+    <pattern id="ground" patternUnits="userSpaceOnUse" width="20" height="10">
+      <path d="M0,10 L10,0 M10,10 L20,0" stroke="#666" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Hintergrund -->
+  <rect width="700" height="480" fill="#FFFFFF"/>
+  
+  <!-- Titel -->
+  <text x="350" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">
+    WESTFASSADE - Kirche St. Peter und Paul
+  </text>
+  <text x="350" y="40" text-anchor="middle" font-family="Arial" font-size="10">
+    Rathausgasse 2, 3011 Bern - EGID: 191821074
+  </text>
+
+  <!-- Terrain -->
+  <rect x="90" y="420" width="520" height="40" fill="url(#ground)" stroke="#333" stroke-width="1"/>
+  <text x="75" y="445" font-family="Arial" font-size="9" text-anchor="end">+/-0.00</text>
+  
+  <!-- Höhenskala Links -->
+  <line x1="90" y1="420" x2="90" y2="40" stroke="#333" stroke-width="1"/>
+  <line x1="85" y1="420" x2="95" y2="420"/>
+  <text x="80" y="425" font-family="Arial" font-size="9" text-anchor="end">0m</text>
+  
+  <line x1="85" y1="300" x2="95" y2="300"/>
+  <text x="80" y="305" font-family="Arial" font-size="9" text-anchor="end">12m</text>
+  
+  <line x1="85" y1="246" x2="95" y2="246"/>
+  <text x="80" y="251" font-family="Arial" font-size="9" text-anchor="end">18m</text>
+  
+  <line x1="85" y1="246" x2="95" y2="246"/>
+  <text x="80" y="251" font-family="Arial" font-size="9" text-anchor="end">25m</text>
+  
+  <line x1="85" y1="40" x2="95" y2="40"/>
+  <text x="80" y="45" font-family="Arial" font-size="9" text-anchor="end">54.6m</text>
+
+  <!-- Seitenschiff Links -->
+  <rect x="100" y="336" width="84" height="84" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+  
+  <!-- Gotische Fenster Seitenschiff Links -->
+  <path d="M120,380 L120,360 Q130,350 140,360 L140,380 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+  <path d="M150,380 L150,360 Q160,350 170,360 L170,380 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+
+  <!-- Westturm (zentral) -->
+  <rect x="184" y="40" width="144" height="380" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+  
+  <!-- Portal im Turm -->
+  <path d="M220,420 L220,370 Q256,340 292,370 L292,420 Z" fill="#FFFFFF" stroke="#000" stroke-width="2"/>
+  
+  <!-- Rosettenfenster -->
+  <circle cx="256" cy="280" r="25" fill="#FFFFFF" stroke="#000" stroke-width="2"/>
+  <path d="M231,280 L281,280 M256,255 L256,305 M241,265 L271,295 M271,265 L241,295" stroke="#000" stroke-width="1"/>
+  
+  <!-- Gotische Spitzbogenfenster Turm -->
+  <path d="M210,200 L210,160 Q226,140 242,160 L242,200 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+  <path d="M270,200 L270,160 Q286,140 302,160 L302,200 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+  
+  <!-- Spitzhelm -->
+  <path d="M184,40 L256,40 L328,40 L256,40 Z" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+
+  <!-- Seitenschiff Rechts -->
+  <rect x="328" y="336" width="84" height="84" fill="url(#hatch)" stroke="#000" stroke-width="2"/>
+  
+  <!-- Gotische Fenster Seitenschiff Rechts -->
+  <path d="M340,380 L340,360 Q350,350 360,360 L360,380 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+  <path d="M370,380 L370,360 Q380,350 390,360 L390,380 Z" fill="#FFFFFF" stroke="#000" stroke-width="1"/>
+
+  <!-- Kirchenschiff (hinter Turm, nur teilweise sichtbar) -->
+  <rect x="420" y="246" width="60" height="174" fill="url(#hatch)" stroke="#000" stroke-width="1" opacity="0.7"/>
+
+  <!-- Gerüst vor Seitenschiff Links -->
+  <!-- Ständer -->
+  <line x1="92" y1="420" x2="92" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="118" y1="420" x2="118" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="144" y1="420" x2="144" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="170" y1="420" x2="170" y2="300" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Beläge -->
+  <rect x="92" y="300" width="78" height="4" fill="#8B4513"/>
+  <rect x="92" y="336" width="78" height="4" fill="#8B4513"/>
+  <rect x="92" y="372" width="78" height="4" fill="#8B4513"/>
+  <rect x="92" y="408" width="78" height="4" fill="#8B4513"/>
+
+  <!-- Gerüst vor Westturm -->
+  <!-- Ständer -->
+  <line x1="176" y1="420" x2="176" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="202" y1="420" x2="202" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="228" y1="420" x2="228" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="254" y1="420" x2="254" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="280" y1="420" x2="280" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="306" y1="420" x2="306" y2="40" stroke="#0066CC" stroke-width="3"/>
+  <line x1="332" y1="420" x2="332" y2="40" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Beläge Turm (alle 2m Höhe) -->
+  <rect x="176" y="40" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="76" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="112" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="148" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="184" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="220" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="256" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="292" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="328" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="364" width="156" height="4" fill="#8B4513"/>
+  <rect x="176" y="400" width="156" height="4" fill="#8B4513"/>
+
+  <!-- Gerüst vor Seitenschiff Rechts -->
+  <!-- Ständer -->
+  <line x1="340" y1="420" x2="340" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="366" y1="420" x2="366" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="392" y1="420" x2="392" y2="300" stroke="#0066CC" stroke-width="3"/>
+  <line x1="418" y1="420" x2="418" y2="300" stroke="#0066CC" stroke-width="3"/>
+  
+  <!-- Beläge -->
+  <rect x="340" y="300" width="78" height="4" fill="#8B4513"/>
+  <rect x="340" y="336" width="78" height="4" fill="#8B4513"/>
+  <rect x="340" y="372" width="78" height="4" fill="#8B4513"/>
+  <rect x="340" y="408" width="78" height="4" fill="#8B4513"/>
+
+  <!-- Verankerungen (gestrichelt) -->
+  <line x1="176" y1="112" x2="184" y2="112" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="176" y1="184" x2="184" y2="184" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="176" y1="256" x2="184" y2="256" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="176" y1="328" x2="184" y2="328" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="176" y1="400" x2="184" y2="400" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  
+  <line x1="332" y1="112" x2="328" y2="112" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="332" y1="184" x2="328" y2="184" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="332" y1="256" x2="328" y2="256" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="332" y1="328" x2="328" y2="328" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="332" y1="400" x2="328" y2="400" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+
+  <!-- Lagenbeschriftung Rechts -->
+  <text x="630" y="415" font-family="Arial" font-size="9">1. Lage</text>
+  <text x="630" y="379" font-family="Arial" font-size="9">2. Lage</text>
+  <text x="630" y="343" font-family="Arial" font-size="9">3. Lage</text>
+  <text x="630" y="307" font-family="Arial" font-size="9">4. Lage</text>
+  <text x="630" y="271" font-family="Arial" font-size="9">5. Lage</text>
+  <text x="630" y="235" font-family="Arial" font-size="9">6. Lage</text>
+  <text x="630" y="199" font-family="Arial" font-size="9">7. Lage</text>
+  <text x="630" y="163" font-family="Arial" font-size="9">8. Lage</text>
+  <text x="630" y="127" font-family="Arial" font-size="9">9. Lage</text>
+  <text x="630" y="91" font-family="Arial" font-size="9">10. Lage</text>
+  <text x="630" y="55" font-family="Arial" font-size="9">11. Lage</text>
+
+  <!-- Massstab -->
+  <text x="520" y="460" font-family="Arial" font-size="9">Massstab 1:143</text>
+  <line x1="520" y1="450" x2="590" y2="450" stroke="#000" stroke-width="1"/>
+  <text x="555" y="445" font-family="Arial" font-size="8" text-anchor="middle">10m</text>
+  
+  <!-- Legende -->
+  <rect x="500" y="380" width="120" height="60" fill="none" stroke="#000" stroke-width="1"/>
+  <text x="505" y="395" font-family="Arial" font-size="10" font-weight="bold">LEGENDE</text>
+  
+  <line x1="505" y1="405" x2="515" y2="405" stroke="#0066CC" stroke-width="3"/>
+  <text x="520" y="409" font-family="Arial" font-size="9">Gerüstständer</text>
+  
+  <rect x="505" y="415" width="10" height="3" fill="#8B4513"/>
+  <text x="520" y="420" font-family="Arial" font-size="9">Beläge</text>
+  
+  <line x1="505" y1="430" x2="515" y2="430" stroke="#CC0000" stroke-width="2" stroke-dasharray="3,3"/>
+  <text x="520" y="434" font-family="Arial" font-size="9">Verankerung</text>
+</svg>

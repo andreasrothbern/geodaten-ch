@@ -476,12 +476,20 @@ export function GrunddatenCard({
   // Check if measured height exists
   const hasMeasuredHeight = dimensions.traufhoehe_m !== null || dimensions.firsthoehe_m !== null
 
-  // Preload all SVG visualizations when component mounts
+  // Preload all 4 SVG visualizations when component mounts (parallel)
   useEffect(() => {
     if (data.address?.matched && apiUrl) {
-      preloadAllSvgs(data.address.matched, apiUrl)
+      // Pass height data so cache keys match ServerSVG component
+      preloadAllSvgs(
+        data.address.matched,
+        apiUrl,
+        650,  // width - must match ServerSVG
+        { 'floor-plan': 450, 'elevation': 400, 'cross-section': 400, 'longitudinal-section': 400 },
+        dimensions.traufhoehe_m || undefined,
+        dimensions.firsthoehe_m || undefined
+      )
     }
-  }, [data.address?.matched, apiUrl])
+  }, [data.address?.matched, apiUrl, dimensions.traufhoehe_m, dimensions.firsthoehe_m])
 
   return (
     <div className="card space-y-6">
