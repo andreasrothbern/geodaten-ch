@@ -121,7 +121,7 @@ Die SmartBuildingService-Pipeline:
 
 | Schritt | Modell | Kosten |
 |---------|--------|--------|
-| Recherche (unbekannt) | Haiku | ~$0.01 |
+| Recherche (unbekannt) | Sonnet | ~$0.03-0.05 |
 | Zonen-Analyse (komplex) | Sonnet | ~$0.05-0.15 |
 | Bekanntes Gebaeude | - | $0.00 |
 

@@ -22,12 +22,14 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 53.2m, First 62.6m
 - **Max. Zonenhoehe:** 64.0m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 143ms
+- **Response-Zeit:** 1004ms
 
 **Zonen:**
   - Arkaden (arkade): 6.0m - 6.0m
   - Hauptgebäude (hauptgebaeude): 25.0m - 30.0m
   - Kuppel (kuppel): 30.0m - 64.0m
+
+**Warnungen:** Zone 'Arkaden' (6.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!, Zone 'Hauptgebäude' (30.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!
 
 #### Rathausgasse 2, 3011 Bern
 - **Status:** OK
@@ -36,13 +38,15 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 46.4m, First 54.6m
 - **Max. Zonenhoehe:** 54.6m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 479ms
+- **Response-Zeit:** 406ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 18.0m - 25.0m
   - Seitenschiffe (anbau): 9.0m - 12.0m
   - Chor (anbau): 12.0m - 18.0m
   - Westturm (turm): 25.0m - 54.6m
+
+**Warnungen:** Zone 'Kirchenschiff' (25.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!, Zone 'Seitenschiffe' (12.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!, Zone 'Chor' (18.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!
 
 #### Muensterplatz 1, 3011 Bern
 - **Status:** OK
@@ -51,24 +55,28 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Hoehen:** Traufe 25.7m, First 30.3m
 - **Max. Zonenhoehe:** 100.3m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 285ms
+- **Response-Zeit:** 351ms
 
 **Zonen:**
   - Kirchenschiff (hauptgebaeude): 22.0m - 28.0m
   - Seitenkapellen (anbau): 12.0m - 15.0m
   - Turm (turm): 28.0m - 100.3m
 
+**Warnungen:** Hoehe 30.3m sehr hoch fuer 1 Geschosse (moeglicherweise Turm), Zone 'Seitenkapellen' (15.0m) deutlich unter API-Traufhoehe (25.7m) - Zone-Daten pruefen!
+
 #### Kramgasse 49, 3011 Bern
 - **Status:** OK
 - **Erwartet:** Einsteinhaus (1 Zonen)
 - **Erhalten:** Einsteinhaus (1 Zonen)
 - **Hoehen:** Traufe 22.3m, First 26.2m
-- **Max. Zonenhoehe:** 16.0m
+- **Max. Zonenhoehe:** 26.0m
 - **Komplexitaet:** simple
-- **Response-Zeit:** 301ms
+- **Response-Zeit:** 426ms
 
 **Zonen:**
-  - Hauptgebäude (hauptgebaeude): 12.0m - 16.0m
+  - Hauptgebaeude (hauptgebaeude): 22.0m - 26.0m
+
+**Warnungen:** Hoehe 26.2m sehr hoch fuer 5 Geschosse (moeglicherweise Turm)
 
 ### Unbekannte Gebaeude (NICHT in known_buildings.py)
 
@@ -77,71 +85,83 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 - **Erhalten:** Hotel Schweizerhof Bern (2 Zonen)
 - **Hoehen:** Traufe 23.1m, First 27.2m
 - **Komplexitaet:** moderate
-- **Response-Zeit:** 332ms
+- **Response-Zeit:** 376ms
 
 **Zonen:**
   - Hauptgebaeude (hauptgebaeude): 18.0m - 25.0m
   - Dachaufbau (anbau): 25.0m - 30.0m
+
+**Warnungen:** Hoehe 27.2m sehr hoch fuer 6 Geschosse (moeglicherweise Turm)
 
 #### Bahnhofplatz 10, 3011 Bern
 - **Erwartet:** Hauptbahnhof Bern (erwartet)
 - **Erhalten:** Hauptbahnhof Bern (3 Zonen)
 - **Hoehen:** Traufe 31.3m, First 36.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 329ms
+- **Response-Zeit:** 402ms
 
 **Zonen:**
   - Baldachin (arkade): 8.0m - 12.0m
   - Bahnhofshalle (hauptgebaeude): 18.0m - 22.0m
   - Bueroturm (turm): 30.0m - 40.0m
 
+**Warnungen:** Zone 'Baldachin' (12.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!, Zone 'Bahnhofshalle' (22.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!
+
 #### Kornhausplatz 18, 3011 Bern
 - **Erwartet:** Kornhaus (erwartet)
 - **Erhalten:** Kornhaus (3 Zonen)
 - **Hoehen:** Traufe 22.3m, First 26.2m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 279ms
+- **Response-Zeit:** 328ms
 
 **Zonen:**
   - Arkaden (arkade): 5.0m - 5.0m
   - Hauptbau (hauptgebaeude): 18.0m - 25.0m
   - Dachreiter (turm): 25.0m - 32.0m
 
+**Warnungen:** Hoehe 26.2m sehr hoch fuer 4 Geschosse (moeglicherweise Turm), Zone 'Arkaden' (5.0m) deutlich unter API-Traufhoehe (22.3m) - Zone-Daten pruefen!
+
 #### Theaterplatz 7, 3011 Bern
 - **Erwartet:** Stadttheater (erwartet)
 - **Erhalten:** Konzert Theater Bern (3 Zonen)
 - **Hoehen:** Traufe 15.1m, First 17.7m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 294ms
+- **Response-Zeit:** 355ms
 
 **Zonen:**
   - Foyer (anbau): 10.0m - 12.0m
   - Zuschauerhaus (hauptgebaeude): 18.0m - 22.0m
   - Buehnenturm (turm): 22.0m - 32.0m
 
+**Warnungen:** Zone 'Foyer' (12.0m) deutlich unter API-Traufhoehe (15.1m) - Zone-Daten pruefen!
+
 #### Hodlerstrasse 8, 3011 Bern
 - **Erwartet:** Kunstmuseum (erwartet)
 - **Erhalten:** Kunstmuseum Bern (3 Zonen)
 - **Hoehen:** Traufe 6.7m, First 7.9m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 263ms
+- **Response-Zeit:** 371ms
 
 **Zonen:**
   - Altbau (hauptgebaeude): 15.0m - 18.0m
   - Neubau (Stettler) (hauptgebaeude): 12.0m - 15.0m
   - Erweiterung (anbau): 8.0m - 10.0m
 
+**Warnungen:** Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m), Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?, Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?
+
 #### Helvetiaplatz 5, 3005 Bern
 - **Erwartet:** Historisches Museum (erwartet)
 - **Erhalten:** Bernisches Historisches Museum (3 Zonen)
 - **Hoehen:** Traufe 44.0m, First 51.8m
 - **Komplexitaet:** complex
-- **Response-Zeit:** 281ms
+- **Response-Zeit:** 368ms
 
 **Zonen:**
   - Hauptbau (hauptgebaeude): 25.0m - 35.0m
   - Seitenfluegel (anbau): 18.0m - 25.0m
   - Eckturm (turm): 35.0m - 50.0m
+
+**Warnungen:** Zone 'Hauptbau' (35.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!, Zone 'Seitenfluegel' (25.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!
 
 ---
 
@@ -152,8 +172,8 @@ Analysiere die folgenden API-Ergebnisse fuer 10+ Berner Gebaeude und identifizie
 | Anzahl Gebaeude | 10 |
 | Erfolgreiche Abfragen | 10 |
 | Fehlgeschlagene Abfragen | 0 |
-| Gesamtzeit | 2986ms |
-| Durchschnittszeit | 299ms |
+| Gesamtzeit | 4387ms |
+| Durchschnittszeit | 439ms |
 
 ### API-Calls pro Gebaeude
 
@@ -165,7 +185,7 @@ Die SmartBuildingService-Pipeline fuehrt folgende Schritte aus:
 4. **Terrain** (swissALTI3D API)
 5. **Polygon** (geodienste.ch WFS)
 6. **Dach-Analyse** (berechnet)
-7. **Recherche** (known_buildings.py ODER Claude Haiku API)
+7. **Recherche** (known_buildings.py ODER Claude Sonnet API)
 8. **Zonen-Analyse** (bei komplexen Gebaeuden: Claude Sonnet)
 9. **SUVA Zugaenge** (berechnet)
 10. **Qualitaetsbewertung** (berechnet)

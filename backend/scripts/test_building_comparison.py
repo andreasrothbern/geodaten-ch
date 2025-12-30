@@ -441,7 +441,7 @@ Die SmartBuildingService-Pipeline fuehrt folgende Schritte aus:
 4. **Terrain** (swissALTI3D API)
 5. **Polygon** (geodienste.ch WFS)
 6. **Dach-Analyse** (berechnet)
-7. **Recherche** (known_buildings.py ODER Claude Haiku API)
+7. **Recherche** (known_buildings.py ODER Claude Sonnet API)
 8. **Zonen-Analyse** (bei komplexen Gebaeuden: Claude Sonnet)
 9. **SUVA Zugaenge** (berechnet)
 10. **Qualitaetsbewertung** (berechnet)
@@ -478,7 +478,7 @@ Bitte beantworte folgende Fragen:
 
 ### 5. Kosten-Nutzen
 
-- Sind die Claude-API-Calls (Haiku + Sonnet) gerechtfertigt?
+- Sind die Claude-API-Calls (Sonnet) gerechtfertigt?
 - Wo koennte man API-Calls einsparen?
 - Welche Gebaeude benoetigen zwingend Claude-Analyse?
 

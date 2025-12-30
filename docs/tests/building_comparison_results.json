@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-30T03:52:58.445359",
+  "timestamp": "2025-12-30T14:18:23.356023",
   "api_base_url": "https://acceptable-trust-production.up.railway.app",
   "metrics": {
     "total_calls": 10,
@@ -7,8 +7,8 @@
       "known": 4,
       "unknown": 6
     },
-    "total_time_ms": 102574,
-    "avg_time_ms": 10257.4,
+    "total_time_ms": 4387,
+    "avg_time_ms": 438.7,
     "errors": []
   },
   "results": [
@@ -47,7 +47,10 @@
       "max_zone_height": 64.0,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Zone 'Arkaden' (6.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!",
+        "Zone 'Hauptgebäude' (30.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -57,7 +60,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 816,
+      "response_time_ms": 1004,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -672,7 +675,10 @@
         "overall_quality": "high",
         "research_confidence": 1.0,
         "analysis_confidence": 0.0,
-        "warnings": [],
+        "warnings": [
+          "Zone 'Arkaden' (6.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!",
+          "Zone 'Hauptgebäude' (30.0m) deutlich unter API-Traufhoehe (53.2m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
@@ -718,7 +724,11 @@
       "max_zone_height": 54.6,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Zone 'Kirchenschiff' (25.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+        "Zone 'Seitenschiffe' (12.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+        "Zone 'Chor' (18.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -728,7 +738,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 329,
+      "response_time_ms": 406,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -1714,7 +1724,11 @@
         "overall_quality": "high",
         "research_confidence": 1.0,
         "analysis_confidence": 0.0,
-        "warnings": [],
+        "warnings": [
+          "Zone 'Kirchenschiff' (25.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+          "Zone 'Seitenschiffe' (12.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!",
+          "Zone 'Chor' (18.0m) deutlich unter API-Traufhoehe (46.4m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
@@ -1753,7 +1767,10 @@
       "max_zone_height": 100.3,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Hoehe 30.3m sehr hoch fuer 1 Geschosse (moeglicherweise Turm)",
+        "Zone 'Seitenkapellen' (15.0m) deutlich unter API-Traufhoehe (25.7m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -1763,7 +1780,7 @@
         "calculated",
         "manual"
       ],
-      "response_time_ms": 483,
+      "response_time_ms": 351,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -2497,7 +2514,10 @@
         "overall_quality": "high",
         "research_confidence": 1.0,
         "analysis_confidence": 0.0,
-        "warnings": [],
+        "warnings": [
+          "Hoehe 30.3m sehr hoch fuer 1 Geschosse (moeglicherweise Turm)",
+          "Zone 'Seitenkapellen' (15.0m) deutlich unter API-Traufhoehe (25.7m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
@@ -2510,19 +2530,21 @@
       "actual_zones": 1,
       "zone_details": [
         {
-          "name": "Hauptgebäude",
+          "name": "Hauptgebaeude",
           "type": "hauptgebaeude",
-          "traufhoehe_m": 22.3,
-          "firsthoehe_m": 26.2,
+          "traufhoehe_m": 22.0,
+          "firsthoehe_m": 26.0,
           "sonderkonstruktion": false
         }
       ],
       "traufhoehe_m": 22.3,
       "firsthoehe_m": 26.2,
-      "max_zone_height": 26.2,
+      "max_zone_height": 26.0,
       "complexity": "simple",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Hoehe 26.2m sehr hoch fuer 5 Geschosse (moeglicherweise Turm)"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -2530,9 +2552,9 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research"
+        "manual"
       ],
-      "response_time_ms": 7822,
+      "response_time_ms": 426,
       "is_known_building": true,
       "name_match": true,
       "zones_match": true,
@@ -2543,9 +2565,9 @@
         "lv95_e": 600863.6875,
         "lv95_n": 199640.3125,
         "building_name": "Einsteinhaus",
-        "building_type": "Historisches Wohnhaus/Museum",
-        "architectural_style": "Mittelalterlich/Spätgotisch",
-        "construction_year": 1600,
+        "building_type": "Museum / Wohnhaus",
+        "architectural_style": "Barock",
+        "construction_year": 1720,
         "gwr_category": "Mehrfamilienhaus",
         "gwr_category_code": 1030,
         "gwr_floors": 5,
@@ -2709,20 +2731,20 @@
         "roof_angle_deg": 15.866500842253735,
         "roof_orientation": "O-W",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude",
+            "name": "Hauptgebaeude",
             "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 22.3,
-            "firsthoehe_m": 26.2,
-            "gebaeudehoehe_m": 26.21,
+            "traufhoehe_m": 22.0,
+            "firsthoehe_m": 26.0,
+            "gebaeudehoehe_m": 26.0,
             "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
             "confidence": 1.0,
-            "source": "calculated",
+            "source": "manual",
             "notes": null
           }
         ],
@@ -2755,37 +2777,48 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.95,
+        "research_confidence": 1.0,
         "analysis_confidence": 0.0,
-        "warnings": [],
+        "warnings": [
+          "Hoehe 26.2m sehr hoch fuer 5 Geschosse (moeglicherweise Turm)"
+        ],
         "errors": []
       }
     },
     {
-      "address": "Marktgasse 67, 3011 Bern",
+      "address": "Bahnhofplatz 11, 3011 Bern",
       "expected_name": "Hotel Schweizerhof (erwartet)",
-      "actual_name": null,
-      "egid": "1230596",
+      "actual_name": "Hotel Schweizerhof Bern",
+      "egid": "1230691",
       "expected_zones": null,
-      "actual_zones": 1,
+      "actual_zones": 2,
       "zone_details": [
         {
-          "name": "Hauptgebäude",
+          "name": "Hauptgebaeude",
           "type": "hauptgebaeude",
-          "traufhoehe_m": 17.1,
-          "firsthoehe_m": 20.1,
+          "traufhoehe_m": 18.0,
+          "firsthoehe_m": 25.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Dachaufbau",
+          "type": "anbau",
+          "traufhoehe_m": 25.0,
+          "firsthoehe_m": 30.0,
           "sonderkonstruktion": false
         }
       ],
-      "traufhoehe_m": 17.1,
-      "firsthoehe_m": 20.1,
-      "max_zone_height": 20.1,
-      "complexity": "simple",
+      "traufhoehe_m": 23.1,
+      "firsthoehe_m": 27.2,
+      "max_zone_height": 30.0,
+      "complexity": "moderate",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Hoehe 27.2m sehr hoch fuer 6 Geschosse (moeglicherweise Turm)"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -2793,51 +2826,82 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 11225,
+      "response_time_ms": 376,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": false,
       "zones_match": true,
       "raw_data": {
-        "egid": "1230596",
-        "address_input": "Marktgasse 67, 3011 Bern",
-        "address_matched": "Marktgasse 67 3011 Bern",
-        "lv95_e": 600404.25,
-        "lv95_n": 199674.828125,
-        "building_name": null,
-        "building_type": "Wohngebäude mit Nebennutzung",
-        "architectural_style": "Historischer Altstadtstil",
-        "construction_year": null,
+        "egid": "1230691",
+        "address_input": "Bahnhofplatz 11, 3011 Bern",
+        "address_matched": "Bahnhofplatz 11 3011 Bern",
+        "lv95_e": 600173.75,
+        "lv95_n": 199742.953125,
+        "building_name": "Hotel Schweizerhof Bern",
+        "building_type": "Hotel",
+        "architectural_style": "Historismus",
+        "construction_year": 1859,
         "gwr_category": "Wohngebäude mit Nebennutzung",
         "gwr_category_code": 1040,
-        "gwr_floors": 5,
-        "gwr_area_m2": 104,
+        "gwr_floors": 6,
+        "gwr_area_m2": 1591,
         "polygon": [
           [
-            2600398.949,
-            1199666.82
+            2600161.599,
+            1199770.239
           ],
           [
-            2600416.68,
-            1199664.727
+            2600165.955,
+            1199771.297
           ],
           [
-            2600416.581,
-            1199659.073
+            2600171.251,
+            1199776.953
           ],
           [
-            2600399.169,
-            1199660.525
+            2600172.039,
+            1199781.366
           ],
           [
-            2600398.957,
-            1199666.68
+            2600188.802,
+            1199778.272
           ],
           [
-            2600398.949,
-            1199666.82
+            2600185.29,
+            1199759.907
+          ],
+          [
+            2600200.043,
+            1199746.039
+          ],
+          [
+            2600197.924,
+            1199739.206
+          ],
+          [
+            2600201.599,
+            1199724.456
+          ],
+          [
+            2600185.939,
+            1199720.556
+          ],
+          [
+            2600187.191,
+            1199715.658
+          ],
+          [
+            2600175.781,
+            1199712.817
+          ],
+          [
+            2600162.812,
+            1199765.328
+          ],
+          [
+            2600161.599,
+            1199770.239
           ]
         ],
         "polygon_simplified": false,
@@ -2845,73 +2909,199 @@
           {
             "index": 0,
             "start": {
-              "x": 2600398.949,
-              "y": 1199666.82
+              "x": 2600161.599,
+              "y": 1199770.239
             },
             "end": {
-              "x": 2600416.68,
-              "y": 1199664.727
+              "x": 2600165.955,
+              "y": 1199771.297
             },
-            "length_m": 17.85,
+            "length_m": 4.48,
             "direction": "O",
-            "angle_deg": -6.7
+            "angle_deg": 13.7
           },
           {
             "index": 1,
             "start": {
-              "x": 2600416.68,
-              "y": 1199664.727
+              "x": 2600165.955,
+              "y": 1199771.297
             },
             "end": {
-              "x": 2600416.581,
-              "y": 1199659.073
+              "x": 2600171.251,
+              "y": 1199776.953
             },
-            "length_m": 5.65,
-            "direction": "S",
-            "angle_deg": -91.0
+            "length_m": 7.75,
+            "direction": "NO",
+            "angle_deg": 46.9
           },
           {
             "index": 2,
             "start": {
-              "x": 2600416.581,
-              "y": 1199659.073
+              "x": 2600171.251,
+              "y": 1199776.953
             },
             "end": {
-              "x": 2600399.169,
-              "y": 1199660.525
+              "x": 2600172.039,
+              "y": 1199781.366
             },
-            "length_m": 17.47,
-            "direction": "W",
-            "angle_deg": 175.2
+            "length_m": 4.48,
+            "direction": "N",
+            "angle_deg": 79.9
           },
           {
             "index": 3,
             "start": {
-              "x": 2600399.169,
-              "y": 1199660.525
+              "x": 2600172.039,
+              "y": 1199781.366
             },
             "end": {
-              "x": 2600398.957,
-              "y": 1199666.68
+              "x": 2600188.802,
+              "y": 1199778.272
             },
-            "length_m": 6.16,
+            "length_m": 17.05,
+            "direction": "O",
+            "angle_deg": -10.5
+          },
+          {
+            "index": 4,
+            "start": {
+              "x": 2600188.802,
+              "y": 1199778.272
+            },
+            "end": {
+              "x": 2600185.29,
+              "y": 1199759.907
+            },
+            "length_m": 18.7,
+            "direction": "S",
+            "angle_deg": -100.8
+          },
+          {
+            "index": 5,
+            "start": {
+              "x": 2600185.29,
+              "y": 1199759.907
+            },
+            "end": {
+              "x": 2600200.043,
+              "y": 1199746.039
+            },
+            "length_m": 20.25,
+            "direction": "SO",
+            "angle_deg": -43.2
+          },
+          {
+            "index": 6,
+            "start": {
+              "x": 2600200.043,
+              "y": 1199746.039
+            },
+            "end": {
+              "x": 2600197.924,
+              "y": 1199739.206
+            },
+            "length_m": 7.15,
+            "direction": "S",
+            "angle_deg": -107.2
+          },
+          {
+            "index": 7,
+            "start": {
+              "x": 2600197.924,
+              "y": 1199739.206
+            },
+            "end": {
+              "x": 2600201.599,
+              "y": 1199724.456
+            },
+            "length_m": 15.2,
+            "direction": "S",
+            "angle_deg": -76.0
+          },
+          {
+            "index": 8,
+            "start": {
+              "x": 2600201.599,
+              "y": 1199724.456
+            },
+            "end": {
+              "x": 2600185.939,
+              "y": 1199720.556
+            },
+            "length_m": 16.14,
+            "direction": "W",
+            "angle_deg": -166.0
+          },
+          {
+            "index": 9,
+            "start": {
+              "x": 2600185.939,
+              "y": 1199720.556
+            },
+            "end": {
+              "x": 2600187.191,
+              "y": 1199715.658
+            },
+            "length_m": 5.06,
+            "direction": "S",
+            "angle_deg": -75.7
+          },
+          {
+            "index": 10,
+            "start": {
+              "x": 2600187.191,
+              "y": 1199715.658
+            },
+            "end": {
+              "x": 2600175.781,
+              "y": 1199712.817
+            },
+            "length_m": 11.76,
+            "direction": "W",
+            "angle_deg": -166.0
+          },
+          {
+            "index": 11,
+            "start": {
+              "x": 2600175.781,
+              "y": 1199712.817
+            },
+            "end": {
+              "x": 2600162.812,
+              "y": 1199765.328
+            },
+            "length_m": 54.09,
             "direction": "N",
-            "angle_deg": 92.0
+            "angle_deg": 103.9
+          },
+          {
+            "index": 12,
+            "start": {
+              "x": 2600162.812,
+              "y": 1199765.328
+            },
+            "end": {
+              "x": 2600161.599,
+              "y": 1199770.239
+            },
+            "length_m": 5.06,
+            "direction": "N",
+            "angle_deg": 103.9
           }
         ],
-        "perimeter_m": 47.14,
-        "footprint_area_m2": 104,
-        "bbox_width_m": 17.731000000145286,
-        "bbox_depth_m": 7.746999999973923,
-        "traufhoehe_m": 17.1,
-        "firsthoehe_m": 20.1,
-        "gebaeudehoehe_m": 20.12,
+        "perimeter_m": 187.16,
+        "footprint_area_m2": 1591,
+        "bbox_width_m": 40.0,
+        "bbox_depth_m": 68.54899999988265,
+        "traufhoehe_m": 23.1,
+        "firsthoehe_m": 27.2,
+        "gebaeudehoehe_m": 27.17,
         "height_source": "swissbuildings3d",
         "height_quality": "high",
-        "estimated_height_m": 17.0,
-        "floors_estimated": 5,
+        "estimated_height_m": 19.8,
+        "floors_estimated": 6,
         "terrain": {
-          "reference_height_m": 541.9,
+          "reference_height_m": 540.9,
           "min_height_m": null,
           "max_height_m": null,
           "slope_m": null,
@@ -2919,33 +3109,42 @@
           "slope_direction": null,
           "requires_level_compensation": false
         },
-        "roof_type": "satteldach",
-        "roof_angle_deg": 37.75754395539266,
-        "roof_orientation": "N-S",
+        "roof_type": "mansarddach",
+        "roof_angle_deg": 6.821448074956417,
+        "roof_orientation": "O-W",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude",
+            "name": "Hauptgebaeude",
             "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 17.1,
-            "firsthoehe_m": 20.1,
-            "gebaeudehoehe_m": 20.12,
-            "fassaden_ids": [
-              "N",
-              "E",
-              "S",
-              "W"
-            ],
+            "traufhoehe_m": 18.0,
+            "firsthoehe_m": 25.0,
+            "gebaeudehoehe_m": 25.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.9,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_2",
+            "name": "Dachaufbau",
+            "zone_type": "anbau",
+            "traufhoehe_m": 25.0,
+            "firsthoehe_m": 30.0,
+            "gebaeudehoehe_m": 30.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
-        "complexity": "simple",
+        "complexity": "moderate",
         "has_height_variations": false,
         "has_towers": false,
         "has_annexes": false,
@@ -2953,16 +3152,30 @@
         "access_points": [
           {
             "id": "Z1",
-            "fassade_id": "W",
-            "position_percent": 0.5,
-            "reason": "Stirnseite West, optimaler Abstand für 47m Umfang",
+            "fassade_id": "O",
+            "position_percent": 0.3921554252199414,
+            "reason": "Automatisch verteilt (46.8m Abstand)",
             "suva_compliant": true
           },
           {
             "id": "Z2",
-            "fassade_id": "E",
-            "position_percent": 0.5,
-            "reason": "Stirnseite Ost, zweiter Fluchtweg gemäss SUVA",
+            "fassade_id": "SO",
+            "position_percent": 0.9753086419753086,
+            "reason": "Automatisch verteilt (46.8m Abstand) → Ecke (Ende)",
+            "suva_compliant": true
+          },
+          {
+            "id": "Z3",
+            "fassade_id": "W",
+            "position_percent": 0.04251700680272109,
+            "reason": "Automatisch verteilt (46.8m Abstand) → Ecke (Start)",
+            "suva_compliant": true
+          },
+          {
+            "id": "Z4",
+            "fassade_id": "N",
+            "position_percent": 0.9011857707509882,
+            "reason": "Automatisch verteilt (46.8m Abstand) → Ecke (Ende)",
             "suva_compliant": true
           }
         ],
@@ -2974,38 +3187,56 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.3,
-        "analysis_confidence": 0.9,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Hoehe 27.2m sehr hoch fuer 6 Geschosse (moeglicherweise Turm)"
+        ],
         "errors": []
       }
     },
     {
       "address": "Bahnhofplatz 10, 3011 Bern",
       "expected_name": "Hauptbahnhof Bern (erwartet)",
-      "actual_name": null,
+      "actual_name": "Hauptbahnhof Bern",
       "egid": "2241912",
       "expected_zones": null,
-      "actual_zones": 1,
+      "actual_zones": 3,
       "zone_details": [
         {
-          "name": "Hauptgebäude Süd",
-          "type": "hauptgebaeude",
-          "traufhoehe_m": 31.3,
-          "firsthoehe_m": 36.8,
+          "name": "Baldachin",
+          "type": "arkade",
+          "traufhoehe_m": 8.0,
+          "firsthoehe_m": 12.0,
           "sonderkonstruktion": false
+        },
+        {
+          "name": "Bahnhofshalle",
+          "type": "hauptgebaeude",
+          "traufhoehe_m": 18.0,
+          "firsthoehe_m": 22.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Bueroturm",
+          "type": "turm",
+          "traufhoehe_m": 30.0,
+          "firsthoehe_m": 40.0,
+          "sonderkonstruktion": true
         }
       ],
       "traufhoehe_m": 31.3,
       "firsthoehe_m": 36.8,
-      "max_zone_height": 36.8,
+      "max_zone_height": 40.0,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Zone 'Baldachin' (12.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!",
+        "Zone 'Bahnhofshalle' (22.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -3013,12 +3244,11 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 18514,
+      "response_time_ms": 402,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": true,
       "zones_match": true,
       "raw_data": {
         "egid": "2241912",
@@ -3026,10 +3256,10 @@
         "address_matched": "Bahnhofplatz 10 3011 Bern",
         "lv95_e": 600107.375,
         "lv95_n": 199721.890625,
-        "building_name": null,
-        "building_type": "Geschäfts- und Wohngebäude",
-        "architectural_style": "Historismus/Gründerzeit",
-        "construction_year": null,
+        "building_name": "Hauptbahnhof Bern",
+        "building_type": "Bahnhof",
+        "architectural_style": "Moderne / Brutalismus",
+        "construction_year": 1974,
         "gwr_category": "Gebäude mit teilweiser Wohnnutzung",
         "gwr_category_code": 1060,
         "gwr_floors": 4,
@@ -3517,64 +3747,136 @@
         "roof_angle_deg": 3.0293821562449645,
         "roof_orientation": "O-W",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude Süd",
-            "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 31.3,
-            "firsthoehe_m": 36.8,
-            "gebaeudehoehe_m": 36.77,
-            "fassaden_ids": [
-              "N",
-              "E",
-              "S",
-              "W"
-            ],
+            "name": "Baldachin",
+            "zone_type": "arkade",
+            "traufhoehe_m": 8.0,
+            "firsthoehe_m": 12.0,
+            "gebaeudehoehe_m": 12.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.7,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_2",
+            "name": "Bahnhofshalle",
+            "zone_type": "hauptgebaeude",
+            "traufhoehe_m": 18.0,
+            "firsthoehe_m": 22.0,
+            "gebaeudehoehe_m": 22.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_3",
+            "name": "Bueroturm",
+            "zone_type": "turm",
+            "traufhoehe_m": 30.0,
+            "firsthoehe_m": 40.0,
+            "gebaeudehoehe_m": 40.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": true,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
         "complexity": "complex",
         "has_height_variations": false,
-        "has_towers": false,
-        "has_annexes": true,
+        "has_towers": true,
+        "has_annexes": false,
         "has_courtyards": false,
         "access_points": [
           {
             "id": "Z1",
-            "fassade_id": "W",
-            "position_percent": 0.3,
-            "reason": "Zugang Westseite, näher zum Bahnhofplatz",
-            "suva_compliant": true
+            "fassade_id": "O",
+            "position_percent": 0.8850574712643678,
+            "reason": "Automatisch verteilt (48.2m Abstand) → Ecke (Ende)",
+            "suva_compliant": false
           },
           {
             "id": "Z2",
-            "fassade_id": "E",
-            "position_percent": 0.5,
-            "reason": "Zugang Ostseite zur besseren Abdeckung",
-            "suva_compliant": true
+            "fassade_id": "NO",
+            "position_percent": 0.7094713226687472,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
           },
           {
             "id": "Z3",
             "fassade_id": "N",
-            "position_percent": 0.4,
-            "reason": "Zusätzlicher Nordseiten-Zugang aufgrund großem Umfang (531m)",
-            "suva_compliant": true
+            "position_percent": 0.018782870022539443,
+            "reason": "Automatisch verteilt (48.2m Abstand) → Ecke (Start)",
+            "suva_compliant": false
           },
           {
             "id": "Z4",
+            "fassade_id": "N",
+            "position_percent": 0.5831702249390222,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z5",
             "fassade_id": "S",
-            "position_percent": 0.6,
-            "reason": "Südseiten-Zugang für optimale Fluchtweg-Abdeckung",
-            "suva_compliant": true
+            "position_percent": 0.5009357065624215,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z6",
+            "fassade_id": "S",
+            "position_percent": 0.6846201743462015,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z7",
+            "fassade_id": "S",
+            "position_percent": 0.8072331008928813,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z8",
+            "fassade_id": "S",
+            "position_percent": 0.4026225880579241,
+            "reason": "Automatisch verteilt (48.2m Abstand)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z9",
+            "fassade_id": "W",
+            "position_percent": 0.8287671232876712,
+            "reason": "Automatisch verteilt (48.2m Abstand) → Ecke (Ende)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z10",
+            "fassade_id": "W",
+            "position_percent": 0.8287671232876712,
+            "reason": "Automatisch verteilt (48.2m Abstand) → Ecke (Ende)",
+            "suva_compliant": false
+          },
+          {
+            "id": "Z11",
+            "fassade_id": "N",
+            "position_percent": 0.018782870022539443,
+            "reason": "Automatisch verteilt (48.2m Abstand) → Ecke (Start)",
+            "suva_compliant": false
           }
         ],
-        "suva_compliant": true,
+        "suva_compliant": false,
         "data_sources": [
           "swisstopo_geocoding",
           "swisstopo_gwr",
@@ -3582,45 +3884,57 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.4,
-        "analysis_confidence": 0.7,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Zone 'Baldachin' (12.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!",
+          "Zone 'Bahnhofshalle' (22.0m) deutlich unter API-Traufhoehe (31.3m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
     {
       "address": "Kornhausplatz 18, 3011 Bern",
       "expected_name": "Kornhaus (erwartet)",
-      "actual_name": null,
+      "actual_name": "Kornhaus",
       "egid": "1230631",
       "expected_zones": null,
-      "actual_zones": 2,
+      "actual_zones": 3,
       "zone_details": [
         {
-          "name": "Hauptgebäude Süd",
-          "type": "hauptgebaeude",
-          "traufhoehe_m": 22.3,
-          "firsthoehe_m": 26.2,
+          "name": "Arkaden",
+          "type": "arkade",
+          "traufhoehe_m": 5.0,
+          "firsthoehe_m": 5.0,
           "sonderkonstruktion": false
         },
         {
-          "name": "Nordflügel",
+          "name": "Hauptbau",
           "type": "hauptgebaeude",
-          "traufhoehe_m": 22.3,
-          "firsthoehe_m": 26.2,
+          "traufhoehe_m": 18.0,
+          "firsthoehe_m": 25.0,
           "sonderkonstruktion": false
+        },
+        {
+          "name": "Dachreiter",
+          "type": "turm",
+          "traufhoehe_m": 25.0,
+          "firsthoehe_m": 32.0,
+          "sonderkonstruktion": true
         }
       ],
       "traufhoehe_m": 22.3,
       "firsthoehe_m": 26.2,
-      "max_zone_height": 26.2,
+      "max_zone_height": 32.0,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Hoehe 26.2m sehr hoch fuer 4 Geschosse (moeglicherweise Turm)",
+        "Zone 'Arkaden' (5.0m) deutlich unter API-Traufhoehe (22.3m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -3628,12 +3942,11 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 15563,
+      "response_time_ms": 328,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": true,
       "zones_match": true,
       "raw_data": {
         "egid": "1230631",
@@ -3641,10 +3954,10 @@
         "address_matched": "Kornhausplatz 18 3011 Bern",
         "lv95_e": 600646.375,
         "lv95_n": 199751.1875,
-        "building_name": null,
-        "building_type": "Wohngebäude mit Nebennutzung",
-        "architectural_style": null,
-        "construction_year": null,
+        "building_name": "Kornhaus",
+        "building_type": "Kulturzentrum / Restaurant",
+        "architectural_style": "Barock",
+        "construction_year": 1718,
         "gwr_category": "Wohngebäude mit Nebennutzung",
         "gwr_category_code": 1040,
         "gwr_floors": 4,
@@ -3840,81 +4153,87 @@
           "slope_direction": null,
           "requires_level_compensation": false
         },
-        "roof_type": "pultdach",
+        "roof_type": "mansarddach",
         "roof_angle_deg": 7.11925750249276,
         "roof_orientation": "O-W",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude Süd",
-            "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 22.3,
-            "firsthoehe_m": 26.2,
-            "gebaeudehoehe_m": 26.21,
-            "fassaden_ids": [
-              "S",
-              "SW",
-              "W"
-            ],
+            "name": "Arkaden",
+            "zone_type": "arkade",
+            "traufhoehe_m": 5.0,
+            "firsthoehe_m": 5.0,
+            "gebaeudehoehe_m": 5.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.7,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           },
           {
             "id": "zone_2",
-            "name": "Nordflügel",
+            "name": "Hauptbau",
             "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 22.3,
-            "firsthoehe_m": 26.2,
-            "gebaeudehoehe_m": 26.21,
-            "fassaden_ids": [
-              "N",
-              "NE",
-              "E"
-            ],
+            "traufhoehe_m": 18.0,
+            "firsthoehe_m": 25.0,
+            "gebaeudehoehe_m": 25.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.7,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_3",
+            "name": "Dachreiter",
+            "zone_type": "turm",
+            "traufhoehe_m": 25.0,
+            "firsthoehe_m": 32.0,
+            "gebaeudehoehe_m": 32.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": true,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
         "complexity": "complex",
         "has_height_variations": false,
-        "has_towers": false,
+        "has_towers": true,
         "has_annexes": false,
         "has_courtyards": false,
         "access_points": [
           {
             "id": "Z1",
             "fassade_id": "W",
-            "position_percent": 0.3,
-            "reason": "Westseite Zone 1 für optimale Erschließung",
+            "position_percent": 0.23584905660377356,
+            "reason": "Automatisch verteilt (42.2m Abstand) → Ecke (Start)",
             "suva_compliant": true
           },
           {
             "id": "Z2",
-            "fassade_id": "E",
-            "position_percent": 0.7,
-            "reason": "Ostseite Zone 2 für zweiten Fluchtweg",
+            "fassade_id": "N",
+            "position_percent": 0.8075871941697026,
+            "reason": "Automatisch verteilt (42.2m Abstand)",
             "suva_compliant": true
           },
           {
             "id": "Z3",
             "fassade_id": "S",
-            "position_percent": 0.5,
-            "reason": "Zusätzlicher Zugang Südseite bei großem Umfang (168.6m)",
+            "position_percent": 0.2912381995954145,
+            "reason": "Automatisch verteilt (42.2m Abstand)",
             "suva_compliant": true
           },
           {
             "id": "Z4",
-            "fassade_id": "N",
-            "position_percent": 0.5,
-            "reason": "Nordseite Zugang für optimale Fluchtweglängen",
+            "fassade_id": "W",
+            "position_percent": 0.23584905660377356,
+            "reason": "Automatisch verteilt (42.2m Abstand) → Ecke (Start)",
             "suva_compliant": true
           }
         ],
@@ -3926,38 +4245,56 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.3,
-        "analysis_confidence": 0.7,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Hoehe 26.2m sehr hoch fuer 4 Geschosse (moeglicherweise Turm)",
+          "Zone 'Arkaden' (5.0m) deutlich unter API-Traufhoehe (22.3m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
     {
       "address": "Theaterplatz 7, 3011 Bern",
       "expected_name": "Stadttheater (erwartet)",
-      "actual_name": null,
+      "actual_name": "Konzert Theater Bern",
       "egid": "1230414",
       "expected_zones": null,
-      "actual_zones": 1,
+      "actual_zones": 3,
       "zone_details": [
         {
-          "name": "Hauptgebäude",
-          "type": "hauptgebaeude",
-          "traufhoehe_m": 15.1,
-          "firsthoehe_m": 17.7,
+          "name": "Foyer",
+          "type": "anbau",
+          "traufhoehe_m": 10.0,
+          "firsthoehe_m": 12.0,
           "sonderkonstruktion": false
+        },
+        {
+          "name": "Zuschauerhaus",
+          "type": "hauptgebaeude",
+          "traufhoehe_m": 18.0,
+          "firsthoehe_m": 22.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Buehnenturm",
+          "type": "turm",
+          "traufhoehe_m": 22.0,
+          "firsthoehe_m": 32.0,
+          "sonderkonstruktion": true
         }
       ],
       "traufhoehe_m": 15.1,
       "firsthoehe_m": 17.7,
-      "max_zone_height": 17.7,
-      "complexity": "simple",
+      "max_zone_height": 32.0,
+      "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Zone 'Foyer' (12.0m) deutlich unter API-Traufhoehe (15.1m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -3965,12 +4302,11 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 13470,
+      "response_time_ms": 355,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": false,
       "zones_match": true,
       "raw_data": {
         "egid": "1230414",
@@ -3978,10 +4314,10 @@
         "address_matched": "Theaterplatz 7 3011 Bern",
         "lv95_e": 600688.6875,
         "lv95_n": 199605.203125,
-        "building_name": null,
-        "building_type": "Wohngebäude mit Nebennutzung",
-        "architectural_style": null,
-        "construction_year": null,
+        "building_name": "Konzert Theater Bern",
+        "building_type": "Theater / Oper",
+        "architectural_style": "Neobarock",
+        "construction_year": 1903,
         "gwr_category": "Wohngebäude mit Nebennutzung",
         "gwr_category_code": 1040,
         "gwr_floors": 5,
@@ -4141,57 +4477,80 @@
           "slope_direction": null,
           "requires_level_compensation": false
         },
-        "roof_type": "pultdach",
+        "roof_type": "walmdach",
         "roof_angle_deg": 11.911615283785602,
         "roof_orientation": "N-S",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude",
-            "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 15.1,
-            "firsthoehe_m": 17.7,
-            "gebaeudehoehe_m": 17.74,
-            "fassaden_ids": [
-              "N",
-              "E",
-              "S",
-              "W"
-            ],
+            "name": "Foyer",
+            "zone_type": "anbau",
+            "traufhoehe_m": 10.0,
+            "firsthoehe_m": 12.0,
+            "gebaeudehoehe_m": 12.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.85,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_2",
+            "name": "Zuschauerhaus",
+            "zone_type": "hauptgebaeude",
+            "traufhoehe_m": 18.0,
+            "firsthoehe_m": 22.0,
+            "gebaeudehoehe_m": 22.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_3",
+            "name": "Buehnenturm",
+            "zone_type": "turm",
+            "traufhoehe_m": 22.0,
+            "firsthoehe_m": 32.0,
+            "gebaeudehoehe_m": 32.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": true,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
-        "complexity": "simple",
+        "complexity": "complex",
         "has_height_variations": false,
-        "has_towers": false,
+        "has_towers": true,
         "has_annexes": false,
         "has_courtyards": false,
         "access_points": [
           {
             "id": "Z1",
-            "fassade_id": "W",
-            "position_percent": 0.5,
-            "reason": "Westseite, gute Zugänglichkeit vom Theaterplatz",
+            "fassade_id": "O",
+            "position_percent": 0.2113520996769727,
+            "reason": "Automatisch verteilt (37.8m Abstand)",
             "suva_compliant": true
           },
           {
             "id": "Z2",
-            "fassade_id": "E",
-            "position_percent": 0.5,
-            "reason": "Ostseite, zweiter Fluchtweg gemäss SUVA-Vorschriften",
+            "fassade_id": "W",
+            "position_percent": 0.031308703819661866,
+            "reason": "Automatisch verteilt (37.8m Abstand) → Ecke (Start)",
             "suva_compliant": true
           },
           {
             "id": "Z3",
             "fassade_id": "N",
-            "position_percent": 0.3,
-            "reason": "Nordseite, zusätzlicher Zugang für optimale Fluchtweglängen bei grossem Umfang (113.5m)",
+            "position_percent": 0.9213836477987422,
+            "reason": "Automatisch verteilt (37.8m Abstand) → Ecke (Ende)",
             "suva_compliant": true
           }
         ],
@@ -4203,38 +4562,57 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.3,
-        "analysis_confidence": 0.85,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Zone 'Foyer' (12.0m) deutlich unter API-Traufhoehe (15.1m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     },
     {
       "address": "Hodlerstrasse 8, 3011 Bern",
       "expected_name": "Kunstmuseum (erwartet)",
-      "actual_name": null,
+      "actual_name": "Kunstmuseum Bern",
       "egid": "2247274",
       "expected_zones": null,
-      "actual_zones": 1,
+      "actual_zones": 3,
       "zone_details": [
         {
-          "name": "Hauptgebäude",
+          "name": "Altbau",
           "type": "hauptgebaeude",
-          "traufhoehe_m": 6.7,
-          "firsthoehe_m": 7.9,
+          "traufhoehe_m": 15.0,
+          "firsthoehe_m": 18.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Neubau (Stettler)",
+          "type": "hauptgebaeude",
+          "traufhoehe_m": 12.0,
+          "firsthoehe_m": 15.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Erweiterung",
+          "type": "anbau",
+          "traufhoehe_m": 8.0,
+          "firsthoehe_m": 10.0,
           "sonderkonstruktion": false
         }
       ],
       "traufhoehe_m": 6.7,
       "firsthoehe_m": 7.9,
-      "max_zone_height": 7.9,
+      "max_zone_height": 18.0,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m)",
+        "Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?",
+        "Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -4242,12 +4620,11 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 15292,
+      "response_time_ms": 371,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": false,
       "zones_match": true,
       "raw_data": {
         "egid": "2247274",
@@ -4255,10 +4632,10 @@
         "address_matched": "Hodlerstrasse 8 3011 Bern",
         "lv95_e": 600391.25,
         "lv95_n": 199983.15625,
-        "building_name": null,
-        "building_type": "Wohn- und Geschäftshaus",
-        "architectural_style": "Historismus/Gründerzeit",
-        "construction_year": null,
+        "building_name": "Kunstmuseum Bern",
+        "building_type": "Museum",
+        "architectural_style": "Neorenaissance / Moderne",
+        "construction_year": 1879,
         "gwr_category": "Gebäude mit teilweiser Wohnnutzung",
         "gwr_category_code": 1060,
         "gwr_floors": null,
@@ -4476,29 +4853,48 @@
         "roof_angle_deg": 2.8452437144914633,
         "roof_orientation": "NO-SW",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude",
+            "name": "Altbau",
             "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 6.7,
-            "firsthoehe_m": 7.9,
-            "gebaeudehoehe_m": 7.89,
-            "fassaden_ids": [
-              "N",
-              "NE",
-              "E",
-              "SE",
-              "S",
-              "SW",
-              "W",
-              "NW"
-            ],
+            "traufhoehe_m": 15.0,
+            "firsthoehe_m": 18.0,
+            "gebaeudehoehe_m": 18.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.7,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_2",
+            "name": "Neubau (Stettler)",
+            "zone_type": "hauptgebaeude",
+            "traufhoehe_m": 12.0,
+            "firsthoehe_m": 15.0,
+            "gebaeudehoehe_m": 15.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_3",
+            "name": "Erweiterung",
+            "zone_type": "anbau",
+            "traufhoehe_m": 8.0,
+            "firsthoehe_m": 10.0,
+            "gebaeudehoehe_m": 10.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
@@ -4510,23 +4906,23 @@
         "access_points": [
           {
             "id": "Z1",
-            "fassade_id": "S",
-            "position_percent": 0.3,
-            "reason": "Südseite für gute Erreichbarkeit",
+            "fassade_id": "NO",
+            "position_percent": 0.9430523917995444,
+            "reason": "Automatisch verteilt (48.4m Abstand) → Ecke (Ende)",
             "suva_compliant": true
           },
           {
             "id": "Z2",
-            "fassade_id": "N",
-            "position_percent": 0.5,
-            "reason": "Nordseite als zweiter Fluchtweg",
+            "fassade_id": "SO",
+            "position_percent": 0.9864608719198483,
+            "reason": "Automatisch verteilt (48.4m Abstand) → Ecke (Ende)",
             "suva_compliant": true
           },
           {
             "id": "Z3",
-            "fassade_id": "E",
-            "position_percent": 0.4,
-            "reason": "Zusätzlicher Zugang Ostseite wegen großem Umfang (145m)",
+            "fassade_id": "NW",
+            "position_percent": 0.01849112426035503,
+            "reason": "Automatisch verteilt (48.4m Abstand) → Ecke (Start)",
             "suva_compliant": true
           }
         ],
@@ -4538,38 +4934,58 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.4,
-        "analysis_confidence": 0.7,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Firsthoehe 7.9m unplausibel niedrig fuer GKAT 1060 (erwartet >= 12m)",
+          "Zone 'Altbau' (18.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?",
+          "Zone 'Neubau (Stettler)' (15.0m) deutlich ueber API-First (7.9m) - als Turm/Kuppel klassifizieren?"
+        ],
         "errors": []
       }
     },
     {
       "address": "Helvetiaplatz 5, 3005 Bern",
       "expected_name": "Historisches Museum (erwartet)",
-      "actual_name": null,
+      "actual_name": "Bernisches Historisches Museum",
       "egid": "2243518",
       "expected_zones": null,
-      "actual_zones": 1,
+      "actual_zones": 3,
       "zone_details": [
         {
-          "name": "Hauptgebäude Süd",
+          "name": "Hauptbau",
           "type": "hauptgebaeude",
-          "traufhoehe_m": 44.0,
-          "firsthoehe_m": 51.8,
+          "traufhoehe_m": 25.0,
+          "firsthoehe_m": 35.0,
           "sonderkonstruktion": false
+        },
+        {
+          "name": "Seitenfluegel",
+          "type": "anbau",
+          "traufhoehe_m": 18.0,
+          "firsthoehe_m": 25.0,
+          "sonderkonstruktion": false
+        },
+        {
+          "name": "Eckturm",
+          "type": "turm",
+          "traufhoehe_m": 35.0,
+          "firsthoehe_m": 50.0,
+          "sonderkonstruktion": true
         }
       ],
       "traufhoehe_m": 44.0,
       "firsthoehe_m": 51.8,
-      "max_zone_height": 51.8,
+      "max_zone_height": 50.0,
       "complexity": "complex",
       "data_quality": "high",
-      "warnings": [],
+      "warnings": [
+        "Zone 'Hauptbau' (35.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!",
+        "Zone 'Seitenfluegel' (25.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!"
+      ],
       "api_calls_used": [
         "swisstopo_geocoding",
         "swisstopo_gwr",
@@ -4577,12 +4993,11 @@
         "swissalti3d",
         "geodienste_wfs",
         "calculated",
-        "claude_research",
-        "claude_analysis"
+        "manual"
       ],
-      "response_time_ms": 19060,
+      "response_time_ms": 368,
       "is_known_building": false,
-      "name_match": null,
+      "name_match": false,
       "zones_match": true,
       "raw_data": {
         "egid": "2243518",
@@ -4590,10 +5005,10 @@
         "address_matched": "Helvetiaplatz 5 3005 Bern",
         "lv95_e": 600810.3125,
         "lv95_n": 199107.546875,
-        "building_name": null,
-        "building_type": "Wohn- und Geschäftsgebäude",
-        "architectural_style": null,
-        "construction_year": null,
+        "building_name": "Bernisches Historisches Museum",
+        "building_type": "Museum",
+        "architectural_style": "Historismus (Schloss)",
+        "construction_year": 1894,
         "gwr_category": "Gebäude mit teilweiser Wohnnutzung",
         "gwr_category_code": 1060,
         "gwr_floors": null,
@@ -5257,96 +5672,119 @@
           "slope_direction": null,
           "requires_level_compensation": false
         },
-        "roof_type": "pultdach",
+        "roof_type": "satteldach_mit_turm",
         "roof_angle_deg": 12.251693989274344,
         "roof_orientation": "N-S",
         "roof_area_m2": 120.0,
-        "roof_confidence": 0.7000000000000001,
+        "roof_confidence": 1.0,
         "zones": [
           {
             "id": "zone_1",
-            "name": "Hauptgebäude Süd",
+            "name": "Hauptbau",
             "zone_type": "hauptgebaeude",
-            "traufhoehe_m": 44.0,
-            "firsthoehe_m": 51.8,
-            "gebaeudehoehe_m": 51.75,
-            "fassaden_ids": [
-              "N",
-              "E",
-              "S",
-              "W"
-            ],
+            "traufhoehe_m": 25.0,
+            "firsthoehe_m": 35.0,
+            "gebaeudehoehe_m": 35.0,
+            "fassaden_ids": [],
             "beruesten": true,
             "sonderkonstruktion": false,
-            "confidence": 0.6,
-            "source": "claude_analysis",
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_2",
+            "name": "Seitenfluegel",
+            "zone_type": "anbau",
+            "traufhoehe_m": 18.0,
+            "firsthoehe_m": 25.0,
+            "gebaeudehoehe_m": 25.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": false,
+            "confidence": 1.0,
+            "source": "manual",
+            "notes": null
+          },
+          {
+            "id": "zone_3",
+            "name": "Eckturm",
+            "zone_type": "turm",
+            "traufhoehe_m": 35.0,
+            "firsthoehe_m": 50.0,
+            "gebaeudehoehe_m": 50.0,
+            "fassaden_ids": [],
+            "beruesten": true,
+            "sonderkonstruktion": true,
+            "confidence": 1.0,
+            "source": "manual",
             "notes": null
           }
         ],
         "complexity": "complex",
         "has_height_variations": false,
-        "has_towers": false,
-        "has_annexes": true,
+        "has_towers": true,
+        "has_annexes": false,
         "has_courtyards": false,
         "access_points": [
           {
             "id": "Z1",
-            "fassade_id": "S",
-            "position_percent": 0.2,
-            "reason": "Südwestliche Ecke, gute Erreichbarkeit",
-            "suva_compliant": true
+            "fassade_id": "N",
+            "position_percent": 0.08605851979345956,
+            "reason": "Automatisch verteilt (49.7m Abstand) → Ecke (Start)",
+            "suva_compliant": false
           },
           {
             "id": "Z2",
-            "fassade_id": "N",
-            "position_percent": 0.3,
-            "reason": "Nördlicher Bereich, zentral positioniert",
-            "suva_compliant": true
+            "fassade_id": "NO",
+            "position_percent": 0.09433962264150944,
+            "reason": "Automatisch verteilt (49.7m Abstand) → Ecke (Start)",
+            "suva_compliant": false
           },
           {
             "id": "Z3",
-            "fassade_id": "E",
-            "position_percent": 0.5,
-            "reason": "Östliche Mitte für optimale Erschließung",
-            "suva_compliant": true
+            "fassade_id": "O",
+            "position_percent": 0.9061913696060038,
+            "reason": "Automatisch verteilt (49.7m Abstand) → Ecke (Ende)",
+            "suva_compliant": false
           },
           {
             "id": "Z4",
             "fassade_id": "W",
-            "position_percent": 0.7,
-            "reason": "Westlicher Bereich zur vollständigen Abdeckung",
-            "suva_compliant": true
+            "position_percent": 0.5519298392498326,
+            "reason": "Automatisch verteilt (49.7m Abstand)",
+            "suva_compliant": false
           },
           {
             "id": "Z5",
-            "fassade_id": "S",
-            "position_percent": 0.8,
-            "reason": "Südöstliche Position für maximale Fluchtwegeabdeckung",
-            "suva_compliant": true
+            "fassade_id": "SW",
+            "position_percent": 0.07267441860465117,
+            "reason": "Automatisch verteilt (49.7m Abstand) → Ecke (Start)",
+            "suva_compliant": false
           },
           {
             "id": "Z6",
             "fassade_id": "N",
-            "position_percent": 0.1,
-            "reason": "Nordwestliche Ecke für vollständige Erschließung",
-            "suva_compliant": true
+            "position_percent": 0.9139414802065404,
+            "reason": "Automatisch verteilt (49.7m Abstand) → Ecke (Ende)",
+            "suva_compliant": false
           },
           {
             "id": "Z7",
-            "fassade_id": "E",
-            "position_percent": 0.9,
-            "reason": "Östliche Ecke zur Sicherstellung der 50m-Regel",
-            "suva_compliant": true
+            "fassade_id": "S",
+            "position_percent": 0.3167835786568552,
+            "reason": "Automatisch verteilt (49.7m Abstand)",
+            "suva_compliant": false
           },
           {
             "id": "Z8",
             "fassade_id": "W",
-            "position_percent": 0.1,
-            "reason": "Westliche Ecke für optimale Fluchtwegeverteilung",
-            "suva_compliant": true
+            "position_percent": 0.15634700665188428,
+            "reason": "Automatisch verteilt (49.7m Abstand)",
+            "suva_compliant": false
           }
         ],
-        "suva_compliant": true,
+        "suva_compliant": false,
         "data_sources": [
           "swisstopo_geocoding",
           "swisstopo_gwr",
@@ -5354,13 +5792,15 @@
           "swissalti3d",
           "geodienste_wfs",
           "calculated",
-          "claude_research",
-          "claude_analysis"
+          "manual"
         ],
         "overall_quality": "high",
-        "research_confidence": 0.3,
-        "analysis_confidence": 0.6,
-        "warnings": [],
+        "research_confidence": 1.0,
+        "analysis_confidence": 0.0,
+        "warnings": [
+          "Zone 'Hauptbau' (35.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!",
+          "Zone 'Seitenfluegel' (25.0m) deutlich unter API-Traufhoehe (44.0m) - Zone-Daten pruefen!"
+        ],
         "errors": []
       }
     }

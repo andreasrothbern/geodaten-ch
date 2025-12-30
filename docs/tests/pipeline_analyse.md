@@ -18,7 +18,7 @@
 │  4. Terrain            → Koordinaten → m ue.M.              │
 │  5. Polygon            → EGID → Grundriss-Form              │
 │  6. Dach-Analyse       → Hoehen → Dachform, Neigung         │
-│  7. Recherche          → known_buildings ODER Claude Haiku  │
+│  7. Recherche          → known_buildings ODER Claude Sonnet  │
 │  8. Zonen-Analyse      → Claude Sonnet (bei COMPLEX)        │
 │  9. SUVA Zugaenge      → Polygon → Zugangspunkte            │
 │ 10. Qualitaetsbewertung→ Alle Daten → Score                 │
@@ -305,7 +305,7 @@ neigung_grad = arctan((firsthoehe - traufhoehe) / (gebaeudetiefe / 2)) × (180/�
 
 ---
 
-## Schritt 7: Recherche (known_buildings ODER Claude Haiku)
+## Schritt 7: Recherche (known_buildings ODER Claude Sonnet)
 
 ### Variante A: known_buildings.py (kostenlos, sofort)
 
@@ -336,7 +336,7 @@ KNOWN_BUILDINGS = {
 }
 ```
 
-### Variante B: Claude Haiku Recherche (~$0.01-0.02)
+### Variante B: Claude Sonnet Recherche (~$0.01-0.02)
 
 **Prompt:**
 
@@ -373,7 +373,7 @@ Antworte im JSON-Format.
 
 1. **Bekannte Gebaeude** (known_buildings.py) → Sofort, kostenlos
 2. **Kirchen** (GKAT 1110) → Spezielle Kirchen-Zonen
-3. **Claude Haiku** → Nur wenn unbekannt und GKAT != 1020/1030
+3. **Claude Sonnet** → Nur wenn unbekannt und GKAT != 1020/1030
 
 ---
 
