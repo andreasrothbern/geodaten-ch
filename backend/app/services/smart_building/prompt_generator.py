@@ -68,6 +68,18 @@ class UnifiedPromptGenerator:
     OFFSET_RIGHT = 50    # Lagenbeschriftung
     OFFSET_TOP = 40      # Titel
 
+    # Dachform-Mapping: Technischer Wert -> Lesbare Beschreibung für Claude
+    ROOF_TYPE_LABELS = {
+        "flachdach": "Flachdach (horizontal, keine Neigung)",
+        "pultdach": "Pultdach (einseitig geneigt)",
+        "satteldach": "Satteldach (zwei geneigte Flächen, First in der Mitte)",
+        "satteldach_mit_turm": "Satteldach mit Kirchturm (Hauptdach + hoher Turm mit Spitzhelm)",
+        "walmdach": "Walmdach (vier geneigte Flächen)",
+        "mansarddach": "Mansarddach (gebrochene Dachflächen, steiler unten)",
+        "kuppel": "Kuppeldach (halbrund, typisch für repräsentative Gebäude)",
+        "unknown": "Unbekannt (Standard-Satteldach annehmen)",
+    }
+
     def generate(
         self,
         bundle: BuildingDataBundle,
@@ -284,7 +296,12 @@ Folge den unten aufgefuehrten Daten und Style-Vorgaben EXAKT."""
         """Dach-Daten"""
         lines = ["## 5. Dach-Analyse"]
 
-        lines.append(f"- **Dachform:** {bundle.roof_type}")
+        # Dachform mit lesbarer Beschreibung für Claude
+        roof_label = self.ROOF_TYPE_LABELS.get(
+            bundle.roof_type or "unknown",
+            f"{bundle.roof_type} (unbekannter Typ)"
+        )
+        lines.append(f"- **Dachform:** {roof_label}")
         if bundle.roof_angle_deg:
             lines.append(f"- **Dachneigung:** {bundle.roof_angle_deg:.0f}°")
         if bundle.roof_orientation:
