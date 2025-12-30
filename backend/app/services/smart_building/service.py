@@ -628,44 +628,9 @@ class SmartBuildingService:
             logger.error(f"Roof calculation error: {e}")
 
     async def _collect_research_data(self, bundle: BuildingDataBundle, force_refresh: bool = False):
-        """Schritt 7: Gebäude-Recherche via Claude Haiku"""
-        try:
-            from app.services.prompts import get_research_service
-            research_service = get_research_service()
-
-            gwr_data = {
-                "building_category": bundle.gwr_category,
-                "construction_year": bundle.construction_year,
-                "floors": bundle.gwr_floors,
-            }
-
-            research = await research_service.get_building_research(
-                adresse=bundle.address_matched,
-                egid=bundle.egid,
-                coordinates=(bundle.lv95_e, bundle.lv95_n) if bundle.lv95_e else None,
-                gwr_data=gwr_data,
-                force_refresh=force_refresh
-            )
-
-            if research:
-                bundle.building_name = research.building_name
-                bundle.building_type = research.building_type
-                bundle.architectural_style = research.architectural_style
-                bundle.construction_year = research.construction_year or bundle.construction_year
-                bundle.research_confidence = research.confidence
-
-                if research.source == "claude_research":
-                    bundle.add_source(DataSource.CLAUDE_RESEARCH)
-                elif research.source == "cache":
-                    bundle.add_source(DataSource.CACHE)
-
-                # Vorgeschlagene Zonen für spätere Analyse
-                if research.suggested_zones:
-                    bundle._research_zones = research.suggested_zones
-
-        except Exception as e:
-            logger.error(f"Research error: {e}")
-            bundle.add_warning(f"Gebäude-Recherche fehlgeschlagen: {str(e)}")
+        """Schritt 7: Gebäude-Recherche (bekannte Gebäude + Claude)"""
+        from .research_integration import collect_building_research
+        await collect_building_research(bundle, force_refresh)
 
     def _needs_zones_analysis(self, bundle: BuildingDataBundle) -> bool:
         """Prüft ob eine detaillierte Zonen-Analyse nötig ist"""
@@ -774,12 +739,24 @@ class SmartBuildingService:
     def _create_default_zone(self, bundle: BuildingDataBundle):
         """Erstellt Standard-Zone(n) basierend auf Höhendaten
 
-        Bei extremer Höhendifferenz (First - Trauf > 15m) werden automatisch
-        mehrere Zonen erstellt (Hauptgebäude + Turm), da dies typisch für
-        Kirchen, Rathäuser, etc. ist.
+        PRIORITÄT:
+        1. Zonen aus bekannten Gebäuden (_known_zones)
+        2. Kirchen-spezifische Zonen bei Sakralbauten
+        3. Standard-Zonen bei extremer Höhendifferenz
+        4. Einfache Zone für normale Gebäude
         """
         if bundle.zones:
             return  # Bereits Zonen vorhanden
+
+        # 1. Bekannte Gebäude-Zonen
+        from .research_integration import create_zones_from_known_building
+        if create_zones_from_known_building(bundle):
+            return
+
+        # 2. Kirchen-spezifische Zonen
+        from .research_integration import create_church_zones
+        if create_church_zones(bundle):
+            return
 
         # Prüfe auf extreme Höhendifferenz (typisch für Kirchen mit Turm)
         if bundle.has_extreme_height_diff():

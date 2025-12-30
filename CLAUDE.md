@@ -919,7 +919,9 @@ backend/app/services/smart_building/
 ├── __init__.py              # Modul-Export
 ├── models.py                # BuildingDataBundle, ZoneInfo, TerrainProfile
 ├── service.py               # SmartBuildingService (Orchestrierung)
-└── prompt_generator.py      # UnifiedPromptGenerator
+├── prompt_generator.py      # UnifiedPromptGenerator
+├── known_buildings.py       # Bekannte Gebäude-Cache (Bundeshaus, Münster, etc.)
+└── research_integration.py  # Integration bekannte Gebäude + Kirchen-Zonen
 ```
 
 ### API-Endpunkte
@@ -1634,7 +1636,7 @@ npx @railway/cli volume add --mount-path /app/data
 | **Gemessene Höhen** | SQLite in Volume | ✅ Bleibt erhalten (mit Volume) |
 | Layher-Katalog | SQLite in Volume | ✅ Bleibt erhalten |
 
-## Status (Stand: 29.12.2025)
+## Status (Stand: 30.12.2025)
 
 ### Fertig ✅
 - [x] Backend + Frontend Deployment
@@ -1718,6 +1720,8 @@ npx @railway/cli volume add --mount-path /app/data
   - `smart_building/models.py` - BuildingDataBundle, ZoneInfo, TerrainProfile
   - `smart_building/service.py` - Orchestrierung aller Datenquellen
   - `smart_building/prompt_generator.py` - Einheitliche Prompt-Generierung
+  - `smart_building/known_buildings.py` - Bekannte Gebäude-Cache (NEU 30.12.2025)
+  - `smart_building/research_integration.py` - Kirchen-Zonen + bekannte Gebäude Integration (NEU 30.12.2025)
   - Bundle-Caching (24h TTL) in SQLite
   - Komplexitäts-Erkennung: simple → auto-zone, complex → Claude Sonnet Analyse
   - SUVA-konforme Zugangspunkt-Berechnung
@@ -1729,6 +1733,14 @@ npx @railway/cli volume add --mount-path /app/data
   - Konverter-Funktion: `smartToScaffoldingData()` für Abwärtskompatibilität
   - Visualisierungs-Endpunkte nutzen SmartService Cache
   - `/api/v1/scaffolding` als **deprecated** markiert
+- [x] **5 Claude.ai Analyse-Fixes** (NEU 30.12.2025)
+  - Fix 1: UTF-8 Encoding (FastAPI Standard)
+  - Fix 2: Prompt-Konsolidierung mit SVGType.ALL
+  - Fix 3: "RECHERCHIEREN" entfernt, sinnvoller Fallback in prompt_generator.py
+  - Fix 4: Kirchen-spezifische Zonen (Seitenschiffe, Kirchenschiff, Turm)
+  - Fix 5: Bekannte Gebäude-Cache (known_buildings.py)
+  - Bundeshaus, Münster, Zytglogge, St. Peter & Paul mit korrekten Höhenzonen
+  - Priorisierung: Bekannte Gebäude → Claude Recherche → Standard-Zonen
 
 ### API Migration (29.12.2025)
 

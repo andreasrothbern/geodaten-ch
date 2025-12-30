@@ -143,7 +143,14 @@ Folge den unten aufgeführten Daten und Style-Vorgaben EXAKT."""
         if bundle.lv95_e and bundle.lv95_n:
             lines.append(f"- **Koordinaten (LV95):** E {bundle.lv95_e:.0f}, N {bundle.lv95_n:.0f}")
 
-        lines.append(f"- **Gebäudename:** {bundle.building_name or 'RECHERCHIEREN'}")
+        # Gebäudename: Nie "RECHERCHIEREN" - sinnvoller Fallback
+        if bundle.building_name:
+            lines.append(f"- **Gebäudename:** {bundle.building_name}")
+        elif bundle.building_type:
+            lines.append(f"- **Gebäudename:** {bundle.building_type} ({bundle.address_matched})")
+        else:
+            addr_short = (bundle.address_matched or bundle.address_input or "").split(",")[0]
+            lines.append(f"- **Gebäudename:** Gebäude {addr_short}")
         lines.append(f"- **Gebäudetyp:** {bundle.building_type or self._infer_building_type(bundle)}")
 
         if bundle.architectural_style:
