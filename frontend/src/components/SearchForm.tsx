@@ -24,9 +24,10 @@ export function SearchForm({ onSearch, loading, defaultAddress }: SearchFormProp
   }
 
   const examples = [
-    'Bundesplatz 3, 3011 Bern',
-    'Kramgasse 10, Bern',
-    'Bahnhofstrasse 1, Zürich',
+    'Bundesplatz 3, 3011 Bern',        // Bundeshaus
+    'Rathausgasse 2, 3011 Bern',       // Kirche St. Peter und Paul
+    'Münsterplatz 1, 3011 Bern',       // Berner Münster
+    'Kramgasse 49, 3011 Bern',         // Zytglogge
   ]
 
   return (
