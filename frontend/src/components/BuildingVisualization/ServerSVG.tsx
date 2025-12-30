@@ -129,13 +129,19 @@ export function ServerSVG({
       return
     }
 
+    // Debug: Log cache key and available keys
+    console.log(`[ServerSVG] ${type}: Looking for cache key:`, cacheKey)
+    console.log(`[ServerSVG] Available cache keys:`, Array.from(svgCache.keys()).filter(k => k.includes(type)))
+
     // Check cache first
     const cached = svgCache.get(cacheKey)
     if (cached) {
+      console.log(`[ServerSVG] ${type}: CACHE HIT!`)
       setSvg(cached)
       setLoading(false)
       return
     }
+    console.log(`[ServerSVG] ${type}: CACHE MISS - will fetch`)
 
     // Prevent duplicate fetches
     if (fetchedRef.current === cacheKey) {
