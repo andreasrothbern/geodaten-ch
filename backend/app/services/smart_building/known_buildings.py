@@ -77,7 +77,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
             {
                 "name": "Kirchenschiff",
                 "zone_type": "hauptgebaeude",
-                "traufhoehe_m": 18.0,  # Kirchenschiff ist HÖHER als die gemessene Traufe!
+                "traufhoehe_m": 18.0,  # Kirchenschiff ist HOEHER als die gemessene Traufe!
                 "firsthoehe_m": 25.0,
                 "beruesten": True,
                 "sonderkonstruktion": False,
@@ -91,9 +91,17 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "sonderkonstruktion": False,
             },
             {
-                "name": "Turm",
+                "name": "Chor",
+                "zone_type": "anbau",
+                "traufhoehe_m": 12.0,
+                "firsthoehe_m": 18.0,
+                "beruesten": True,
+                "sonderkonstruktion": False,
+            },
+            {
+                "name": "Westturm",
                 "zone_type": "turm",
-                "traufhoehe_m": 25.0,  # Turm startet über Kirchenschiff
+                "traufhoehe_m": 25.0,  # Turm startet ueber Kirchenschiff
                 "firsthoehe_m": 54.6,
                 "beruesten": True,
                 "sonderkonstruktion": True,
@@ -101,11 +109,11 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         ],
         "tower_config": {
             "count": 1,
-            "position": "zentral-west",
-            "form": "Spitzhelm",
+            "position": "zentral (Westfassade)",
+            "form": "Spitzhelm (neugotisch)",
             "height_m": 54.6,
         },
-        "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade"],
+        "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Chorraum"],
     },
 
     # Berner Muenster
