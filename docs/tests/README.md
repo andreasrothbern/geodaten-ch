@@ -82,7 +82,7 @@ Markdown-Dokument zum Kopieren in Claude.ai fuer:
 
 | Kriterium | Erwartung |
 |-----------|-----------|
-| Name erkannt | Nein oder via Claude Haiku |
+| Name erkannt | Nein oder via Claude Sonnet |
 | Zonen | 1-2 (Standard-Fallback) |
 | Response-Zeit | 10-20 Sekunden (Claude API) |
 | Hoehendaten | Aus swissBUILDINGS3D |
@@ -111,7 +111,7 @@ Die SmartBuildingService-Pipeline:
 4. Terrain            (swissALTI3D API)
 5. Polygon            (geodienste.ch WFS)
 6. Dach-Analyse       (berechnet)
-7. Recherche          (known_buildings ODER Claude Haiku)
+7. Recherche          (known_buildings ODER Claude Sonnet)
 8. Zonen-Analyse      (bei COMPLEX: Claude Sonnet)
 9. SUVA Zugaenge      (berechnet)
 10. Qualitaetsbewertung (berechnet)

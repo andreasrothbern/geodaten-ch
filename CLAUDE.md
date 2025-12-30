@@ -819,7 +819,7 @@ Schnitt und Ansicht verwendet (identischer Prompt wie Export für Claude.ai).
 │           ┌─────────────────────────────────────────────┐   │
 │           │    claude_research_cache (SQLite)           │   │
 │           │    → 30 Tage TTL                            │   │
-│           │    → Ca. $0.01-0.02 pro Recherche (Haiku)   │   │
+│           │    → Ca. $0.03-0.05 pro Recherche (Sonnet)  │   │
 │           └─────────────────────────────────────────────┘   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -869,7 +869,7 @@ POST /api/v1/prompt/research/clear-expired
 
 ### ClaudeResearchService
 
-Dynamische Gebäude-Recherche via Claude API (Haiku) mit Caching.
+Dynamische Gebäude-Recherche via Claude API (Sonnet) mit Caching.
 
 ```python
 from app.services.prompts import get_research_service
@@ -916,7 +916,7 @@ prompt = await builder.build_svg_prompt(
 | Aktion | Kosten |
 |--------|--------|
 | Gecachte Recherche | $0.00 |
-| Neue Recherche (Haiku) | ~$0.01-0.02 |
+| Neue Recherche (Sonnet) | ~$0.03-0.05 |
 | Cache-TTL | 30 Tage |
 
 ### Ersetzt building_hints.py
@@ -927,7 +927,7 @@ Das neue System ersetzt die statischen Building-Hints:
 |-------------------------|----------------|
 | 7 hardcoded Gebäude | Dynamisch für alle |
 | Manuelle Pflege nötig | Automatische Recherche |
-| Keine Kosten | ~$0.01-0.02 pro neuem Gebäude |
+| Keine Kosten | ~$0.03-0.05 pro neuem Gebäude |
 | Sofort verfügbar | 1-2s Latenz bei Cache-Miss |
 
 ## SmartBuildingService (NEU 29.12.2025)
@@ -952,7 +952,7 @@ Zentraler Service für die schrittweise Sammlung aller Gebäudedaten für Gerüs
 │  │  4. Terrain (swissALTI3D, Hanglage)                │   │
 │  │  5. Polygon & Fassaden (geodienste.ch)             │   │
 │  │  6. Dach-Analyse (berechnet)                       │   │
-│  │  7. Gebäude-Recherche (Claude Haiku)               │   │
+│  │  7. Gebäude-Recherche (Claude Sonnet)              │   │
 │  │  8. Zonen-Analyse (Claude Sonnet - bei Komplex)    │   │
 │  │  9. SUVA Zugangspunkte (berechnet)                 │   │
 │  │ 10. Qualitätsbewertung                             │   │
@@ -1133,8 +1133,8 @@ class BuildingDataBundle:
 | Szenario | Cache | Recherche | Zonen-Analyse | Total |
 |----------|-------|-----------|---------------|-------|
 | Cache-Hit | ✓ | - | - | $0.00 |
-| Einfaches Gebäude | ✗ | Haiku | Auto | ~$0.01-0.02 |
-| Komplexes Gebäude | ✗ | Haiku | Sonnet | ~$0.05-0.15 |
+| Einfaches Gebäude | ✗ | Sonnet | Auto | ~$0.03-0.05 |
+| Komplexes Gebäude | ✗ | Sonnet | Sonnet | ~$0.08-0.20 |
 
 ### Vorteile gegenüber altem System
 
@@ -1766,11 +1766,11 @@ npx @railway/cli volume add --mount-path /app/data
   - Landmark-Buildings Seed-Daten (Bundeshaus, Münster, etc.)
   - API-Endpoints: `/api/v1/search`, `/api/v1/building/{egid}/svg/*`, `/api/v1/db/stats`
 - [x] **Einheitliches Prompt-System v3.0** (NEU 29.12.2025)
-  - `research_service.py` - Dynamische Gebäude-Recherche via Claude Haiku
+  - `research_service.py` - Dynamische Gebäude-Recherche via Claude Sonnet
   - `prompt_builder.py` - Template-basiert nach `Export_Prompt_Claude.md`
   - `claude_svg_zones.py` - Nutzt jetzt PromptBuilder (identische Prompts)
   - Ersetzt statische `building_hints.py` durch dynamische Recherche
-  - 30 Tage Cache für Recherche-Ergebnisse (~$0.01-0.02 pro Gebäude)
+  - 30 Tage Cache für Recherche-Ergebnisse (~$0.03-0.05 pro Gebäude)
   - Frontend Export nutzt Backend-API für konsistente Prompts
   - **"Professional" Toggle entfernt** - Claude wird immer für Schnitt/Ansicht verwendet
   - Backend `use_claude` Default geändert auf `True`

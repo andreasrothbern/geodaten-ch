@@ -101,7 +101,6 @@ Screenshots der App helfen bei der Analyse!
 |-----|-----------|--------|
 | BUG-004: Einsteinhaus langsam | P1 | Offen |
 | BUG-006: Nur 1-2 Zonen bei Unbekannten | P2 | Offen |
-| BUG-010: Doku sagt Haiku statt Sonnet | P1 | Offen |
 | FEATURE-001: Grundrissform-Erkennung | P2 | Geplant |
 
 **Details:** Siehe `docs/roadmap/CURRENT_BUGS.md`

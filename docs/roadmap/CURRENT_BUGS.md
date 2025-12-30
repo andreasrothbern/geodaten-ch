@@ -108,33 +108,32 @@ INFO:httpx: GET .../height?easting=601009... (6x!)
 
 ---
 
-### BUG-010: Dokumentation sagt "Haiku" aber Code verwendet Sonnet
+### BUG-010: Dokumentation sagt "Haiku" aber Code verwendet Sonnet ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P1
 **Identifiziert durch:** Claude.ai Pipeline-Analyse (30.12.2025)
 
 **Problem:**
-- Dokumentation (CLAUDE.md, README.md, etc.) sagt "Claude Haiku fuer Recherche"
-- Code verwendet ueberall `claude-sonnet-4-20250514`:
-  - `research_service.py:47`: `RESEARCH_MODEL = "claude-sonnet-4-20250514"`
-  - `claude_svg_zones.py:140`: `model="claude-sonnet-4-20250514"`
-  - `building_context.py:403`: `model="claude-sonnet-4-20250514"`
-
-**Auswirkung:**
-- Kosten sind hoeher als dokumentiert (~$0.05 statt ~$0.01 pro Recherche)
-- Verwirrung bei Analyse und Debugging
+- Dokumentation (CLAUDE.md, README.md, etc.) sagte "Claude Haiku fuer Recherche"
+- Code verwendet ueberall `claude-sonnet-4-20250514`
 
 **Loesung:**
-- Option A: Dokumentation korrigieren (Sonnet ueberall)
-- Option B: Recherche auf Haiku umstellen (guenstiger, ggf. weniger genau)
-- Empfehlung: Option A - Sonnet liefert bessere Ergebnisse
+- Dokumentation korrigiert: Sonnet ueberall
+- Korrigierte Dateien:
+  - CLAUDE.md (mehrere Stellen)
+  - .claude/rules/smart-building.md
+  - backend/app/main.py (Docstrings)
+  - backend/app/services/claude_svg_zones.py
+  - backend/app/services/prompts/research_service.py
+  - docs/tests/README.md
+- Kosten aktualisiert: ~$0.03-0.05 pro Recherche (statt ~$0.01-0.02)
 
 ---
 
-### BUG-011: Hoehen-Validierung fehlt (Schritt 3/8)
+### BUG-011: Hoehen-Validierung fehlt (Schritt 3/8) ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P1
 **Identifiziert durch:** Claude.ai Pipeline-Analyse (30.12.2025)
 
@@ -173,9 +172,9 @@ def _validate_heights(self, bundle: BuildingDataBundle) -> List[str]:
 
 ---
 
-### BUG-012: Zone/API-Konsistenz Warnung fehlt
+### BUG-012: Zone/API-Konsistenz Warnung fehlt ✅
 
-**Status:** Offen
+**Status:** Gefixt (30.12.2025)
 **Prioritaet:** P1
 **Identifiziert durch:** Claude.ai Datenqualitaets-Analyse (30.12.2025)
 
@@ -433,17 +432,14 @@ git push -u origin feature/ml-learning-system
 ## Priorisierte Reihenfolge
 
 ### P1 (Kritisch - als naechstes fixen)
-1. **BUG-010** - Dokumentation Haiku→Sonnet korrigieren
-2. **BUG-011** - Hoehen-Validierung implementieren
-3. **BUG-012** - Zone/API-Konsistenz Warnung
-4. **BUG-004** - Einsteinhaus langsam (Performance)
+1. **BUG-004** - Einsteinhaus langsam (Performance)
 
 ### P2 (Wichtig - nach P1)
-5. **BUG-006** - Zonen bei Unbekannten (UX)
-6. **FEATURE-001** - Grundrissform-Erkennung (U/L/H)
+2. **BUG-006** - Zonen bei Unbekannten (UX)
+3. **FEATURE-001** - Grundrissform-Erkennung (U/L/H)
 
 ### P3 (Kosmetik)
-7. **BUG-007** - Encoding (Kosmetik)
+4. **BUG-007** - Encoding (Kosmetik)
 
 ### Erledigt ✅
 - ~~**BUG-001** - Kunstmuseum Hoehen~~ ✅
@@ -452,6 +448,9 @@ git push -u origin feature/ml-learning-system
 - ~~**BUG-005** - Stadttheater Hoehen + Dachform~~ ✅
 - ~~**BUG-008** - ConnectTimeout ohne Retry~~ ✅
 - ~~**BUG-009** - Einsteinhaus Zone-Hoehe~~ ✅
+- ~~**BUG-010** - Dokumentation Haiku→Sonnet~~ ✅
+- ~~**BUG-011** - Hoehen-Validierung~~ ✅
+- ~~**BUG-012** - Zone/API-Konsistenz Warnung~~ ✅
 
 ---
 

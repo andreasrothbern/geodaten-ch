@@ -9,7 +9,7 @@ identische Prompts bei Export UND automatischer SVG-Generierung.
 
 Features:
 - Einheitlicher Prompt für Export und API-Generierung
-- Dynamische Gebäude-Recherche via Claude Haiku (gecacht)
+- Dynamische Gebäude-Recherche via Claude Sonnet (gecacht)
 - SVG-Caching in SQLite
 - 90 Sekunden Timeout für Claude API
 """

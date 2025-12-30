@@ -9,7 +9,7 @@
 4. Terrain (swissALTI3D)
 5. Polygon (geodienste.ch WFS)
 6. Dach-Analyse (berechnet)
-7. Recherche (bekannte Gebäude → Claude Haiku)
+7. Recherche (bekannte Gebäude → Claude Sonnet)
 8. Zonen-Analyse (bei komplexen Gebäuden)
 9. SUVA Zugänge (max 50m Abstand)
 10. Qualitätsbewertung

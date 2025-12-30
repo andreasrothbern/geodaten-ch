@@ -10,7 +10,7 @@ unbekannte Gebäude zu recherchieren. Die Ergebnisse werden
 in der SQLite-Datenbank gecacht (30 Tage TTL).
 
 Kosten:
-- Pro Recherche: ca. $0.01-0.02 (Haiku)
+- Pro Recherche: ca. $0.01-0.02 (Sonnet)
 - Gecachte Anfragen: $0.00
 
 Verwendung:

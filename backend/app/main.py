@@ -1097,7 +1097,7 @@ async def analyze_building_context(
     Analysiert das Gebäudepolygon und identifiziert Höhenzonen,
     Türme, Anbauten und andere Sonderelemente.
 
-    **Kosten:** ~$0.01-0.02 pro Analyse
+    **Kosten:** ~$0.03-0.05 pro Analyse
     """
     service = get_building_context_service()
 
@@ -3454,7 +3454,7 @@ async def get_smart_building_data(
     4. Terrain (swissALTI3D, Hanglage-Erkennung)
     5. Polygon & Fassaden (geodienste.ch)
     6. Dach-Analyse (berechnet)
-    7. Gebäude-Recherche (Claude Haiku)
+    7. Gebäude-Recherche (Claude Sonnet)
     8. Zonen-Analyse (Claude Sonnet - nur bei komplexen Gebäuden)
     9. SUVA Zugangspunkte (berechnet)
     10. Qualitätsbewertung
@@ -3463,7 +3463,7 @@ async def get_smart_building_data(
 
     **Kosten:**
     - Cache-Hit: $0.00
-    - Recherche (Haiku): ~$0.01-0.02
+    - Recherche (Sonnet): ~$0.03-0.05
     - Zonen-Analyse (Sonnet): ~$0.05-0.10 (nur bei komplexen Gebäuden)
     """
     try:
@@ -3740,8 +3740,8 @@ async def generate_smart_building_svg(
     - Frische Daten nach Höhen-Import
 
     **Kosten bei force_refresh:**
-    - Einfaches Gebäude: ~$0.05-0.10 (Haiku + Sonnet)
-    - Komplexes Gebäude: ~$0.10-0.20 (Haiku + 2x Sonnet)
+    - Einfaches Gebäude: ~$0.05-0.10 (Sonnet + Sonnet)
+    - Komplexes Gebäude: ~$0.10-0.20 (Sonnet + 2x Sonnet)
     """
     try:
         from app.services.claude_svg_zones import (
