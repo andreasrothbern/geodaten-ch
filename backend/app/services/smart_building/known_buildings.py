@@ -138,7 +138,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Rosettenfenster", "Portal"],
         # SVG-Hinweise für korrekte Darstellung
         "svg_hints": {
-            "grundriss": "Kreuzform zeichnen! Westturm links (quadratisch), Kirchenschiff laenglich, Seitenschiffe schmaler, Chor rechts. Norden nach oben.",
+            "grundriss": "KREUZFORM zeichnen! Westturm OBEN (quadratisch), Kirchenschiff MITTE (laenglich), Seitenschiffe LINKS+RECHTS (schmaler), Chor UNTEN. Norden nach oben. GERUESTZONE: Kreuzfoermige Offset-Kontur mit 1m Abstand - folgt der Gebaeudeform, KEIN Rechteck!",
             "ansicht": "WESTANSICHT - ANORDNUNG IM SVG (von links nach rechts): [1] Seitenschiff links (12m hoch) | [2] TURM IN DER MITTE (54.6m mit Spitzhelm) | [3] Seitenschiff rechts (12m hoch). Das Kirchenschiff (25m) ist HINTER dem Turm und teilweise verdeckt. Der Turm muss EXAKT in der horizontalen Mitte des SVG stehen (x=350 bei viewBox 700)!",
             "schnitt": "Querschnitt Ost-West: Turm LINKS (54.6m), Kirchenschiff RECHTS (25m). Basilika-Profil zeigen: Hohes Mittelschiff mit niedrigen Seitenschiffen."
         },

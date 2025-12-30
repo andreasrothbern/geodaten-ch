@@ -546,7 +546,10 @@ Blick von AUSSEN                   Blick in SCHNITTEBENE
 - **Perspektive:** Vogelperspektive, Blick von oben
 - **Zeigt:** Gebaeudeumriss, Wandstaerken, Fassadenlaengen
 - **Schraffur:** url(#hatch) fuer Mauern
-- **Geruestzone:** Rechteckige Huelle mit 1m Abstand
+- **Geruestzone:** OFFSET-KONTUR mit 1m Abstand (folgt der Gebaeudeform!)
+  - Bei Kreuzform → Geruestzone ist auch kreuzfoermig
+  - Bei U-Form → Geruestzone folgt der U-Form (Innenhof FREI lassen!)
+  - KEINE rechteckige Bounding Box um komplexe Gebaeude!
 - **Elemente:** Nordpfeil, Massstab, Fassaden-Beschriftung""")
 
             # SVG-Hints fuer Grundriss (NEU 30.12.2025)
