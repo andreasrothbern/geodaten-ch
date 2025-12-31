@@ -279,7 +279,7 @@ export default function FacadeSelectionPage() {
   }
 
   return (
-    <div className="pb-24">
+    <div className="pb-40">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <button
@@ -407,8 +407,8 @@ export default function FacadeSelectionPage() {
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
+      {/* Action Buttons - positioned above BottomNav */}
+      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t shadow-lg z-40">
         <div className="max-w-lg mx-auto flex gap-3">
           <button
             onClick={() => navigate(`/projects/${id}`)}
