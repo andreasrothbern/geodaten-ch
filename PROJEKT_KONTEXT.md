@@ -82,7 +82,7 @@ Screenshots der App helfen bei der Analyse!
 
 ---
 
-## Aktueller Stand (30.12.2025)
+## Aktueller Stand (31.12.2025)
 
 ### Was funktioniert
 
@@ -113,8 +113,8 @@ Screenshots der App helfen bei der Analyse!
 
 | Task | Beschreibung | Status |
 |------|--------------|--------|
-| **CI/CD Pipeline** | Automatische Tests + Deployment bei Push | ❌ Fehlt |
-| **Tests** | Unit + Integration Tests für Backend | ❌ Fehlt |
+| **CI/CD Pipeline** | Automatische Tests + Deployment bei Push | ✅ Implementiert |
+| **Tests** | Unit + Integration Tests für Backend | ✅ Basis vorhanden |
 | **Prompt-Versionierung** | SVG-Prompts versioniert speichern | ❌ Fehlt |
 
 ### P1 - Wichtig
@@ -140,7 +140,16 @@ Screenshots der App helfen bei der Analyse!
 
 ## Naechstes Projekt: Geruestbau-App
 
-**Konzept:** [`../geruestbau_app_konzept.md`](../geruestbau_app_konzept.md)
+**Status:** In Entwicklung auf Branch `feature/geruestbau-app`
+
+### Dokumentation
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [`CLAUDE_GERUESTBAU.md`](CLAUDE_GERUESTBAU.md) | CLAUDE.md Erweiterung für Gerüstbau-Modul |
+| [`docs/geruestbau-app/GERUESTBAU_APP_SETUP.md`](docs/geruestbau-app/GERUESTBAU_APP_SETUP.md) | Vollständiges Setup-Guide für PWA |
+| [`docs/geruestbau-app/QUICKSTART.md`](docs/geruestbau-app/QUICKSTART.md) | Schnellstart-Anleitung |
+| [`../geruestbau_app_konzept.md`](docs/geruestbau_app_konzept.md) | Grobkonzept |
 
 Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dienen.
 
@@ -159,19 +168,104 @@ Die geodaten-ch API wird als Backend für eine vollständige Gerüstbau-App dien
 
 ### Offene Punkte: Gerüstbau-App
 
-| Task | Beschreibung | Priorität |
-|------|--------------|-----------|
-| **Projekt-Setup** | Neues Repo, Tech Stack definieren | P0 |
-| **Auth/Multi-Tenant** | Benutzer-Verwaltung, Firmen-Trennung | P0 |
-| **Projekt-DB Schema** | PostgreSQL + PostGIS Setup | P0 |
-| **CI/CD Pipeline** | Tests + Deployment | P0 |
-| **PDF Offerte** | Template-basierte PDF-Generierung | P1 |
-| **Foto-Upload** | S3/MinIO Integration | P1 |
-| **IFC Export** | ifcopenshell Integration | P2 |
-| **LayPLAN XML** | Export für Layher Software | P2 |
-| **Mobile App** | React Native iOS/Android | P3 |
+| Task | Beschreibung | Priorität | Status |
+|------|--------------|-----------|--------|
+| **Projekt-Setup** | PWA im geodaten-ch Repo | P0 | ✅ Implementiert |
+| **CI/CD Pipeline** | GitHub Actions für Tests + Deployment | P0 | ✅ Implementiert |
+| **Auth/Multi-Tenant** | Benutzer-Verwaltung, Firmen-Trennung | P0 | ❌ Offen |
+| **Projekt-DB Schema** | SQLite (später PostgreSQL) | P0 | ✅ Schema definiert |
+| **PDF Offerte** | Template-basierte PDF-Generierung | P1 | ❌ Offen |
+| **Foto-Upload** | S3/MinIO Integration | P1 | ❌ Offen |
+| **IFC Export** | ifcopenshell Integration | P2 | ❌ Offen |
+| **LayPLAN XML** | Export für Layher Software | P2 | ❌ Offen |
+| **Mobile App** | PWA (kein React Native nötig) | P3 | ✅ PWA-Setup |
 
-**Architektur:** geodaten-ch bleibt als API-Service, die Gerüstbau-App wird ein separates Frontend mit eigener Projekt-Datenbank.
+**Architektur:** Die Gerüstbau-App wird als PWA (`geruestbau-app/`) im geodaten-ch Repo entwickelt und nutzt die bestehende Backend-API.
+
+**Tech Stack:**
+- Frontend: React 18 + TypeScript + Vite + TailwindCSS
+- State: Zustand
+- PWA: vite-plugin-pwa
+- Backend: Erweiterung des bestehenden FastAPI
+
+### CI/CD Pipeline
+
+Die GitHub Actions Pipeline (`.github/workflows/ci.yml`) testet alle 3 Komponenten parallel:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CI/CD PIPELINE                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Push/PR zu main                                            │
+│       │                                                     │
+│       ├──────────────┬──────────────┬──────────────┐       │
+│       ▼              ▼              ▼              │       │
+│  backend-test   frontend-test   geruestbau-test   │       │
+│  (Python 3.11)  (Node 20)       (Node 20)         │       │
+│  pytest         npm build       npm build+test    │       │
+│       │              │              │              │       │
+│       └──────────────┴──────────────┴──────────────┘       │
+│                          │                                  │
+│                          ▼                                  │
+│                       deploy                                │
+│                  (nur bei main push)                        │
+│                  Railway.app Auto-Deploy                    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Jobs:**
+
+| Job | Runner | Schritte |
+|-----|--------|----------|
+| `backend-test` | ubuntu-latest | Python 3.11, pip install, pytest |
+| `frontend-test` | ubuntu-latest | Node 20, npm ci, npm build |
+| `geruestbau-test` | ubuntu-latest | Node 20, npm ci, npm build, npm test |
+| `deploy` | ubuntu-latest | Railway.app (automatisch via GitHub Integration) |
+
+### Ordnerstruktur
+
+```
+geodaten-ch/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # CI/CD Pipeline
+│
+├── backend/                    # FastAPI + Python 3.11
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── models/
+│   │   ├── routers/
+│   │   │   └── geruestbau.py   # Gerüstbau-API Router
+│   │   └── services/
+│   │       ├── smart_building/
+│   │       └── geruestbau/     # Gerüstbau-Service
+│   └── tests/
+│       └── test_geruestbau.py
+│
+├── frontend/                   # React + Vite (bestehend)
+│   └── src/
+│
+├── geruestbau-app/             # Mobile-First PWA (NEU)
+│   ├── src/
+│   │   ├── api/                # API Client
+│   │   ├── components/         # UI-Komponenten
+│   │   ├── pages/              # Seiten
+│   │   ├── stores/             # Zustand State
+│   │   └── types/              # TypeScript Types
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── Dockerfile
+│   └── README.md
+│
+├── docs/
+│   └── geruestbau-app/         # Setup-Guides
+│
+├── CLAUDE.md                   # Technische Dokumentation
+├── CLAUDE_GERUESTBAU.md        # Gerüstbau-Erweiterung
+└── PROJEKT_KONTEXT.md          # Projekt-Überblick
+```
 
 ---
 
@@ -207,6 +301,15 @@ Ziel: Automatische Verbesserung der SVG-Qualität durch Feedback-Loop.
 
 | Datum | Aenderung |
 |-------|----------|
+| 2025-12-31 | **Gerüstbau-App**: Komplette PWA-Struktur implementiert |
+| 2025-12-31 | **CI/CD**: GitHub Actions Pipeline für alle 3 Komponenten |
+| 2025-12-31 | **Backend**: Gerüstbau-Router + Project-Service hinzugefügt |
+| 2025-12-31 | **Tests**: test_geruestbau.py mit Projekt-Lifecycle Tests |
+| 2025-12-31 | **Gerüstbau-App**: Branch `feature/geruestbau-app` erstellt |
+| 2025-12-31 | **Gerüstbau-App**: PWA-Setup dokumentiert (docs/geruestbau-app/) |
+| 2025-12-31 | CLAUDE_GERUESTBAU.md erstellt (CLAUDE.md Erweiterung) |
+| 2025-12-31 | 4 SVG-Typen: Grundriss, Ansicht, Querschnitt, Längsschnitt |
+| 2025-12-31 | SVG-Preloading für alle 4 Typen parallel |
 | 2025-12-30 | BUG-011/012 Hoehen-Validierung implementiert |
 | 2025-12-30 | known_buildings.py erweitert (10 Berner Gebaeude) |
 | 2025-12-30 | CURRENT_BUGS.md mit Claude.ai Analyse-Bugs |

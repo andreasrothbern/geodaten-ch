@@ -1,0 +1,14 @@
+# Railway Configuration for Geruestbau-App (PWA)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Static files served by nginx
+# No volume needed - stateless frontend
