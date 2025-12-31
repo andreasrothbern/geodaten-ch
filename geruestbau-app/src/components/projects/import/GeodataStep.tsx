@@ -132,7 +132,7 @@ export default function GeodataStep({
           </div>
           <div className="flex items-center gap-3">
             {getStatusIcon(loadingStates.heights)}
-            <span className="text-sm">Höhendaten laden (swissBUILDINGS3D)</span>
+            <span className="text-sm">Gebäudedaten laden (3D-Modell)</span>
           </div>
           <div className="flex items-center gap-3">
             {getStatusIcon(loadingStates.polygon)}
