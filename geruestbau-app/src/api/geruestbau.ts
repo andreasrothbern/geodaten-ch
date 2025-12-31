@@ -66,4 +66,29 @@ export const geruestbauApi = {
 
     return response.json()
   },
+
+  // URL-Import (simap.ch)
+  extractFromUrl: async (url: string): Promise<OcrExtractionResult> => {
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/import/url`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      return {
+        success: false,
+        confidence: 0,
+        error: `Fehler: ${response.status} - ${errorText}`,
+      }
+    }
+
+    return response.json()
+  },
 }

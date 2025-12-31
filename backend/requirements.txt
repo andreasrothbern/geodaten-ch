@@ -36,3 +36,6 @@ Pillow>=10.0.0
 
 # Claude API für SVG-Generierung
 anthropic>=0.39.0
+
+# HTML Parsing für URL-Import
+beautifulsoup4>=4.12.0

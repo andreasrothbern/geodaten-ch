@@ -98,23 +98,30 @@ export interface ScaffoldConfig {
   access_points: number
 }
 
+// Extrahierte Projektdaten (von PDF, URL oder manueller Eingabe)
+export interface ExtractedProjectData {
+  project_name?: string
+  address?: string
+  client_name?: string
+  client_contact?: string
+  description?: string
+  tender_number?: string
+  submission_deadline?: string
+  project_start?: string
+  project_end?: string
+  estimated_area_m2?: number
+  requirements?: string[]
+  // simap.ch spezifische Daten
+  simap_id?: string
+  procedure?: 'open' | 'selective' | 'invitation' | 'negotiated'
+}
+
 // OCR-Extraktions-Ergebnis vom Backend
 export interface OcrExtractionResult {
   success: boolean
-  data?: {
-    project_name?: string
-    address?: string
-    client_name?: string
-    client_contact?: string
-    description?: string
-    tender_number?: string
-    submission_deadline?: string
-    project_start?: string
-    project_end?: string
-    estimated_area_m2?: number
-    requirements?: string[]
-  }
+  data?: ExtractedProjectData
   confidence: number
   raw_text?: string
   error?: string
+  source_id?: string  // z.B. simap.ch Projekt-ID
 }
