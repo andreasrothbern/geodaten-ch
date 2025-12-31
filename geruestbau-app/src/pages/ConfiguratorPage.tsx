@@ -3,8 +3,9 @@
  *
  * Flow:
  * 1. If projectId provided: Load project and use stored building_data
- * 2. Otherwise: User enters address and API fetches building data
- * 3. ScaffoldConfigurator is rendered with the data
+ * 2. Check sessionStorage for pre-selected facades from FacadeSelectionPage
+ * 3. Otherwise: User enters address and API fetches building data
+ * 4. ScaffoldConfigurator is rendered with the data
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -98,6 +99,40 @@ function calculateArea(polygon: [number, number][]): number {
   return Math.abs(area) / 2;
 }
 
+// Helper: Get selected facades from sessionStorage (from FacadeSelectionPage)
+interface SelectedSide {
+  index: number;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  length_m: number;
+  direction: string;
+  angle_deg: number;
+}
+
+function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildingData['selected_facades'] | null {
+  try {
+    const stored = sessionStorage.getItem('selectedFacades');
+    if (!stored) return null;
+
+    const sides: SelectedSide[] = JSON.parse(stored);
+    if (!sides || sides.length === 0) return null;
+
+    // Convert to configurator format
+    return sides.map((side) => ({
+      id: `facade-${side.index + 1}`,
+      direction: side.direction,
+      length_m: Math.round(side.length_m * 100) / 100,
+      height_m: traufHeight,
+      slope_percent: 0,
+      start_point: [side.start.x, side.start.y] as [number, number],
+      end_point: [side.end.x, side.end.y] as [number, number],
+    }));
+  } catch (e) {
+    console.warn('Failed to parse selectedFacades from sessionStorage:', e);
+    return null;
+  }
+}
+
 // Helper: Convert stored building_data to configurator format
 function convertStoredDataToConfiguratorFormat(
   project: Project,
@@ -114,29 +149,42 @@ function convertStoredDataToConfiguratorFormat(
   const traufHeight = storedData.heights?.traufhoehe_m || 10;
   const firstHeight = storedData.heights?.firsthoehe_m || traufHeight + 2;
 
-  // Calculate facades from polygon
-  const facades: ConfiguratorBuildingData['selected_facades'] = [];
+  // Check if we have pre-selected facades from FacadeSelectionPage
+  const preSelectedFacades = getSelectedFacadesFromSession(traufHeight);
+
+  let facades: ConfiguratorBuildingData['selected_facades'];
   let perimeter = 0;
 
-  for (let i = 0; i < polygon.length - 1; i++) {
-    const start = polygon[i];
-    const end = polygon[i + 1];
-    const length = calculateLength(start, end);
+  if (preSelectedFacades && preSelectedFacades.length > 0) {
+    // Use pre-selected facades from FacadeSelectionPage
+    console.log(`Using ${preSelectedFacades.length} pre-selected facades from FacadeSelectionPage`);
+    facades = preSelectedFacades;
+    perimeter = facades.reduce((sum, f) => sum + f.length_m, 0);
+    // Clear sessionStorage after use
+    sessionStorage.removeItem('selectedFacades');
+  } else {
+    // Calculate ALL facades from polygon (fallback)
+    facades = [];
+    for (let i = 0; i < polygon.length - 1; i++) {
+      const start = polygon[i];
+      const end = polygon[i + 1];
+      const length = calculateLength(start, end);
 
-    // Skip very short segments (< 1m)
-    if (length < 1) continue;
+      // Skip very short segments (< 1m)
+      if (length < 1) continue;
 
-    perimeter += length;
+      perimeter += length;
 
-    facades.push({
-      id: `facade-${i + 1}`,
-      direction: calculateDirection(start, end),
-      length_m: Math.round(length * 100) / 100,
-      height_m: traufHeight,
-      slope_percent: 0,
-      start_point: start,
-      end_point: end,
-    });
+      facades.push({
+        id: `facade-${i + 1}`,
+        direction: calculateDirection(start, end),
+        length_m: Math.round(length * 100) / 100,
+        height_m: traufHeight,
+        slope_percent: 0,
+        start_point: start,
+        end_point: end,
+      });
+    }
   }
 
   return {
@@ -153,7 +201,7 @@ function convertStoredDataToConfiguratorFormat(
     },
     selected_facades: facades,
     metadata: {
-      source: 'stored_project',
+      source: preSelectedFacades ? 'facade_selection' : 'stored_project',
       polygon_points: polygon.length,
       facade_count: facades.length,
       perimeter_m: Math.round(perimeter * 100) / 100,
@@ -299,9 +347,9 @@ export default function ConfiguratorPage() {
         {/* Header */}
         <header className="bg-red-600 text-white px-4 py-4 shadow-lg">
           <div className="max-w-lg mx-auto">
-            <h1 className="text-xl font-bold">Gerüst Konfigurator</h1>
+            <h1 className="text-xl font-bold">Geruest Konfigurator</h1>
             <p className="text-red-200 text-sm">
-              {project ? project.name : 'Gebäude auswählen'}
+              {project ? project.name : 'Gebaeude auswaehlen'}
             </p>
           </div>
         </header>
@@ -315,7 +363,7 @@ export default function ConfiguratorPage() {
               {loadingState === 'loading' && (
                 <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Lade Gebäudedaten...
+                  Lade Gebaeudedaten...
                 </p>
               )}
             </div>
@@ -346,12 +394,12 @@ export default function ConfiguratorPage() {
                   {loadingState === 'loading' ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Lade Gebäudedaten...
+                      Lade Gebaeudedaten...
                     </>
                   ) : (
                     <>
                       <Search className="w-4 h-4" />
-                      Gebäude laden
+                      Gebaeude laden
                     </>
                   )}
                 </button>
@@ -367,7 +415,7 @@ export default function ConfiguratorPage() {
                 <p className="font-medium text-red-800">Fehler beim Laden</p>
                 <p className="text-sm text-red-600 mt-1">{error}</p>
                 <p className="text-xs text-red-500 mt-2">
-                  Tipp: Nicht alle Kantone unterstützen Gebäudedaten. Versuche eine Adresse in BE, SO, BS, ZH, AG, SG, TG, BL oder SH.
+                  Tipp: Nicht alle Kantone unterstuetzen Gebaeudedaten. Versuche eine Adresse in BE, SO, BS, ZH, AG, SG, TG, BL oder SH.
                 </p>
               </div>
             </div>
@@ -380,15 +428,15 @@ export default function ConfiguratorPage() {
               <ol className="text-sm text-blue-700 space-y-1.5">
                 <li className="flex items-start gap-2">
                   <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">1</span>
-                  Adresse eingeben und auswählen
+                  Adresse eingeben und auswaehlen
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">2</span>
-                  Gebäudedaten werden automatisch geladen
+                  Gebaeudedaten werden automatisch geladen
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">3</span>
-                  Gerüst im Editor konfigurieren
+                  Geruest im Editor konfigurieren
                 </li>
               </ol>
             </div>
@@ -433,9 +481,9 @@ export default function ConfiguratorPage() {
       onBack={() => {
         setBuildingData(null);
         setLoadingState('idle');
-        // If we came from a project, go back to project
+        // If we came from a project, go back to facade selection
         if (project) {
-          navigate(`/projects/${project.id}`);
+          navigate(`/projects/${project.id}/facades`);
         }
       }}
       onComplete={() => {
