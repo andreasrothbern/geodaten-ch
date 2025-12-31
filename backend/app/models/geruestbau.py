@@ -17,6 +17,20 @@ class ProjectStatus(str, Enum):
     COMMISSIONED = "commissioned"
 
 
+class TenderData(BaseModel):
+    """Ausschreibungs-Daten (aus PDF, Foto, simap.ch)."""
+    tender_number: Optional[str] = None
+    submission_deadline: Optional[str] = None
+    project_start: Optional[str] = None
+    project_end: Optional[str] = None
+    is_urgent: Optional[bool] = None
+    requires_special: Optional[bool] = None
+    estimated_area_m2: Optional[float] = None
+    source: Optional[str] = None
+    raw_text: Optional[str] = None
+    confidence: Optional[float] = None
+
+
 class BuildingDataInput(BaseModel):
     """Gebäudedaten aus SmartBuildingService (für 3D-Modell)."""
     egid: Optional[str] = None
@@ -42,6 +56,7 @@ class ProjectCreate(BaseModel):
     client_contact: Optional[str] = None
     deadline: Optional[datetime] = None
     description: Optional[str] = None
+    tender_data: Optional[TenderData] = None  # Ausschreibungs-Daten
     building_data: Optional[BuildingDataInput] = None  # Geodaten für 3D-Modell
 
 
