@@ -434,3 +434,39 @@ def bulk_insert_heights_by_coord(data: list, source: str = "unknown") -> int:
         conn.commit()
 
     return len(data)
+
+
+class HeightDBService:
+    """
+    Service-Klasse für Höhendatenbank-Zugriffe.
+
+    Wrapper um die Modul-Funktionen für einfachere Verwendung in Services.
+    """
+
+    def __init__(self):
+        """Initialisiert den Service und stellt sicher, dass die DB existiert."""
+        try:
+            init_database()
+        except Exception:
+            pass  # DB might already exist or we don't have write access
+
+    def get_height(self, egid: int) -> Optional[Tuple[float, str]]:
+        """Höhe für ein Gebäude abrufen."""
+        return get_building_height(egid)
+
+    def get_heights_detailed(self, egid: int) -> Optional[dict]:
+        """Alle Höhenwerte für ein Gebäude abrufen."""
+        return get_building_heights_detailed(egid)
+
+    def get_height_by_coordinates(
+        self,
+        e: float,
+        n: float,
+        tolerance_m: float = 25.0
+    ) -> Optional[dict]:
+        """Höhe per Koordinaten suchen."""
+        return get_building_height_by_coordinates(e, n, tolerance_m)
+
+    def get_stats(self) -> dict:
+        """Datenbank-Statistiken abrufen."""
+        return get_database_stats()
