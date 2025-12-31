@@ -82,8 +82,9 @@ allowed_origins = [
 # Railway Frontend URL hinzufügen
 if os.getenv("FRONTEND_URL"):
     allowed_origins.append(os.getenv("FRONTEND_URL"))
-# Fallback: alle railway.app Subdomains erlauben
+# Railway Frontend URLs
 allowed_origins.append("https://cooperative-commitment-production.up.railway.app")
+allowed_origins.append("https://geruestbau-app-production.up.railway.app")
 
 app.add_middleware(
     CORSMiddleware,
