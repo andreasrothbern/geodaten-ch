@@ -9,7 +9,6 @@ export default function HomePage() {
           <span className="text-4xl">🏗️</span>
         </div>
         <h2 className="text-2xl font-bold text-gray-900">Gerüstbau App</h2>
-        <p className="text-gray-500 mt-2">Projekterfassung und Kalkulation</p>
       </div>
 
       <div className="grid gap-4">
@@ -45,7 +44,7 @@ export default function HomePage() {
       </div>
 
       <div className="text-center text-xs text-gray-400 mt-8">
-        Version 0.1.0 | geodaten-ch Integration
+        Version 0.1.0
       </div>
     </div>
   )

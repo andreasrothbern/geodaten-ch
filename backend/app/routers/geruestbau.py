@@ -1,17 +1,19 @@
 """Gerüstbau-App API Router."""
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from typing import List
+from typing import List, Dict, Any
 
 from ..models.geruestbau import (
     Project, ProjectCreate, ProjectUpdate, ProjectStatus,
     PhotoAnalysis, ScaffoldConfig
 )
 from ..services.geruestbau.project_service import ProjectService
+from ..services.geruestbau.tender_extractor import get_tender_extractor
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
 project_service = ProjectService()
+tender_extractor = get_tender_extractor()
 
 
 @router.get("/projects", response_model=List[Project])
@@ -98,3 +100,32 @@ async def export_project(project_id: str, format: str = "pdf"):
     if format not in ["pdf", "xlsx", "ifc", "dxf"]:
         raise HTTPException(status_code=400, detail="Ungültiges Format")
     return await project_service.export_project(project_id, format)
+
+
+@router.post("/extract", response_model=Dict[str, Any])
+async def extract_from_document(file: UploadFile = File(...)):
+    """
+    Extrahiert Projektdaten aus einer Ausschreibung (PDF oder Foto).
+
+    Verwendet Claude Vision API für OCR und Datenextraktion.
+
+    Unterstützte Formate:
+    - PDF-Dokumente
+    - Bilder (JPG, PNG, GIF, WebP)
+
+    Returns:
+        OcrExtractionResult mit extrahierten Daten
+    """
+    # Read file content
+    file_bytes = await file.read()
+
+    if len(file_bytes) > 10 * 1024 * 1024:  # 10 MB limit
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 10 MB)")
+
+    # Get original filename
+    filename = file.filename or "document.pdf"
+
+    # Extract data
+    result = await tender_extractor.extract_from_file(file_bytes, filename)
+
+    return result.to_dict()
