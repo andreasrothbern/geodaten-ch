@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage'
 import ProjectsPage from './pages/ProjectsPage'
 import NewProjectPage from './pages/NewProjectPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import FacadeSelectionPage from './pages/FacadeSelectionPage'
 import ConfiguratorPage from './pages/ConfiguratorPage'
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
+          <Route path="/projects/:id/facades" element={<FacadeSelectionPage />} />
           <Route path="/projects/:id/photos" element={<div className="text-center py-8">Fotos - Coming Soon</div>} />
           <Route path="/projects/:id/scaffold" element={<div className="text-center py-8">Gerüst - Coming Soon</div>} />
           <Route path="/settings" element={<div className="text-center py-8">Einstellungen - Coming Soon</div>} />
