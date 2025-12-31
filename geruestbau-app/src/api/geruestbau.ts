@@ -1,5 +1,5 @@
-import { api } from './client'
-import type { Project, ProjectCreate } from '../types/project'
+import { api, API_BASE } from './client'
+import type { Project, ProjectCreate, OcrExtractionResult } from '../types/project'
 
 export const geruestbauApi = {
   // Projekte
@@ -40,4 +40,30 @@ export const geruestbauApi = {
   // Export
   exportProject: (projectId: string, format: 'pdf' | 'xlsx' = 'pdf') =>
     api.post(`/api/v1/geruestbau/projects/${projectId}/export?format=${format}`, {}),
+
+  // OCR-Extraktion aus Dokument (PDF/Foto)
+  extractFromDocument: async (file: File): Promise<OcrExtractionResult> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/extract`,
+      {
+        method: 'POST',
+        body: formData,
+        // Note: Don't set Content-Type header for FormData
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      return {
+        success: false,
+        confidence: 0,
+        error: `Fehler: ${response.status} - ${errorText}`,
+      }
+    }
+
+    return response.json()
+  },
 }
