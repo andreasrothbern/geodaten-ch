@@ -1,9 +1,25 @@
 import { Link } from 'react-router-dom'
-import { FolderPlus, List, BarChart3 } from 'lucide-react'
+import { FolderPlus, List, BarChart3, Building2 } from 'lucide-react'
 
 export default function HomePage() {
   return (
     <div className="space-y-4 pt-2">
+      {/* Quick Access: Konfigurator */}
+      <Link
+        to="/configurator"
+        className="block bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl p-4 shadow-lg hover:from-red-700 hover:to-red-800 transition-all"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+            <Building2 className="text-white" size={24} />
+          </div>
+          <div>
+            <h3 className="font-bold text-lg">Konfigurator</h3>
+            <p className="text-red-200 text-sm">Adresse eingeben und Gerüst planen</p>
+          </div>
+        </div>
+      </Link>
+
       <div className="grid gap-4">
         <Link to="/projects/new" className="card flex items-center gap-4">
           <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
