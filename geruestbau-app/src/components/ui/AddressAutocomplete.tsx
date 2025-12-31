@@ -86,7 +86,7 @@ export default function AddressAutocomplete({
       }))
 
       setSuggestions(mapped)
-      setIsOpen(mapped.length > 0)
+      setIsOpen(true)  // Keep open to show "no results" message if empty
       setHighlightedIndex(-1)
     } catch (error) {
       console.error('Address search error:', error)
