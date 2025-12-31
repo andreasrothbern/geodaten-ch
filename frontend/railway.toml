@@ -1,8 +1,7 @@
-# Railway Configuration for Geruestbau-App (PWA)
+# Railway Configuration for Frontend Service
 
 [build]
 builder = "DOCKERFILE"
-# dockerfilePath not needed - Dockerfile is in root of this service
 
 [deploy]
 healthcheckPath = "/"
@@ -10,5 +9,5 @@ healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
-# Static files served by nginx
+# Static SPA served by nginx
 # No volume needed - stateless frontend
