@@ -2,7 +2,7 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "/geruestbau-app/Dockerfile"
 
 [deploy]
 healthcheckPath = "/"
