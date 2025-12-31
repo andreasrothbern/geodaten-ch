@@ -170,7 +170,7 @@ export default function NewProjectPage() {
         // Geodaten fuer 3D-Modell konvertieren und mitsenden
         const buildingDataInput = convertToBackendFormat(buildingData)
 
-        const project = await geruestbauApi.createProject({
+        await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
           client_name: projectData.client_name,
