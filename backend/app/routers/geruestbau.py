@@ -1,13 +1,17 @@
 """Gerüstbau-App API Router."""
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from typing import List, Dict, Any
+import math
+import uuid
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query
+from typing import List, Dict, Any, Optional
 
 from ..models.geruestbau import (
     Project, ProjectCreate, ProjectUpdate, ProjectStatus,
     PhotoAnalysis, ScaffoldConfig
 )
 from ..services.geruestbau.project_service import ProjectService
+from ..services.swissbuildings3d_service import get_swissbuildings3d_service
+from ..services.swisstopo import SwisstopoService
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
@@ -176,3 +180,152 @@ async def import_from_url(request: UrlImportRequest):
     result = await importer.import_from_url(request.url)
 
     return result.to_dict()
+
+
+# ============ SCAFFOLD CONFIGURATOR API ============
+
+def _calculate_azimuth(dx: float, dy: float) -> float:
+    """Berechnet Azimut in Grad (0 = Nord, 90 = Ost)."""
+    azimuth = math.degrees(math.atan2(dx, dy))
+    if azimuth < 0:
+        azimuth += 360
+    return azimuth
+
+
+def _azimuth_to_direction(azimuth: float) -> str:
+    """Konvertiert Azimut zu Himmelsrichtung."""
+    directions = [
+        (22.5, "N"),
+        (67.5, "NE"),
+        (112.5, "E"),
+        (157.5, "SE"),
+        (202.5, "S"),
+        (247.5, "SW"),
+        (292.5, "W"),
+        (337.5, "NW"),
+        (360, "N")
+    ]
+    for threshold, direction in directions:
+        if azimuth < threshold:
+            return direction
+    return "N"
+
+
+@router.get("/configurator/facades", response_model=Dict[str, Any])
+async def get_facade_data_for_configurator(
+    address: str = Query(..., description="Adresse des Gebäudes"),
+    include_roof: bool = Query(True, description="Dachanalyse einbeziehen")
+):
+    """
+    Lädt Fassaden-Daten für den Scaffold Configurator.
+
+    Kombiniert Daten aus:
+    - geodienste.ch WFS (Polygon)
+    - sonnendach.ch API (Dachflächen)
+    - Lokale DB (Höhen)
+
+    Returns:
+        ProjectInput-kompatibles JSON für ScaffoldConfigurator
+    """
+    # 1. Geocoding - Adresse in Koordinaten umwandeln
+    swisstopo = SwisstopoService()
+    geocode_result = await swisstopo.geocode(address)
+
+    if not geocode_result:
+        raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
+
+    e = geocode_result.lv95_e
+    n = geocode_result.lv95_n
+
+    # 2. Gebäudedaten vom Composite Service holen
+    service = get_swissbuildings3d_service()
+    building = await service.get_building_by_coordinates(
+        e, n,
+        include_roof_analysis=include_roof
+    )
+
+    if not building or not building.polygon:
+        raise HTTPException(
+            status_code=404,
+            detail="Keine Gebäudegeometrie gefunden. Möglicherweise unterstützt dieser Kanton geodienste.ch WFS nicht."
+        )
+
+    # 3. Fassaden aus Polygon-Seiten ableiten
+    selected_facades = []
+    default_height = building.trauf_height_m or 10.0  # Fallback 10m
+
+    for i, side in enumerate(building.sides):
+        # Berechne Richtung der Fassade
+        start = side.get("start", [0, 0])
+        end = side.get("end", [0, 0])
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = side.get("length", math.sqrt(dx*dx + dy*dy))
+
+        # Azimut der Fassade (senkrecht zur Wand, nach aussen)
+        # Die Fassade zeigt nach aussen, also 90° zur Wandrichtung
+        wall_azimuth = _calculate_azimuth(dx, dy)
+        facade_azimuth = (wall_azimuth + 90) % 360  # Nach aussen zeigend
+        direction = _azimuth_to_direction(facade_azimuth)
+
+        facade = {
+            "id": f"facade_{i+1}",
+            "direction": direction,
+            "length_m": round(length, 2),
+            "height_m": round(default_height, 2),
+            "slope_percent": 0.0,  # Terrain-Neigung (TODO: aus swissALTI3D)
+            "start_point": start,
+            "end_point": end,
+        }
+        selected_facades.append(facade)
+
+    # 4. Response im ProjectInput-Format zusammenstellen
+    project_id = str(uuid.uuid4())[:8]
+
+    response = {
+        "project_id": project_id,
+        "building": {
+            "egid": building.egid or "",
+            "address": geocode_result.label or address,
+            "name": geocode_result.label.split(",")[0] if geocode_result.label else address,
+            "polygon": [(p[0], p[1]) for p in building.polygon],
+            "trauf_height_m": building.trauf_height_m or default_height,
+            "first_height_m": building.first_height_m or (default_height + 3),
+            "center_e": e,
+            "center_n": n,
+        },
+        "selected_facades": selected_facades,
+        "metadata": {
+            "source": "swissBUILDINGS3D_composite",
+            "polygon_points": len(building.polygon),
+            "facade_count": len(selected_facades),
+            "perimeter_m": building.perimeter_m,
+            "area_m2": building.area_m2,
+            "roof_type": building.roof_type,
+            "roof_surfaces_count": len(building.roof_surfaces) if building.roof_surfaces else 0,
+            "height_source": building.height_source,
+            "confidence": building.confidence,
+        }
+    }
+
+    return response
+
+
+@router.get("/configurator/address-search")
+async def search_addresses(q: str = Query(..., min_length=3)):
+    """
+    Autocomplete für Adresssuche.
+
+    Verwendet swisstopo SearchServer API.
+    """
+    swisstopo = SwisstopoService()
+    results = await swisstopo.search_addresses(q, limit=10)
+    return {
+        "suggestions": [
+            {
+                "label": r.label,
+                "detail": r.detail,
+            }
+            for r in results
+        ]
+    }
