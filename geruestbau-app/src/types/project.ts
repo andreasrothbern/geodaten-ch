@@ -65,6 +65,23 @@ export interface Project {
   updated_at: string
 }
 
+// Gebäudedaten für Backend (3D-Modell)
+export interface BuildingDataInput {
+  egid?: string
+  coordinates?: { e: number; n: number; lat?: number; lon?: number }
+  polygon?: number[][]  // [[e, n], ...]
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  gebaeudehoehe_m?: number
+  height_source?: string
+  floors?: number
+  building_type?: string
+  year_built?: number
+  perimeter_m?: number
+  area_m2?: number
+  sides?: Array<{ start: number[]; end: number[]; length: number }>
+}
+
 // Projekt erstellen (Input)
 export interface ProjectCreate {
   name: string
@@ -74,6 +91,7 @@ export interface ProjectCreate {
   deadline?: string
   description?: string
   tender_data?: TenderData
+  building_data?: BuildingDataInput  // Geodaten für 3D-Modell
 }
 
 // Gerüst-Zonen

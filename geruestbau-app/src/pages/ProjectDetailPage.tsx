@@ -111,7 +111,7 @@ export default function ProjectDetailPage() {
           <span className="font-medium">Fotos</span>
         </Link>
         <Link
-          to={`/projects/${id}/scaffold`}
+          to={`/configurator?projectId=${id}`}
           className="card flex flex-col items-center py-6"
         >
           <Ruler className="text-primary-600 mb-2" size={32} />

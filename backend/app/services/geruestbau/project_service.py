@@ -12,8 +12,7 @@ from ...models.geruestbau import (
     PhotoAnalysis, ScaffoldConfig, ScaffoldZone
 )
 from ..swisstopo import SwisstopoService
-from ..geodienste import GeodiensteService
-from ..height_db import HeightDBService
+from ..swissbuildings3d_service import get_swissbuildings3d_service
 
 
 class ProjectService:
@@ -22,8 +21,6 @@ class ProjectService:
     def __init__(self):
         self.db_path = Path(__file__).parent.parent.parent / "data" / "geruestbau.db"
         self.swisstopo = SwisstopoService()
-        self.geodienste = GeodiensteService()
-        self.height_db = HeightDBService()
         self._init_db()
 
     def _init_db(self):
@@ -70,22 +67,32 @@ class ProjectService:
         project_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
 
+        # Building data als JSON serialisieren
+        building_data_json = None
+        egid = None
+        if data.building_data:
+            building_data_dict = data.building_data.model_dump() if hasattr(data.building_data, 'model_dump') else data.building_data
+            building_data_json = json.dumps(building_data_dict)
+            egid = data.building_data.egid
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO projects (id, name, address, status, client_name,
-                                  client_contact, deadline, description, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (id, name, address, status, egid, client_name,
+                                  client_contact, deadline, description, building_data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             project_id,
             data.name,
             data.address,
             ProjectStatus.DRAFT.value,
+            egid,
             data.client_name,
             data.client_contact,
             data.deadline.isoformat() if data.deadline else None,
             data.description,
+            building_data_json,
             now, now
         ))
 
@@ -194,10 +201,13 @@ class ProjectService:
             # 1. Adresse geocodieren
             geocode_result = await self.swisstopo.geocode(project.address)
             if geocode_result:
+                e = geocode_result.lv95_e
+                n = geocode_result.lv95_n
+
                 building_data["geocode"] = {
                     "coordinates": {
-                        "e": geocode_result.coordinates_lv95[0] if geocode_result.coordinates_lv95 else None,
-                        "n": geocode_result.coordinates_lv95[1] if geocode_result.coordinates_lv95 else None,
+                        "e": e,
+                        "n": n,
                     },
                     "lat": geocode_result.lat,
                     "lon": geocode_result.lon,
@@ -216,24 +226,31 @@ class ProjectService:
                             "year_built": gwr_data.get("gbauj"),
                         }
 
-                # 3. Gebäudepolygon abrufen
-                if geocode_result.coordinates_lv95:
-                    polygon = await self.geodienste.get_building_polygon(
-                        geocode_result.coordinates_lv95[0],
-                        geocode_result.coordinates_lv95[1]
+                # 3. Gebäudedaten vom Composite Service holen (Polygon + Höhen)
+                if e and n:
+                    buildings3d_service = get_swissbuildings3d_service()
+                    building_3d = await buildings3d_service.get_building_by_coordinates(
+                        e, n,
+                        include_roof_analysis=False  # Für Projekt-Enrichment nicht nötig
                     )
-                    if polygon:
-                        building_data["polygon"] = polygon
+                    if building_3d:
+                        # Polygon
+                        if building_3d.polygon:
+                            building_data["polygon"] = building_3d.polygon
 
-                # 4. Höhendaten abrufen
-                if egid:
-                    height_data = self.height_db.get_height_by_egid(int(egid))
-                    if height_data:
+                        # Höhendaten
                         building_data["heights"] = {
-                            "traufhoehe_m": height_data.get("traufhoehe_m"),
-                            "firsthoehe_m": height_data.get("firsthoehe_m"),
-                            "gebaeudehoehe_m": height_data.get("gebaeudehoehe_m"),
-                            "source": "swissBUILDINGS3D",
+                            "traufhoehe_m": building_3d.trauf_height_m,
+                            "firsthoehe_m": building_3d.first_height_m,
+                            "gebaeudehoehe_m": building_3d.building_height_m,
+                            "source": building_3d.height_source or "swissBUILDINGS3D",
+                        }
+
+                        # Zusätzliche Metadaten
+                        building_data["geometry"] = {
+                            "perimeter_m": building_3d.perimeter_m,
+                            "area_m2": building_3d.area_m2,
+                            "sides_count": len(building_3d.sides) if building_3d.sides else 0,
                         }
 
         except Exception as e:

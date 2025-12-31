@@ -8,8 +8,32 @@ import type {
   ExtractedProjectData,
   TenderData,
   BuildingData,
+  BuildingDataInput,
   OcrExtractionResult,
 } from '../types/project'
+
+// Konvertiere Frontend BuildingData zu Backend BuildingDataInput
+function convertToBackendFormat(data: BuildingData | null): BuildingDataInput | undefined {
+  if (!data) return undefined
+
+  return {
+    egid: data.gwr?.egid,
+    coordinates: data.geocode?.coordinates ? {
+      e: data.geocode.coordinates.e,
+      n: data.geocode.coordinates.n,
+      lat: data.geocode.lat,
+      lon: data.geocode.lon,
+    } : undefined,
+    polygon: data.polygon?.coordinates?.[0],
+    traufhoehe_m: data.heights?.traufhoehe_m,
+    firsthoehe_m: data.heights?.firsthoehe_m,
+    gebaeudehoehe_m: data.heights?.gebaeudehoehe_m,
+    height_source: data.heights?.source,
+    floors: data.gwr?.floors,
+    building_type: data.gwr?.category,
+    year_built: data.gwr?.year_built,
+  }
+}
 
 const STEPS = [
   { id: 1, label: 'Import' },
@@ -124,11 +148,9 @@ export default function NewProjectPage() {
     []
   )
 
-  // Create project
+  // Create project - jetzt MIT building_data!
   const handleSubmit = useCallback(
-    async (_buildingData: BuildingData | null) => {
-      // Note: buildingData is available for future use (e.g., storing in project)
-      void _buildingData
+    async (buildingData: BuildingData | null) => {
       if (!projectData.project_name || !projectData.address) return
 
       setLoading(true)
@@ -145,6 +167,9 @@ export default function NewProjectPage() {
           raw_text: rawText,
         }
 
+        // Geodaten fuer 3D-Modell konvertieren und mitsenden
+        const buildingDataInput = convertToBackendFormat(buildingData)
+
         const project = await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
@@ -153,6 +178,7 @@ export default function NewProjectPage() {
           description: projectData.description,
           deadline: projectData.submission_deadline,
           tender_data: tenderData,
+          building_data: buildingDataInput,  // Geodaten werden jetzt gespeichert!
         })
 
         // Navigate to project detail
