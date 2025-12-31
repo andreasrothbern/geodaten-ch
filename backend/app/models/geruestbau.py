@@ -17,6 +17,23 @@ class ProjectStatus(str, Enum):
     COMMISSIONED = "commissioned"
 
 
+class BuildingDataInput(BaseModel):
+    """Gebäudedaten aus SmartBuildingService (für 3D-Modell)."""
+    egid: Optional[str] = None
+    coordinates: Optional[dict] = None  # {e, n, lat, lon}
+    polygon: Optional[List[List[float]]] = None  # [[e, n], ...]
+    traufhoehe_m: Optional[float] = None
+    firsthoehe_m: Optional[float] = None
+    gebaeudehoehe_m: Optional[float] = None
+    height_source: Optional[str] = None
+    floors: Optional[int] = None
+    building_type: Optional[str] = None
+    year_built: Optional[int] = None
+    perimeter_m: Optional[float] = None
+    area_m2: Optional[float] = None
+    sides: Optional[List[dict]] = None  # Fassaden-Daten
+
+
 class ProjectCreate(BaseModel):
     """Daten für Projekt-Erstellung."""
     name: str
@@ -25,6 +42,7 @@ class ProjectCreate(BaseModel):
     client_contact: Optional[str] = None
     deadline: Optional[datetime] = None
     description: Optional[str] = None
+    building_data: Optional[BuildingDataInput] = None  # Geodaten für 3D-Modell
 
 
 class ProjectUpdate(BaseModel):

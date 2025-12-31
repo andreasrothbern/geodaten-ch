@@ -2,22 +2,24 @@
  * ConfiguratorPage - Entry point for Scaffold Configurator
  *
  * Flow:
- * 1. User enters address
- * 2. API fetches building data (polygon, facades, heights)
+ * 1. If projectId provided: Load project and use stored building_data
+ * 2. Otherwise: User enters address and API fetches building data
  * 3. ScaffoldConfigurator is rendered with the data
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
+import { geruestbauApi } from '../api/geruestbau';
+import type { Project, BuildingData as StoredBuildingData } from '../types/project';
 import type { SelectedFacade } from '../features/scaffold-configurator/types/scaffold.types';
 
 // API Base URL - use environment variable or default
 const API_BASE = import.meta.env.VITE_API_URL || 'https://acceptable-trust-production.up.railway.app';
 
-interface BuildingData {
+interface ConfiguratorBuildingData {
   project_id: string;
   building: {
     egid: string;
@@ -53,18 +55,179 @@ interface BuildingData {
 
 type LoadingState = 'idle' | 'loading' | 'success' | 'error';
 
+// Helper: Calculate facade direction from start/end points
+function calculateDirection(start: [number, number], end: [number, number]): string {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+  // Normalize angle to 0-360
+  const normalized = (angle + 360) % 360;
+
+  // Map to cardinal directions (perpendicular to facade = viewing direction)
+  if (normalized >= 315 || normalized < 45) return 'O';    // East-facing
+  if (normalized >= 45 && normalized < 135) return 'N';    // North-facing
+  if (normalized >= 135 && normalized < 225) return 'W';   // West-facing
+  return 'S'; // South-facing
+}
+
+// Helper: Calculate facade length
+function calculateLength(start: [number, number], end: [number, number]): number {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Helper: Calculate polygon center
+function calculateCenter(polygon: [number, number][]): [number, number] {
+  const n = polygon.length;
+  const sumE = polygon.reduce((acc, p) => acc + p[0], 0);
+  const sumN = polygon.reduce((acc, p) => acc + p[1], 0);
+  return [sumE / n, sumN / n];
+}
+
+// Helper: Calculate polygon area (Shoelace formula)
+function calculateArea(polygon: [number, number][]): number {
+  let area = 0;
+  const n = polygon.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += polygon[i][0] * polygon[j][1];
+    area -= polygon[j][0] * polygon[i][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+// Helper: Convert stored building_data to configurator format
+function convertStoredDataToConfiguratorFormat(
+  project: Project,
+  storedData: StoredBuildingData
+): ConfiguratorBuildingData | null {
+  // Need polygon to calculate facades
+  if (!storedData.polygon?.coordinates?.[0]) {
+    console.warn('No polygon in stored building_data');
+    return null;
+  }
+
+  const polygon = storedData.polygon.coordinates[0] as [number, number][];
+  const center = calculateCenter(polygon);
+  const traufHeight = storedData.heights?.traufhoehe_m || 10;
+  const firstHeight = storedData.heights?.firsthoehe_m || traufHeight + 2;
+
+  // Calculate facades from polygon
+  const facades: ConfiguratorBuildingData['selected_facades'] = [];
+  let perimeter = 0;
+
+  for (let i = 0; i < polygon.length - 1; i++) {
+    const start = polygon[i];
+    const end = polygon[i + 1];
+    const length = calculateLength(start, end);
+
+    // Skip very short segments (< 1m)
+    if (length < 1) continue;
+
+    perimeter += length;
+
+    facades.push({
+      id: `facade-${i + 1}`,
+      direction: calculateDirection(start, end),
+      length_m: Math.round(length * 100) / 100,
+      height_m: traufHeight,
+      slope_percent: 0,
+      start_point: start,
+      end_point: end,
+    });
+  }
+
+  return {
+    project_id: project.id,
+    building: {
+      egid: storedData.gwr?.egid || project.egid || 'unknown',
+      address: project.address,
+      name: project.name,
+      polygon: polygon,
+      trauf_height_m: traufHeight,
+      first_height_m: firstHeight,
+      center_e: center[0],
+      center_n: center[1],
+    },
+    selected_facades: facades,
+    metadata: {
+      source: 'stored_project',
+      polygon_points: polygon.length,
+      facade_count: facades.length,
+      perimeter_m: Math.round(perimeter * 100) / 100,
+      area_m2: Math.round(calculateArea(polygon) * 100) / 100,
+      roof_type: null,
+      roof_surfaces_count: 0,
+      height_source: storedData.heights?.source || 'stored',
+      confidence: 1.0,
+    },
+  };
+}
+
 export default function ConfiguratorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // Get projectId from URL if present
+  const projectId = searchParams.get('projectId');
 
   // State
   const [address, setAddress] = useState(searchParams.get('address') || '');
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [buildingData, setBuildingData] = useState<BuildingData | null>(null);
+  const [buildingData, setBuildingData] = useState<ConfiguratorBuildingData | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+
+  // Load project data if projectId is provided
+  useEffect(() => {
+    if (projectId) {
+      loadProjectData(projectId);
+    }
+  }, [projectId]);
+
+  // Load project and use stored building_data
+  const loadProjectData = async (id: string) => {
+    setLoadingState('loading');
+    setError(null);
+
+    try {
+      const loadedProject = await geruestbauApi.getProject(id);
+      setProject(loadedProject);
+
+      // Check if project has stored building_data
+      if (loadedProject.building_data) {
+        const configData = convertStoredDataToConfiguratorFormat(
+          loadedProject,
+          loadedProject.building_data
+        );
+
+        if (configData) {
+          console.log('Using stored building_data from project');
+          setBuildingData(configData);
+          setLoadingState('success');
+          return;
+        }
+      }
+
+      // Fallback: Use address to fetch from API
+      console.log('No stored building_data, fetching from API');
+      setAddress(loadedProject.address);
+      await fetchBuildingData(loadedProject.address, loadedProject);
+
+    } catch (err) {
+      console.error('Error loading project:', err);
+      setError(err instanceof Error ? err.message : 'Projekt konnte nicht geladen werden');
+      setLoadingState('error');
+    }
+  };
 
   // Fetch building data from API
-  const fetchBuildingData = useCallback(async (selectedAddress: string) => {
+  const fetchBuildingData = useCallback(async (
+    selectedAddress: string,
+    existingProject?: Project | null
+  ) => {
     setLoadingState('loading');
     setError(null);
 
@@ -81,37 +244,45 @@ export default function ConfiguratorPage() {
         throw new Error(errorData.detail || `HTTP ${response.status}`);
       }
 
-      const data: BuildingData = await response.json();
+      const data: ConfiguratorBuildingData = await response.json();
+
+      // If we have an existing project, use its ID
+      if (existingProject) {
+        data.project_id = existingProject.id;
+      }
+
       setBuildingData(data);
       setLoadingState('success');
 
-      // Update URL with address for sharing
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('address', selectedAddress);
-      window.history.replaceState({}, '', newUrl.toString());
+      // Update URL with address for sharing (only if no projectId)
+      if (!projectId) {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('address', selectedAddress);
+        window.history.replaceState({}, '', newUrl.toString());
+      }
 
     } catch (err) {
       console.error('Error fetching building data:', err);
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
       setLoadingState('error');
     }
-  }, []);
+  }, [projectId]);
 
   // Handle address selection from autocomplete
   const handleAddressSelect = useCallback((suggestion: { label: string }) => {
     setAddress(suggestion.label);
-    fetchBuildingData(suggestion.label);
-  }, [fetchBuildingData]);
+    fetchBuildingData(suggestion.label, project);
+  }, [fetchBuildingData, project]);
 
   // Handle manual search (Enter key or button)
   const handleSearch = useCallback(() => {
     if (address.length >= 5) {
-      fetchBuildingData(address);
+      fetchBuildingData(address, project);
     }
-  }, [address, fetchBuildingData]);
+  }, [address, fetchBuildingData, project]);
 
   // Convert API response to SelectedFacade format
-  const convertToSelectedFacades = (data: BuildingData): SelectedFacade[] => {
+  const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
     return data.selected_facades.map((facade) => ({
       id: facade.id,
       direction: facade.direction as SelectedFacade['direction'],
@@ -129,46 +300,64 @@ export default function ConfiguratorPage() {
         <header className="bg-red-600 text-white px-4 py-4 shadow-lg">
           <div className="max-w-lg mx-auto">
             <h1 className="text-xl font-bold">Gerüst Konfigurator</h1>
-            <p className="text-red-200 text-sm">Gebäude auswählen</p>
+            <p className="text-red-200 text-sm">
+              {project ? project.name : 'Gebäude auswählen'}
+            </p>
           </div>
         </header>
 
         <div className="max-w-lg mx-auto p-4 space-y-6">
-          {/* Search Card */}
-          <div className="bg-white rounded-xl shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Building2 className="w-5 h-5 text-red-600" />
-              <h2 className="font-semibold">Adresse eingeben</h2>
+          {/* Project info if loaded */}
+          {project && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <h3 className="font-medium text-green-800">Projekt: {project.name}</h3>
+              <p className="text-sm text-green-600">{project.address}</p>
+              {loadingState === 'loading' && (
+                <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Lade Gebäudedaten...
+                </p>
+              )}
             </div>
+          )}
 
-            <div className="space-y-3">
-              <AddressAutocomplete
-                value={address}
-                onChange={setAddress}
-                onSelect={handleAddressSelect}
-                placeholder="z.B. Bundesplatz 3, 3011 Bern"
-                className="w-full"
-              />
+          {/* Search Card - show if no project or loading failed */}
+          {(!project || loadingState === 'error') && (
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 className="w-5 h-5 text-red-600" />
+                <h2 className="font-semibold">Adresse eingeben</h2>
+              </div>
 
-              <button
-                onClick={handleSearch}
-                disabled={loadingState === 'loading' || address.length < 5}
-                className="w-full btn-primary flex items-center justify-center gap-2"
-              >
-                {loadingState === 'loading' ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Lade Gebäudedaten...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4" />
-                    Gebäude laden
-                  </>
-                )}
-              </button>
+              <div className="space-y-3">
+                <AddressAutocomplete
+                  value={address}
+                  onChange={setAddress}
+                  onSelect={handleAddressSelect}
+                  placeholder="z.B. Bundesplatz 3, 3011 Bern"
+                  className="w-full"
+                />
+
+                <button
+                  onClick={handleSearch}
+                  disabled={loadingState === 'loading' || address.length < 5}
+                  className="w-full btn-primary flex items-center justify-center gap-2"
+                >
+                  {loadingState === 'loading' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Lade Gebäudedaten...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4" />
+                      Gebäude laden
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Error Message */}
           {loadingState === 'error' && error && (
@@ -184,47 +373,51 @@ export default function ConfiguratorPage() {
             </div>
           )}
 
-          {/* Info Card */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <h3 className="font-medium text-blue-800 mb-2">So funktioniert's</h3>
-            <ol className="text-sm text-blue-700 space-y-1.5">
-              <li className="flex items-start gap-2">
-                <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">1</span>
-                Adresse eingeben und auswählen
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">2</span>
-                Gebäudedaten werden automatisch geladen
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">3</span>
-                Gerüst im Editor konfigurieren
-              </li>
-            </ol>
-          </div>
-
-          {/* Example addresses */}
-          <div className="text-center">
-            <p className="text-xs text-gray-500 mb-2">Beispieladressen:</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {[
-                'Bundesplatz 3, 3011 Bern',
-                'Kramgasse 10, 3011 Bern',
-                'Marktplatz 10, 4051 Basel',
-              ].map((example) => (
-                <button
-                  key={example}
-                  onClick={() => {
-                    setAddress(example);
-                    fetchBuildingData(example);
-                  }}
-                  className="text-xs text-blue-600 hover:underline px-2 py-1 bg-blue-50 rounded"
-                >
-                  {example}
-                </button>
-              ))}
+          {/* Info Card - only show if no project */}
+          {!project && loadingState !== 'loading' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <h3 className="font-medium text-blue-800 mb-2">So funktioniert's</h3>
+              <ol className="text-sm text-blue-700 space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">1</span>
+                  Adresse eingeben und auswählen
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">2</span>
+                  Gebäudedaten werden automatisch geladen
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0">3</span>
+                  Gerüst im Editor konfigurieren
+                </li>
+              </ol>
             </div>
-          </div>
+          )}
+
+          {/* Example addresses - only show if no project */}
+          {!project && loadingState !== 'loading' && (
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-2">Beispieladressen:</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {[
+                  'Bundesplatz 3, 3011 Bern',
+                  'Kramgasse 10, 3011 Bern',
+                  'Marktplatz 10, 4051 Basel',
+                ].map((example) => (
+                  <button
+                    key={example}
+                    onClick={() => {
+                      setAddress(example);
+                      fetchBuildingData(example, project);
+                    }}
+                    className="text-xs text-blue-600 hover:underline px-2 py-1 bg-blue-50 rounded"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -240,10 +433,18 @@ export default function ConfiguratorPage() {
       onBack={() => {
         setBuildingData(null);
         setLoadingState('idle');
+        // If we came from a project, go back to project
+        if (project) {
+          navigate(`/projects/${project.id}`);
+        }
       }}
       onComplete={() => {
-        // TODO: Save configuration and navigate
-        navigate('/projects');
+        // Navigate back to project or projects list
+        if (project) {
+          navigate(`/projects/${project.id}`);
+        } else {
+          navigate('/projects');
+        }
       }}
     />
   );
