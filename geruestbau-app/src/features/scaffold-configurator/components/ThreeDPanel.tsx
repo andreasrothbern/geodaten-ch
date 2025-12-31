@@ -1,74 +1,99 @@
 /**
  * 3D Panel - Tab 3
- * 3D visualization placeholder (IFC.js/xeokit to be implemented later)
+ * 3D visualization using IFC.js (@thatopen/components)
  */
 
-import { Box, RotateCw, ZoomIn, Home, Code } from 'lucide-react';
+import { useState, Suspense } from 'react';
+import { RotateCw, ZoomIn, Home } from 'lucide-react';
 import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldConfig';
 import { formatNumber } from '../utils/calculations';
+import type { View3D } from '../types/scaffold.types';
+import { ScaffoldScene } from './threeDView';
 
 export default function ThreeDPanel() {
-  const { setCurrentTab } = useScaffoldConfig();
+  const { setCurrentTab, configuration } = useScaffoldConfig();
   const totals = useTotals();
   const settings = useSettings();
+  const [activeView, setActiveView] = useState<View3D>('isometric');
 
-  const views = [
-    { id: 'isometric', label: 'Isometrisch', active: true },
-    { id: 'north', label: 'Nord', active: false },
-    { id: 'east', label: 'Ost', active: false },
-    { id: 'south', label: 'Süd', active: false },
-    { id: 'west', label: 'West', active: false },
-    { id: 'top', label: 'Draufsicht', active: false },
+  const views: { id: View3D; label: string }[] = [
+    { id: 'isometric', label: 'Isometrisch' },
+    { id: 'north', label: 'Nord' },
+    { id: 'east', label: 'Ost' },
+    { id: 'south', label: 'Süd' },
+    { id: 'west', label: 'West' },
+    { id: 'top', label: 'Draufsicht' },
   ];
+
+  const handleResetView = () => {
+    setActiveView('isometric');
+  };
+
+  if (!configuration) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Keine Konfiguration geladen</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      {/* 3D Viewer Placeholder */}
+      {/* 3D Viewer */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div
-          className="relative"
-          style={{
-            minHeight: '400px',
-            background: 'linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 50%, #e0f2fe 100%)',
-          }}
-        >
-          {/* Placeholder 3D Illustration */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-24 h-24 bg-white/80 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg">
-                <Box className="w-12 h-12 text-blue-500" />
+        <div className="relative" style={{ minHeight: '400px' }}>
+          {/* 3D Scene */}
+          <Suspense
+            fallback={
+              <div className="absolute inset-0 flex items-center justify-center bg-sky-50">
+                <div className="text-center">
+                  <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-gray-600">3D-Szene wird geladen...</p>
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-gray-700">3D-Visualisierung</h3>
-              <p className="text-sm text-gray-500 mt-1">Wird in Phase 4 implementiert</p>
-              <p className="text-xs text-gray-400 mt-2">
-                {totals.facade_count} Fassaden • {formatNumber(totals.scaffold_area_m2)} m²
-              </p>
-            </div>
-          </div>
+            }
+          >
+            <ScaffoldScene
+              configuration={configuration}
+              activeView={activeView}
+              onViewChange={setActiveView}
+            />
+          </Suspense>
 
           {/* 3D Controls */}
           <div className="absolute bottom-4 left-4 flex gap-2">
-            <button className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors">
+            <button
+              className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
+              title="Drehen (Maus ziehen)"
+            >
               <RotateCw className="w-5 h-5 text-gray-600" />
             </button>
-            <button className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors">
+            <button
+              className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
+              title="Zoom (Mausrad)"
+            >
               <ZoomIn className="w-5 h-5 text-gray-600" />
             </button>
-            <button className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors">
+            <button
+              onClick={handleResetView}
+              className="p-2.5 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
+              title="Ansicht zurücksetzen"
+            >
               <Home className="w-5 h-5 text-gray-600" />
             </button>
           </div>
 
           {/* View Selector */}
           <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden">
-            {views.map((view, index) => (
+            {views.map((view) => (
               <button
                 key={view.id}
-                className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                  view.active ? 'font-medium bg-gray-50' : 'text-gray-600'
-                } ${index > 0 && view.id === 'top' ? 'border-t' : ''}`}
+                onClick={() => setActiveView(view.id)}
+                className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                  activeView === view.id ? 'font-medium bg-gray-50' : 'text-gray-600'
+                }`}
               >
-                {view.active && <span className="text-red-500 mr-2">●</span>}
+                {activeView === view.id && <span className="text-red-500 mr-2">●</span>}
                 {view.label}
               </button>
             ))}
@@ -86,7 +111,9 @@ export default function ThreeDPanel() {
 
           {/* Info Badge */}
           <div className="absolute bottom-4 right-4 bg-white/95 rounded-lg shadow-lg px-3 py-2 text-sm">
-            <p className="font-medium text-gray-800">Volleinrüstung</p>
+            <p className="font-medium text-gray-800">
+              {settings?.work_type === 'facade' ? 'Fassadengerüst' : settings?.work_type === 'roof' ? 'Dachschutz' : 'Volleinrüstung'}
+            </p>
             <p className="text-gray-500 text-xs">{formatNumber(totals.scaffold_area_m2)} m² • {totals.facade_count} Fassaden</p>
           </div>
         </div>
@@ -107,54 +134,11 @@ export default function ThreeDPanel() {
               <span className="w-4 h-4 bg-orange-500 rounded"></span>West
             </span>
             <span className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-amber-500 rounded"></span>Ecken
+              <span className="w-4 h-4 bg-amber-500 rounded"></span>Lift
             </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Implementation Note */}
-      <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-        <div className="flex gap-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Code className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-blue-800">3D-Visualisierung: Library-Auswahl</h4>
-            <p className="text-sm text-blue-700 mt-1 mb-3">
-              Für die echte 3D-Darstellung stehen zwei Optionen zur Verfügung:
-            </p>
-
-            <div className="space-y-2">
-              <div className="bg-white/60 rounded-lg p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-blue-900">Three.js</span>
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Schneller Start</span>
-                </div>
-                <p className="text-xs text-blue-600 mt-1">
-                  + Flexibel, grosse Community<br />
-                  + Gute Performance<br />
-                  − Kein nativer IFC-Support
-                </p>
-              </div>
-
-              <div className="bg-white/60 rounded-lg p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-blue-900">IFC.js / xeokit</span>
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Empfohlen für BIM</span>
-                </div>
-                <p className="text-xs text-blue-600 mt-1">
-                  + Nativer IFC Import/Export<br />
-                  + BIM-Workflows (LayPLAN kompatibel)<br />
-                  + swissBUILDINGS3D direkt ladbar<br />
-                  − Steilere Lernkurve
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-blue-600 mt-3 italic">
-              💡 Empfehlung: IFC.js/xeokit für direkten Export nach LayPLAN und DXF
-            </p>
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-green-500 rounded"></span>Treppe
+            </span>
           </div>
         </div>
       </div>
@@ -193,15 +177,31 @@ export default function ThreeDPanel() {
         </div>
       </div>
 
+      {/* IFC.js Info */}
+      <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+        <div className="flex gap-3">
+          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <span className="text-blue-600 font-bold text-sm">IFC</span>
+          </div>
+          <div>
+            <h4 className="font-semibold text-blue-800">IFC.js Integration</h4>
+            <p className="text-sm text-blue-700 mt-1">
+              3D-Ansicht basiert auf @thatopen/components (IFC.js).
+              Export nach IFC/DXF für LayPLAN in Entwicklung.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button
           onClick={() => setCurrentTab('editor')}
-          className="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50"
+          className="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         >
           ← Bearbeiten
         </button>
-        <button className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 shadow-sm">
+        <button className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 shadow-sm transition-colors">
           📦 Materialliste
         </button>
       </div>
