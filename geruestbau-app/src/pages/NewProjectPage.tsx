@@ -142,9 +142,6 @@ export default function NewProjectPage() {
     <form onSubmit={handleSubmit} className="space-y-6 pb-24">
       {/* File Upload Section */}
       <div className="card">
-        <h3 className="font-semibold text-gray-900 mb-3">
-          Ausschreibung importieren
-        </h3>
         <FileUpload
           onFileSelect={handleFileSelect}
           onCameraCapture={handleCameraCapture}
@@ -190,10 +187,6 @@ export default function NewProjectPage() {
 
       {/* Manual/Extracted Data Form */}
       <div className="card">
-        <h3 className="font-semibold text-gray-900 mb-4">
-          Projektdaten {extractionResult?.success && '(editierbar)'}
-        </h3>
-
         <div className="space-y-4">
           {/* Project Name */}
           <div>
