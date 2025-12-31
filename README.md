@@ -74,26 +74,84 @@ npx @railway/cli volume add --mount-path /app/data
 
 ```
 geodaten-ch/
-├── backend/                 # FastAPI + Python 3.11
-│   ├── app/
-│   │   ├── main.py         # API Endpunkte
-│   │   ├── models/         # Pydantic Schemas
-│   │   ├── services/       # Business Logic
-│   │   └── data/           # SQLite Datenbanken
-│   └── scripts/            # Import-Skripte
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # CI/CD Pipeline (GitHub Actions)
 │
-├── frontend/               # React + Vite + TypeScript + Tailwind
+├── backend/                    # FastAPI + Python 3.11
+│   ├── app/
+│   │   ├── main.py             # API Endpunkte
+│   │   ├── models/             # Pydantic Schemas
+│   │   ├── routers/
+│   │   │   └── geruestbau.py   # Gerüstbau-API Router
+│   │   ├── services/           # Business Logic
+│   │   │   ├── smart_building/ # SmartBuildingService
+│   │   │   └── geruestbau/     # Projekt-Service
+│   │   └── data/               # SQLite Datenbanken
+│   ├── tests/
+│   │   └── test_geruestbau.py  # API Tests
+│   └── scripts/                # Import-Skripte
+│
+├── frontend/                   # React + Vite + TypeScript + Tailwind
 │   └── src/
 │       ├── App.tsx
 │       └── components/
 │
-└── CLAUDE.md               # Technische Dokumentation
+├── geruestbau-app/             # Mobile-First PWA (NEU)
+│   ├── src/
+│   │   ├── api/                # API Client
+│   │   ├── components/         # UI-Komponenten
+│   │   ├── pages/              # Seiten
+│   │   ├── stores/             # Zustand State
+│   │   └── types/              # TypeScript Types
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── Dockerfile
+│   └── README.md               # Entwickler-Guide
+│
+├── docs/
+│   └── geruestbau-app/         # Setup-Guides
+│
+├── CLAUDE.md                   # Technische Dokumentation
+├── CLAUDE_GERUESTBAU.md        # Gerüstbau-Erweiterung
+└── PROJEKT_KONTEXT.md          # Projekt-Überblick
 ```
 
 ## Dokumentation
 
-- **CLAUDE.md** - Vollständige technische Dokumentation (API-Details, Datenquellen, Implementierung)
-- **PROJEKT_KONTEXT.md** - Projekt-Überblick für Claude.ai
+| Dokument | Beschreibung |
+|----------|--------------|
+| **CLAUDE.md** | Vollständige technische Dokumentation |
+| **CLAUDE_GERUESTBAU.md** | Gerüstbau-Modul Erweiterung |
+| **PROJEKT_KONTEXT.md** | Projekt-Überblick für Claude.ai |
+| **geruestbau-app/README.md** | PWA-Entwickler-Guide |
+| **docs/geruestbau-app/** | Setup-Guides, Quickstart |
+
+## Gerüstbau-App (PWA)
+
+Mobile-First Progressive Web App für Gerüstbau-Projekterfassung.
+
+```bash
+cd geruestbau-app
+npm install
+npm run dev
+# → http://localhost:3001
+```
+
+**Tech Stack:** React 18, TypeScript, Vite 5, TailwindCSS, Zustand, vite-plugin-pwa
+
+## CI/CD Pipeline
+
+GitHub Actions testet alle 3 Komponenten parallel bei Push/PR zu `main`:
+
+| Job | Beschreibung |
+|-----|--------------|
+| `backend-test` | Python 3.11 + pytest |
+| `frontend-test` | Node 20 + npm build |
+| `geruestbau-test` | Node 20 + npm build/test |
+| `deploy` | Railway.app (bei main push) |
+
+Konfiguration: `.github/workflows/ci.yml`
 
 ## Datenquellen & Lizenzen
 

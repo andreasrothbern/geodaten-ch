@@ -32,6 +32,7 @@ from app.models.schemas import (
     HealthResponse,
     ErrorResponse
 )
+from app.routers import geruestbau
 
 # Services initialisieren
 swisstopo = SwisstopoService()
@@ -75,6 +76,7 @@ app = FastAPI(
 # CORS für Frontend
 allowed_origins = [
     "http://localhost:3000",
+    "http://localhost:3001",  # Gerüstbau-App
     "http://localhost:5173",
 ]
 # Railway Frontend URL hinzufügen
@@ -90,6 +92,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Gerüstbau-App Router einbinden
+app.include_router(geruestbau.router)
 
 
 # ============================================================================
