@@ -1,12 +1,12 @@
 /**
  * Editor Panel - Tab 2
  * Carousel navigation and interactive scaffold grid
- * (Placeholder - to be implemented in Phase 3)
  */
 
 import { ChevronLeft, ChevronRight, MousePointer, Eraser, ArrowLeftRight, ArrowUpDown, ArrowUpFromLine, Footprints } from 'lucide-react';
-import { useScaffoldConfig, useVisibleElements } from '../hooks/useScaffoldConfig';
-import type { EditorTool } from '../types/scaffold.types';
+import { useScaffoldConfig, useVisibleElements, useSettings } from '../hooks/useScaffoldConfig';
+import type { EditorTool, ScaffoldFacade } from '../types/scaffold.types';
+import { ScaffoldGrid } from './editor';
 
 export default function EditorPanel() {
   const {
@@ -17,9 +17,15 @@ export default function EditorPanel() {
     setTool,
     setCurrentTab,
     configuration,
+    toggleCell,
+    toggleRow,
+    toggleLevel,
+    setLift,
+    setStairs,
   } = useScaffoldConfig();
 
   const visibleElements = useVisibleElements();
+  const settings = useSettings();
   const currentElement = visibleElements?.current;
   const elements = configuration?.elements ?? [];
 
@@ -41,7 +47,40 @@ export default function EditorPanel() {
     stairs: 'Klicke wo die Treppe platziert werden soll',
   };
 
-  if (!visibleElements) {
+  // Grid click handlers
+  const handleCellClick = (field: number, level: number) => {
+    if (currentElement?.type === 'facade') {
+      toggleCell(currentElement.id, field, level);
+    }
+  };
+
+  const handleRowClick = (field: number) => {
+    if (currentElement?.type === 'facade') {
+      toggleRow(currentElement.id, field);
+    }
+  };
+
+  const handleLevelClick = (level: number) => {
+    if (currentElement?.type === 'facade') {
+      toggleLevel(currentElement.id, level);
+    }
+  };
+
+  const handleLiftClick = (field: number) => {
+    if (currentElement?.type === 'facade') {
+      const currentLift = currentElement.modifications.lift_position;
+      setLift(currentElement.id, currentLift === field ? null : field);
+    }
+  };
+
+  const handleStairsClick = (field: number) => {
+    if (currentElement?.type === 'facade') {
+      const currentStairs = currentElement.modifications.stairs_position;
+      setStairs(currentElement.id, currentStairs === field ? null : field);
+    }
+  };
+
+  if (!visibleElements || !settings) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-gray-500">Keine Elemente verfügbar</p>
@@ -56,7 +95,7 @@ export default function EditorPanel() {
         <div className="flex items-center justify-center gap-2 py-3 px-4">
           <button
             onClick={() => navigateCarousel(-1)}
-            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50"
+            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors"
           >
             <ChevronLeft className="w-5 h-5 text-gray-500" />
           </button>
@@ -101,7 +140,7 @@ export default function EditorPanel() {
 
           <button
             onClick={() => navigateCarousel(1)}
-            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50"
+            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors"
           >
             <ChevronRight className="w-5 h-5 text-gray-500" />
           </button>
@@ -112,10 +151,13 @@ export default function EditorPanel() {
           {elements.map((el, idx) => (
             <button
               key={el.id}
-              onClick={() => jumpToElement(idx)}
+              onClick={() => {
+                jumpToElement(idx);
+                setCurrentTab('editor'); // Stay on editor
+              }}
               className={`w-2 h-2 rounded-full transition-all hover:scale-125 ${
                 idx === currentElementIndex
-                  ? el.type === 'corner' ? 'bg-amber-500' : 'bg-red-500'
+                  ? el.type === 'corner' ? 'bg-amber-500 w-4' : 'bg-red-500 w-4'
                   : el.type === 'corner' ? 'bg-amber-200' : 'bg-gray-300'
               }`}
               title={el.name}
@@ -131,11 +173,12 @@ export default function EditorPanel() {
             <button
               key={tool.id}
               onClick={() => setTool(tool.id)}
+              disabled={currentElement?.type === 'corner'}
               className={`flex items-center gap-1.5 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
                 currentTool === tool.id
                   ? 'bg-red-50 border-red-500 text-red-600'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
+              } ${currentElement?.type === 'corner' ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {tool.icon}
               {tool.label}
@@ -143,7 +186,7 @@ export default function EditorPanel() {
           ))}
         </div>
         <div className="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-          ℹ️ {toolHints[currentTool]}
+          ℹ️ {currentElement?.type === 'corner' ? 'Ecken werden automatisch berechnet' : toolHints[currentTool]}
         </div>
       </div>
 
@@ -170,7 +213,7 @@ export default function EditorPanel() {
           )}
         </div>
 
-        {/* Grid Placeholder */}
+        {/* Grid or Corner Info */}
         {currentElement?.type === 'corner' ? (
           <div className="text-center py-8 bg-amber-50 rounded-xl border-2 border-amber-200 border-dashed">
             <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -187,26 +230,39 @@ export default function EditorPanel() {
               </span>
             </div>
           </div>
-        ) : (
-          <div className="overflow-hidden border rounded-xl bg-gradient-to-b from-sky-50 to-gray-50 p-4">
-            <div className="flex items-center justify-center h-48 text-gray-400">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-200 rounded-xl mx-auto mb-3 flex items-center justify-center">
-                  <span className="text-2xl">📐</span>
-                </div>
-                <p className="text-sm font-medium">Gerüst-Grid</p>
-                <p className="text-xs">Wird in Phase 3 implementiert</p>
-              </div>
-            </div>
+        ) : currentElement?.type === 'facade' ? (
+          <div className="overflow-hidden border rounded-xl bg-gradient-to-b from-sky-50 to-gray-50">
+            <ScaffoldGrid
+              facade={currentElement as ScaffoldFacade}
+              settings={settings}
+              currentTool={currentTool}
+              onCellClick={handleCellClick}
+              onRowClick={handleRowClick}
+              onLevelClick={handleLevelClick}
+              onLiftClick={handleLiftClick}
+              onStairsClick={handleStairsClick}
+            />
           </div>
-        )}
+        ) : null}
 
         {/* Legend */}
         <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
-          <span><span className="inline-block w-4 h-3 bg-red-500 mr-1 rounded"></span>Gerüstfeld</span>
-          <span><span className="inline-block w-4 h-3 bg-red-200 mr-1 rounded"></span>Entfernt</span>
-          <span><span className="inline-block w-4 h-3 bg-amber-500 mr-1 rounded"></span>Lift</span>
-          <span><span className="inline-block w-4 h-3 bg-green-500 mr-1 rounded"></span>Treppe</span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 h-3 bg-red-500 rounded"></span>
+            Gerüstfeld
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 h-3 bg-red-200 rounded opacity-50"></span>
+            Entfernt
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 h-3 bg-amber-500 rounded"></span>
+            Lift
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 h-3 bg-green-500 rounded"></span>
+            Treppe
+          </span>
         </div>
       </div>
 
@@ -229,8 +285,8 @@ export default function EditorPanel() {
             <p className="text-xl font-bold text-red-600">
               {Math.round(
                 (currentElement.fields * currentElement.levels - currentElement.modifications.removed_cells.size) *
-                (configuration?.settings.field_width_m || 2.57) *
-                (configuration?.settings.level_height_m || 2)
+                settings.field_width_m *
+                settings.level_height_m
               )}
             </p>
             <p className="text-xs text-gray-500">m²</p>
@@ -249,13 +305,13 @@ export default function EditorPanel() {
       <div className="flex gap-3">
         <button
           onClick={() => setCurrentTab('overview')}
-          className="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50"
+          className="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         >
           ← Übersicht
         </button>
         <button
           onClick={() => setCurrentTab('3d')}
-          className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700"
+          className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
         >
           3D-Vorschau →
         </button>
