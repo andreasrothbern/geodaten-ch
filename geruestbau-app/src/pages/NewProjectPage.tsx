@@ -181,8 +181,8 @@ export default function NewProjectPage() {
           building_data: buildingDataInput,  // Geodaten werden jetzt gespeichert!
         })
 
-        // Navigate to project detail
-        navigate(`/projects/${project.id}`)
+        // Navigate to projects list
+        navigate('/projects')
       } catch (error) {
         console.error('Fehler beim Erstellen:', error)
         alert('Fehler beim Erstellen des Projekts')
