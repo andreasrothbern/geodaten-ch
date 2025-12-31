@@ -12,6 +12,7 @@
 **App-URLs:**
 - Frontend: https://cooperative-commitment-production.up.railway.app/
 - Backend API: https://acceptable-trust-production.up.railway.app/
+- Gerüstbau-App: https://geruestbau-app-production.up.railway.app/
 - Beispiel: `?address=Bundesplatz%203,%203011%20Bern`
 
 ---

@@ -123,6 +123,8 @@ VITE_API_URL=https://acceptable-trust-production.up.railway.app
 
 ## Deployment
 
+**Live URL:** https://geruestbau-app-production.up.railway.app
+
 Deployment erfolgt via Railway.app nach Merge zu `main`.
 
 **Lokaler Docker-Test:**
