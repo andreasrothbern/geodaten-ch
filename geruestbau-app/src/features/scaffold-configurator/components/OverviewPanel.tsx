@@ -1,166 +1,170 @@
 /**
  * Overview Panel - Tab 1
  * Global settings, summary stats, and facade cards
- * (Placeholder - to be implemented in Phase 2)
  */
 
-import { LayoutGrid } from 'lucide-react';
+import { useState, useMemo } from 'react';
 import { useScaffoldConfig, useTotals, useSettings, useElements } from '../hooks/useScaffoldConfig';
-import { formatNumber, formatWeight } from '../utils/calculations';
+import type { ScaffoldFacade, WorkType, ScaffoldSystem, BayWidth } from '../types/scaffold.types';
+
+// Sub-components
+import ProjectHeader from './overview/ProjectHeader';
+import MiniFloorPlan, { FloorPlanLegend } from './overview/MiniFloorPlan';
+import WorkTypeSelector from './overview/WorkTypeSelector';
+import SystemSelector from './overview/SystemSelector';
+import SummaryStats from './overview/SummaryStats';
+import FacadeCards from './overview/FacadeCards';
+import GlobalOptions from './overview/GlobalOptions';
 
 export default function OverviewPanel() {
-  const { buildingName, buildingAddress, setCurrentTab } = useScaffoldConfig();
+  const {
+    buildingName,
+    buildingAddress,
+    setCurrentTab,
+    setWorkType,
+    setSystem,
+    setBayWidth,
+    toggleOption,
+    jumpToElement,
+  } = useScaffoldConfig();
+
   const totals = useTotals();
   const settings = useSettings();
   const elements = useElements();
 
-  const facades = elements.filter((el) => el.type === 'facade');
-  // corners available for future use
-  void elements.filter((el) => el.type === 'corner');
+  // Local state for facade cards carousel
+  const [facadeCardIndex, setFacadeCardIndex] = useState(0);
+
+  // Filter facades from elements
+  const facades = useMemo(() => {
+    return elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
+  }, [elements]);
+
+  // Calculate max slope from all facades
+  const maxSlope = useMemo(() => {
+    return facades.reduce((max, f) => Math.max(max, f.slope_percent), 0);
+  }, [facades]);
+
+  // Handle carousel navigation
+  const handleNavigate = (direction: 'prev' | 'next') => {
+    if (facades.length === 0) return;
+    setFacadeCardIndex((prev) => {
+      if (direction === 'prev') {
+        return (prev - 1 + facades.length) % facades.length;
+      }
+      return (prev + 1) % facades.length;
+    });
+  };
+
+  // Handle facade selection from cards
+  const handleSelectFacade = (index: number) => {
+    setFacadeCardIndex(index);
+  };
+
+  // Handle jumping to editor with facade
+  const handleEditFacade = (index: number) => {
+    // Find the actual element index (facades + corners interleaved)
+    const facadeId = facades[index]?.id;
+    const elementIndex = elements.findIndex((el) => el.id === facadeId);
+    if (elementIndex !== -1) {
+      jumpToElement(elementIndex);
+    }
+  };
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Keine Konfiguration geladen</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      {/* Project Header */}
+      {/* Project Header with Mini Floor Plan */}
       <div className="bg-white rounded-xl p-4 shadow-sm">
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="font-bold text-gray-800 text-lg">{buildingName || 'Projekt'}</h2>
-            <p className="text-sm text-gray-500">{buildingAddress || 'Adresse'}</p>
-          </div>
-          <span className="bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-            Vollständig
-          </span>
-        </div>
+        <ProjectHeader
+          buildingName={buildingName}
+          buildingAddress={buildingAddress}
+          isComplete={facades.length > 0}
+        />
 
-        {/* Mini Floor Plan Placeholder */}
+        {/* Mini Floor Plan + Legend */}
         <div className="mt-4 flex items-center gap-6">
-          <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center">
-            <LayoutGrid className="w-8 h-8 text-gray-400" />
-          </div>
-          <div className="flex-1 grid grid-cols-2 gap-2 text-sm">
-            {facades.slice(0, 4).map((facade) => (
-              <div key={facade.id} className="flex items-center gap-2">
-                <span
-                  className="w-3 h-3 rounded"
-                  style={{ backgroundColor: facade.type === 'facade' ? facade.color : '#f59e0b' }}
-                ></span>
-                <span className="text-gray-600">
-                  {facade.name} ({facade.type === 'facade' ? `${facade.length_m}m` : ''})
-                </span>
-              </div>
-            ))}
-          </div>
+          <MiniFloorPlan facades={facades} size={96} />
+          <FloorPlanLegend facades={facades} />
         </div>
       </div>
 
-      {/* Work Type Selection - Placeholder */}
-      <div className="bg-white rounded-xl p-4 shadow-sm">
-        <h3 className="font-semibold text-gray-700 mb-3">Art der Arbeiten</h3>
-        <div className="flex gap-2">
-          {(['facade', 'roof', 'full'] as const).map((type) => (
-            <button
-              key={type}
-              className={`flex-1 py-2.5 px-3 border-2 rounded-xl text-sm font-medium transition-all ${
-                settings?.work_type === type
-                  ? 'bg-red-600 text-white border-red-600'
-                  : 'border-gray-200 text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {type === 'facade' && 'Fassade'}
-              {type === 'roof' && 'Dacharbeiten'}
-              {type === 'full' && 'Komplett'}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Work Type Selection */}
+      <WorkTypeSelector
+        value={settings.work_type}
+        onChange={(type: WorkType) => setWorkType(type)}
+      />
+
+      {/* System & Bay Width Selection */}
+      <SystemSelector
+        system={settings.system}
+        bayWidth={settings.bay_width_m}
+        onSystemChange={(system: ScaffoldSystem) => setSystem(system)}
+        onBayWidthChange={(width: BayWidth) => setBayWidth(width)}
+      />
 
       {/* Summary Stats */}
-      <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white shadow-lg">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold flex items-center gap-2">
-            Gesamtberechnung
+      <SummaryStats totals={totals} settings={settings} maxSlope={maxSlope} />
+
+      {/* Facade Cards Carousel */}
+      {facades.length > 0 && (
+        <div>
+          <h3 className="font-semibold text-gray-700 mb-3 flex items-center justify-between">
+            <span>Fassaden Details</span>
+            <span className="text-xs text-gray-400 font-normal">
+              {facadeCardIndex + 1} / {facades.length}
+            </span>
           </h3>
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-            {settings?.system === 'layher_blitz' ? 'Layher Blitz' : 'Layher Allround'}
-          </span>
+          <FacadeCards
+            facades={facades}
+            settings={settings}
+            currentIndex={facadeCardIndex}
+            onNavigate={handleNavigate}
+            onSelectFacade={handleSelectFacade}
+          />
         </div>
+      )}
 
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          <div className="bg-white/20 rounded-lg p-2.5 text-center">
-            <p className="text-2xl font-bold">{formatNumber(totals.scaffold_area_m2)}</p>
-            <p className="text-xs text-white/80">m² Gerüst</p>
-          </div>
-          <div className="bg-white/20 rounded-lg p-2.5 text-center">
-            <p className="text-2xl font-bold">{totals.facade_count}</p>
-            <p className="text-xs text-white/80">Fassaden</p>
-          </div>
-          <div className="bg-white/20 rounded-lg p-2.5 text-center">
-            <p className="text-2xl font-bold">{totals.corner_count}</p>
-            <p className="text-xs text-white/80">Ecken</p>
-          </div>
-          <div className="bg-white/20 rounded-lg p-2.5 text-center">
-            <p className="text-2xl font-bold">
-              {Math.ceil(totals.max_height_m / (settings?.level_height_m || 2))}
-            </p>
-            <p className="text-xs text-white/80">Lagen</p>
-          </div>
-        </div>
+      {/* Global Options (Safety Net, Weather Cover) */}
+      <GlobalOptions
+        safetyNet={settings.safety_net}
+        weatherCover={settings.weather_cover}
+        onSafetyNetChange={() => toggleOption('safety_net')}
+        onWeatherCoverChange={() => toggleOption('weather_cover')}
+      />
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-white/90">
-          <p>Umfang: {totals.perimeter_m.toFixed(1)}m</p>
-          <p>Höhe: {totals.max_height_m.toFixed(1)}m</p>
-          <p>Gefälle: — (max)</p>
-          <p>{formatWeight(totals.estimated_weight_kg)}</p>
-        </div>
-      </div>
-
-      {/* Facade Cards */}
-      <div className="space-y-3">
-        <h3 className="font-semibold text-gray-700 flex items-center justify-between">
-          <span>Fassaden & Ecken</span>
+      {/* Quick Access: All Elements Grid */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-semibold text-gray-700 mb-3 flex items-center justify-between">
+          <span>Alle Elemente</span>
           <span className="text-xs text-gray-400 font-normal">{elements.length} Elemente</span>
         </h3>
 
-        <div className="grid grid-cols-2 gap-3">
-          {elements.map((el, index) => (
+        <div className="grid grid-cols-2 gap-2">
+          {facades.map((facade, index) => (
             <button
-              key={el.id}
-              onClick={() => {
-                useScaffoldConfig.getState().jumpToElement(index);
-              }}
-              className={`text-left rounded-xl p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-                el.type === 'corner'
-                  ? 'bg-amber-50 border border-amber-200'
-                  : 'bg-white border-l-4'
-              }`}
-              style={el.type === 'facade' ? { borderLeftColor: el.color } : undefined}
+              key={facade.id}
+              onClick={() => handleEditFacade(index)}
+              className="text-left rounded-lg p-3 border-l-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+              style={{ borderLeftColor: facade.color }}
             >
-              {el.type === 'corner' ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <span className="text-amber-600 text-xs font-bold">⌐</span>
-                    </div>
-                    <span className="font-medium text-amber-800">{el.name}</span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-gray-800">{el.name}</span>
-                  </div>
-                  <p className="text-lg font-bold text-gray-800">
-                    {el.length_m}<span className="text-sm font-normal text-gray-500">m</span>
-                  </p>
-                  <div className="flex justify-between items-center mt-1">
-                    <span className="text-xs text-gray-500">{el.fields}×{el.levels} Felder</span>
-                    <span className="text-sm font-medium" style={{ color: el.color }}>
-                      {Math.round(el.fields * el.levels * (settings?.field_width_m || 2.57) * (settings?.level_height_m || 2))}m²
-                    </span>
-                  </div>
-                </>
-              )}
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-gray-800 text-sm">{facade.name}</span>
+                <span className="text-xs text-gray-500">
+                  {facade.fields}×{facade.levels}
+                </span>
+              </div>
+              <p className="text-lg font-bold text-gray-800">
+                {facade.length_m.toFixed(1)}
+                <span className="text-sm font-normal text-gray-500 ml-0.5">m</span>
+              </p>
             </button>
           ))}
         </div>
@@ -170,7 +174,7 @@ export default function OverviewPanel() {
       <div className="flex gap-3">
         <button
           onClick={() => setCurrentTab('editor')}
-          className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 shadow-sm flex items-center justify-center gap-2"
+          className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 shadow-sm flex items-center justify-center gap-2 transition-colors"
         >
           Im Editor bearbeiten
         </button>
