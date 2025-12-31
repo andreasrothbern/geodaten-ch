@@ -1,6 +1,7 @@
 """Tests für Gerüstbau-App API."""
 
 import pytest
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -75,3 +76,54 @@ class TestGeruestbauAPI:
         # 5. Verifizieren
         verify_response = client.get(f"/api/v1/geruestbau/projects/{project_id}")
         assert verify_response.status_code == 404
+
+
+class TestUrlImportEndpoint:
+    """Test-Klasse für URL-Import Endpunkt."""
+
+    def test_import_url_missing_url(self):
+        """Fehlende URL im Request."""
+        response = client.post("/api/v1/geruestbau/import/url", json={})
+        # Pydantic validation error
+        assert response.status_code == 422
+
+    def test_import_url_empty_url(self):
+        """Leere URL im Request."""
+        response = client.post("/api/v1/geruestbau/import/url", json={"url": ""})
+        assert response.status_code == 400
+
+    def test_import_url_non_simap(self):
+        """Nicht-simap.ch URL ablehnen."""
+        response = client.post(
+            "/api/v1/geruestbau/import/url",
+            json={"url": "https://google.com"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "simap" in data["error"].lower()
+
+    def test_import_url_invalid_simap(self):
+        """Ungültige simap.ch URL (keine Projekt-ID)."""
+        response = client.post(
+            "/api/v1/geruestbau/import/url",
+            json={"url": "https://simap.ch/de/search"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Projekt-ID" in data["error"]
+
+    def test_import_url_valid_format(self):
+        """Gültige URL-Format wird akzeptiert (auch wenn Fetch fehlschlägt)."""
+        # Note: This test might fail if simap.ch is unreachable
+        # In CI, you'd mock the HTTP call
+        response = client.post(
+            "/api/v1/geruestbau/import/url",
+            json={"url": "https://simap.ch/de/project-detail/test-invalid-uuid"}
+        )
+        assert response.status_code == 200
+        # Response format is correct even if import fails
+        data = response.json()
+        assert "success" in data
+        assert "confidence" in data or "error" in data

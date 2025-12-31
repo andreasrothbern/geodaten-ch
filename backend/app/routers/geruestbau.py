@@ -15,6 +15,7 @@ project_service = ProjectService()
 
 # Lazy load tender extractor to avoid startup issues
 _tender_extractor = None
+_url_importer = None
 
 def get_extractor():
     global _tender_extractor
@@ -22,6 +23,13 @@ def get_extractor():
         from ..services.geruestbau.tender_extractor import get_tender_extractor
         _tender_extractor = get_tender_extractor()
     return _tender_extractor
+
+def get_url_importer():
+    global _url_importer
+    if _url_importer is None:
+        from ..services.geruestbau.url_importer import get_url_importer as _get_importer
+        _url_importer = _get_importer()
+    return _url_importer
 
 
 @router.get("/projects", response_model=List[Project])
@@ -136,5 +144,35 @@ async def extract_from_document(file: UploadFile = File(...)):
     # Extract data
     extractor = get_extractor()
     result = await extractor.extract_from_file(file_bytes, filename)
+
+    return result.to_dict()
+
+
+from pydantic import BaseModel
+
+class UrlImportRequest(BaseModel):
+    """Request für URL-Import"""
+    url: str
+
+
+@router.post("/import/url", response_model=Dict[str, Any])
+async def import_from_url(request: UrlImportRequest):
+    """
+    Importiert Ausschreibungsdaten von einer URL (z.B. simap.ch).
+
+    Unterstützte URLs:
+    - simap.ch Projekt-Details
+
+    Args:
+        request: URL-Import Request mit URL
+
+    Returns:
+        OcrExtractionResult mit extrahierten Daten
+    """
+    if not request.url:
+        raise HTTPException(status_code=400, detail="URL erforderlich")
+
+    importer = get_url_importer()
+    result = await importer.import_from_url(request.url)
 
     return result.to_dict()
