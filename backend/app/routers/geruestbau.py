@@ -8,12 +8,20 @@ from ..models.geruestbau import (
     PhotoAnalysis, ScaffoldConfig
 )
 from ..services.geruestbau.project_service import ProjectService
-from ..services.geruestbau.tender_extractor import get_tender_extractor
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
 project_service = ProjectService()
-tender_extractor = get_tender_extractor()
+
+# Lazy load tender extractor to avoid startup issues
+_tender_extractor = None
+
+def get_extractor():
+    global _tender_extractor
+    if _tender_extractor is None:
+        from ..services.geruestbau.tender_extractor import get_tender_extractor
+        _tender_extractor = get_tender_extractor()
+    return _tender_extractor
 
 
 @router.get("/projects", response_model=List[Project])
@@ -126,6 +134,7 @@ async def extract_from_document(file: UploadFile = File(...)):
     filename = file.filename or "document.pdf"
 
     # Extract data
-    result = await tender_extractor.extract_from_file(file_bytes, filename)
+    extractor = get_extractor()
+    result = await extractor.extract_from_file(file_bytes, filename)
 
     return result.to_dict()
