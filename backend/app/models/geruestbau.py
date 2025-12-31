@@ -54,7 +54,7 @@ class ProjectCreate(BaseModel):
     address: str
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
-    deadline: Optional[datetime] = None
+    deadline: Optional[str] = None  # Datumsstring (z.B. "9.1.2026")
     description: Optional[str] = None
     tender_data: Optional[TenderData] = None  # Ausschreibungs-Daten
     building_data: Optional[BuildingDataInput] = None  # Geodaten für 3D-Modell

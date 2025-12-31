@@ -90,7 +90,7 @@ class ProjectService:
             egid,
             data.client_name,
             data.client_contact,
-            data.deadline.isoformat() if data.deadline else None,
+            data.deadline,
             data.description,
             building_data_json,
             now, now
