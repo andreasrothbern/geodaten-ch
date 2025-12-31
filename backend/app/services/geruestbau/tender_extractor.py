@@ -206,32 +206,40 @@ Setze confidence zwischen 0.0 und 1.0:
         # Encode PDF as base64
         pdf_base64 = base64.standard_b64encode(file_bytes).decode('utf-8')
 
-        # Call Claude with PDF
-        response = client.messages.create(
-            model=EXTRACTION_MODEL,
-            max_tokens=2000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": pdf_base64,
+        try:
+            # Call Claude with PDF - requires beta header for PDF support
+            response = client.beta.messages.create(
+                model=EXTRACTION_MODEL,
+                max_tokens=2000,
+                betas=["pdfs-2024-09-25"],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": pdf_base64,
+                                },
                             },
-                        },
-                        {
-                            "type": "text",
-                            "text": self.EXTRACTION_PROMPT
-                        }
-                    ]
-                }
-            ]
-        )
-
-        return self._parse_response(response)
+                            {
+                                "type": "text",
+                                "text": self.EXTRACTION_PROMPT
+                            }
+                        ]
+                    }
+                ]
+            )
+            return self._parse_response(response)
+        except Exception as e:
+            logger.error(f"PDF extraction error: {e}")
+            # Fallback: Try as image (convert first page conceptually)
+            return ExtractionResult(
+                success=False,
+                error=f"PDF-Analyse fehlgeschlagen: {str(e)}"
+            )
 
     async def _extract_from_image(
         self,
