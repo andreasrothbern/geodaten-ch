@@ -107,39 +107,42 @@ export default function FileUpload({
   }
 
   return (
-    <div
-      className={`
-        border-2 border-dashed rounded-xl p-6 text-center transition-colors
-        ${isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-      `}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <div className="flex flex-col items-center gap-3">
-        <div className="p-3 bg-gray-100 rounded-full">
-          <Upload className="w-6 h-6 text-gray-500" />
+    <div className="space-y-4">
+      {/* Drop zone - relative container for the hidden input */}
+      <label
+        className={`
+          relative block border-2 border-dashed rounded-xl p-6 text-center transition-colors
+          ${isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300'}
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        `}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="p-3 bg-gray-100 rounded-full">
+            <Upload className="w-6 h-6 text-gray-500" />
+          </div>
+
+          <div>
+            <p className="text-gray-700 font-medium">
+              PDF hier ablegen oder klicken zum Upload
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              PDF, JPG, PNG (max. 10 MB)
+            </p>
+          </div>
         </div>
 
-        <div>
-          <p className="text-gray-700 font-medium">
-            PDF hier ablegen oder klicken zum Upload
-          </p>
-          <p className="text-sm text-gray-500 mt-1">
-            PDF, JPG, PNG (max. 10 MB)
-          </p>
-        </div>
-
+        {/* Hidden file input - positioned within the label only */}
         <input
           type="file"
           accept={accept}
           onChange={handleFileInput}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           disabled={disabled}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
-      </div>
+      </label>
 
       {/* Divider with "oder" */}
       <div className="relative my-4">
