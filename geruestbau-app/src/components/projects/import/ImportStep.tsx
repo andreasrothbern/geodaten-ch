@@ -33,7 +33,8 @@ export default function ImportStep({
   extractFromUrl,
 }: ImportStepProps) {
   void _onManualEntry  // Suppress unused variable warning
-  const [extracting, setExtracting] = useState(false)
+  const [extractingDoc, setExtractingDoc] = useState(false)
+  const [extractingUrl, setExtractingUrl] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
   const [extractionResult, setExtractionResult] = useState<OcrExtractionResult | null>(null)
@@ -54,7 +55,7 @@ export default function ImportStep({
   const handleFileSelect = async (file: File) => {
     setSelectedFile(file)
     setExtractionResult(null)
-    setExtracting(true)
+    setExtractingDoc(true)
 
     try {
       const result = await extractFromDocument(file)
@@ -71,7 +72,7 @@ export default function ImportStep({
         error: 'Fehler beim Analysieren des Dokuments',
       })
     } finally {
-      setExtracting(false)
+      setExtractingDoc(false)
     }
   }
 
@@ -106,7 +107,7 @@ export default function ImportStep({
     }
 
     setUrlError(null)
-    setExtracting(true)
+    setExtractingUrl(true)
 
     try {
       const result = await extractFromUrl(urlInput)
@@ -123,7 +124,7 @@ export default function ImportStep({
         error: 'Fehler beim Auslesen der URL',
       })
     } finally {
-      setExtracting(false)
+      setExtractingUrl(false)
     }
   }
 
@@ -151,8 +152,8 @@ export default function ImportStep({
         <FileUpload
           onFileSelect={handleFileSelect}
           onCameraCapture={handleCameraCapture}
-          loading={extracting}
-          disabled={extracting}
+          loading={extractingDoc}
+          disabled={extractingDoc || extractingUrl}
           selectedFile={selectedFile}
           onClear={handleClearFile}
         />
@@ -239,7 +240,7 @@ export default function ImportStep({
                     setUrlInput(e.target.value)
                     setUrlError(null)
                   }}
-                  disabled={extracting}
+                  disabled={extractingDoc || extractingUrl}
                 />
                 {urlInput && isSimapUrl(urlInput) && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-600 text-xs">
@@ -255,10 +256,10 @@ export default function ImportStep({
               <button
                 type="button"
                 onClick={handleUrlExtract}
-                disabled={extracting || !urlInput.trim()}
+                disabled={extractingDoc || extractingUrl || !urlInput.trim()}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
               >
-                {extracting ? (
+                {extractingUrl ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Sparkles className="w-4 h-4" />
