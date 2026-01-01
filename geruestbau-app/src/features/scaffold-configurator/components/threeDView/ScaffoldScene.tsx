@@ -106,7 +106,8 @@ function createScaffoldFacade(
 ): THREE.Group {
   const group = new THREE.Group();
   const cellDepth = 0.73;
-  const colorHex = parseInt(facade.color.replace('#', ''), 16);
+  // Fallback color if facade.color is undefined (can happen with old localStorage data)
+  const colorHex = parseInt((facade.color || '#6B7280').replace('#', ''), 16);
 
   for (let level = 0; level < facade.levels; level++) {
     for (let field = 0; field < facade.fields; field++) {

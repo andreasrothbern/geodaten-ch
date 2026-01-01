@@ -92,9 +92,10 @@ export default function ScaffoldGrid({
     const hasLift = facade.modifications.lift_position === field;
     const hasStairs = facade.modifications.stairs_position === field;
 
-    // Determine cell color
-    let fill = facade.color;
-    let stroke = darkenColor(facade.color, 30);
+    // Determine cell color (with fallback for old localStorage data)
+    const facadeColor = facade.color || '#6B7280';
+    let fill = facadeColor;
+    let stroke = darkenColor(facadeColor, 30);
     let opacity = 0.9;
 
     if (isRemoved) {
