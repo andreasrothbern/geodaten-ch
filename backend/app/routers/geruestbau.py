@@ -256,11 +256,28 @@ async def get_facade_data_for_configurator(
 
     for i, side in enumerate(building.sides):
         # Berechne Richtung der Fassade
-        start = side.get("start", [0, 0])
-        end = side.get("end", [0, 0])
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        length = side.get("length", math.sqrt(dx*dx + dy*dy))
+        # Handle both dict format {'x': ..., 'y': ...} and list format [x, y]
+        start = side.get("start", {})
+        end = side.get("end", {})
+
+        # Extract coordinates from dict or list format
+        if isinstance(start, dict):
+            start_x = start.get("x", 0)
+            start_y = start.get("y", 0)
+        else:
+            start_x = start[0] if len(start) > 0 else 0
+            start_y = start[1] if len(start) > 1 else 0
+
+        if isinstance(end, dict):
+            end_x = end.get("x", 0)
+            end_y = end.get("y", 0)
+        else:
+            end_x = end[0] if len(end) > 0 else 0
+            end_y = end[1] if len(end) > 1 else 0
+
+        dx = end_x - start_x
+        dy = end_y - start_y
+        length = side.get("length_m", math.sqrt(dx*dx + dy*dy))
 
         # Azimut der Fassade (senkrecht zur Wand, nach aussen)
         # Die Fassade zeigt nach aussen, also 90° zur Wandrichtung
@@ -274,8 +291,8 @@ async def get_facade_data_for_configurator(
             "length_m": round(length, 2),
             "height_m": round(default_height, 2),
             "slope_percent": 0.0,  # Terrain-Neigung (TODO: aus swissALTI3D)
-            "start_point": start,
-            "end_point": end,
+            "start_point": [start_x, start_y],
+            "end_point": [end_x, end_y],
         }
         selected_facades.append(facade)
 
