@@ -71,7 +71,7 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     bgColor: 'bg-amber-50',
     textColor: 'text-amber-700',
     borderColor: 'border-amber-100',
-    nextStep: 'Geodaten laden',
+    nextStep: 'Grunddaten laden',
   },
   enriched: {
     label: 'Konfiguration',

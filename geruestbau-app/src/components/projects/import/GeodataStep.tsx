@@ -72,8 +72,8 @@ export default function GeodataStep({
         setError('Keine Gebäudedaten gefunden')
       }
     } catch (err) {
-      console.error('Fehler beim Laden der Geodaten:', err)
-      setError('Fehler beim Laden der Geodaten')
+      console.error('Fehler beim Laden der Grunddaten:', err)
+      setError('Fehler beim Laden der Grunddaten')
       setLoadingStates({
         geocoding: 'error',
         gwr: 'error',
@@ -113,7 +113,7 @@ export default function GeodataStep({
 
       {/* Loading Progress */}
       <div className="card">
-        <h3 className="font-medium mb-4">Geodaten werden geladen...</h3>
+        <h3 className="font-medium mb-4">Grunddaten werden geladen...</h3>
 
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -150,7 +150,7 @@ export default function GeodataStep({
               </div>
             )}
 
-            {buildingData.gwr?.floors && (
+            {buildingData.gwr?.floors ? (
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-green-600" />
                 <div>
@@ -158,7 +158,7 @@ export default function GeodataStep({
                   <strong>{buildingData.gwr.floors}</strong>
                 </div>
               </div>
-            )}
+            ) : null}
 
             {buildingData.heights?.traufhoehe_m && (
               <div className="flex items-center gap-2">
@@ -211,7 +211,7 @@ export default function GeodataStep({
             <div>
               <p className="font-medium text-yellow-800">{error}</p>
               <p className="text-sm text-yellow-700 mt-1">
-                Das Projekt kann trotzdem erstellt werden. Geodaten können später
+                Das Projekt kann trotzdem erstellt werden. Grunddaten können später
                 manuell ergänzt werden.
               </p>
               <button

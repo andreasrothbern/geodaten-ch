@@ -38,7 +38,7 @@ function convertToBackendFormat(data: BuildingData | null): BuildingDataInput | 
 const STEPS = [
   { id: 1, label: 'Import' },
   { id: 2, label: 'Prüfen' },
-  { id: 3, label: 'Geodaten' },
+  { id: 3, label: 'Grunddaten' },
 ]
 
 type ImportSource = 'pdf' | 'photo' | 'url' | 'manual'
