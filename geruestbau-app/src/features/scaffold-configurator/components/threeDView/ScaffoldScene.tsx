@@ -527,6 +527,15 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       // Add building from actual polygon
       scene.add(createBuildingFromPolygon(normalized, buildingHeight));
 
+      // Add roof (always show for visualization)
+      const minX = Math.min(...normalized.map(p => p[0]));
+      const maxX = Math.max(...normalized.map(p => p[0]));
+      const minY = Math.min(...normalized.map(p => p[1]));
+      const maxY = Math.max(...normalized.map(p => p[1]));
+      const polyWidth = maxX - minX;
+      const polyDepth = maxY - minY;
+      scene.add(createRoof(polyWidth + 1, polyDepth + 1, 3, buildingHeight));
+
       // Add scaffolds along actual facade edges
       facades.forEach((facade) => {
         scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, center));
