@@ -8,7 +8,7 @@
 import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
-import type { ScaffoldConfiguration, ScaffoldFacade, View3D } from '../../types/scaffold.types';
+import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D } from '../../types/scaffold.types';
 
 interface ScaffoldSceneProps {
   configuration: ScaffoldConfiguration;
@@ -333,6 +333,71 @@ function createGrid(): THREE.GridHelper {
   return grid;
 }
 
+// Helper to create scaffold corner at intersection of two facades
+function createScaffoldCorner(
+  corner: ScaffoldCorner,
+  facades: ScaffoldFacade[],
+  levelHeight: number,
+  center: [number, number],
+  scaffoldGap: number = 0.5
+): THREE.Group | null {
+  if (!corner.enabled) return null;
+
+  const group = new THREE.Group();
+  const cornerColor = 0xf59e0b; // Amber for corners
+
+  // Find the two connected facades
+  const facade1 = facades.find(f => f.id === corner.connects[0]);
+  const facade2 = facades.find(f => f.id === corner.connects[1]);
+
+  if (!facade1 || !facade2) return null;
+  if (!facade1.end_point || !facade2.start_point) return null;
+
+  // Corner position is at facade1's end (which should be facade2's start)
+  const cornerX = facade1.end_point[0] - center[0];
+  const cornerZ = -(facade1.end_point[1] - center[1]);
+
+  // Get number of levels from connected facades
+  const levels = Math.max(facade1.levels, facade2.levels);
+
+  // Create corner posts (vertical cylinders at corner)
+  const postRadius = 0.05;
+  const postHeight = levels * levelHeight;
+  const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 8);
+  const postMaterial = new THREE.MeshStandardMaterial({ color: cornerColor });
+
+  // Position posts at corner with offset outward
+  const postPositions = [
+    { x: cornerX + scaffoldGap, z: cornerZ + scaffoldGap },
+    { x: cornerX + scaffoldGap, z: cornerZ - scaffoldGap },
+    { x: cornerX - scaffoldGap, z: cornerZ + scaffoldGap },
+    { x: cornerX - scaffoldGap, z: cornerZ - scaffoldGap },
+  ];
+
+  postPositions.slice(0, corner.corner_posts).forEach(pos => {
+    const post = new THREE.Mesh(postGeometry, postMaterial);
+    post.position.set(pos.x, postHeight / 2, pos.z);
+    group.add(post);
+  });
+
+  // Add diagonal bracing between posts
+  if (corner.diagonals > 0) {
+    const diagMaterial = new THREE.LineBasicMaterial({ color: cornerColor });
+    for (let level = 0; level < levels; level++) {
+      const y = level * levelHeight + levelHeight / 2;
+      const points = [
+        new THREE.Vector3(cornerX + scaffoldGap, y, cornerZ + scaffoldGap),
+        new THREE.Vector3(cornerX - scaffoldGap, y, cornerZ - scaffoldGap),
+      ];
+      const diagGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const diag = new THREE.Line(diagGeometry, diagMaterial);
+      group.add(diag);
+    }
+  }
+
+  return group;
+}
+
 // Main component
 export default function ScaffoldScene({ configuration, activeView }: ScaffoldSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -431,6 +496,7 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
   // Add scene content
   function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration) {
     const facades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
+    const corners = config.elements.filter((el): el is ScaffoldCorner => el.type === 'corner');
     const fieldWidth = config.settings.field_width_m;
     const levelHeight = config.settings.level_height_m;
 
@@ -452,6 +518,14 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       // Add scaffolds along actual facade edges
       facades.forEach((facade) => {
         scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, center));
+      });
+
+      // Add corners
+      corners.forEach((corner) => {
+        const cornerGroup = createScaffoldCorner(corner, facades, levelHeight, center);
+        if (cornerGroup) {
+          scene.add(cornerGroup);
+        }
       });
 
     } else {
