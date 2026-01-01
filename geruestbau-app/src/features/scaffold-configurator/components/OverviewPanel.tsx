@@ -20,6 +20,7 @@ export default function OverviewPanel() {
   const {
     buildingName,
     buildingAddress,
+    configuration,
     setCurrentTab,
     setWorkType,
     setSystem,
@@ -98,12 +99,17 @@ export default function OverviewPanel() {
         <ProjectHeader
           buildingName={buildingName}
           buildingAddress={buildingAddress}
-          isComplete={facades.length > 0}
+          isComplete={facades.length === allFacades.length && allFacades.length > 0}
         />
 
         {/* Mini Floor Plan + Legend */}
         <div className="mt-4 flex items-center gap-6">
-          <MiniFloorPlan facades={facades} size={96} />
+          <MiniFloorPlan
+            facades={facades}
+            allFacades={allFacades}
+            polygon={configuration?.buildingPolygon}
+            size={96}
+          />
           <FloorPlanLegend facades={facades} />
         </div>
       </div>

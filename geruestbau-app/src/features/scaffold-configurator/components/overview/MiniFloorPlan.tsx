@@ -1,47 +1,106 @@
 /**
  * MiniFloorPlan - SVG visualization of building with selected facades
+ * Shows the actual building polygon with facade highlighting
  */
 
-import type { ScaffoldFacade, FacadeDirection } from '../../types/scaffold.types';
-import { CORNER_COLOR } from '../../types/scaffold.types';
+import type { ScaffoldFacade } from '../../types/scaffold.types';
 
 interface MiniFloorPlanProps {
-  facades: ScaffoldFacade[];
+  facades: ScaffoldFacade[];       // Enabled/selected facades
+  allFacades: ScaffoldFacade[];    // All facades for rendering
+  polygon?: [number, number][];    // Building polygon coordinates
   size?: number;
 }
 
-// Position mapping for each direction
-const DIRECTION_POSITIONS: Record<FacadeDirection, {
-  x1: number; y1: number; x2: number; y2: number;
-}> = {
-  'N':  { x1: 20, y1: 20, x2: 100, y2: 20 },
-  'NE': { x1: 100, y1: 20, x2: 100, y2: 20 }, // Corner position
-  'E':  { x1: 100, y1: 20, x2: 100, y2: 100 },
-  'SE': { x1: 100, y1: 100, x2: 100, y2: 100 }, // Corner position
-  'S':  { x1: 100, y1: 100, x2: 20, y2: 100 },
-  'SW': { x1: 20, y1: 100, x2: 20, y2: 100 }, // Corner position
-  'W':  { x1: 20, y1: 100, x2: 20, y2: 20 },
-  'NW': { x1: 20, y1: 20, x2: 20, y2: 20 }, // Corner position
-};
+export default function MiniFloorPlan({
+  facades,
+  allFacades,
+  polygon,
+  size = 96,
+}: MiniFloorPlanProps) {
+  // Get enabled facade IDs for quick lookup
+  const enabledIds = new Set(facades.map(f => f.id));
 
-// Corner positions
-const CORNER_POSITIONS: { direction: string; cx: number; cy: number }[] = [
-  { direction: 'NW', cx: 20, cy: 20 },
-  { direction: 'NE', cx: 100, cy: 20 },
-  { direction: 'SE', cx: 100, cy: 100 },
-  { direction: 'SW', cx: 20, cy: 100 },
-];
+  // If we have a polygon with coordinates, render the real shape
+  if (polygon && polygon.length >= 3 && allFacades.some(f => f.start_point && f.end_point)) {
+    // Calculate bounds
+    const xs = polygon.map(p => p[0]);
+    const ys = polygon.map(p => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
 
-export default function MiniFloorPlan({ facades, size = 96 }: MiniFloorPlanProps) {
-  // Get facade directions that are selected
-  const selectedDirections = new Set(facades.map(f => f.direction));
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const padding = Math.max(width, height) * 0.15;
 
-  // Determine which corners should be shown (between selected facades)
-  const showCorners = facades.length >= 2;
+    const viewBox = `${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`;
 
+    // Create polygon path
+    const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+
+    // Facade line thickness based on selection
+    const strokeWidthEnabled = width * 0.04;
+    const strokeWidthDisabled = width * 0.015;
+
+    return (
+      <div className="floor-plan-mini" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}>
+        <svg viewBox={viewBox} style={{ width: size, height: size }}>
+          {/* Transform to flip Y-axis (LV95 has Y increasing northward) */}
+          <g transform={`translate(0, ${maxY + minY}) scale(1, -1)`}>
+            {/* Building outline */}
+            <path
+              d={pathData}
+              fill="#f3f4f6"
+              stroke="#d1d5db"
+              strokeWidth={width * 0.01}
+            />
+
+            {/* All facade lines - enabled ones highlighted */}
+            {allFacades.map((facade) => {
+              if (!facade.start_point || !facade.end_point) return null;
+
+              const isEnabled = enabledIds.has(facade.id);
+
+              return (
+                <line
+                  key={facade.id}
+                  x1={facade.start_point[0]}
+                  y1={facade.start_point[1]}
+                  x2={facade.end_point[0]}
+                  y2={facade.end_point[1]}
+                  stroke={isEnabled ? facade.color : '#d1d5db'}
+                  strokeWidth={isEnabled ? strokeWidthEnabled : strokeWidthDisabled}
+                  strokeLinecap="round"
+                />
+              );
+            })}
+          </g>
+
+          {/* North arrow */}
+          <g transform={`translate(${maxX + padding * 0.6}, ${minY + padding * 0.4})`}>
+            <circle r={width * 0.06} fill="white" stroke="#666" strokeWidth={width * 0.008} />
+            <text
+              textAnchor="middle"
+              dy={width * 0.025}
+              fontSize={width * 0.05}
+              fontWeight="bold"
+              fill="#dc2626"
+              style={{ transform: 'scaleY(-1)', transformOrigin: 'center' }}
+            >
+              N
+            </text>
+          </g>
+        </svg>
+      </div>
+    );
+  }
+
+  // Fallback: simple rectangle representation if no polygon
   return (
     <div className="floor-plan-mini" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}>
-      <svg viewBox="0 0 120 120" className="w-24 h-24" style={{ width: size, height: size }}>
+      <svg viewBox="0 0 120 120" style={{ width: size, height: size }}>
         {/* Building outline */}
         <rect
           x="20"
@@ -54,50 +113,6 @@ export default function MiniFloorPlan({ facades, size = 96 }: MiniFloorPlanProps
           rx="2"
         />
 
-        {/* Selected facades */}
-        {facades.map((facade) => {
-          const pos = DIRECTION_POSITIONS[facade.direction];
-          if (!pos) return null;
-
-          return (
-            <line
-              key={facade.id}
-              x1={pos.x1}
-              y1={pos.y1}
-              x2={pos.x2}
-              y2={pos.y2}
-              stroke={facade.color}
-              strokeWidth="5"
-              strokeLinecap="round"
-            />
-          );
-        })}
-
-        {/* Corner circles (when multiple facades selected) */}
-        {showCorners && CORNER_POSITIONS.map((corner) => {
-          // Only show corner if adjacent facades are selected
-          const adjacentDirections: Record<string, [FacadeDirection, FacadeDirection]> = {
-            'NW': ['N', 'W'],
-            'NE': ['N', 'E'],
-            'SE': ['S', 'E'],
-            'SW': ['S', 'W'],
-          };
-          const [dir1, dir2] = adjacentDirections[corner.direction];
-          const hasAdjacent = selectedDirections.has(dir1) && selectedDirections.has(dir2);
-
-          if (!hasAdjacent) return null;
-
-          return (
-            <circle
-              key={corner.direction}
-              cx={corner.cx}
-              cy={corner.cy}
-              r="6"
-              fill={CORNER_COLOR}
-            />
-          );
-        })}
-
         {/* Compass indicator */}
         <text
           x="60"
@@ -108,6 +123,17 @@ export default function MiniFloorPlan({ facades, size = 96 }: MiniFloorPlanProps
           fontWeight="bold"
         >
           N
+        </text>
+
+        {/* Simple indicator showing count */}
+        <text
+          x="60"
+          y="65"
+          textAnchor="middle"
+          fill="#666"
+          fontSize="12"
+        >
+          {facades.length} Fassade{facades.length !== 1 ? 'n' : ''}
         </text>
       </svg>
     </div>
@@ -129,7 +155,7 @@ export function FloorPlanLegend({ facades }: FloorPlanLegendProps) {
             style={{ backgroundColor: facade.color }}
           />
           <span className="text-gray-600">
-            {facade.name} ({facade.length_m}m)
+            {facade.name} ({facade.length_m.toFixed(1)}m)
           </span>
         </div>
       ))}
