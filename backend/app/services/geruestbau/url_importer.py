@@ -18,6 +18,7 @@ import logging
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -147,14 +148,6 @@ class UrlImporter:
                 error="Ungültige simap.ch URL - keine Projekt-ID gefunden"
             )
 
-        # UUID should be 36 characters (32 hex + 4 hyphens)
-        if len(project_id) < 36:
-            logger.warning(f"Project ID too short: '{project_id}' (expected 36 chars UUID)")
-            return UrlImportResult(
-                success=False,
-                error=f"Projekt-ID unvollständig ({len(project_id)} Zeichen). Bitte vollständige URL kopieren."
-            )
-
         try:
             return await self._import_from_simap(url, project_id)
         except Exception as e:
@@ -165,149 +158,75 @@ class UrlImporter:
             )
 
     async def _import_from_simap(self, url: str, project_id: str) -> UrlImportResult:
-        """Importiert von simap.ch via offizielle API"""
+        """Importiert von simap.ch"""
         client = await self._get_client()
 
-        # Use official simap.ch API instead of HTML scraping
-        api_url = f"https://www.simap.ch/api/publications/v2/project/{project_id}/project-header"
+        # Fetch the page
+        response = await client.get(url)
+        response.raise_for_status()
 
-        logger.info(f"Fetching simap.ch API: {api_url}")
-
-        try:
-            response = await client.get(
-                api_url,
-                headers={
-                    'Accept': 'application/json',
-                    'Accept-Language': 'de',
-                }
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"simap.ch API returned HTTP {e.response.status_code} for project {project_id}")
-            return UrlImportResult(
-                success=False,
-                error=f"simap.ch API Fehler (HTTP {e.response.status_code}). Projekt-ID: {project_id}"
-            )
-        except httpx.RequestError as e:
-            logger.warning(f"simap.ch API request failed: {e}")
-            return UrlImportResult(
-                success=False,
-                error="simap.ch API ist nicht erreichbar."
-            )
-
-        # Parse JSON response
-        try:
-            data = response.json()
-            logger.debug(f"simap.ch API response: {data}")
-        except Exception as e:
-            logger.error(f"Failed to parse simap.ch API response: {e}")
-            return UrlImportResult(
-                success=False,
-                error="Ungültige Antwort von simap.ch API"
-            )
+        # Parse HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
 
         # Initialize result
         result = UrlImportResult(source_id=project_id)
 
-        # Extract data from API response
-        # The structure has nested multilingual fields
+        # Extract title
+        title_elem = soup.find('h1') or soup.find('h2', class_='project-title')
+        if title_elem:
+            result.project_name = title_elem.get_text(strip=True)
 
-        # Helper to get first non-null language value
-        def get_multilingual(obj: dict) -> Optional[str]:
-            if not isinstance(obj, dict):
-                return str(obj) if obj else None
-            # Prefer German, then French, Italian, English
-            for lang in ['de', 'fr', 'it', 'en']:
-                if obj.get(lang):
-                    return obj[lang]
-            return None
+        # Extract data from definition lists or tables
+        # simap.ch uses various HTML structures
+        for dt in soup.find_all(['dt', 'th', 'label']):
+            label = dt.get_text(strip=True).lower()
+            # Find corresponding value
+            if dt.name == 'dt':
+                dd = dt.find_next_sibling('dd')
+                value = dd.get_text(strip=True) if dd else None
+            elif dt.name == 'th':
+                td = dt.find_next_sibling('td')
+                value = td.get_text(strip=True) if td else None
+            else:
+                # For label, look for next input or span
+                next_elem = dt.find_next(['input', 'span', 'p'])
+                value = next_elem.get_text(strip=True) if next_elem else None
 
-        # Project title is in latestPublication.title (multilingual)
-        latest_pub = data.get('latestPublication') or {}
-        title_obj = latest_pub.get('title') or data.get('title') or {}
-        result.project_name = (
-            get_multilingual(title_obj) or
-            data.get('projectTitle') or
-            data.get('publicationTitle') or
-            data.get('name')
-        )
+            if not value:
+                continue
 
-        # Client/Auftraggeber
-        procuring_entity = data.get('procuringEntity') or data.get('client') or {}
-        if isinstance(procuring_entity, dict):
-            result.client_name = procuring_entity.get('name') or procuring_entity.get('organizationName')
-        elif isinstance(procuring_entity, str):
-            result.client_name = procuring_entity
+            # Map to fields
+            if any(k in label for k in ['auftraggeber', 'mandant', 'bauherr', 'adjudicateur']):
+                result.client_name = value
+            elif any(k in label for k in ['eingabefrist', 'délai', 'frist']):
+                result.submission_deadline = self._convert_date(value)
+            elif any(k in label for k in ['adresse', 'standort', 'ort', 'lieu']):
+                result.address = value
+            elif any(k in label for k in ['vergabeverfahren', 'verfahren', 'procédure']):
+                result.procedure = self._extract_procedure(value)
+            elif any(k in label for k in ['projektnummer', 'projekt-nr', 'numéro']):
+                result.tender_number = value
+            elif any(k in label for k in ['ausführungsbeginn', 'début']):
+                result.project_start = self._convert_date(value)
+            elif any(k in label for k in ['ausführungsende', 'fin']):
+                result.project_end = self._convert_date(value)
 
-        # Address - try various fields
-        location = data.get('location') or data.get('address') or data.get('deliveryLocation') or {}
-        if isinstance(location, dict):
-            parts = []
-            if location.get('street'):
-                parts.append(location['street'])
-            if location.get('houseNumber'):
-                parts[-1] = f"{parts[-1]} {location['houseNumber']}" if parts else location['houseNumber']
-            if location.get('postalCode') or location.get('city'):
-                parts.append(f"{location.get('postalCode', '')} {location.get('city', '')}".strip())
-            result.address = ', '.join(parts) if parts else None
-        elif isinstance(location, str):
-            result.address = location
+        # Extract description from various possible elements
+        desc_elem = soup.find(['article', 'div'], class_=['description', 'content', 'project-description'])
+        if desc_elem:
+            result.description = desc_elem.get_text(strip=True)[:500]  # Limit length
 
-        # If no structured address, look for text fields
+        # Try to find address in the full text if not found
         if not result.address:
-            result.address = data.get('deliveryAddress') or data.get('locationDescription')
-
-        # Deadline - check latestPublication.dates first
-        pub_dates = latest_pub.get('dates') or {}
-        deadline = (
-            pub_dates.get('offerDeadline') or
-            data.get('submissionDeadline') or
-            data.get('deadline') or
-            data.get('tenderDeadline')
-        )
-        if deadline:
-            # API might return ISO format or Swiss format
-            if isinstance(deadline, str):
-                if 'T' in deadline:  # ISO format (2026-01-26T16:30:00+01:00)
-                    result.submission_deadline = deadline.split('T')[0]
-                else:
-                    result.submission_deadline = self._convert_date(deadline)
-
-        # Procedure type - processType is at root level
-        procedure = data.get('processType') or data.get('procedureType') or data.get('procedure')
-        if procedure:
-            # Map API values to our internal values
-            procedure_map = {
-                'open': 'open',
-                'selective': 'selective',
-                'invitation': 'invitation',
-                'negotiated': 'negotiated',
-            }
-            result.procedure = procedure_map.get(procedure.lower()) or self._extract_procedure(str(procedure))
-
-        # Description
-        result.description = (
-            data.get('description') or
-            data.get('shortDescription') or
-            data.get('summary')
-        )
-        if result.description and len(result.description) > 500:
-            result.description = result.description[:500] + '...'
-
-        # Tender number - projectNumber is at root level
-        result.tender_number = (
-            data.get('projectNumber') or
-            data.get('referenceNumber') or
-            latest_pub.get('publicationNumber')
-        )
-
-        # Project dates
-        execution = data.get('executionPeriod') or {}
-        if isinstance(execution, dict):
-            if execution.get('startDate'):
-                result.project_start = execution['startDate'].split('T')[0] if 'T' in execution['startDate'] else self._convert_date(execution['startDate'])
-            if execution.get('endDate'):
-                result.project_end = execution['endDate'].split('T')[0] if 'T' in execution['endDate'] else self._convert_date(execution['endDate'])
+            # Look for Swiss postal code pattern
+            address_pattern = re.compile(
+                r'([A-Za-zäöüÄÖÜéèà\s-]+\s+\d+[a-z]?\s*,?\s*\d{4}\s+[A-Za-zäöüÄÖÜéèà\s-]+)',
+                re.IGNORECASE
+            )
+            text = soup.get_text()
+            match = address_pattern.search(text)
+            if match:
+                result.address = match.group(1).strip()
 
         # Calculate confidence
         confidence_score = 0.0
@@ -324,10 +243,6 @@ class UrlImporter:
 
         result.confidence = min(confidence_score, 1.0)
         result.success = result.project_name is not None
-
-        if not result.success:
-            logger.warning(f"No project_name found in simap.ch API response for {project_id}")
-            result.error = "Projektdaten konnten nicht aus simap.ch extrahiert werden."
 
         return result
 
