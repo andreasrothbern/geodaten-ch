@@ -651,21 +651,22 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
 
   // Add scene content
   function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration) {
-    const facades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
+    const allFacades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
+    const enabledFacades = allFacades.filter(f => f.enabled);
     const corners = config.elements.filter((el): el is ScaffoldCorner => el.type === 'corner');
     const fieldWidth = config.settings.field_width_m;
     const levelHeight = config.settings.level_height_m;
 
     // Check if we have actual polygon coordinates
     const hasPolygon = config.buildingPolygon && config.buildingPolygon.length >= 3;
-    const hasCoordinates = facades.some(f => f.start_point && f.end_point);
+    const hasCoordinates = enabledFacades.some(f => f.start_point && f.end_point);
 
     if (hasPolygon && hasCoordinates) {
       // NEW: Use actual polygon and facade coordinates
       const { normalized, center } = normalizePolygon(config.buildingPolygon!);
 
-      // Calculate building height from facades
-      const maxFacadeHeight = facades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
+      // Calculate building height from ENABLED facades only
+      const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
       const buildingHeight = Math.max(8, maxFacadeHeight * 0.8);
 
       // Add building from actual polygon
@@ -675,14 +676,14 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       // Use the new function that creates roof directly in 3D space
       scene.add(createRoofFromPolygon(normalized, buildingHeight, 3));
 
-      // Add scaffolds along actual facade edges
-      facades.forEach((facade) => {
+      // Add scaffolds along actual facade edges (ONLY ENABLED facades)
+      enabledFacades.forEach((facade) => {
         scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, center));
       });
 
-      // Add corners
+      // Add corners (only if enabled)
       corners.forEach((corner) => {
-        const cornerGroup = createScaffoldCorner(corner, facades, levelHeight, center);
+        const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, center);
         if (cornerGroup) {
           scene.add(cornerGroup);
         }
@@ -690,16 +691,16 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
 
     } else {
       // FALLBACK: Use old box-based approach (for backwards compatibility)
-      const nsLength = facades
+      const nsLength = enabledFacades
         .filter(f => ['N', 'S', 'NE', 'NW', 'SE', 'SW'].includes(f.direction))
         .reduce((sum, f) => Math.max(sum, f.length_m), 10);
-      const ewLength = facades
+      const ewLength = enabledFacades
         .filter(f => ['E', 'W'].includes(f.direction))
         .reduce((sum, f) => Math.max(sum, f.length_m), 8);
 
       const buildingWidth = Math.max(10, nsLength);
       const buildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
-      const maxFacadeHeight = facades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
+      const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
       const buildingHeight = Math.max(8, maxFacadeHeight * 0.8);
 
       // Add simple box building
@@ -749,7 +750,7 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       };
 
       // Add scaffolds (fallback)
-      facades.forEach((facade) => {
+      enabledFacades.forEach((facade) => {
         const { offset, dir } = getOffset(facade);
         scene.add(createScaffoldFacade(facade, fieldWidth, levelHeight, offset, dir));
       });
