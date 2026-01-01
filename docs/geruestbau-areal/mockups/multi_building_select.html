@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Objekte auswählen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .building-card {
+            transition: all 0.2s;
+        }
+        .building-card:hover {
+            transform: translateY(-2px);
+        }
+        .building-card.selected {
+            border-color: #dc2626;
+            background-color: #fef2f2;
+        }
+        .building-marker {
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .building-marker:hover {
+            transform: scale(1.1);
+        }
+        .building-marker.selected {
+            filter: drop-shadow(0 0 6px rgba(220, 38, 38, 0.6));
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-6">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <button onclick="history.back()" class="p-2 -ml-2 hover:bg-red-700 rounded-lg transition-colors">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <div class="text-center flex-1">
+                <h1 class="font-semibold text-lg">Objekte auswählen</h1>
+                <p class="text-xs text-red-200">Schritt 3 von 6</p>
+            </div>
+            <button onclick="nextStep()" class="px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30">
+                Weiter
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto p-4 space-y-4">
+        
+        <!-- Project Info -->
+        <div class="bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="font-semibold text-gray-800">Kantonsschule Luzern</h2>
+                    <p class="text-sm text-gray-500">Alpenquai 46-50, 6005 Luzern</p>
+                </div>
+                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                    <i class="fas fa-building mr-1"></i>Mehrere Gebäude
+                </span>
+            </div>
+        </div>
+        
+        <!-- Map with Buildings -->
+        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div class="h-56 bg-gradient-to-br from-blue-50 to-blue-100 relative">
+                
+                <svg viewBox="0 0 400 200" class="w-full h-full">
+                    <!-- Water (Lake) -->
+                    <rect x="0" y="150" width="400" height="50" fill="#b3e5fc"/>
+                    <text x="200" y="175" text-anchor="middle" style="font-size: 10px;" fill="#0288d1">Vierwaldstättersee</text>
+                    
+                    <!-- Street -->
+                    <rect x="0" y="130" width="400" height="18" fill="#e0e0e0"/>
+                    <text x="200" y="142" text-anchor="middle" style="font-size: 8px;" fill="#666">Alpenquai</text>
+                    
+                    <!-- Buildings -->
+                    <!-- Building A - Selected -->
+                    <g class="building-marker selected" onclick="toggleBuilding('A')">
+                        <rect x="60" y="50" width="70" height="70" fill="#ef5350" stroke="#c62828" stroke-width="2" rx="3"/>
+                        <text x="95" y="80" text-anchor="middle" style="font-size: 12px; font-weight: bold;" fill="white">A</text>
+                        <text x="95" y="95" text-anchor="middle" style="font-size: 8px;" fill="white">Nr. 46</text>
+                        <circle cx="115" cy="60" r="8" fill="#4caf50" stroke="white" stroke-width="2"/>
+                        <text x="115" y="63" text-anchor="middle" style="font-size: 8px;" fill="white">✓</text>
+                    </g>
+                    
+                    <!-- Building B - Selected -->
+                    <g class="building-marker selected" onclick="toggleBuilding('B')">
+                        <rect x="160" y="40" width="80" height="85" fill="#ef5350" stroke="#c62828" stroke-width="2" rx="3"/>
+                        <text x="200" y="75" text-anchor="middle" style="font-size: 12px; font-weight: bold;" fill="white">B</text>
+                        <text x="200" y="95" text-anchor="middle" style="font-size: 8px;" fill="white">Nr. 48</text>
+                        <circle cx="225" cy="50" r="8" fill="#4caf50" stroke="white" stroke-width="2"/>
+                        <text x="225" y="53" text-anchor="middle" style="font-size: 8px;" fill="white">✓</text>
+                    </g>
+                    
+                    <!-- Building C - Not selected -->
+                    <g class="building-marker" onclick="toggleBuilding('C')">
+                        <rect x="270" y="55" width="65" height="65" fill="#a5d6a7" stroke="#66bb6a" stroke-width="2" rx="3"/>
+                        <text x="302" y="85" text-anchor="middle" style="font-size: 12px; font-weight: bold;" fill="#2e7d32">C</text>
+                        <text x="302" y="100" text-anchor="middle" style="font-size: 8px;" fill="#2e7d32">Nr. 50</text>
+                    </g>
+                    
+                    <!-- Compass -->
+                    <g transform="translate(370, 25)">
+                        <circle r="12" fill="white" stroke="#ccc"/>
+                        <text y="4" text-anchor="middle" style="font-size: 10px; font-weight: bold;" fill="#333">N</text>
+                    </g>
+                </svg>
+                
+                <!-- Legend -->
+                <div class="absolute bottom-2 left-2 bg-white/90 rounded-lg px-2 py-1 text-xs">
+                    <span class="inline-flex items-center gap-1 mr-3">
+                        <span class="w-3 h-3 bg-red-500 rounded"></span>Ausgewählt
+                    </span>
+                    <span class="inline-flex items-center gap-1">
+                        <span class="w-3 h-3 bg-green-300 rounded"></span>Verfügbar
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Selection Info -->
+            <div class="p-3 bg-red-50 border-t border-red-100">
+                <p class="text-sm text-red-700">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <strong>2 von 3</strong> Gebäuden ausgewählt • Klicken Sie auf der Karte oder unten
+                </p>
+            </div>
+        </div>
+        
+        <!-- Building List -->
+        <div class="space-y-3">
+            <h3 class="font-semibold text-gray-700 px-1">Gebäude im Areal</h3>
+            
+            <!-- Building A - Selected -->
+            <div class="building-card selected bg-white rounded-xl p-4 shadow-sm border-2 cursor-pointer" onclick="toggleBuilding('A')">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-xl font-bold text-red-600">A</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-semibold text-gray-800">Hauptgebäude</h4>
+                            <div class="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center">
+                                <i class="fas fa-check text-white text-xs"></i>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500">Alpenquai 46</p>
+                        <div class="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                            <span><i class="fas fa-ruler-vertical mr-1"></i>18.5m</span>
+                            <span><i class="fas fa-layer-group mr-1"></i>4 Geschosse</span>
+                            <span><i class="fas fa-hashtag mr-1"></i>EGID 12345</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Building B - Selected -->
+            <div class="building-card selected bg-white rounded-xl p-4 shadow-sm border-2 cursor-pointer" onclick="toggleBuilding('B')">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-xl font-bold text-red-600">B</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-semibold text-gray-800">Turnhalle & Aula</h4>
+                            <div class="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center">
+                                <i class="fas fa-check text-white text-xs"></i>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500">Alpenquai 48</p>
+                        <div class="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                            <span><i class="fas fa-ruler-vertical mr-1"></i>22.0m</span>
+                            <span><i class="fas fa-layer-group mr-1"></i>5 Geschosse</span>
+                            <span><i class="fas fa-hashtag mr-1"></i>EGID 12346</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Building C - Not selected -->
+            <div class="building-card bg-white rounded-xl p-4 shadow-sm border-2 border-transparent cursor-pointer" onclick="toggleBuilding('C')">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-xl font-bold text-gray-400">C</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-semibold text-gray-600">Nebengebäude</h4>
+                            <div class="w-6 h-6 border-2 border-gray-300 rounded-full"></div>
+                        </div>
+                        <p class="text-sm text-gray-400">Alpenquai 50</p>
+                        <div class="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                            <span><i class="fas fa-ruler-vertical mr-1"></i>12.0m</span>
+                            <span><i class="fas fa-layer-group mr-1"></i>3 Geschosse</span>
+                            <span><i class="fas fa-hashtag mr-1"></i>EGID 12347</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Manual Building -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border-2 border-dashed border-gray-300">
+            <button onclick="openManualDialog()" class="w-full flex items-center justify-center gap-2 py-2 text-gray-500 hover:text-red-600">
+                <i class="fas fa-plus-circle text-xl"></i>
+                <span class="font-medium">Gebäude manuell hinzufügen</span>
+            </button>
+            <p class="text-xs text-gray-400 text-center mt-1">Für Neubauten oder nicht erfasste Gebäude</p>
+        </div>
+        
+        <!-- Summary -->
+        <div class="bg-gradient-to-r from-red-500 to-red-600 rounded-xl p-4 text-white shadow-lg">
+            <h3 class="font-semibold mb-2">Zusammenfassung</h3>
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div>
+                    <p class="text-2xl font-bold">2</p>
+                    <p class="text-xs text-red-200">Gebäude</p>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold">9</p>
+                    <p class="text-xs text-red-200">Geschosse total</p>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold">~40m</p>
+                    <p class="text-xs text-red-200">Max. Höhe</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="flex gap-3">
+            <button onclick="history.back()" class="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-arrow-left mr-2"></i>Zurück
+            </button>
+            <button onclick="nextStep()" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 shadow-sm">
+                Fassaden wählen<i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+        
+    </main>
+    
+    <!-- Manual Building Dialog (Hidden) -->
+    <div id="manualDialog" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="p-4 border-b sticky top-0 bg-white rounded-t-2xl">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-lg">Neubau hinzufügen</h3>
+                    <button onclick="closeManualDialog()" class="p-2 hover:bg-gray-100 rounded-lg">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-4 space-y-4">
+                <div>
+                    <label class="text-sm text-gray-600 block mb-1">Bezeichnung</label>
+                    <input type="text" placeholder="z.B. FORUM UZH Hauptgebäude" class="w-full p-3 border rounded-xl">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Länge (m)</label>
+                        <input type="number" placeholder="80" class="w-full p-3 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Breite (m)</label>
+                        <input type="number" placeholder="45" class="w-full p-3 border rounded-xl">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Geschosse (oberird.)</label>
+                        <input type="number" placeholder="7" class="w-full p-3 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Geschosshöhe (m)</label>
+                        <input type="number" placeholder="3.5" class="w-full p-3 border rounded-xl">
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-xl p-3">
+                    <p class="text-sm text-gray-600">Berechnete Traufhöhe:</p>
+                    <p class="text-xl font-bold text-gray-800">24.5 m</p>
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600 block mb-1">Oder: Pläne hochladen</label>
+                    <div class="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center">
+                        <i class="fas fa-file-upload text-2xl text-gray-300 mb-2"></i>
+                        <p class="text-sm text-gray-500">DXF, DWG oder PDF</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t">
+                <button onclick="closeManualDialog()" class="w-full py-3 bg-red-600 text-white rounded-xl font-semibold">
+                    Gebäude hinzufügen
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function nextStep() {
+            location.href = 'facade_selection.html';
+        }
+        
+        function toggleBuilding(id) {
+            // Toggle selection (in real app: update state)
+            console.log('Toggle building:', id);
+        }
+        
+        function openManualDialog() {
+            document.getElementById('manualDialog').classList.remove('hidden');
+            document.getElementById('manualDialog').classList.add('flex');
+        }
+        
+        function closeManualDialog() {
+            document.getElementById('manualDialog').classList.add('hidden');
+            document.getElementById('manualDialog').classList.remove('flex');
+        }
+    </script>
+
+</body>
+</html>

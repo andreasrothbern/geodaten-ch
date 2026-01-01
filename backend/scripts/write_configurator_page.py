@@ -1,4 +1,7 @@
-/**
+#!/usr/bin/env python3
+"""Write the updated ConfiguratorPage.tsx with sessionStorage support."""
+
+content = '''/**
  * ConfiguratorPage - Entry point for Scaffold Configurator
  *
  * Flow:
@@ -11,8 +14,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
-// AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
-// import AddressAutocomplete from '../components/ui/AddressAutocomplete';
+import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
 import { geruestbauApi } from '../api/geruestbau';
 import type { Project, BuildingData as StoredBuildingData } from '../types/project';
@@ -67,7 +69,7 @@ function calculateDirection(start: [number, number], end: [number, number]): str
   const normalized = (angle + 360) % 360;
 
   // Map to cardinal directions (perpendicular to facade = viewing direction)
-  if (normalized >= 315 || normalized < 45) return 'E';    // East-facing
+  if (normalized >= 315 || normalized < 45) return 'O';    // East-facing
   if (normalized >= 45 && normalized < 135) return 'N';    // North-facing
   if (normalized >= 135 && normalized < 225) return 'W';   // West-facing
   return 'S'; // South-facing
@@ -110,19 +112,6 @@ interface SelectedSide {
   angle_deg: number;
 }
 
-// IMPORTANT: Clear Zustand store cache when new facade selection exists
-// This prevents stale data from overriding fresh selections
-function invalidateStoreIfNewSelection() {
-  const hasNewSelection = sessionStorage.getItem('selectedFacades');
-  if (hasNewSelection) {
-    console.log('New facade selection detected - clearing Zustand store cache');
-    localStorage.removeItem('scaffold-config-storage'); // Correct key from useScaffoldConfig
-  }
-}
-
-// Call immediately on module load (before Zustand hydrates)
-invalidateStoreIfNewSelection();
-
 function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildingData['selected_facades'] | null {
   try {
     const stored = sessionStorage.getItem('selectedFacades');
@@ -147,66 +136,21 @@ function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildin
   }
 }
 
-// Helper: Extract polygon from stored data (handles both flat array and GeoJSON formats)
-function extractPolygon(storedData: StoredBuildingData): [number, number][] | null {
-  const rawPolygon = storedData.polygon;
-  if (!rawPolygon) return null;
-
-  // Check if it's a flat array [[e, n], ...]
-  if (Array.isArray(rawPolygon) && rawPolygon.length > 0) {
-    const first = rawPolygon[0];
-    if (Array.isArray(first) && typeof first[0] === 'number') {
-      return rawPolygon as [number, number][];
-    }
-  }
-
-  // Check if it's GeoJSON format { type: "Polygon", coordinates: [[[e,n],...]] }
-  const geoJson = rawPolygon as { type?: string; coordinates?: number[][][] };
-  if (geoJson.coordinates && geoJson.coordinates[0]) {
-    return geoJson.coordinates[0] as [number, number][];
-  }
-
-  return null;
-}
-
-// Helper: Get height values from stored data (handles both direct and nested formats)
-function extractHeights(storedData: StoredBuildingData): { trauf: number; first: number } {
-  // Direct format from SmartBuilding API
-  const directTrauf = (storedData as Record<string, unknown>).traufhoehe_m as number | undefined;
-  const directFirst = (storedData as Record<string, unknown>).firsthoehe_m as number | undefined;
-
-  if (directTrauf !== undefined) {
-    return { trauf: directTrauf, first: directFirst ?? directTrauf + 2 };
-  }
-
-  // Nested format (heights object)
-  const heights = storedData.heights;
-  if (heights) {
-    return {
-      trauf: heights.traufhoehe_m ?? 10,
-      first: heights.firsthoehe_m ?? (heights.traufhoehe_m ?? 10) + 2,
-    };
-  }
-
-  return { trauf: 10, first: 12 };
-}
-
 // Helper: Convert stored building_data to configurator format
 function convertStoredDataToConfiguratorFormat(
   project: Project,
   storedData: StoredBuildingData
 ): ConfiguratorBuildingData | null {
-  // Extract polygon (handles both formats)
-  const polygon = extractPolygon(storedData);
-  if (!polygon || polygon.length < 3) {
-    console.warn('No valid polygon in stored building_data');
+  // Need polygon to calculate facades
+  if (!storedData.polygon?.coordinates?.[0]) {
+    console.warn('No polygon in stored building_data');
     return null;
   }
 
+  const polygon = storedData.polygon.coordinates[0] as [number, number][];
   const center = calculateCenter(polygon);
-  const heights = extractHeights(storedData);
-  const traufHeight = heights.trauf;
-  const firstHeight = heights.first;
+  const traufHeight = storedData.heights?.traufhoehe_m || 10;
+  const firstHeight = storedData.heights?.firsthoehe_m || traufHeight + 2;
 
   // Check if we have pre-selected facades from FacadeSelectionPage
   const preSelectedFacades = getSelectedFacadesFromSession(traufHeight);
@@ -246,16 +190,10 @@ function convertStoredDataToConfiguratorFormat(
     }
   }
 
-  // Get EGID from various sources
-  const egid = (storedData as Record<string, unknown>).egid as string | undefined
-    ?? storedData.gwr?.egid
-    ?? project.egid
-    ?? 'unknown';
-
   return {
     project_id: project.id,
     building: {
-      egid,
+      egid: storedData.gwr?.egid || project.egid || 'unknown',
       address: project.address,
       name: project.name,
       polygon: polygon,
@@ -381,11 +319,11 @@ export default function ConfiguratorPage() {
     }
   }, [projectId]);
 
-  // Handle address selection from autocomplete (deaktiviert)
-  // const handleAddressSelect = useCallback((suggestion: { label: string }) => {
-  //   setAddress(suggestion.label);
-  //   fetchBuildingData(suggestion.label, project);
-  // }, [fetchBuildingData, project]);
+  // Handle address selection from autocomplete
+  const handleAddressSelect = useCallback((suggestion: { label: string }) => {
+    setAddress(suggestion.label);
+    fetchBuildingData(suggestion.label, project);
+  }, [fetchBuildingData, project]);
 
   // Handle manual search (Enter key or button)
   const handleSearch = useCallback(() => {
@@ -394,7 +332,7 @@ export default function ConfiguratorPage() {
     }
   }, [address, fetchBuildingData, project]);
 
-  // Convert API response to SelectedFacade format (including coordinates for 3D)
+  // Convert API response to SelectedFacade format
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
     return data.selected_facades.map((facade) => ({
       id: facade.id,
@@ -402,8 +340,6 @@ export default function ConfiguratorPage() {
       length_m: facade.length_m,
       height_m: facade.height_m,
       slope_percent: facade.slope_percent,
-      start_point: facade.start_point,
-      end_point: facade.end_point,
     }));
   };
 
@@ -445,12 +381,12 @@ export default function ConfiguratorPage() {
               </div>
 
               <div className="space-y-3">
-                <input
-                  type="text"
-                  className="input-field w-full"
+                <AddressAutocomplete
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={setAddress}
+                  onSelect={handleAddressSelect}
                   placeholder="z.B. Bundesplatz 3, 3011 Bern"
+                  className="w-full"
                 />
 
                 <button
@@ -544,7 +480,6 @@ export default function ConfiguratorPage() {
       projectId={buildingData.project_id}
       buildingName={buildingData.building.name}
       buildingAddress={buildingData.building.address}
-      buildingPolygon={buildingData.building.polygon}
       selectedFacades={convertToSelectedFacades(buildingData)}
       onBack={() => {
         setBuildingData(null);
@@ -565,3 +500,10 @@ export default function ConfiguratorPage() {
     />
   );
 }
+'''
+
+if __name__ == '__main__':
+    path = 'C:/Users/vonro/projects/lawil/geodaten-ch/geruestbau-app/src/pages/ConfiguratorPage.tsx'
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f'Written {len(content)} bytes to ConfiguratorPage.tsx')

@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Smart Import mit Drag & Drop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .step-hidden { display: none; }
+        .step-active { display: block; }
+        .pulse-border { animation: pulse-border 2s infinite; }
+        @keyframes pulse-border {
+            0%, 100% { border-color: #dc2626; }
+            50% { border-color: #fca5a5; }
+        }
+        .field-highlight {
+            animation: highlight 1s ease-out;
+        }
+        @keyframes highlight {
+            0% { background-color: #fef3c7; }
+            100% { background-color: transparent; }
+        }
+        .drop-zone {
+            transition: all 0.2s ease;
+        }
+        .drop-zone.drag-over {
+            border-color: #dc2626;
+            background-color: #fef2f2;
+            transform: scale(1.02);
+        }
+        .drop-zone.drag-over .drop-icon {
+            transform: scale(1.1);
+            color: #dc2626;
+        }
+        .import-option {
+            transition: all 0.2s ease;
+        }
+        .import-option:hover {
+            transform: translateY(-2px);
+        }
+        .import-option.selected {
+            border-color: #dc2626;
+            background-color: #fef2f2;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-20">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center justify-between max-w-lg mx-auto">
+            <button class="p-2 -ml-2" onclick="goBack()">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <h1 class="font-semibold text-lg" id="headerTitle">Neues Projekt</h1>
+            <div class="w-10"></div>
+        </div>
+    </header>
+
+    <!-- Progress Bar -->
+    <div class="bg-white border-b px-4 py-2">
+        <div class="max-w-lg mx-auto">
+            <div class="flex items-center justify-between text-sm text-gray-500 mb-2">
+                <span id="stepLabel">Schritt 1 von 3</span>
+                <span id="stepName">Import</span>
+            </div>
+            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div id="progressBar" class="h-full bg-red-600 transition-all duration-300" style="width: 33%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-lg mx-auto p-4">
+        
+        <!-- ========== STEP 1: Smart Import ========== -->
+        <div id="step1" class="step-active space-y-4">
+            
+            <!-- Main Drop Zone -->
+            <div id="mainDropZone" 
+                 class="drop-zone bg-white rounded-2xl p-6 shadow-sm border-2 border-dashed border-gray-300 text-center cursor-pointer"
+                 ondragover="handleDragOver(event)"
+                 ondragleave="handleDragLeave(event)"
+                 ondrop="handleDrop(event)"
+                 onclick="document.getElementById('fileInput').click()">
+                
+                <input type="file" id="fileInput" class="hidden" 
+                       accept=".pdf,.jpg,.jpeg,.png,.heic" 
+                       onchange="handleFileSelect(event)">
+                
+                <div class="drop-icon transition-all">
+                    <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-file-import text-red-600 text-3xl"></i>
+                    </div>
+                </div>
+                
+                <h2 class="text-xl font-bold text-gray-800">Ausschreibung importieren</h2>
+                <p class="text-gray-500 mt-2">PDF oder Foto hierher ziehen</p>
+                
+                <div class="flex items-center justify-center gap-4 mt-4 text-sm text-gray-400">
+                    <span><i class="fas fa-file-pdf mr-1"></i>PDF</span>
+                    <span><i class="fas fa-camera mr-1"></i>Foto</span>
+                    <span><i class="fas fa-link mr-1"></i>Link</span>
+                </div>
+            </div>
+            
+            <!-- Or Divider -->
+            <div class="flex items-center gap-4">
+                <div class="flex-1 h-px bg-gray-300"></div>
+                <span class="text-sm text-gray-500 font-medium">oder wähle eine Option</span>
+                <div class="flex-1 h-px bg-gray-300"></div>
+            </div>
+            
+            <!-- Import Options Grid -->
+            <div class="grid grid-cols-2 gap-3">
+                
+                <!-- Option: simap.ch Link -->
+                <button onclick="showUrlInput()" 
+                        class="import-option bg-white rounded-xl p-4 shadow-sm border-2 border-transparent text-center hover:border-red-300">
+                    <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                        <i class="fas fa-link text-blue-600 text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800 text-sm">simap.ch Link</h3>
+                    <p class="text-xs text-gray-500 mt-1">URL einfügen</p>
+                </button>
+                
+                <!-- Option: PDF Upload -->
+                <button onclick="triggerPdfUpload()" 
+                        class="import-option bg-white rounded-xl p-4 shadow-sm border-2 border-transparent text-center hover:border-red-300">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                        <i class="fas fa-file-pdf text-red-600 text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800 text-sm">PDF hochladen</h3>
+                    <p class="text-xs text-gray-500 mt-1">Ausschreibung</p>
+                </button>
+                
+                <!-- Option: Photo -->
+                <button onclick="triggerPhotoCapture()" 
+                        class="import-option bg-white rounded-xl p-4 shadow-sm border-2 border-transparent text-center hover:border-red-300">
+                    <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                        <i class="fas fa-camera text-amber-600 text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800 text-sm">Foto aufnehmen</h3>
+                    <p class="text-xs text-gray-500 mt-1">Bauaushang / Brief</p>
+                </button>
+                
+                <!-- Option: Manual -->
+                <button onclick="startManualEntry()" 
+                        class="import-option bg-white rounded-xl p-4 shadow-sm border-2 border-transparent text-center hover:border-red-300">
+                    <div class="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                        <i class="fas fa-pen text-gray-600 text-xl"></i>
+                    </div>
+                    <h3 class="font-semibold text-gray-800 text-sm">Manuell</h3>
+                    <p class="text-xs text-gray-500 mt-1">Selbst eingeben</p>
+                </button>
+            </div>
+            
+            <!-- URL Input Panel (hidden by default) -->
+            <div id="urlInputPanel" class="hidden bg-white rounded-xl p-4 shadow-sm space-y-3 border-2 border-blue-200">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-800">
+                        <i class="fas fa-link text-blue-600 mr-2"></i>simap.ch Link
+                    </h3>
+                    <button onclick="hideUrlInput()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="relative">
+                    <input type="url" id="projectUrl" 
+                           placeholder="https://www.simap.ch/de/project-detail/..."
+                           class="w-full px-4 py-3 pr-12 border-2 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                           onpaste="handlePaste(event)"
+                           oninput="handleUrlInput()">
+                    <button onclick="pasteFromClipboard()" 
+                            class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-red-600"
+                            title="Aus Zwischenablage einfügen">
+                        <i class="fas fa-paste text-lg"></i>
+                    </button>
+                </div>
+                
+                <div id="urlStatus" class="hidden text-sm"></div>
+                
+                <button id="extractUrlBtn" onclick="extractFromUrl()" 
+                        class="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        disabled>
+                    <i class="fas fa-magic"></i>
+                    Daten auslesen
+                </button>
+            </div>
+            
+            <!-- Quick Search Link -->
+            <div class="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-search text-blue-700"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="font-medium text-blue-900 text-sm">Gerüstbau-Ausschreibungen</h4>
+                        <p class="text-xs text-blue-700">simap.ch mit Filter öffnen</p>
+                    </div>
+                    <a href="https://www.simap.ch/de?cpvCodes=[%2244212310%22,%2245262100%22]&newestPubTypes=[%22tender%22]&orderAddressCountryOnlySwitzerland=true" 
+                       target="_blank"
+                       class="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                        <i class="fas fa-external-link-alt"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ========== STEP 1b: Processing Overlay ========== -->
+        <div id="processingOverlay" class="step-hidden">
+            <div class="bg-white rounded-2xl p-8 shadow-sm text-center">
+                <div class="relative w-24 h-24 mx-auto mb-6">
+                    <div class="absolute inset-0 border-4 border-red-200 rounded-full"></div>
+                    <div class="absolute inset-0 border-4 border-red-600 rounded-full border-t-transparent animate-spin"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <i id="processingIcon" class="fas fa-file-pdf text-red-600 text-2xl"></i>
+                    </div>
+                </div>
+                
+                <h2 class="text-xl font-bold text-gray-800" id="processingTitle">PDF wird analysiert...</h2>
+                <p class="text-gray-500 mt-2" id="processingSubtitle">Text wird extrahiert und ausgewertet</p>
+                
+                <div class="mt-6 space-y-2 text-left max-w-xs mx-auto">
+                    <div class="flex items-center gap-3 text-sm" id="proc1">
+                        <i class="fas fa-circle-notch fa-spin text-red-600"></i>
+                        <span class="text-gray-600">Dokument lesen...</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm text-gray-400" id="proc2">
+                        <i class="far fa-circle"></i>
+                        <span>Projektdaten extrahieren</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm text-gray-400" id="proc3">
+                        <i class="far fa-circle"></i>
+                        <span>Adresse erkennen</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== STEP 2: Extracted Data Review ========== -->
+        <div id="step2" class="step-hidden space-y-4">
+            
+            <!-- Success Banner -->
+            <div id="extractSuccess" class="bg-green-50 rounded-xl p-4 border border-green-200">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-check text-green-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-green-900" id="extractSuccessTitle">Daten erfolgreich ausgelesen!</h3>
+                        <p class="text-sm text-green-700" id="extractSuccessSubtitle">Bitte prüfe und ergänze die Angaben</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Source Info -->
+            <div id="sourceInfo" class="bg-gray-50 rounded-xl p-3 flex items-center gap-3">
+                <i id="sourceIcon" class="fas fa-file-pdf text-red-600 text-xl"></i>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-gray-500">Quelle</p>
+                    <p id="sourceName" class="text-sm font-medium text-gray-800 truncate">Ausschreibung.pdf</p>
+                </div>
+                <button id="sourceActionBtn" onclick="openSource()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200">
+                    <i class="fas fa-external-link-alt"></i>
+                </button>
+            </div>
+            
+            <!-- Extracted Fields -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-4">
+                <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                    <i class="fas fa-file-alt text-red-600"></i>
+                    Projektdaten
+                    <span id="autoExtractBadge" class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">
+                        <i class="fas fa-magic mr-1"></i>ausgelesen
+                    </span>
+                </h3>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Projekttitel <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="projectTitle" 
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Adresse / Ausführungsort <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="projectAddress" 
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                    <p class="text-xs text-gray-500 mt-1">
+                        <i class="fas fa-magic text-green-600 mr-1"></i>
+                        Geodaten werden automatisch geladen
+                    </p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Auftraggeber
+                    </label>
+                    <input type="text" id="projectClient" 
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Eingabefrist
+                        </label>
+                        <input type="text" id="projectDeadline" 
+                               class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Verfahrensart
+                        </label>
+                        <select id="projectProcedure" 
+                                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white">
+                            <option value="">-- wählen --</option>
+                            <option value="open">Offenes Verfahren</option>
+                            <option value="selective">Selektives Verfahren</option>
+                            <option value="invitation">Einladungsverfahren</option>
+                            <option value="direct">Freihändige Vergabe</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Beschreibung
+                    </label>
+                    <textarea id="projectDescription" rows="3"
+                              class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"></textarea>
+                </div>
+            </div>
+            
+            <!-- Uploaded Document -->
+            <div id="uploadedDocSection" class="hidden bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-paperclip text-red-600 mr-2"></i>Hochgeladenes Dokument
+                </h3>
+                <div id="uploadedDocPreview" class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                    <!-- Filled dynamically -->
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3 pt-2">
+                <button onclick="goToStep(1)" class="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="goToStep(3)" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    Weiter
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== STEP 3: Geodata + Finalize ========== -->
+        <div id="step3" class="step-hidden space-y-4">
+            
+            <!-- Geodata Section -->
+            <div id="geodataSection">
+                <!-- Loading State -->
+                <div id="geodataLoading" class="bg-white rounded-xl p-6 shadow-sm text-center">
+                    <div class="w-16 h-16 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mx-auto"></div>
+                    <p class="mt-4 text-gray-600">Geodaten werden geladen...</p>
+                    <p class="text-sm text-gray-400 mt-1" id="loadingAddress"></p>
+                </div>
+                
+                <!-- Success State -->
+                <div id="geodataSuccess" class="hidden space-y-4">
+                    <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-map-marker-alt text-green-600"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-green-900">Gebäude gefunden!</h3>
+                                <p class="text-sm text-green-700" id="foundAddress"></p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Building Data -->
+                    <div class="bg-white rounded-xl p-4 shadow-sm space-y-3">
+                        <h3 class="font-semibold text-gray-700">
+                            <i class="fas fa-building text-red-600 mr-2"></i>Gebäudedaten
+                        </h3>
+                        
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div class="bg-gray-50 rounded-lg p-3">
+                                <p class="text-gray-500 text-xs">EGID</p>
+                                <p class="font-mono font-medium" id="buildingEgid">-</p>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-3">
+                                <p class="text-gray-500 text-xs">Baujahr</p>
+                                <p class="font-medium" id="buildingYear">-</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-3 text-sm">
+                            <div class="bg-red-50 rounded-lg p-3 text-center">
+                                <p class="text-gray-500 text-xs">Traufhöhe</p>
+                                <p class="font-bold text-lg text-red-600" id="buildingEaves">-</p>
+                            </div>
+                            <div class="bg-red-50 rounded-lg p-3 text-center">
+                                <p class="text-gray-500 text-xs">Firsthöhe</p>
+                                <p class="font-bold text-lg text-red-600" id="buildingRidge">-</p>
+                            </div>
+                            <div class="bg-red-50 rounded-lg p-3 text-center">
+                                <p class="text-gray-500 text-xs">Grundfläche</p>
+                                <p class="font-bold text-lg text-red-600" id="buildingArea">-</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Additional Documents -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-4">
+                <h3 class="font-semibold text-gray-700">
+                    <i class="fas fa-folder-plus text-red-600 mr-2"></i>Weitere Dokumente
+                </h3>
+                
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-red-500 transition-colors cursor-pointer"
+                     onclick="document.getElementById('additionalFiles').click()">
+                    <input type="file" id="additionalFiles" multiple class="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf" onchange="handleAdditionalFiles(event)">
+                    <i class="fas fa-plus text-2xl text-gray-400"></i>
+                    <p class="text-sm text-gray-600 mt-2">Weitere Dateien hinzufügen</p>
+                </div>
+                
+                <div id="additionalFilesList" class="space-y-2">
+                    <!-- Files will be added here -->
+                </div>
+            </div>
+            
+            <!-- Summary -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-clipboard-check text-red-600 mr-2"></i>Zusammenfassung
+                </h3>
+                <div class="space-y-2 text-sm" id="summaryContent"></div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3 pt-2">
+                <button onclick="goToStep(2)" class="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="createProject()" class="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i>
+                    Projekt erstellen
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== SUCCESS SCREEN ========== -->
+        <div id="successScreen" class="step-hidden">
+            <div class="text-center py-8">
+                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-check text-green-600 text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800">Projekt erstellt!</h2>
+                <p class="text-gray-600 mt-2" id="successProjectName"></p>
+                
+                <div class="mt-8 space-y-3">
+                    <button class="w-full px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 flex items-center justify-center gap-2">
+                        <i class="fas fa-camera"></i>
+                        Fotos aufnehmen
+                    </button>
+                    <button onclick="resetFlow()" class="w-full px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                        Weiteres Projekt erfassen
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let currentStep = 1;
+        let extractedData = {};
+        let uploadedDocument = null;
+        let additionalFiles = [];
+        let importSource = null; // 'pdf', 'photo', 'url', 'manual'
+        
+        const stepConfig = {
+            1: { label: 'Schritt 1 von 3', name: 'Import', progress: 33, title: 'Neues Projekt' },
+            2: { label: 'Schritt 2 von 3', name: 'Prüfen', progress: 66, title: 'Daten prüfen' },
+            3: { label: 'Schritt 3 von 3', name: 'Abschluss', progress: 100, title: 'Abschluss' },
+        };
+        
+        // Mock data for extraction simulation
+        const mockPdfExtraction = {
+            title: 'Gerüstarbeiten Fassadensanierung Schulhaus Länggasse',
+            address: 'Länggassstrasse 40, 3012 Bern',
+            client: 'Stadt Bern, Hochbau Stadt Bern',
+            deadline: '15.02.2025',
+            procedure: 'open',
+            description: 'Erstellen und Unterhalten von Fassadengerüsten für die Gesamtsanierung des Schulhauses Länggasse. Gerüstfläche ca. 2\'400 m². Ausführungszeitraum: März bis Oktober 2025.'
+        };
+        
+        const mockPhotoExtraction = {
+            title: 'Gerüstbau Renovation Mehrfamilienhaus',
+            address: 'Bundesplatz 8, 3011 Bern',
+            client: 'Immobilien AG',
+            deadline: '28.01.2025',
+            procedure: 'invitation',
+            description: 'Bauaushang erkannt: Fassadengerüst für Renovationsarbeiten. Details bitte ergänzen.'
+        };
+        
+        const mockBuildingData = {
+            egid: '302145678',
+            year: '1965',
+            eaves: '12.4m',
+            ridge: '16.2m',
+            area: '850m²'
+        };
+        
+        // ===== Drag & Drop Handlers =====
+        
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('mainDropZone').classList.add('drag-over');
+        }
+        
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('mainDropZone').classList.remove('drag-over');
+        }
+        
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('mainDropZone').classList.remove('drag-over');
+            
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        }
+        
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        }
+        
+        function processFile(file) {
+            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|heic)$/i.test(file.name);
+            
+            if (isPdf) {
+                importSource = 'pdf';
+                uploadedDocument = file;
+                showProcessing('pdf', file.name);
+            } else if (isImage) {
+                importSource = 'photo';
+                uploadedDocument = file;
+                showProcessing('photo', file.name);
+            } else {
+                alert('Bitte eine PDF-Datei oder ein Foto hochladen.');
+            }
+        }
+        
+        function triggerPdfUpload() {
+            const input = document.getElementById('fileInput');
+            input.accept = '.pdf';
+            input.click();
+        }
+        
+        function triggerPhotoCapture() {
+            const input = document.getElementById('fileInput');
+            input.accept = 'image/*';
+            input.setAttribute('capture', 'environment');
+            input.click();
+        }
+        
+        // ===== Processing Animation =====
+        
+        async function showProcessing(type, filename) {
+            // Update UI for processing type
+            const icon = document.getElementById('processingIcon');
+            const title = document.getElementById('processingTitle');
+            const subtitle = document.getElementById('processingSubtitle');
+            
+            if (type === 'pdf') {
+                icon.className = 'fas fa-file-pdf text-red-600 text-2xl';
+                title.textContent = 'PDF wird analysiert...';
+                subtitle.textContent = filename;
+            } else if (type === 'photo') {
+                icon.className = 'fas fa-camera text-amber-600 text-2xl';
+                title.textContent = 'Foto wird analysiert...';
+                subtitle.textContent = 'Text wird per OCR erkannt';
+            } else if (type === 'url') {
+                icon.className = 'fas fa-globe text-blue-600 text-2xl';
+                title.textContent = 'Seite wird geladen...';
+                subtitle.textContent = 'Daten werden extrahiert';
+            }
+            
+            // Show processing overlay
+            document.getElementById('step1').classList.add('step-hidden');
+            document.getElementById('processingOverlay').classList.remove('step-hidden');
+            document.getElementById('processingOverlay').classList.add('step-active');
+            
+            // Simulate processing steps
+            await simulateProcessingSteps();
+            
+            // Extract data based on type
+            if (type === 'pdf') {
+                extractedData = { ...mockPdfExtraction };
+            } else if (type === 'photo') {
+                extractedData = { ...mockPhotoExtraction };
+            }
+            
+            // Hide processing, show step 2
+            document.getElementById('processingOverlay').classList.add('step-hidden');
+            fillExtractedData();
+            goToStep(2);
+        }
+        
+        async function simulateProcessingSteps() {
+            const steps = ['proc1', 'proc2', 'proc3'];
+            
+            for (let i = 0; i < steps.length; i++) {
+                await new Promise(r => setTimeout(r, 800));
+                
+                // Mark current step as complete
+                const current = document.getElementById(steps[i]);
+                current.innerHTML = `
+                    <i class="fas fa-check-circle text-green-600"></i>
+                    <span class="text-gray-800">${current.querySelector('span').textContent}</span>
+                `;
+                current.classList.remove('text-gray-400');
+                
+                // Activate next step
+                if (i + 1 < steps.length) {
+                    const next = document.getElementById(steps[i + 1]);
+                    next.innerHTML = `
+                        <i class="fas fa-circle-notch fa-spin text-red-600"></i>
+                        <span class="text-gray-600">${next.querySelector('span').textContent}</span>
+                    `;
+                    next.classList.remove('text-gray-400');
+                }
+            }
+            
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
+        // ===== URL Input =====
+        
+        function showUrlInput() {
+            document.getElementById('urlInputPanel').classList.remove('hidden');
+            document.getElementById('projectUrl').focus();
+        }
+        
+        function hideUrlInput() {
+            document.getElementById('urlInputPanel').classList.add('hidden');
+        }
+        
+        async function pasteFromClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                document.getElementById('projectUrl').value = text;
+                handleUrlInputChange();
+            } catch (err) {
+                console.log('Clipboard access denied');
+            }
+        }
+        
+        function handlePaste(event) {
+            setTimeout(handleUrlInputChange, 100);
+        }
+        
+        function handleUrlInput() {
+            handleUrlInputChange();
+        }
+        
+        function handleUrlInputChange() {
+            const url = document.getElementById('projectUrl').value.trim();
+            const statusDiv = document.getElementById('urlStatus');
+            const extractBtn = document.getElementById('extractUrlBtn');
+            
+            if (!url) {
+                statusDiv.classList.add('hidden');
+                extractBtn.disabled = true;
+                return;
+            }
+            
+            statusDiv.classList.remove('hidden');
+            
+            if (url.includes('simap.ch')) {
+                statusDiv.innerHTML = `
+                    <div class="flex items-center gap-2 text-green-700 bg-green-50 p-2 rounded-lg">
+                        <i class="fas fa-check-circle"></i>
+                        <span class="text-sm">simap.ch Link erkannt</span>
+                    </div>
+                `;
+                extractBtn.disabled = false;
+            } else if (url.startsWith('http')) {
+                statusDiv.innerHTML = `
+                    <div class="flex items-center gap-2 text-amber-700 bg-amber-50 p-2 rounded-lg">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span class="text-sm">Unbekannte Quelle</span>
+                    </div>
+                `;
+                extractBtn.disabled = false;
+            } else {
+                statusDiv.innerHTML = `
+                    <div class="flex items-center gap-2 text-red-700 bg-red-50 p-2 rounded-lg">
+                        <i class="fas fa-times-circle"></i>
+                        <span class="text-sm">Ungültige URL</span>
+                    </div>
+                `;
+                extractBtn.disabled = true;
+            }
+        }
+        
+        async function extractFromUrl() {
+            const url = document.getElementById('projectUrl').value.trim();
+            importSource = 'url';
+            extractedData = { 
+                ...mockPdfExtraction, 
+                sourceUrl: url,
+                title: 'Gerüstarbeiten Kirchgemeindehaus Ostermundigen'
+            };
+            
+            await showProcessing('url', url);
+        }
+        
+        // ===== Manual Entry =====
+        
+        function startManualEntry() {
+            importSource = 'manual';
+            extractedData = {};
+            
+            // Update UI for manual mode
+            document.getElementById('extractSuccess').innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-pen text-gray-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-800">Manuelle Erfassung</h3>
+                        <p class="text-sm text-gray-600">Bitte alle Felder ausfüllen</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('extractSuccess').className = 'bg-gray-50 rounded-xl p-4 border border-gray-200';
+            document.getElementById('autoExtractBadge').classList.add('hidden');
+            document.getElementById('sourceInfo').classList.add('hidden');
+            
+            goToStep(2);
+        }
+        
+        // ===== Fill Form =====
+        
+        function fillExtractedData() {
+            document.getElementById('projectTitle').value = extractedData.title || '';
+            document.getElementById('projectAddress').value = extractedData.address || '';
+            document.getElementById('projectClient').value = extractedData.client || '';
+            document.getElementById('projectDeadline').value = extractedData.deadline || '';
+            document.getElementById('projectProcedure').value = extractedData.procedure || '';
+            document.getElementById('projectDescription').value = extractedData.description || '';
+            
+            // Update source info
+            const sourceInfo = document.getElementById('sourceInfo');
+            const sourceIcon = document.getElementById('sourceIcon');
+            const sourceName = document.getElementById('sourceName');
+            
+            sourceInfo.classList.remove('hidden');
+            
+            if (importSource === 'pdf') {
+                sourceIcon.className = 'fas fa-file-pdf text-red-600 text-xl';
+                sourceName.textContent = uploadedDocument?.name || 'PDF-Dokument';
+                document.getElementById('sourceActionBtn').classList.add('hidden');
+            } else if (importSource === 'photo') {
+                sourceIcon.className = 'fas fa-camera text-amber-600 text-xl';
+                sourceName.textContent = uploadedDocument?.name || 'Foto';
+                document.getElementById('sourceActionBtn').classList.add('hidden');
+            } else if (importSource === 'url') {
+                sourceIcon.className = 'fas fa-link text-blue-600 text-xl';
+                sourceName.textContent = extractedData.sourceUrl || 'Link';
+                document.getElementById('sourceActionBtn').classList.remove('hidden');
+            }
+            
+            // Show uploaded document preview
+            if (uploadedDocument) {
+                document.getElementById('uploadedDocSection').classList.remove('hidden');
+                const preview = document.getElementById('uploadedDocPreview');
+                const icon = importSource === 'pdf' ? 'fa-file-pdf text-red-500' : 'fa-image text-amber-500';
+                preview.innerHTML = `
+                    <i class="fas ${icon} text-xl"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-sm truncate">${uploadedDocument.name}</p>
+                        <p class="text-xs text-gray-500">${(uploadedDocument.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                        <i class="fas fa-check mr-1"></i>Analysiert
+                    </span>
+                `;
+            }
+            
+            // Reset success banner for non-manual
+            if (importSource !== 'manual') {
+                document.getElementById('extractSuccess').innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-check text-green-600"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-green-900">Daten erfolgreich ausgelesen!</h3>
+                            <p class="text-sm text-green-700">Bitte prüfe und ergänze die Angaben</p>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('extractSuccess').className = 'bg-green-50 rounded-xl p-4 border border-green-200';
+                document.getElementById('autoExtractBadge').classList.remove('hidden');
+            }
+        }
+        
+        function openSource() {
+            if (extractedData.sourceUrl) {
+                window.open(extractedData.sourceUrl, '_blank');
+            }
+        }
+        
+        // ===== Navigation =====
+        
+        function goToStep(step) {
+            // Hide all
+            document.querySelectorAll('[id^="step"]').forEach(el => {
+                el.classList.remove('step-active');
+                el.classList.add('step-hidden');
+            });
+            document.getElementById('processingOverlay').classList.add('step-hidden');
+            document.getElementById('successScreen').classList.add('step-hidden');
+            
+            // Show target
+            const stepEl = document.getElementById('step' + step);
+            if (stepEl) {
+                stepEl.classList.remove('step-hidden');
+                stepEl.classList.add('step-active');
+            }
+            
+            // Update progress
+            const config = stepConfig[step];
+            if (config) {
+                document.getElementById('stepLabel').textContent = config.label;
+                document.getElementById('stepName').textContent = config.name;
+                document.getElementById('progressBar').style.width = config.progress + '%';
+                document.getElementById('headerTitle').textContent = config.title;
+            }
+            
+            currentStep = step;
+            
+            if (step === 3) {
+                loadGeodata();
+                updateSummary();
+            }
+        }
+        
+        function goBack() {
+            if (currentStep > 1) {
+                goToStep(currentStep - 1);
+            }
+        }
+        
+        // ===== Geodata =====
+        
+        async function loadGeodata() {
+            const address = document.getElementById('projectAddress').value;
+            document.getElementById('loadingAddress').textContent = address;
+            
+            document.getElementById('geodataLoading').classList.remove('hidden');
+            document.getElementById('geodataSuccess').classList.add('hidden');
+            
+            await new Promise(r => setTimeout(r, 1500));
+            
+            document.getElementById('geodataLoading').classList.add('hidden');
+            document.getElementById('geodataSuccess').classList.remove('hidden');
+            document.getElementById('foundAddress').textContent = address;
+            
+            document.getElementById('buildingEgid').textContent = mockBuildingData.egid;
+            document.getElementById('buildingYear').textContent = mockBuildingData.year;
+            document.getElementById('buildingEaves').textContent = mockBuildingData.eaves;
+            document.getElementById('buildingRidge').textContent = mockBuildingData.ridge;
+            document.getElementById('buildingArea').textContent = mockBuildingData.area;
+        }
+        
+        // ===== Additional Files =====
+        
+        function handleAdditionalFiles(event) {
+            const files = Array.from(event.target.files);
+            const container = document.getElementById('additionalFilesList');
+            
+            files.forEach(file => {
+                additionalFiles.push(file);
+                
+                const icon = file.name.endsWith('.pdf') ? 'fa-file-pdf text-red-500' :
+                            file.name.match(/\.xlsx?$/) ? 'fa-file-excel text-green-500' :
+                            file.name.match(/\.docx?$/) ? 'fa-file-word text-blue-500' :
+                            file.name.match(/\.dw?g$/) ? 'fa-drafting-compass text-purple-500' :
+                            'fa-file text-gray-500';
+                
+                const fileEl = document.createElement('div');
+                fileEl.className = 'flex items-center gap-3 bg-gray-50 rounded-lg p-3';
+                fileEl.innerHTML = `
+                    <i class="fas ${icon} text-xl"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-sm truncate">${file.name}</p>
+                        <p class="text-xs text-gray-500">${(file.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <button class="text-gray-400 hover:text-red-500" onclick="this.parentElement.remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                container.appendChild(fileEl);
+            });
+            
+            updateSummary();
+        }
+        
+        // ===== Summary =====
+        
+        function updateSummary() {
+            const summary = document.getElementById('summaryContent');
+            const title = document.getElementById('projectTitle').value || '-';
+            const address = document.getElementById('projectAddress').value || '-';
+            const client = document.getElementById('projectClient').value || '-';
+            const deadline = document.getElementById('projectDeadline').value || '-';
+            
+            let fileCount = additionalFiles.length;
+            if (uploadedDocument) fileCount++;
+            
+            summary.innerHTML = `
+                <div class="flex justify-between py-2 border-b">
+                    <span class="text-gray-500">Projekt</span>
+                    <span class="font-medium text-right max-w-[200px] truncate">${title}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b">
+                    <span class="text-gray-500">Adresse</span>
+                    <span class="font-medium">${address}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b">
+                    <span class="text-gray-500">Auftraggeber</span>
+                    <span class="font-medium max-w-[200px] truncate">${client}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b">
+                    <span class="text-gray-500">Frist</span>
+                    <span class="font-medium ${deadline !== '-' ? 'text-red-600' : ''}">${deadline}</span>
+                </div>
+                <div class="flex justify-between py-2">
+                    <span class="text-gray-500">Dokumente</span>
+                    <span class="font-medium">${fileCount} Datei${fileCount !== 1 ? 'en' : ''}</span>
+                </div>
+            `;
+        }
+        
+        // ===== Create Project =====
+        
+        function createProject() {
+            const title = document.getElementById('projectTitle').value;
+            
+            document.getElementById('step3').classList.add('step-hidden');
+            document.getElementById('successScreen').classList.remove('step-hidden');
+            document.getElementById('successScreen').classList.add('step-active');
+            document.getElementById('headerTitle').textContent = 'Fertig!';
+            document.getElementById('successProjectName').textContent = title;
+        }
+        
+        function resetFlow() {
+            location.reload();
+        }
+    </script>
+
+</body>
+</html>

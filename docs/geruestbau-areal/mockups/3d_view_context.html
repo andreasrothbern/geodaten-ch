@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - 3D Ansicht mit Umgebung</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .viewer-3d {
+            background: linear-gradient(180deg, #87CEEB 0%, #E0E0E0 100%);
+            position: relative;
+        }
+        .layer-chip {
+            transition: all 0.15s;
+        }
+        .layer-chip.active {
+            background-color: #dc2626;
+            color: white;
+            border-color: #dc2626;
+        }
+        .view-btn {
+            transition: all 0.15s;
+        }
+        .view-btn.active {
+            background-color: #1e3a5f;
+            color: white;
+        }
+        .info-panel {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.9);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-slate-800 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center justify-between max-w-6xl mx-auto">
+            <button onclick="history.back()" class="p-2 -ml-2 hover:bg-slate-700 rounded-lg transition-colors">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <div class="text-center flex-1">
+                <h1 class="font-semibold text-lg">3D-Ansicht</h1>
+                <p class="text-xs text-slate-400">Kantonsschule Luzern</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="p-2 hover:bg-slate-700 rounded-lg">
+                    <i class="fas fa-expand text-xl"></i>
+                </button>
+                <button class="p-2 hover:bg-slate-700 rounded-lg">
+                    <i class="fas fa-download text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto">
+        
+        <!-- 3D Viewer -->
+        <div class="viewer-3d h-[60vh] relative">
+            
+            <!-- Simulated 3D Scene -->
+            <svg viewBox="0 0 800 500" class="w-full h-full" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                    <!-- Gradient for sky -->
+                    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#87CEEB"/>
+                        <stop offset="100%" style="stop-color:#E8F4F8"/>
+                    </linearGradient>
+                    
+                    <!-- Gradient for water -->
+                    <linearGradient id="water" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#4FC3F7"/>
+                        <stop offset="100%" style="stop-color:#0288D1"/>
+                    </linearGradient>
+                    
+                    <!-- Shadow filter -->
+                    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="5" dy="10" stdDeviation="8" flood-opacity="0.3"/>
+                    </filter>
+                </defs>
+                
+                <!-- Sky -->
+                <rect width="100%" height="100%" fill="url(#sky)"/>
+                
+                <!-- Mountains in background -->
+                <path d="M0,350 L100,280 L200,320 L350,250 L450,300 L550,240 L700,290 L800,260 L800,500 L0,500 Z" fill="#B0BEC5" opacity="0.5"/>
+                
+                <!-- Terrain/Ground -->
+                <path d="M0,400 Q200,380 400,390 Q600,400 800,385 L800,500 L0,500 Z" fill="#8BC34A"/>
+                
+                <!-- Water (Lake) -->
+                <ellipse cx="650" cy="450" rx="180" ry="60" fill="url(#water)" opacity="0.8"/>
+                
+                <!-- Street -->
+                <path d="M0,420 Q200,410 400,415 Q600,420 800,410" stroke="#9E9E9E" stroke-width="25" fill="none"/>
+                <path d="M0,420 Q200,410 400,415 Q600,420 800,410" stroke="#FFEB3B" stroke-width="2" stroke-dasharray="20,15" fill="none"/>
+                
+                <!-- Neighbor Buildings (transparent/gray) -->
+                <g id="neighbors" opacity="0.5" filter="url(#shadow)">
+                    <!-- Left neighbor -->
+                    <g transform="translate(100, 320)">
+                        <path d="M0,80 L0,0 L60,0 L60,80 Z" fill="#78909C"/>
+                        <path d="M0,0 L30,-20 L60,0 Z" fill="#607D8B"/>
+                    </g>
+                    
+                    <!-- Right neighbor -->
+                    <g transform="translate(550, 300)">
+                        <path d="M0,100 L0,0 L80,0 L80,100 Z" fill="#78909C"/>
+                        <path d="M0,0 L40,-25 L80,0 Z" fill="#607D8B"/>
+                    </g>
+                </g>
+                
+                <!-- Project Building A -->
+                <g id="buildingA" filter="url(#shadow)" transform="translate(200, 280)">
+                    <!-- Main body -->
+                    <path d="M0,120 L0,0 L100,0 L100,120 Z" fill="#EF5350"/>
+                    <!-- Side face (3D effect) -->
+                    <path d="M100,0 L140,20 L140,140 L100,120 Z" fill="#C62828"/>
+                    <!-- Roof -->
+                    <path d="M0,0 L50,-15 L100,0 L140,20 L90,35 L50,-15 Z" fill="#B71C1C"/>
+                    
+                    <!-- Scaffold on front -->
+                    <g stroke="#FFB300" stroke-width="2" fill="none">
+                        <line x1="5" y1="120" x2="5" y2="10"/>
+                        <line x1="35" y1="120" x2="35" y2="10"/>
+                        <line x1="65" y1="120" x2="65" y2="10"/>
+                        <line x1="95" y1="120" x2="95" y2="10"/>
+                        
+                        <line x1="5" y1="30" x2="95" y2="30"/>
+                        <line x1="5" y1="60" x2="95" y2="60"/>
+                        <line x1="5" y1="90" x2="95" y2="90"/>
+                        <line x1="5" y1="115" x2="95" y2="115"/>
+                    </g>
+                    
+                    <!-- Scaffold platforms -->
+                    <rect x="5" y="28" width="90" height="4" fill="#FFC107" opacity="0.7"/>
+                    <rect x="5" y="58" width="90" height="4" fill="#FFC107" opacity="0.7"/>
+                    <rect x="5" y="88" width="90" height="4" fill="#FFC107" opacity="0.7"/>
+                    
+                    <!-- Label -->
+                    <text x="50" y="70" text-anchor="middle" fill="white" style="font-size: 14px; font-weight: bold;">A</text>
+                </g>
+                
+                <!-- Project Building B -->
+                <g id="buildingB" filter="url(#shadow)" transform="translate(350, 250)">
+                    <!-- Main body -->
+                    <path d="M0,150 L0,0 L120,0 L120,150 Z" fill="#EF5350"/>
+                    <!-- Side face -->
+                    <path d="M120,0 L160,25 L160,175 L120,150 Z" fill="#C62828"/>
+                    <!-- Roof -->
+                    <path d="M0,0 L60,-20 L120,0 L160,25 L100,45 L60,-20 Z" fill="#B71C1C"/>
+                    
+                    <!-- Scaffold on front -->
+                    <g stroke="#FFB300" stroke-width="2" fill="none">
+                        <line x1="5" y1="150" x2="5" y2="10"/>
+                        <line x1="40" y1="150" x2="40" y2="10"/>
+                        <line x1="75" y1="150" x2="75" y2="10"/>
+                        <line x1="115" y1="150" x2="115" y2="10"/>
+                        
+                        <line x1="5" y1="30" x2="115" y2="30"/>
+                        <line x1="5" y1="60" x2="115" y2="60"/>
+                        <line x1="5" y1="90" x2="115" y2="90"/>
+                        <line x1="5" y1="120" x2="115" y2="120"/>
+                        <line x1="5" y1="145" x2="115" y2="145"/>
+                    </g>
+                    
+                    <!-- Scaffold platforms -->
+                    <rect x="5" y="28" width="110" height="4" fill="#FFC107" opacity="0.7"/>
+                    <rect x="5" y="58" width="110" height="4" fill="#FFC107" opacity="0.7"/>
+                    <rect x="5" y="88" width="110" height="4" fill="#FFC107" opacity="0.7"/>
+                    <rect x="5" y="118" width="110" height="4" fill="#FFC107" opacity="0.7"/>
+                    
+                    <!-- Label -->
+                    <text x="60" y="85" text-anchor="middle" fill="white" style="font-size: 14px; font-weight: bold;">B</text>
+                </g>
+                
+                <!-- Access point markers -->
+                <g id="accessPoints">
+                    <!-- Truck -->
+                    <g transform="translate(280, 430)">
+                        <circle r="15" fill="#2196F3" stroke="white" stroke-width="2"/>
+                        <text y="5" text-anchor="middle" fill="white" style="font-size: 12px;">🚛</text>
+                    </g>
+                    
+                    <!-- Crane -->
+                    <g transform="translate(500, 360)">
+                        <circle r="15" fill="#FF9800" stroke="white" stroke-width="2"/>
+                        <text y="5" text-anchor="middle" fill="white" style="font-size: 12px;">🏗️</text>
+                    </g>
+                </g>
+                
+                <!-- Compass -->
+                <g transform="translate(750, 50)">
+                    <circle r="25" fill="rgba(255,255,255,0.9)" stroke="#ccc"/>
+                    <path d="M0,-18 L5,5 L0,0 L-5,5 Z" fill="#dc2626"/>
+                    <path d="M0,18 L5,-5 L0,0 L-5,-5 Z" fill="#333"/>
+                    <text y="2" text-anchor="middle" style="font-size: 10px; font-weight: bold;" fill="#333">N</text>
+                </g>
+            </svg>
+            
+            <!-- 3D Controls -->
+            <div class="absolute bottom-4 right-4 flex flex-col gap-2">
+                <button class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50">
+                    <i class="fas fa-sync-alt text-gray-600"></i>
+                </button>
+                <button class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50">
+                    <i class="fas fa-plus text-gray-600"></i>
+                </button>
+                <button class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50">
+                    <i class="fas fa-minus text-gray-600"></i>
+                </button>
+                <button class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50">
+                    <i class="fas fa-home text-gray-600"></i>
+                </button>
+            </div>
+            
+            <!-- Info Panel -->
+            <div class="info-panel absolute top-4 left-4 rounded-xl p-3 shadow-lg max-w-xs">
+                <h4 class="font-semibold text-sm text-gray-800 mb-2">Projektübersicht</h4>
+                <div class="space-y-1 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Gebäude:</span>
+                        <span class="font-medium">2 (A + B)</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Gerüstfläche:</span>
+                        <span class="font-medium text-red-600">1'840 m²</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Max. Höhe:</span>
+                        <span class="font-medium">22.0 m</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- View Mode Indicator -->
+            <div class="absolute top-4 right-4 bg-slate-800 text-white text-xs px-3 py-1.5 rounded-full">
+                <i class="fas fa-cube mr-1"></i>3D Perspektive
+            </div>
+        </div>
+        
+        <!-- Controls Panel -->
+        <div class="bg-white border-t shadow-lg">
+            
+            <!-- View Presets -->
+            <div class="p-3 border-b">
+                <p class="text-xs text-gray-500 mb-2">Ansichten</p>
+                <div class="flex gap-2 overflow-x-auto pb-1">
+                    <button class="view-btn active px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-cube mr-1"></i>3D
+                    </button>
+                    <button class="view-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-arrow-up mr-1"></i>Nord
+                    </button>
+                    <button class="view-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-arrow-right mr-1"></i>Ost
+                    </button>
+                    <button class="view-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-arrow-down mr-1"></i>Süd
+                    </button>
+                    <button class="view-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-arrow-left mr-1"></i>West
+                    </button>
+                    <button class="view-btn px-3 py-2 rounded-lg text-xs font-medium bg-slate-100 whitespace-nowrap">
+                        <i class="fas fa-eye mr-1"></i>Draufsicht
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Layer Controls -->
+            <div class="p-3 border-b">
+                <p class="text-xs text-gray-500 mb-2">Layer ein/ausblenden</p>
+                <div class="flex flex-wrap gap-2">
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-building mr-1"></i>Projekt
+                    </button>
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-hard-hat mr-1"></i>Gerüst
+                    </button>
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-city mr-1"></i>Nachbarn
+                    </button>
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-road mr-1"></i>Strassen
+                    </button>
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-water mr-1"></i>Wasser
+                    </button>
+                    <button class="layer-chip px-3 py-1.5 rounded-full text-xs font-medium border bg-white text-gray-600" onclick="toggleLayer(this)">
+                        <i class="fas fa-tree mr-1"></i>Vegetation
+                    </button>
+                    <button class="layer-chip active px-3 py-1.5 rounded-full text-xs font-medium border" onclick="toggleLayer(this)">
+                        <i class="fas fa-truck mr-1"></i>Zufahrten
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="p-3 grid grid-cols-4 gap-2">
+                <div class="text-center">
+                    <p class="text-lg font-bold text-red-600">2</p>
+                    <p class="text-xs text-gray-500">Gebäude</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-lg font-bold text-amber-600">8</p>
+                    <p class="text-xs text-gray-500">Fassaden</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-lg font-bold text-blue-600">3</p>
+                    <p class="text-xs text-gray-500">Nachbarn</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-lg font-bold text-green-600">2</p>
+                    <p class="text-xs text-gray-500">Zufahrten</p>
+                </div>
+            </div>
+            
+            <!-- Export Buttons -->
+            <div class="p-3 border-t flex gap-2">
+                <button class="flex-1 py-2.5 bg-slate-800 text-white rounded-xl font-medium text-sm hover:bg-slate-700">
+                    <i class="fas fa-file-pdf mr-2"></i>PDF
+                </button>
+                <button class="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-medium text-sm hover:bg-blue-700">
+                    <i class="fas fa-cube mr-2"></i>IFC
+                </button>
+                <button class="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium text-sm hover:bg-green-700">
+                    <i class="fas fa-vector-square mr-2"></i>DXF
+                </button>
+                <button class="flex-1 py-2.5 border border-gray-300 rounded-xl font-medium text-sm hover:bg-gray-50">
+                    <i class="fas fa-share-alt mr-2"></i>Teilen
+                </button>
+            </div>
+        </div>
+        
+    </main>
+
+    <script>
+        function toggleLayer(btn) {
+            btn.classList.toggle('active');
+            btn.classList.toggle('bg-white');
+            btn.classList.toggle('text-gray-600');
+        }
+        
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+
+</body>
+</html>

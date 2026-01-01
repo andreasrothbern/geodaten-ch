@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Gerüst konfigurieren</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .scaffold-cell {
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        .scaffold-cell:hover {
+            filter: brightness(1.1);
+        }
+        .scaffold-cell.removed {
+            opacity: 0.2;
+        }
+        .scaffold-cell.selected {
+            stroke: #fbbf24;
+            stroke-width: 3;
+        }
+        .tab-btn.active {
+            background-color: #dc2626;
+            color: white;
+        }
+        .tool-btn.active {
+            background-color: #fee2e2;
+            border-color: #dc2626;
+            color: #dc2626;
+        }
+        .height-marker {
+            font-size: 9px;
+            fill: #6b7280;
+        }
+        .dimension-line {
+            stroke: #9ca3af;
+            stroke-width: 1;
+            stroke-dasharray: 4 2;
+        }
+        /* Simple 3D illusion */
+        .building-3d {
+            transform: perspective(800px) rotateX(15deg) rotateY(-25deg);
+            transform-style: preserve-3d;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <button onclick="goBack()" class="p-2 -ml-2">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <h1 class="font-semibold text-lg">Gerüst konfigurieren</h1>
+            <button class="p-2 text-white/80 hover:text-white">
+                <i class="fas fa-question-circle text-xl"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="bg-white border-b sticky top-[52px] z-40">
+        <div class="max-w-4xl mx-auto flex">
+            <button onclick="showTab('config')" id="tab-config" class="tab-btn active flex-1 py-3 text-sm font-medium text-center border-b-2 border-transparent">
+                <i class="fas fa-sliders-h mr-2"></i>Konfiguration
+            </button>
+            <button onclick="showTab('editor')" id="tab-editor" class="tab-btn flex-1 py-3 text-sm font-medium text-center border-b-2 border-transparent text-gray-500">
+                <i class="fas fa-edit mr-2"></i>Editor
+            </button>
+            <button onclick="showTab('3d')" id="tab-3d" class="tab-btn flex-1 py-3 text-sm font-medium text-center border-b-2 border-transparent text-gray-500">
+                <i class="fas fa-cube mr-2"></i>3D-Ansicht
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto p-4">
+        
+        <!-- TAB 1: Grundkonfiguration -->
+        <div id="panel-config" class="space-y-4">
+            
+            <!-- Project Context -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                        <i class="fas fa-building text-red-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-gray-800">Schulhaus Länggasse</h2>
+                        <p class="text-sm text-gray-500">West-Fassade • 18.0m × 16.2m</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Work Type Selection -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Art der Arbeiten</h3>
+                
+                <div class="space-y-2">
+                    <label class="flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors work-type-option" data-type="facade">
+                        <input type="radio" name="workType" value="facade" class="w-5 h-5 text-red-600" checked onchange="updateWorkType()">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">Fassadenarbeiten</p>
+                            <p class="text-sm text-gray-500">Gerüst bis Traufhöhe (16.2m)</p>
+                        </div>
+                        <span class="text-sm text-gray-400">9 Lagen</span>
+                    </label>
+                    
+                    <label class="flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors work-type-option" data-type="roof">
+                        <input type="radio" name="workType" value="roof" class="w-5 h-5 text-red-600" onchange="updateWorkType()">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">Dacharbeiten</p>
+                            <p class="text-sm text-gray-500">Gerüst 1m über Traufe (17.2m)</p>
+                        </div>
+                        <span class="text-sm text-gray-400">9 Lagen + Schutz</span>
+                    </label>
+                    
+                    <label class="flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors work-type-option" data-type="full">
+                        <input type="radio" name="workType" value="full" class="w-5 h-5 text-red-600" onchange="updateWorkType()">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">Volleinrüstung</p>
+                            <p class="text-sm text-gray-500">Bis Firsthöhe (18.5m)</p>
+                        </div>
+                        <span class="text-sm text-gray-400">10 Lagen</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- System Selection -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Gerüstsystem</h3>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex flex-col items-center p-4 border-2 border-red-500 bg-red-50 rounded-xl cursor-pointer">
+                        <input type="radio" name="system" value="blitz" class="sr-only" checked>
+                        <span class="font-bold text-red-700">Layher Blitz</span>
+                        <span class="text-xs text-gray-500 mt-1">2.57m × 2.0m</span>
+                    </label>
+                    <label class="flex flex-col items-center p-4 border-2 border-gray-200 rounded-xl cursor-pointer hover:border-gray-300">
+                        <input type="radio" name="system" value="allround" class="sr-only">
+                        <span class="font-medium text-gray-700">Layher Allround</span>
+                        <span class="text-xs text-gray-500 mt-1">variabel</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Calculated Result -->
+            <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
+                <h3 class="font-semibold mb-3 flex items-center gap-2">
+                    <i class="fas fa-calculator"></i>
+                    Berechnetes Gerüst
+                </h3>
+                
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="bg-white/20 rounded-lg p-3 text-center">
+                        <p class="text-2xl font-bold" id="calcFields">7</p>
+                        <p class="text-xs text-white/80">Felder</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-3 text-center">
+                        <p class="text-2xl font-bold" id="calcLevels">9</p>
+                        <p class="text-xs text-white/80">Lagen</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-3 text-center">
+                        <p class="text-2xl font-bold" id="calcArea">324</p>
+                        <p class="text-xs text-white/80">m² Fläche</p>
+                    </div>
+                </div>
+                
+                <div class="text-sm space-y-1 text-white/90">
+                    <p><i class="fas fa-ruler-horizontal mr-2"></i>Breite: <span id="calcWidth">17.99m</span> (7 × 2.57m)</p>
+                    <p><i class="fas fa-ruler-vertical mr-2"></i>Höhe: <span id="calcHeight">18.0m</span> (9 × 2.0m)</p>
+                    <p><i class="fas fa-mountain mr-2"></i>Gefälle: 1.5% → <span class="text-amber-300">Ausgleich nötig</span></p>
+                </div>
+            </div>
+            
+            <!-- Extras -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Zusatzausstattung</h3>
+                
+                <div class="space-y-2">
+                    <label class="flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-shield-alt text-gray-400 w-6"></i>
+                            <span class="font-medium">Schutznetz</span>
+                        </div>
+                        <input type="checkbox" id="extraNet" class="w-5 h-5 text-red-600 rounded" checked onchange="updateExtras()">
+                    </label>
+                    
+                    <label class="flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-tarp text-gray-400 w-6"></i>
+                            <span class="font-medium">Wetterschutz / Plane</span>
+                        </div>
+                        <input type="checkbox" id="extraCover" class="w-5 h-5 text-red-600 rounded" onchange="updateExtras()">
+                    </label>
+                </div>
+                
+                <p class="text-xs text-gray-400 mt-3">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Lift und Treppenturm im Editor platzieren
+                </p>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3">
+                <button onclick="goBack()" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="showTab('editor')" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    Im Editor anpassen
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- TAB 2: Visual Editor -->
+        <div id="panel-editor" class="hidden space-y-4">
+            
+            <!-- Toolbar -->
+            <div class="bg-white rounded-xl p-3 shadow-sm">
+                <div class="flex gap-2 overflow-x-auto pb-1">
+                    <button onclick="setTool('select')" id="tool-select" class="tool-btn active flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-mouse-pointer"></i>
+                        Auswählen
+                    </button>
+                    <button onclick="setTool('remove')" id="tool-remove" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-eraser"></i>
+                        Feld entfernen
+                    </button>
+                    <button onclick="setTool('add')" id="tool-add" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-plus"></i>
+                        Feld hinzufügen
+                    </button>
+                </div>
+                <div class="flex gap-2 mt-2 overflow-x-auto pb-1">
+                    <button onclick="setTool('removeRow')" id="tool-removeRow" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-h"></i>
+                        Reihe ±
+                    </button>
+                    <button onclick="setTool('removeLevel')" id="tool-removeLevel" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-v"></i>
+                        Schicht ±
+                    </button>
+                    <button onclick="setTool('lift')" id="tool-lift" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-elevator"></i>
+                        Lift
+                    </button>
+                    <button onclick="setTool('stairs')" id="tool-stairs" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-stairs"></i>
+                        Treppe
+                    </button>
+                    <button onclick="setTool('console')" id="tool-console" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-angle-double-right"></i>
+                        Konsole
+                    </button>
+                </div>
+                
+                <!-- Tool Hint -->
+                <div id="toolHint" class="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <span id="toolHintText">Klicke auf ein Feld für Details</span>
+                </div>
+            </div>
+            
+            <!-- Scaffold Editor SVG -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-gray-700">West-Fassade</h3>
+                    <div class="flex gap-2">
+                        <button onclick="zoomIn()" class="p-2 border rounded-lg hover:bg-gray-50">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button onclick="zoomOut()" class="p-2 border rounded-lg hover:bg-gray-50">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <button onclick="resetView()" class="p-2 border rounded-lg hover:bg-gray-50">
+                            <i class="fas fa-compress-arrows-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="overflow-auto border rounded-xl bg-gray-50 p-4" style="max-height: 500px;">
+                    <svg id="scaffoldEditor" viewBox="0 0 520 420" class="w-full" style="min-width: 480px;">
+                        <!-- Background Grid -->
+                        <defs>
+                            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
+                            </pattern>
+                        </defs>
+                        <rect width="100%" height="100%" fill="url(#grid)"/>
+                        
+                        <!-- Ground Line -->
+                        <line x1="40" y1="380" x2="480" y2="380" stroke="#78716c" stroke-width="3"/>
+                        <text x="30" y="395" class="text-xs fill-gray-500" text-anchor="end">0m</text>
+                        
+                        <!-- Slope Indicator -->
+                        <line x1="40" y1="380" x2="480" y2="373" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5 3"/>
+                        <text x="490" y="377" class="text-xs fill-amber-600">+1.5%</text>
+                        
+                        <!-- Building Outline (background) -->
+                        <rect x="60" y="60" width="400" height="320" fill="none" stroke="#d1d5db" stroke-width="2" stroke-dasharray="8 4"/>
+                        
+                        <!-- Height Markers -->
+                        <g id="heightMarkers">
+                            <!-- Generated by JS -->
+                        </g>
+                        
+                        <!-- Width Markers -->
+                        <g id="widthMarkers">
+                            <!-- Generated by JS -->
+                        </g>
+                        
+                        <!-- Scaffold Grid -->
+                        <g id="scaffoldGrid">
+                            <!-- Generated by JS -->
+                        </g>
+                        
+                        <!-- Extras (lift, stairs, etc.) -->
+                        <g id="scaffoldExtras">
+                            <!-- Generated by JS -->
+                        </g>
+                        
+                        <!-- Detected Features from Photo -->
+                        <g id="detectedFeatures">
+                            <!-- Windows -->
+                            <rect x="120" y="120" width="40" height="50" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1" rx="2"/>
+                            <rect x="200" y="120" width="40" height="50" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1" rx="2"/>
+                            <rect x="280" y="120" width="40" height="50" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1" rx="2"/>
+                            <rect x="360" y="120" width="40" height="50" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1" rx="2"/>
+                            
+                            <!-- Door -->
+                            <rect x="180" y="300" width="60" height="80" fill="#d1d5db" stroke="#6b7280" stroke-width="2" rx="2"/>
+                            <text x="210" y="345" text-anchor="middle" class="text-xs fill-gray-500">Tür</text>
+                        </g>
+                        
+                        <!-- Roof Line -->
+                        <path d="M 40 60 L 260 20 L 480 60" fill="none" stroke="#9ca3af" stroke-width="2"/>
+                        <text x="260" y="15" text-anchor="middle" class="text-xs fill-gray-400">First 18.5m</text>
+                        
+                        <!-- Trauf Line -->
+                        <line x1="40" y1="60" x2="480" y2="60" stroke="#9ca3af" stroke-width="1" stroke-dasharray="4 2"/>
+                        <text x="490" y="64" class="text-xs fill-gray-400">Traufe 16.2m</text>
+                        
+                    </svg>
+                </div>
+                
+                <!-- Editor Legend -->
+                <div class="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
+                    <span><span class="inline-block w-4 h-3 bg-red-500 mr-1 rounded"></span>Gerüstfeld</span>
+                    <span><span class="inline-block w-4 h-3 bg-red-200 mr-1 rounded"></span>Entfernt</span>
+                    <span><span class="inline-block w-4 h-3 bg-amber-500 mr-1 rounded"></span>Lift</span>
+                    <span><span class="inline-block w-4 h-3 bg-green-500 mr-1 rounded"></span>Treppe</span>
+                    <span><span class="inline-block w-4 h-3 bg-purple-500 mr-1 rounded"></span>Konsole</span>
+                    <span><span class="inline-block w-4 h-3 bg-blue-200 border border-blue-500 mr-1 rounded"></span>Fenster</span>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="grid grid-cols-4 gap-2">
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="editorFields">63</p>
+                    <p class="text-xs text-gray-500">Felder</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="editorRemoved">0</p>
+                    <p class="text-xs text-gray-500">Entfernt</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-red-600" id="editorArea">324</p>
+                    <p class="text-xs text-gray-500">m² Gerüst</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="editorAccess">2</p>
+                    <p class="text-xs text-gray-500">Zugänge</p>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3">
+                <button onclick="showTab('config')" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Zurück
+                </button>
+                <button onclick="showTab('3d')" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    3D-Vorschau
+                    <i class="fas fa-cube ml-2"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- TAB 3: 3D View -->
+        <div id="panel-3d" class="hidden space-y-4">
+            
+            <!-- 3D Viewer -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div class="bg-gradient-to-b from-sky-200 to-sky-100 p-8 relative" style="min-height: 400px;">
+                    
+                    <!-- Simple 3D Representation -->
+                    <div class="flex items-center justify-center h-full">
+                        <div class="building-3d relative">
+                            
+                            <!-- Ground / Street -->
+                            <div class="absolute -bottom-4 left-1/2 -translate-x-1/2 w-80 h-24 bg-gray-400 rounded-lg opacity-50 transform -skew-y-3"></div>
+                            
+                            <!-- Neighboring Building (left) -->
+                            <div class="absolute -left-20 bottom-0 w-16 h-32 bg-gray-300 rounded-t-sm opacity-60"></div>
+                            
+                            <!-- Main Building -->
+                            <div class="relative w-48 h-56 bg-gradient-to-b from-stone-200 to-stone-300 rounded-t-sm shadow-xl">
+                                <!-- Roof -->
+                                <div class="absolute -top-6 left-0 right-0 h-8 bg-gradient-to-b from-red-800 to-red-700 transform origin-bottom" style="clip-path: polygon(0% 100%, 50% 0%, 100% 100%);"></div>
+                                
+                                <!-- Windows -->
+                                <div class="absolute top-8 left-4 grid grid-cols-3 gap-3">
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                </div>
+                                <div class="absolute top-24 left-4 grid grid-cols-3 gap-3">
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                    <div class="w-8 h-10 bg-sky-200 border border-stone-400"></div>
+                                </div>
+                                
+                                <!-- Door -->
+                                <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-10 h-14 bg-amber-900 rounded-t-sm"></div>
+                            </div>
+                            
+                            <!-- Scaffold (West side) -->
+                            <div class="absolute -left-3 bottom-0 w-4 h-56 flex flex-col">
+                                <div class="flex-1 bg-red-500/80 border-l-2 border-red-700"></div>
+                            </div>
+                            <div class="absolute -left-6 bottom-0 w-3 h-56 bg-red-600/60 border-l border-red-700"></div>
+                            
+                            <!-- Scaffold horizontal bars -->
+                            <div class="absolute -left-6 bottom-0 w-8 space-y-4">
+                                <div class="h-0.5 bg-red-700 mt-10"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                            </div>
+                            
+                            <!-- Depot Area -->
+                            <div class="absolute -right-16 -bottom-2 w-12 h-6 bg-amber-600 rounded-sm flex items-center justify-center">
+                                <span class="text-white text-xs">Depot</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 3D Controls -->
+                    <div class="absolute bottom-4 left-4 flex gap-2">
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" title="Drehen links">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" title="Drehen rechts">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" title="Zoom">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" title="Reset">
+                            <i class="fas fa-home"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Compass -->
+                    <div class="absolute top-4 right-4 w-12 h-12 bg-white rounded-full shadow flex items-center justify-center">
+                        <div class="text-center">
+                            <span class="text-xs text-red-600 font-bold">N</span>
+                            <div class="w-0.5 h-3 bg-red-600 mx-auto"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Info Badge -->
+                    <div class="absolute top-4 left-4 bg-white/90 rounded-lg px-3 py-2 shadow text-sm">
+                        <p class="font-medium text-gray-800">West-Ansicht</p>
+                        <p class="text-gray-500 text-xs">Gerüst: 324m²</p>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="p-4 border-t border-gray-100">
+                    <div class="flex flex-wrap gap-4 text-sm">
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-red-500 rounded"></span>
+                            Gerüst
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-gray-300 rounded"></span>
+                            Nachbargebäude
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-gray-400 rounded"></span>
+                            Strasse
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-amber-600 rounded"></span>
+                            Depot
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Environment Info -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-map-marked-alt text-red-600 mr-2"></i>
+                    Umgebung
+                </h3>
+                
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-building text-gray-400"></i>
+                            <div>
+                                <p class="font-medium text-sm">Nachbargebäude West</p>
+                                <p class="text-xs text-gray-500">Abstand: 3.2m</p>
+                            </div>
+                        </div>
+                        <span class="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>Eng
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-road text-gray-400"></i>
+                            <div>
+                                <p class="font-medium text-sm">Länggassstrasse</p>
+                                <p class="text-xs text-gray-500">Breite: 6m, LKW möglich</p>
+                            </div>
+                        </div>
+                        <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                            <i class="fas fa-check mr-1"></i>Zufahrt OK
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-warehouse text-gray-400"></i>
+                            <div>
+                                <p class="font-medium text-sm">Depot-Fläche</p>
+                                <p class="text-xs text-gray-500">~45m² verfügbar (Parkplatz Ost)</p>
+                            </div>
+                        </div>
+                        <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                            <i class="fas fa-check mr-1"></i>Ausreichend
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Summary -->
+            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white">
+                <h3 class="font-semibold mb-3">
+                    <i class="fas fa-clipboard-check mr-2"></i>
+                    Zusammenfassung
+                </h3>
+                
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-green-100">Gerüstfläche</p>
+                        <p class="text-xl font-bold">324 m²</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">Fassaden</p>
+                        <p class="text-xl font-bold">1 (West)</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">Max. Höhe</p>
+                        <p class="text-xl font-bold">18.0 m</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">System</p>
+                        <p class="text-xl font-bold">Layher Blitz</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 pt-4 border-t border-white/20 text-sm">
+                    <p class="flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        Keine Sonderkonstruktion erforderlich
+                    </p>
+                    <p class="flex items-center gap-2 mt-1">
+                        <i class="fas fa-exclamation-triangle text-amber-300"></i>
+                        Höhenausgleich für Gefälle einplanen
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3">
+                <button onclick="showTab('editor')" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Bearbeiten
+                </button>
+                <button onclick="goToMaterial()" class="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">
+                    Materialliste
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // State
+        let currentTab = 'config';
+        let currentTool = 'select';
+        let workType = 'facade';
+        
+        const facadeData = {
+            width: 18.0,
+            height: 16.2,
+            ridgeHeight: 18.5,
+            slope: 1.5
+        };
+        
+        const systemData = {
+            fieldWidth: 2.57,
+            levelHeight: 2.0
+        };
+        
+        let scaffoldState = {
+            fields: 7,
+            levels: 9,
+            removed: new Set(),  // "field-level" keys
+            hasLift: false,
+            hasStairs: false,
+            liftPosition: null,
+            stairsPosition: null,
+            consoles: new Set()  // field indices with consoles
+        };
+        
+        // Tab Navigation
+        function showTab(tab) {
+            currentTab = tab;
+            
+            ['config', 'editor', '3d'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+                document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+                document.getElementById(`tab-${t}`).classList.toggle('text-gray-500', t !== tab);
+            });
+            
+            if (tab === 'editor') {
+                renderScaffoldEditor();
+            }
+        }
+        
+        // Work Type
+        function updateWorkType() {
+            const selected = document.querySelector('input[name="workType"]:checked').value;
+            workType = selected;
+            
+            let targetHeight;
+            switch (selected) {
+                case 'facade':
+                    targetHeight = facadeData.height;
+                    break;
+                case 'roof':
+                    targetHeight = facadeData.height + 1.0;
+                    break;
+                case 'full':
+                    targetHeight = facadeData.ridgeHeight;
+                    break;
+            }
+            
+            scaffoldState.levels = Math.ceil(targetHeight / systemData.levelHeight);
+            updateCalculations();
+        }
+        
+        function updateCalculations() {
+            const totalFields = scaffoldState.fields * scaffoldState.levels;
+            const removedCount = scaffoldState.removed.size;
+            const activeFields = totalFields - removedCount;
+            const area = Math.round(activeFields * systemData.fieldWidth * systemData.levelHeight);
+            
+            document.getElementById('calcFields').textContent = scaffoldState.fields;
+            document.getElementById('calcLevels').textContent = scaffoldState.levels;
+            document.getElementById('calcArea').textContent = area;
+            document.getElementById('calcWidth').textContent = (scaffoldState.fields * systemData.fieldWidth).toFixed(2) + 'm';
+            document.getElementById('calcHeight').textContent = (scaffoldState.levels * systemData.levelHeight).toFixed(1) + 'm';
+            
+            // Editor stats
+            document.getElementById('editorFields').textContent = totalFields;
+            document.getElementById('editorRemoved').textContent = removedCount;
+            document.getElementById('editorArea').textContent = area;
+        }
+        
+        function updateExtras() {
+            scaffoldState.hasLift = document.getElementById('extraLift').checked;
+            scaffoldState.hasStairs = document.getElementById('extraStairs').checked;
+            
+            if (currentTab === 'editor') {
+                renderScaffoldEditor();
+            }
+        }
+        
+        // Editor Tools
+        function setTool(tool) {
+            currentTool = tool;
+            ['select', 'remove', 'add', 'removeRow', 'removeLevel', 'lift', 'stairs', 'console'].forEach(t => {
+                const btn = document.getElementById(`tool-${t}`);
+                if (btn) btn.classList.toggle('active', t === tool);
+            });
+            
+            // Update hint
+            const hints = {
+                select: 'Klicke auf ein Feld für Details',
+                remove: 'Klicke auf Felder um sie zu entfernen',
+                add: 'Klicke auf entfernte Felder um sie wiederherzustellen',
+                removeRow: 'Klicke auf eine Reihe (vertikal) um sie zu entfernen/hinzuzufügen',
+                removeLevel: 'Klicke auf eine Schicht (horizontal) um sie zu entfernen/hinzuzufügen',
+                lift: 'Klicke wo der Lift platziert werden soll (verschiebbar)',
+                stairs: 'Klicke wo der Treppenturm platziert werden soll',
+                console: 'Klicke auf oberste Schicht für Konsole (Dachüberstand)'
+            };
+            document.getElementById('toolHintText').textContent = hints[tool] || '';
+        }
+        
+        function handleCellClick(field, level) {
+            const key = `${field}-${level}`;
+            
+            switch (currentTool) {
+                case 'remove':
+                    scaffoldState.removed.add(key);
+                    break;
+                case 'add':
+                    scaffoldState.removed.delete(key);
+                    break;
+                case 'removeRow':
+                    toggleRow(field);
+                    break;
+                case 'removeLevel':
+                    toggleLevel(level);
+                    break;
+                case 'lift':
+                    placeLift(field);
+                    break;
+                case 'stairs':
+                    placeStairs(field);
+                    break;
+                case 'console':
+                    if (level === scaffoldState.levels - 1) {
+                        toggleConsole(field);
+                    }
+                    break;
+                case 'select':
+                    showCellInfo(field, level);
+                    break;
+            }
+            
+            renderScaffoldEditor();
+            updateCalculations();
+        }
+        
+        function toggleRow(field) {
+            // Check if row is mostly removed
+            let removedInRow = 0;
+            for (let level = 0; level < scaffoldState.levels; level++) {
+                if (scaffoldState.removed.has(`${field}-${level}`)) {
+                    removedInRow++;
+                }
+            }
+            
+            const shouldAdd = removedInRow > scaffoldState.levels / 2;
+            
+            for (let level = 0; level < scaffoldState.levels; level++) {
+                const key = `${field}-${level}`;
+                if (shouldAdd) {
+                    scaffoldState.removed.delete(key);
+                } else {
+                    scaffoldState.removed.add(key);
+                }
+            }
+        }
+        
+        function toggleLevel(level) {
+            // Check if level is mostly removed
+            let removedInLevel = 0;
+            for (let field = 0; field < scaffoldState.fields; field++) {
+                if (scaffoldState.removed.has(`${field}-${level}`)) {
+                    removedInLevel++;
+                }
+            }
+            
+            const shouldAdd = removedInLevel > scaffoldState.fields / 2;
+            
+            for (let field = 0; field < scaffoldState.fields; field++) {
+                const key = `${field}-${level}`;
+                if (shouldAdd) {
+                    scaffoldState.removed.delete(key);
+                } else {
+                    scaffoldState.removed.add(key);
+                }
+            }
+        }
+        
+        function placeLift(field) {
+            if (scaffoldState.liftPosition && scaffoldState.liftPosition.field === field) {
+                // Remove lift if clicking same position
+                scaffoldState.hasLift = false;
+                scaffoldState.liftPosition = null;
+            } else {
+                scaffoldState.hasLift = true;
+                scaffoldState.liftPosition = { field: field };
+            }
+        }
+        
+        function placeStairs(field) {
+            if (scaffoldState.stairsPosition && scaffoldState.stairsPosition.field === field) {
+                scaffoldState.hasStairs = false;
+                scaffoldState.stairsPosition = null;
+            } else {
+                scaffoldState.hasStairs = true;
+                scaffoldState.stairsPosition = { field: field };
+            }
+        }
+        
+        function toggleConsole(field) {
+            if (!scaffoldState.consoles) scaffoldState.consoles = new Set();
+            
+            if (scaffoldState.consoles.has(field)) {
+                scaffoldState.consoles.delete(field);
+            } else {
+                scaffoldState.consoles.add(field);
+            }
+        }
+        
+        function showCellInfo(field, level) {
+            const key = `${field}-${level}`;
+            const isRemoved = scaffoldState.removed.has(key);
+            const height = ((level + 1) * systemData.levelHeight).toFixed(1);
+            const width = ((field + 1) * systemData.fieldWidth).toFixed(2);
+            
+            alert(`Feld ${field + 1}, Schicht ${level + 1}\nPosition: ${width}m × ${height}m\nStatus: ${isRemoved ? 'Entfernt' : 'Aktiv'}`);
+        }
+        
+        function addLift() {
+            setTool('lift');
+        }
+        
+        function addConsole() {
+            setTool('console');
+        }
+        
+        // Render Scaffold Grid
+        function renderScaffoldEditor() {
+            const svg = document.getElementById('scaffoldGrid');
+            const extras = document.getElementById('scaffoldExtras');
+            const heightMarkers = document.getElementById('heightMarkers');
+            const widthMarkers = document.getElementById('widthMarkers');
+            
+            svg.innerHTML = '';
+            extras.innerHTML = '';
+            heightMarkers.innerHTML = '';
+            widthMarkers.innerHTML = '';
+            
+            const startX = 60;
+            const startY = 380;
+            const cellWidth = 55;
+            const cellHeight = 35;
+            
+            // Height markers
+            for (let level = 0; level <= scaffoldState.levels; level++) {
+                const y = startY - (level * cellHeight);
+                const height = (level * systemData.levelHeight).toFixed(1);
+                heightMarkers.innerHTML += `
+                    <text x="35" y="${y + 4}" text-anchor="end" class="height-marker">${height}m</text>
+                    <line x1="40" y1="${y}" x2="45" y2="${y}" stroke="#9ca3af" stroke-width="1"/>
+                `;
+            }
+            
+            // Width markers
+            for (let field = 0; field <= scaffoldState.fields; field++) {
+                const x = startX + (field * cellWidth);
+                const width = (field * systemData.fieldWidth).toFixed(1);
+                widthMarkers.innerHTML += `
+                    <text x="${x}" y="400" text-anchor="middle" class="height-marker">${width}m</text>
+                `;
+            }
+            
+            // Scaffold cells
+            for (let level = 0; level < scaffoldState.levels; level++) {
+                for (let field = 0; field < scaffoldState.fields; field++) {
+                    const x = startX + (field * cellWidth);
+                    const y = startY - ((level + 1) * cellHeight);
+                    const key = `${field}-${level}`;
+                    const isRemoved = scaffoldState.removed.has(key);
+                    
+                    // Highlight for row/level tool
+                    let highlight = '';
+                    if (currentTool === 'removeRow') {
+                        highlight = 'opacity: 0.8;';
+                    } else if (currentTool === 'removeLevel') {
+                        highlight = 'opacity: 0.8;';
+                    }
+                    
+                    svg.innerHTML += `
+                        <rect 
+                            x="${x}" y="${y}" 
+                            width="${cellWidth - 2}" height="${cellHeight - 2}" 
+                            rx="3"
+                            class="scaffold-cell ${isRemoved ? 'removed' : ''}"
+                            fill="${isRemoved ? '#fecaca' : '#ef4444'}"
+                            stroke="#b91c1c"
+                            stroke-width="1"
+                            style="${highlight}"
+                            onclick="handleCellClick(${field}, ${level})"
+                        />
+                    `;
+                    
+                    // Access points (every 3rd field on ground level)
+                    if (level === 0 && field % 3 === 1 && !isRemoved) {
+                        svg.innerHTML += `
+                            <rect x="${x + 15}" y="${y + 8}" width="20" height="20" fill="#22c55e" rx="3"/>
+                            <text x="${x + 25}" y="${y + 22}" text-anchor="middle" fill="white" font-size="10">↑</text>
+                        `;
+                    }
+                }
+            }
+            
+            // Consoles (top)
+            if (scaffoldState.consoles) {
+                scaffoldState.consoles.forEach(field => {
+                    const x = startX + (field * cellWidth);
+                    const y = startY - (scaffoldState.levels * cellHeight) - 15;
+                    extras.innerHTML += `
+                        <rect x="${x}" y="${y}" width="${cellWidth - 2}" height="15" 
+                              fill="#8b5cf6" stroke="#7c3aed" stroke-width="1" rx="2"/>
+                        <text x="${x + cellWidth/2 - 1}" y="${y + 11}" text-anchor="middle" fill="white" font-size="8">Konsole</text>
+                    `;
+                });
+            }
+            
+            // Lift
+            if (scaffoldState.hasLift && scaffoldState.liftPosition !== null) {
+                const lx = startX + (scaffoldState.liftPosition.field * cellWidth);
+                const ly = startY - (scaffoldState.levels * cellHeight);
+                const liftHeight = scaffoldState.levels * cellHeight;
+                
+                extras.innerHTML += `
+                    <g class="cursor-move" onclick="setTool('lift')">
+                        <rect x="${lx - 3}" y="${ly}" width="${cellWidth + 6}" height="${liftHeight}" 
+                              fill="#f59e0b" fill-opacity="0.3" stroke="#f59e0b" stroke-width="2" rx="4"/>
+                        <rect x="${lx + 10}" y="${ly + 5}" width="${cellWidth - 22}" height="${liftHeight - 10}" 
+                              fill="#fbbf24" stroke="#d97706" stroke-width="1" rx="2"/>
+                        <text x="${lx + cellWidth/2}" y="${startY - 15}" text-anchor="middle" fill="#92400e" font-size="10" font-weight="bold">LIFT</text>
+                        <!-- Move handle -->
+                        <circle cx="${lx + cellWidth/2}" cy="${ly - 8}" r="8" fill="#f59e0b" stroke="white" stroke-width="2"/>
+                        <text x="${lx + cellWidth/2}" y="${ly - 4}" text-anchor="middle" fill="white" font-size="8">↔</text>
+                    </g>
+                `;
+            }
+            
+            // Stairs Tower
+            if (scaffoldState.hasStairs && scaffoldState.stairsPosition !== null) {
+                const sx = startX + (scaffoldState.stairsPosition.field * cellWidth);
+                const sy = startY - (scaffoldState.levels * cellHeight);
+                const stairsHeight = scaffoldState.levels * cellHeight;
+                
+                extras.innerHTML += `
+                    <g class="cursor-move" onclick="setTool('stairs')">
+                        <rect x="${sx - 3}" y="${sy}" width="${cellWidth + 6}" height="${stairsHeight}" 
+                              fill="#10b981" fill-opacity="0.3" stroke="#10b981" stroke-width="2" rx="4"/>
+                        <!-- Stair steps indication -->
+                        ${Array.from({length: scaffoldState.levels}, (_, i) => {
+                            const stepY = sy + (i * cellHeight) + cellHeight/2;
+                            return `<line x1="${sx + 5}" y1="${stepY}" x2="${sx + cellWidth - 7}" y2="${stepY}" stroke="#059669" stroke-width="2"/>`;
+                        }).join('')}
+                        <text x="${sx + cellWidth/2}" y="${startY - 15}" text-anchor="middle" fill="#065f46" font-size="9" font-weight="bold">TREPPE</text>
+                        <!-- Move handle -->
+                        <circle cx="${sx + cellWidth/2}" cy="${sy - 8}" r="8" fill="#10b981" stroke="white" stroke-width="2"/>
+                        <text x="${sx + cellWidth/2}" y="${sy - 4}" text-anchor="middle" fill="white" font-size="8">↔</text>
+                    </g>
+                `;
+            }
+        }
+        
+        // Navigation
+        function goBack() {
+            if (currentTab === 'editor') {
+                showTab('config');
+            } else if (currentTab === '3d') {
+                showTab('editor');
+            } else {
+                window.history.back();
+            }
+        }
+        
+        function goToMaterial() {
+            alert('Weiter zur Materialliste...');
+        }
+        
+        function zoomIn() {}
+        function zoomOut() {}
+        function resetView() {}
+        
+        // Initialize
+        updateCalculations();
+        renderScaffoldEditor();
+    </script>
+
+</body>
+</html>

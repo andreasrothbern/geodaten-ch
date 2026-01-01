@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Eckgerüst (2 Fassaden)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .scaffold-cell {
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        .scaffold-cell:hover {
+            filter: brightness(1.1);
+        }
+        .scaffold-cell.removed {
+            opacity: 0.2;
+        }
+        .tab-btn.active {
+            background-color: #dc2626;
+            color: white;
+        }
+        .tool-btn.active {
+            background-color: #fee2e2;
+            border-color: #dc2626;
+            color: #dc2626;
+        }
+        .corner-indicator {
+            background: linear-gradient(135deg, #f59e0b 50%, #ef4444 50%);
+        }
+        
+        /* Carousel Tabs */
+        .carousel-tab {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .carousel-tab.active {
+            transform: scale(1.05);
+        }
+        .carousel-tab.side {
+            opacity: 0.6;
+        }
+        .carousel-tab.side:hover {
+            opacity: 0.85;
+        }
+        .carousel-tab.hidden-tab {
+            display: none;
+        }
+        
+        /* 3D CSS transforms */
+        .scene-3d {
+            perspective: 1000px;
+        }
+        .building-3d {
+            transform-style: preserve-3d;
+            transform: rotateX(-15deg) rotateY(-35deg);
+            transition: transform 0.5s ease;
+        }
+        .building-3d:hover {
+            transform: rotateX(-15deg) rotateY(-45deg);
+        }
+        .face {
+            position: absolute;
+            backface-visibility: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <button onclick="history.back()" class="p-2 -ml-2">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <h1 class="font-semibold text-lg">Eckgerüst konfigurieren</h1>
+            <button class="p-2 text-white/80 hover:text-white">
+                <i class="fas fa-question-circle text-xl"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Tabs -->
+    <div class="bg-white border-b sticky top-[52px] z-40">
+        <div class="max-w-4xl mx-auto flex">
+            <button onclick="showMainTab('config')" id="main-tab-config" class="tab-btn active flex-1 py-3 text-sm font-medium text-center">
+                <i class="fas fa-sliders-h mr-2"></i>Übersicht
+            </button>
+            <button onclick="showMainTab('editor')" id="main-tab-editor" class="tab-btn flex-1 py-3 text-sm font-medium text-center text-gray-500">
+                <i class="fas fa-edit mr-2"></i>Editor
+            </button>
+            <button onclick="showMainTab('3d')" id="main-tab-3d" class="tab-btn flex-1 py-3 text-sm font-medium text-center text-gray-500">
+                <i class="fas fa-cube mr-2"></i>3D-Ansicht
+            </button>
+        </div>
+    </div>
+
+    <main class="max-w-4xl mx-auto p-4">
+        
+        <!-- OVERVIEW TAB -->
+        <div id="panel-config" class="space-y-4">
+            
+            <!-- Project Info with Corner Badge -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-building text-red-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="font-bold text-gray-800">Schulhaus Länggasse</h2>
+                            <p class="text-sm text-gray-500">2 Fassaden ausgewählt</p>
+                        </div>
+                    </div>
+                    <span class="corner-indicator text-white text-xs px-3 py-1 rounded-full font-medium">
+                        MIT ECKE
+                    </span>
+                </div>
+                
+                <!-- Mini Floor Plan -->
+                <div class="mt-4 flex justify-center">
+                    <svg viewBox="0 0 160 160" class="w-32 h-32">
+                        <!-- Building -->
+                        <rect x="40" y="40" width="80" height="80" fill="#f3f4f6" stroke="#d1d5db" stroke-width="2"/>
+                        
+                        <!-- Compass -->
+                        <text x="80" y="20" text-anchor="middle" class="text-xs fill-gray-400" font-size="10">N</text>
+                        <text x="145" y="82" text-anchor="start" class="text-xs fill-gray-400" font-size="10">O</text>
+                        <text x="80" y="150" text-anchor="middle" class="text-xs fill-gray-400" font-size="10">S</text>
+                        <text x="15" y="82" text-anchor="end" class="text-xs fill-gray-400" font-size="10">W</text>
+                        
+                        <!-- Selected Facades (West + South) -->
+                        <line x1="40" y1="40" x2="40" y2="120" stroke="#ef4444" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="40" y1="120" x2="120" y2="120" stroke="#ef4444" stroke-width="6" stroke-linecap="round"/>
+                        
+                        <!-- Corner indicator -->
+                        <circle cx="40" cy="120" r="8" fill="#f59e0b" stroke="white" stroke-width="2"/>
+                        <text x="40" y="124" text-anchor="middle" fill="white" font-size="10" font-weight="bold">E</text>
+                    </svg>
+                </div>
+            </div>
+            
+            <!-- Facade Summary Cards -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white rounded-xl p-4 shadow-sm border-l-4 border-red-500">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-800">West</span>
+                        <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                            <i class="fas fa-camera mr-1"></i>Foto
+                        </span>
+                    </div>
+                    <p class="text-2xl font-bold text-gray-800">18.0<span class="text-sm font-normal text-gray-500">m</span></p>
+                    <p class="text-xs text-gray-500">7 Felder × 9 Lagen</p>
+                    <p class="text-sm text-red-600 font-medium mt-1">292 m²</p>
+                </div>
+                
+                <div class="bg-white rounded-xl p-4 shadow-sm border-l-4 border-red-500">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-800">Süd</span>
+                        <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                            Kein Foto
+                        </span>
+                    </div>
+                    <p class="text-2xl font-bold text-gray-800">24.5<span class="text-sm font-normal text-gray-500">m</span></p>
+                    <p class="text-xs text-gray-500">10 Felder × 9 Lagen</p>
+                    <p class="text-sm text-red-600 font-medium mt-1">450 m²</p>
+                </div>
+            </div>
+            
+            <!-- Corner Info -->
+            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-vector-square text-amber-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-amber-800">Eckverbindung SW</h3>
+                        <p class="text-sm text-amber-700 mt-1">
+                            Die Fassaden West und Süd werden mit einer Eckausbildung verbunden. 
+                            Dies erfordert spezielle Eckpfosten und Diagonalverstrebungen.
+                        </p>
+                        <div class="flex gap-4 mt-2 text-xs text-amber-600">
+                            <span><i class="fas fa-plus-circle mr-1"></i>4 Eckpfosten</span>
+                            <span><i class="fas fa-plus-circle mr-1"></i>18 Diagonalen</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Total Summary -->
+            <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
+                <h3 class="font-semibold mb-3 flex items-center gap-2">
+                    <i class="fas fa-calculator"></i>
+                    Gesamtberechnung
+                </h3>
+                
+                <div class="grid grid-cols-4 gap-2 mb-4">
+                    <div class="bg-white/20 rounded-lg p-2 text-center">
+                        <p class="text-xl font-bold">17</p>
+                        <p class="text-xs text-white/80">Felder</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-2 text-center">
+                        <p class="text-xl font-bold">9</p>
+                        <p class="text-xs text-white/80">Lagen</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-2 text-center">
+                        <p class="text-xl font-bold">742</p>
+                        <p class="text-xs text-white/80">m² Gerüst</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-2 text-center">
+                        <p class="text-xl font-bold">1</p>
+                        <p class="text-xs text-white/80">Ecke</p>
+                    </div>
+                </div>
+                
+                <div class="text-sm space-y-1 text-white/90">
+                    <p><i class="fas fa-ruler mr-2"></i>Gesamtlänge: 42.5m (18.0 + 24.5)</p>
+                    <p><i class="fas fa-ruler-vertical mr-2"></i>Max. Höhe: 18.0m (9 × 2.0m)</p>
+                </div>
+            </div>
+            
+            <!-- Work Type -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Art der Arbeiten</h3>
+                <div class="space-y-2">
+                    <label class="flex items-center gap-3 p-3 border-2 border-red-500 bg-red-50 rounded-xl cursor-pointer">
+                        <input type="radio" name="workType" value="facade" class="w-5 h-5 text-red-600" checked>
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">Fassadenarbeiten</p>
+                            <p class="text-sm text-gray-500">Bis Traufhöhe (16.2m) → 9 Lagen</p>
+                        </div>
+                    </label>
+                    <label class="flex items-center gap-3 p-3 border-2 border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="workType" value="roof" class="w-5 h-5 text-red-600">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">Dacharbeiten</p>
+                            <p class="text-sm text-gray-500">+1m über Traufe (17.2m) → 9 Lagen + Schutz</p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            
+            <button onclick="showMainTab('editor')" class="w-full py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                Im Editor anpassen
+                <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+        
+        <!-- EDITOR TAB -->
+        <div id="panel-editor" class="hidden space-y-4">
+            
+            <!-- Carousel Facade Navigation -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div class="px-2 py-3">
+                    <div class="flex items-center justify-center gap-1" id="facadeCarousel">
+                        <!-- Will be rendered by JS -->
+                    </div>
+                </div>
+                <!-- Dots indicator -->
+                <div class="flex justify-center gap-1.5 pb-3" id="carouselDots">
+                    <!-- Will be rendered by JS -->
+                </div>
+            </div>
+            
+            <!-- Toolbar -->
+            <div class="bg-white rounded-xl p-3 shadow-sm">
+                <div class="flex gap-2 overflow-x-auto pb-1">
+                    <button onclick="setTool('select')" id="tool-select" class="tool-btn active flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-mouse-pointer"></i>
+                        Auswählen
+                    </button>
+                    <button onclick="setTool('remove')" id="tool-remove" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-eraser"></i>
+                        Entfernen
+                    </button>
+                    <button onclick="setTool('removeRow')" id="tool-removeRow" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-h"></i>
+                        Reihe ±
+                    </button>
+                    <button onclick="setTool('removeLevel')" id="tool-removeLevel" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-v"></i>
+                        Schicht ±
+                    </button>
+                    <button onclick="setTool('lift')" id="tool-lift" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-elevator"></i>
+                        Lift
+                    </button>
+                    <button onclick="setTool('stairs')" id="tool-stairs" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-stairs"></i>
+                        Treppe
+                    </button>
+                </div>
+                <div id="toolHint" class="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <span id="toolHintText">Klicke auf ein Feld für Details</span>
+                </div>
+            </div>
+            
+            <!-- Single Facade Editor -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-gray-700" id="editorTitle">West-Fassade</h3>
+                    <div class="flex items-center gap-2 text-sm text-gray-500">
+                        <span id="editorDimensions">18.0m × 16.2m</span>
+                    </div>
+                </div>
+                
+                <!-- Corner View (hidden by default) -->
+                <div id="cornerView" class="hidden text-center py-12">
+                    <div class="w-20 h-20 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-vector-square text-amber-600 text-3xl"></i>
+                    </div>
+                    <h4 class="font-semibold text-gray-800 mb-2">Eckverbindung Südwest</h4>
+                    <p class="text-sm text-gray-500 mb-4">Die Ecke wird automatisch berechnet basierend auf den angrenzenden Fassaden.</p>
+                    <div class="inline-flex gap-4 text-sm">
+                        <span class="bg-amber-50 text-amber-700 px-3 py-1 rounded-full">
+                            <i class="fas fa-plus-circle mr-1"></i>4 Eckpfosten
+                        </span>
+                        <span class="bg-amber-50 text-amber-700 px-3 py-1 rounded-full">
+                            <i class="fas fa-plus-circle mr-1"></i>18 Diagonalen
+                        </span>
+                    </div>
+                </div>
+                
+                <!-- Scaffold Grid View -->
+                <div id="gridView" class="overflow-x-auto border rounded-xl bg-gray-50 p-4">
+                    <svg id="facadeEditor" viewBox="0 0 480 380" class="w-full" style="min-width: 440px;">
+                        <!-- Background -->
+                        <defs>
+                            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
+                            </pattern>
+                        </defs>
+                        <rect width="100%" height="100%" fill="url(#grid)"/>
+                        
+                        <!-- Ground Line -->
+                        <line x1="40" y1="340" x2="460" y2="340" stroke="#78716c" stroke-width="3"/>
+                        
+                        <!-- Height Markers -->
+                        <g id="heightMarkers"></g>
+                        
+                        <!-- Width Markers -->
+                        <g id="widthMarkers"></g>
+                        
+                        <!-- Scaffold Grid -->
+                        <g id="scaffoldGrid"></g>
+                        
+                        <!-- Extras (Lift, Stairs) -->
+                        <g id="scaffoldExtras"></g>
+                        
+                    </svg>
+                </div>
+                
+                <!-- Legend -->
+                <div id="gridLegend" class="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
+                    <span><span class="inline-block w-4 h-3 bg-red-500 mr-1 rounded"></span>Gerüstfeld</span>
+                    <span><span class="inline-block w-4 h-3 bg-red-200 mr-1 rounded"></span>Entfernt</span>
+                    <span><span class="inline-block w-4 h-3 bg-amber-500 mr-1 rounded"></span>Lift</span>
+                    <span><span class="inline-block w-4 h-3 bg-green-500 mr-1 rounded"></span>Treppe</span>
+                    <span><span class="inline-block w-4 h-3 bg-emerald-400 mr-1 rounded"></span>Zugang</span>
+                </div>
+            </div>
+            
+            <!-- Stats for current facade -->
+            <div class="grid grid-cols-4 gap-2">
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="statFields">63</p>
+                    <p class="text-xs text-gray-500">Felder</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="statRemoved">0</p>
+                    <p class="text-xs text-gray-500">Entfernt</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-red-600" id="statArea">292</p>
+                    <p class="text-xs text-gray-500">m²</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="statExtras">0</p>
+                    <p class="text-xs text-gray-500">Extras</p>
+                </div>
+            </div>
+            
+            <!-- Navigation hint -->
+            <div class="text-center text-xs text-gray-400">
+                <i class="fas fa-arrows-alt-h mr-1"></i>
+                Klicke auf eine Seite um sie auszuwählen
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="showMainTab('config')" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>Übersicht
+                </button>
+                <button onclick="showMainTab('3d')" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    3D-Vorschau
+                    <i class="fas fa-cube ml-2"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- 3D TAB -->
+        <div id="panel-3d" class="hidden space-y-4">
+            
+            <!-- 3D Viewer -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div class="bg-gradient-to-b from-sky-300 to-sky-100 relative" style="min-height: 450px;">
+                    
+                    <!-- 3D Scene -->
+                    <div class="scene-3d absolute inset-0 flex items-center justify-center">
+                        <div class="building-3d relative" style="width: 200px; height: 200px;">
+                            
+                            <!-- Ground -->
+                            <div class="absolute w-72 h-72 bg-gray-300/50 rounded-lg" 
+                                 style="transform: rotateX(90deg) translateZ(-100px) translateX(-35px);"></div>
+                            
+                            <!-- Building Base -->
+                            <div class="absolute w-40 h-48 bg-gradient-to-b from-stone-200 to-stone-300 border border-stone-400"
+                                 style="transform: translateZ(0px);"></div>
+                            
+                            <!-- Building Side (East) -->
+                            <div class="absolute w-32 h-48 bg-gradient-to-b from-stone-300 to-stone-400 border border-stone-400"
+                                 style="transform: rotateY(90deg) translateZ(80px) translateX(16px);"></div>
+                            
+                            <!-- Roof -->
+                            <div class="absolute w-44 h-36 bg-red-700"
+                                 style="transform: rotateX(70deg) translateZ(85px) translateY(-60px) translateX(-2px);
+                                        clip-path: polygon(0% 100%, 50% 0%, 100% 100%);"></div>
+                            
+                            <!-- SCAFFOLD WEST (red) -->
+                            <div class="absolute w-3 h-48 bg-red-500/80 border-l-2 border-red-700"
+                                 style="transform: translateX(-15px) translateZ(5px);"></div>
+                            <div class="absolute w-2 h-48 bg-red-600/60"
+                                 style="transform: translateX(-22px) translateZ(5px);"></div>
+                            <!-- Horizontal bars West -->
+                            <div class="absolute w-12 h-48 flex flex-col justify-around"
+                                 style="transform: translateX(-25px) translateZ(5px);">
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                                <div class="h-0.5 bg-red-700"></div>
+                            </div>
+                            
+                            <!-- SCAFFOLD SOUTH (rose) -->
+                            <div class="absolute w-40 h-3 bg-rose-400/80 border-t-2 border-rose-600"
+                                 style="transform: translateY(192px) translateZ(5px);"></div>
+                            <div class="absolute w-40 h-2 bg-rose-500/60"
+                                 style="transform: translateY(198px) translateZ(5px);"></div>
+                            
+                            <!-- Corner piece -->
+                            <div class="absolute w-4 h-52 bg-amber-500 rounded"
+                                 style="transform: translateX(-18px) translateY(-4px) translateZ(2px);"></div>
+                            
+                            <!-- Labels -->
+                            <div class="absolute text-xs font-bold text-red-700 bg-white/80 px-1 rounded"
+                                 style="transform: translateX(-35px) translateY(90px);">W</div>
+                            <div class="absolute text-xs font-bold text-rose-600 bg-white/80 px-1 rounded"
+                                 style="transform: translateX(70px) translateY(200px);">S</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 3D Controls -->
+                    <div class="absolute bottom-4 left-4 flex gap-2">
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" onclick="rotate3D(-1)">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50" onclick="rotate3D(1)">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button class="p-2 bg-white rounded-lg shadow hover:bg-gray-50">
+                            <i class="fas fa-home"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- View Selector -->
+                    <div class="absolute top-4 right-4 bg-white rounded-lg shadow p-2 space-y-1">
+                        <button class="block w-full text-left px-3 py-1 text-sm rounded hover:bg-gray-100 font-medium">
+                            <i class="fas fa-cube mr-2 text-gray-400"></i>Isometrisch
+                        </button>
+                        <button class="block w-full text-left px-3 py-1 text-sm rounded hover:bg-gray-100 text-gray-500">
+                            <i class="fas fa-arrow-left mr-2 text-gray-400"></i>West-Ansicht
+                        </button>
+                        <button class="block w-full text-left px-3 py-1 text-sm rounded hover:bg-gray-100 text-gray-500">
+                            <i class="fas fa-arrow-down mr-2 text-gray-400"></i>Süd-Ansicht
+                        </button>
+                        <button class="block w-full text-left px-3 py-1 text-sm rounded hover:bg-gray-100 text-gray-500">
+                            <i class="fas fa-arrow-up mr-2 text-gray-400"></i>Draufsicht
+                        </button>
+                    </div>
+                    
+                    <!-- Compass -->
+                    <div class="absolute top-4 left-4 w-14 h-14 bg-white rounded-full shadow flex items-center justify-center">
+                        <div class="relative w-10 h-10">
+                            <span class="absolute top-0 left-1/2 -translate-x-1/2 text-xs text-red-600 font-bold">N</span>
+                            <span class="absolute bottom-0 left-1/2 -translate-x-1/2 text-xs text-gray-400">S</span>
+                            <span class="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-gray-400">W</span>
+                            <span class="absolute right-0 top-1/2 -translate-y-1/2 text-xs text-gray-400">O</span>
+                            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-0 h-0 
+                                        border-l-4 border-r-4 border-b-8 border-l-transparent border-r-transparent border-b-red-500
+                                        transform -rotate-45"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="p-4 border-t bg-white">
+                    <div class="flex flex-wrap gap-4 text-sm">
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-red-500 rounded"></span>
+                            West-Gerüst
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-rose-400 rounded"></span>
+                            Süd-Gerüst
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-4 h-4 bg-amber-500 rounded"></span>
+                            Eckverbindung
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Summary -->
+            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white">
+                <h3 class="font-semibold mb-3">
+                    <i class="fas fa-clipboard-check mr-2"></i>
+                    Zusammenfassung Eckgerüst
+                </h3>
+                
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-green-100">Gerüstfläche gesamt</p>
+                        <p class="text-2xl font-bold">742 m²</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">Fassaden</p>
+                        <p class="text-2xl font-bold">2 + 1 Ecke</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">West</p>
+                        <p class="font-bold">18.0m × 16.2m</p>
+                    </div>
+                    <div>
+                        <p class="text-green-100">Süd</p>
+                        <p class="font-bold">24.5m × 16.2m</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 pt-4 border-t border-white/20 text-sm space-y-1">
+                    <p class="flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        Eckausbildung automatisch berechnet
+                    </p>
+                    <p class="flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        Beide Fassaden durchgehend verbunden
+                    </p>
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="showMainTab('editor')" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>Bearbeiten
+                </button>
+                <button class="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">
+                    Materialliste
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        
+    </main>
+
+    <script>
+        // State
+        let currentMainTab = 'config';
+        let currentFacade = 'west';
+        let currentTool = 'select';
+        
+        const facadeOrder = ['west', 'corner', 'south'];
+        
+        const facades = {
+            west: {
+                name: 'West',
+                length: 18.0,
+                height: 16.2,
+                fields: 7,
+                levels: 9,
+                color: '#ef4444',
+                colorLight: '#fecaca',
+                removed: new Set(),
+                liftPosition: null,
+                stairsPosition: null
+            },
+            south: {
+                name: 'Süd',
+                length: 24.5,
+                height: 16.2,
+                fields: 10,
+                levels: 9,
+                color: '#fb7185',
+                colorLight: '#fecdd3',
+                removed: new Set(),
+                liftPosition: null,
+                stairsPosition: null
+            }
+        };
+        
+        const systemData = {
+            fieldWidth: 2.57,
+            levelHeight: 2.0
+        };
+        
+        // Tab Navigation
+        function showMainTab(tab) {
+            currentMainTab = tab;
+            ['config', 'editor', '3d'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+                const tabBtn = document.getElementById(`main-tab-${t}`);
+                tabBtn.classList.toggle('active', t === tab);
+                tabBtn.classList.toggle('text-gray-500', t !== tab);
+            });
+            
+            if (tab === 'editor') {
+                renderFacadeEditor();
+            }
+        }
+        
+        function showFacade(facade) {
+            currentFacade = facade;
+            
+            // Update tabs
+            ['west', 'corner', 'south'].forEach(f => {
+                const tab = document.getElementById(`facade-tab-${f}`);
+                tab.classList.toggle('active', f === facade);
+                tab.classList.toggle('text-gray-500', f !== facade);
+                tab.classList.toggle('border-red-500', f === facade && f !== 'corner');
+                tab.classList.toggle('border-amber-500', f === facade && f === 'corner');
+                tab.classList.toggle('border-transparent', f !== facade);
+            });
+            
+            // Show/hide views
+            const isCorner = facade === 'corner';
+            document.getElementById('cornerView').classList.toggle('hidden', !isCorner);
+            document.getElementById('gridView').classList.toggle('hidden', isCorner);
+            document.getElementById('gridLegend').classList.toggle('hidden', isCorner);
+            
+            // Update navigation buttons
+            updateNavButtons();
+            
+            if (!isCorner) {
+                renderFacadeEditor();
+            }
+            
+            updateStats();
+        }
+        
+        function updateNavButtons() {
+            const idx = facadeOrder.indexOf(currentFacade);
+            const prevBtn = document.getElementById('btnPrev');
+            const nextBtn = document.getElementById('btnNext');
+            
+            prevBtn.disabled = idx === 0;
+            nextBtn.disabled = idx === facadeOrder.length - 1;
+            
+            document.getElementById('btnPrevLabel').textContent = idx > 0 ? 
+                (facadeOrder[idx-1] === 'corner' ? 'Ecke SW' : facades[facadeOrder[idx-1]]?.name || '—') : '—';
+            document.getElementById('btnNextLabel').textContent = idx < facadeOrder.length - 1 ? 
+                (facadeOrder[idx+1] === 'corner' ? 'Ecke SW' : facades[facadeOrder[idx+1]]?.name || '—') : '—';
+        }
+        
+        function prevFacade() {
+            const idx = facadeOrder.indexOf(currentFacade);
+            if (idx > 0) showFacade(facadeOrder[idx - 1]);
+        }
+        
+        function nextFacade() {
+            const idx = facadeOrder.indexOf(currentFacade);
+            if (idx < facadeOrder.length - 1) showFacade(facadeOrder[idx + 1]);
+        }
+        
+        // Tools
+        function setTool(tool) {
+            currentTool = tool;
+            ['select', 'remove', 'removeRow', 'removeLevel', 'lift', 'stairs'].forEach(t => {
+                const btn = document.getElementById(`tool-${t}`);
+                if (btn) btn.classList.toggle('active', t === tool);
+            });
+            
+            const hints = {
+                select: 'Klicke auf ein Feld für Details',
+                remove: 'Klicke auf Felder um sie zu entfernen/wiederherzustellen',
+                removeRow: 'Klicke auf eine Reihe (vertikal) um sie zu entfernen',
+                removeLevel: 'Klicke auf eine Schicht (horizontal) um sie zu entfernen',
+                lift: 'Klicke wo der Lift platziert werden soll',
+                stairs: 'Klicke wo der Treppenturm platziert werden soll'
+            };
+            document.getElementById('toolHintText').textContent = hints[tool] || '';
+        }
+        
+        // Render Single Facade Editor
+        function renderFacadeEditor() {
+            if (currentFacade === 'corner') return;
+            
+            const facade = facades[currentFacade];
+            const svg = document.getElementById('scaffoldGrid');
+            const extras = document.getElementById('scaffoldExtras');
+            const heightMarkers = document.getElementById('heightMarkers');
+            const widthMarkers = document.getElementById('widthMarkers');
+            
+            // Update title
+            document.getElementById('editorTitle').textContent = `${facade.name}-Fassade`;
+            document.getElementById('editorDimensions').textContent = `${facade.length}m × ${facade.height}m`;
+            
+            svg.innerHTML = '';
+            extras.innerHTML = '';
+            heightMarkers.innerHTML = '';
+            widthMarkers.innerHTML = '';
+            
+            const cellWidth = 55;
+            const cellHeight = 32;
+            const startX = 50;
+            const startY = 340;
+            
+            // Adjust viewBox based on fields
+            const viewWidth = startX + (facade.fields * cellWidth) + 40;
+            document.getElementById('facadeEditor').setAttribute('viewBox', `0 0 ${viewWidth} 380`);
+            
+            // Height markers
+            for (let level = 0; level <= facade.levels; level++) {
+                const y = startY - (level * cellHeight);
+                const height = (level * systemData.levelHeight).toFixed(1);
+                heightMarkers.innerHTML += `
+                    <text x="35" y="${y + 4}" text-anchor="end" class="fill-gray-500" font-size="9">${height}m</text>
+                    <line x1="40" y1="${y}" x2="45" y2="${y}" stroke="#9ca3af" stroke-width="1"/>
+                `;
+            }
+            
+            // Width markers
+            for (let field = 0; field <= facade.fields; field++) {
+                const x = startX + (field * cellWidth);
+                widthMarkers.innerHTML += `
+                    <text x="${x}" y="358" text-anchor="middle" class="fill-gray-500" font-size="9">${(field * systemData.fieldWidth).toFixed(1)}m</text>
+                `;
+            }
+            
+            // Scaffold cells
+            for (let level = 0; level < facade.levels; level++) {
+                for (let field = 0; field < facade.fields; field++) {
+                    const x = startX + (field * cellWidth);
+                    const y = startY - ((level + 1) * cellHeight);
+                    const key = `${field}-${level}`;
+                    const isRemoved = facade.removed.has(key);
+                    
+                    svg.innerHTML += `
+                        <rect 
+                            x="${x}" y="${y}" 
+                            width="${cellWidth - 2}" height="${cellHeight - 2}" 
+                            rx="3"
+                            fill="${isRemoved ? facade.colorLight : facade.color}"
+                            stroke="${isRemoved ? '#f87171' : '#b91c1c'}"
+                            stroke-width="1"
+                            opacity="${isRemoved ? 0.4 : 1}"
+                            class="scaffold-cell"
+                            onclick="handleCellClick(${field}, ${level})"
+                        />
+                    `;
+                    
+                    // Default access points (every 4th field on ground level)
+                    if (level === 0 && field % 4 === 1 && !isRemoved && 
+                        facade.liftPosition !== field && facade.stairsPosition !== field) {
+                        svg.innerHTML += `
+                            <rect x="${x + 18}" y="${y + 6}" width="18" height="18" fill="#34d399" rx="3"/>
+                            <text x="${x + 27}" y="${y + 19}" text-anchor="middle" fill="white" font-size="10">↑</text>
+                        `;
+                    }
+                }
+            }
+            
+            // Lift
+            if (facade.liftPosition !== null) {
+                const lx = startX + (facade.liftPosition * cellWidth);
+                const ly = startY - (facade.levels * cellHeight);
+                const liftHeight = facade.levels * cellHeight;
+                
+                extras.innerHTML += `
+                    <g class="cursor-pointer" onclick="handleCellClick(${facade.liftPosition}, 0)">
+                        <rect x="${lx - 2}" y="${ly}" width="${cellWidth + 4}" height="${liftHeight}" 
+                              fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="2" rx="4"/>
+                        <rect x="${lx + 12}" y="${ly + 8}" width="${cellWidth - 26}" height="${liftHeight - 16}" 
+                              fill="#fbbf24" stroke="#d97706" stroke-width="1" rx="2"/>
+                        <text x="${lx + cellWidth/2}" y="${startY - 8}" text-anchor="middle" fill="#92400e" font-size="9" font-weight="bold">LIFT</text>
+                        <!-- Move indicator -->
+                        <circle cx="${lx + cellWidth/2}" cy="${ly - 10}" r="8" fill="#f59e0b" stroke="white" stroke-width="2"/>
+                        <text x="${lx + cellWidth/2}" y="${ly - 6}" text-anchor="middle" fill="white" font-size="8">✕</text>
+                    </g>
+                `;
+            }
+            
+            // Stairs
+            if (facade.stairsPosition !== null) {
+                const sx = startX + (facade.stairsPosition * cellWidth);
+                const sy = startY - (facade.levels * cellHeight);
+                const stairsHeight = facade.levels * cellHeight;
+                
+                let stairsSteps = '';
+                for (let i = 0; i < facade.levels; i++) {
+                    const stepY = sy + (i * cellHeight) + cellHeight / 2;
+                    stairsSteps += `<line x1="${sx + 8}" y1="${stepY}" x2="${sx + cellWidth - 10}" y2="${stepY}" stroke="#059669" stroke-width="2"/>`;
+                }
+                
+                extras.innerHTML += `
+                    <g class="cursor-pointer" onclick="handleCellClick(${facade.stairsPosition}, 0)">
+                        <rect x="${sx - 2}" y="${sy}" width="${cellWidth + 4}" height="${stairsHeight}" 
+                              fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="2" rx="4"/>
+                        ${stairsSteps}
+                        <text x="${sx + cellWidth/2}" y="${startY - 8}" text-anchor="middle" fill="#065f46" font-size="8" font-weight="bold">TREPPE</text>
+                        <!-- Move indicator -->
+                        <circle cx="${sx + cellWidth/2}" cy="${sy - 10}" r="8" fill="#10b981" stroke="white" stroke-width="2"/>
+                        <text x="${sx + cellWidth/2}" y="${sy - 6}" text-anchor="middle" fill="white" font-size="8">✕</text>
+                    </g>
+                `;
+            }
+            
+            updateStats();
+        }
+        
+        function handleCellClick(field, level) {
+            if (currentFacade === 'corner') return;
+            
+            const facade = facades[currentFacade];
+            const key = `${field}-${level}`;
+            
+            switch (currentTool) {
+                case 'select':
+                    // Show info
+                    const isRemoved = facade.removed.has(key);
+                    console.log(`Feld ${field + 1}, Schicht ${level + 1} - ${isRemoved ? 'Entfernt' : 'Aktiv'}`);
+                    break;
+                    
+                case 'remove':
+                    if (facade.removed.has(key)) {
+                        facade.removed.delete(key);
+                    } else {
+                        facade.removed.add(key);
+                    }
+                    break;
+                    
+                case 'removeRow':
+                    toggleRow(field);
+                    break;
+                    
+                case 'removeLevel':
+                    toggleLevel(level);
+                    break;
+                    
+                case 'lift':
+                    if (facade.liftPosition === field) {
+                        facade.liftPosition = null;
+                    } else {
+                        facade.liftPosition = field;
+                        // Remove stairs if same position
+                        if (facade.stairsPosition === field) {
+                            facade.stairsPosition = null;
+                        }
+                    }
+                    break;
+                    
+                case 'stairs':
+                    if (facade.stairsPosition === field) {
+                        facade.stairsPosition = null;
+                    } else {
+                        facade.stairsPosition = field;
+                        // Remove lift if same position
+                        if (facade.liftPosition === field) {
+                            facade.liftPosition = null;
+                        }
+                    }
+                    break;
+            }
+            
+            renderFacadeEditor();
+        }
+        
+        function toggleRow(field) {
+            const facade = facades[currentFacade];
+            let removedCount = 0;
+            
+            for (let level = 0; level < facade.levels; level++) {
+                if (facade.removed.has(`${field}-${level}`)) removedCount++;
+            }
+            
+            const shouldRestore = removedCount > facade.levels / 2;
+            
+            for (let level = 0; level < facade.levels; level++) {
+                const key = `${field}-${level}`;
+                if (shouldRestore) {
+                    facade.removed.delete(key);
+                } else {
+                    facade.removed.add(key);
+                }
+            }
+        }
+        
+        function toggleLevel(level) {
+            const facade = facades[currentFacade];
+            let removedCount = 0;
+            
+            for (let field = 0; field < facade.fields; field++) {
+                if (facade.removed.has(`${field}-${level}`)) removedCount++;
+            }
+            
+            const shouldRestore = removedCount > facade.fields / 2;
+            
+            for (let field = 0; field < facade.fields; field++) {
+                const key = `${field}-${level}`;
+                if (shouldRestore) {
+                    facade.removed.delete(key);
+                } else {
+                    facade.removed.add(key);
+                }
+            }
+        }
+        
+        function updateStats() {
+            if (currentFacade === 'corner') {
+                document.getElementById('statFields').textContent = '—';
+                document.getElementById('statRemoved').textContent = '—';
+                document.getElementById('statArea').textContent = '—';
+                document.getElementById('statExtras').textContent = '2';
+                return;
+            }
+            
+            const facade = facades[currentFacade];
+            const totalFields = facade.fields * facade.levels;
+            const removedCount = facade.removed.size;
+            const activeFields = totalFields - removedCount;
+            const area = Math.round(activeFields * systemData.fieldWidth * systemData.levelHeight);
+            
+            let extras = 0;
+            if (facade.liftPosition !== null) extras++;
+            if (facade.stairsPosition !== null) extras++;
+            
+            document.getElementById('statFields').textContent = activeFields;
+            document.getElementById('statRemoved').textContent = removedCount;
+            document.getElementById('statArea').textContent = area;
+            document.getElementById('statExtras').textContent = extras;
+        }
+        
+        let rotation = -35;
+        function rotate3D(dir) {
+            rotation += dir * 15;
+            document.querySelector('.building-3d').style.transform = 
+                `rotateX(-15deg) rotateY(${rotation}deg)`;
+        }
+        
+        // Initialize
+        updateNavButtons();
+    </script>
+
+</body>
+</html>

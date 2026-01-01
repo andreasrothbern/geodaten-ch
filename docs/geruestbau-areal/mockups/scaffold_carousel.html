@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Gerüst Editor (Karussell)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .scaffold-cell {
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        .scaffold-cell:hover {
+            filter: brightness(1.1);
+        }
+        .tab-btn.active {
+            background-color: #dc2626;
+            color: white;
+        }
+        .tool-btn.active {
+            background-color: #fee2e2;
+            border-color: #dc2626;
+            color: #dc2626;
+        }
+        
+        /* Carousel */
+        .carousel-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 8px;
+        }
+        .carousel-item {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .carousel-item.center {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        .carousel-item.side {
+            opacity: 0.5;
+            transform: scale(0.9);
+        }
+        .carousel-item.side:hover {
+            opacity: 0.8;
+            transform: scale(0.95);
+        }
+        .carousel-item.far {
+            opacity: 0.3;
+            transform: scale(0.8);
+        }
+        .carousel-arrow {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .carousel-arrow:hover:not(:disabled) {
+            background-color: #f3f4f6;
+        }
+        .carousel-arrow:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        /* 3D */
+        .scene-3d { perspective: 1000px; }
+        .building-3d {
+            transform-style: preserve-3d;
+            transform: rotateX(-15deg) rotateY(-35deg);
+            transition: transform 0.5s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <button onclick="history.back()" class="p-2 -ml-2">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <h1 class="font-semibold text-lg">Gerüst konfigurieren</h1>
+            <span class="text-sm text-white/80">3 Elemente</span>
+        </div>
+    </header>
+
+    <!-- Main Tabs -->
+    <div class="bg-white border-b sticky top-[52px] z-40">
+        <div class="max-w-4xl mx-auto flex">
+            <button onclick="showMainTab('overview')" id="main-tab-overview" class="tab-btn active flex-1 py-3 text-sm font-medium text-center">
+                <i class="fas fa-th-large mr-2"></i>Übersicht
+            </button>
+            <button onclick="showMainTab('editor')" id="main-tab-editor" class="tab-btn flex-1 py-3 text-sm font-medium text-center text-gray-500">
+                <i class="fas fa-edit mr-2"></i>Editor
+            </button>
+            <button onclick="showMainTab('3d')" id="main-tab-3d" class="tab-btn flex-1 py-3 text-sm font-medium text-center text-gray-500">
+                <i class="fas fa-cube mr-2"></i>3D
+            </button>
+        </div>
+    </div>
+
+    <main class="max-w-4xl mx-auto p-4">
+        
+        <!-- OVERVIEW TAB -->
+        <div id="panel-overview" class="space-y-4">
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h2 class="font-bold text-gray-800 mb-3">Schulhaus Länggasse</h2>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-red-50 rounded-lg p-3">
+                        <p class="text-2xl font-bold text-red-600">742</p>
+                        <p class="text-xs text-gray-500">m² Gerüst</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-2xl font-bold text-gray-800">2</p>
+                        <p class="text-xs text-gray-500">Fassaden</p>
+                    </div>
+                    <div class="bg-amber-50 rounded-lg p-3">
+                        <p class="text-2xl font-bold text-amber-600">1</p>
+                        <p class="text-xs text-gray-500">Ecke</p>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="showMainTab('editor')" class="w-full py-3 bg-red-600 text-white rounded-xl font-medium">
+                Im Editor bearbeiten <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+        
+        <!-- EDITOR TAB -->
+        <div id="panel-editor" class="hidden space-y-4">
+            
+            <!-- Carousel Navigation -->
+            <div class="bg-white rounded-xl shadow-sm">
+                <div class="carousel-container" id="carouselContainer">
+                    <!-- Rendered by JS -->
+                </div>
+                <!-- Progress dots -->
+                <div class="flex justify-center gap-1.5 pb-3" id="carouselDots"></div>
+            </div>
+            
+            <!-- Toolbar -->
+            <div class="bg-white rounded-xl p-3 shadow-sm">
+                <div class="flex gap-2 overflow-x-auto pb-1">
+                    <button onclick="setTool('select')" id="tool-select" class="tool-btn active flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-mouse-pointer"></i>Auswählen
+                    </button>
+                    <button onclick="setTool('remove')" id="tool-remove" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-eraser"></i>Entfernen
+                    </button>
+                    <button onclick="setTool('removeRow')" id="tool-removeRow" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-h"></i>Reihe
+                    </button>
+                    <button onclick="setTool('removeLevel')" id="tool-removeLevel" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-arrows-alt-v"></i>Schicht
+                    </button>
+                    <button onclick="setTool('lift')" id="tool-lift" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-elevator"></i>Lift
+                    </button>
+                    <button onclick="setTool('stairs')" id="tool-stairs" class="tool-btn flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        <i class="fas fa-stairs"></i>Treppe
+                    </button>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <span id="toolHint">Klicke auf ein Feld für Details</span>
+                </div>
+            </div>
+            
+            <!-- Editor Area -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-gray-700" id="editorTitle">West-Fassade</h3>
+                    <span class="text-sm text-gray-500" id="editorDimensions">18.0m × 16.2m</span>
+                </div>
+                
+                <!-- Corner Info (hidden for facades) -->
+                <div id="cornerInfo" class="hidden text-center py-8">
+                    <div class="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-vector-square text-amber-500 text-2xl"></i>
+                    </div>
+                    <h4 class="font-semibold text-gray-800">Eckverbindung</h4>
+                    <p class="text-sm text-gray-500 mt-1">Wird automatisch berechnet</p>
+                    <div class="flex justify-center gap-3 mt-4">
+                        <span class="bg-amber-50 text-amber-700 text-sm px-3 py-1 rounded-full">4 Eckpfosten</span>
+                        <span class="bg-amber-50 text-amber-700 text-sm px-3 py-1 rounded-full">18 Diagonalen</span>
+                    </div>
+                </div>
+                
+                <!-- Scaffold Grid -->
+                <div id="gridContainer" class="overflow-x-auto border rounded-xl bg-gray-50 p-4">
+                    <svg id="scaffoldSvg" viewBox="0 0 480 360" class="w-full" style="min-width: 400px;">
+                        <defs>
+                            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
+                            </pattern>
+                        </defs>
+                        <rect width="100%" height="100%" fill="url(#grid)"/>
+                        <line x1="40" y1="320" x2="460" y2="320" stroke="#78716c" stroke-width="3"/>
+                        <g id="heightMarkers"></g>
+                        <g id="widthMarkers"></g>
+                        <g id="scaffoldCells"></g>
+                        <g id="scaffoldExtras"></g>
+                    </svg>
+                </div>
+                
+                <!-- Legend -->
+                <div id="gridLegend" class="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
+                    <span><span class="inline-block w-4 h-3 bg-red-500 mr-1 rounded"></span>Aktiv</span>
+                    <span><span class="inline-block w-4 h-3 bg-red-200 mr-1 rounded"></span>Entfernt</span>
+                    <span><span class="inline-block w-4 h-3 bg-amber-500 mr-1 rounded"></span>Lift</span>
+                    <span><span class="inline-block w-4 h-3 bg-green-500 mr-1 rounded"></span>Treppe</span>
+                </div>
+            </div>
+            
+            <!-- Stats -->
+            <div class="grid grid-cols-4 gap-2">
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="statFields">63</p>
+                    <p class="text-xs text-gray-500">Felder</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-orange-500" id="statRemoved">0</p>
+                    <p class="text-xs text-gray-500">Entfernt</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-red-600" id="statArea">292</p>
+                    <p class="text-xs text-gray-500">m²</p>
+                </div>
+                <div class="bg-white rounded-xl p-3 text-center shadow-sm">
+                    <p class="text-xl font-bold text-gray-800" id="statExtras">0</p>
+                    <p class="text-xs text-gray-500">Extras</p>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3">
+                <button onclick="showMainTab('overview')" class="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>Übersicht
+                </button>
+                <button onclick="showMainTab('3d')" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    3D-Vorschau <i class="fas fa-cube ml-2"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- 3D TAB -->
+        <div id="panel-3d" class="hidden space-y-4">
+            <div class="bg-white rounded-xl p-8 shadow-sm text-center">
+                <div class="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-cube text-gray-400 text-3xl"></i>
+                </div>
+                <h3 class="font-semibold text-gray-800">3D-Vorschau</h3>
+                <p class="text-sm text-gray-500 mt-1">Für echte 3D-Darstellung: Three.js Integration</p>
+            </div>
+            
+            <button onclick="showMainTab('editor')" class="w-full py-3 border border-gray-300 rounded-xl font-medium text-gray-700">
+                <i class="fas fa-arrow-left mr-2"></i>Zurück zum Editor
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        // ============ STATE ============
+        let currentTab = 'overview';
+        let currentIndex = 0;
+        let currentTool = 'select';
+        
+        // Elements: Fassaden und Ecken (zirkulär für Rundum-Einrüstung)
+        const elements = [
+            { id: 'west', type: 'facade', name: 'West', shortName: 'W', length: 18.0, fields: 7, levels: 9, color: '#ef4444' },
+            { id: 'corner-sw', type: 'corner', name: 'Ecke SW', shortName: 'SW' },
+            { id: 'south', type: 'facade', name: 'Süd', shortName: 'S', length: 24.5, fields: 10, levels: 9, color: '#f43f5e' },
+            // Für Volleinrüstung würden hier weitere folgen:
+            // { id: 'corner-se', type: 'corner', name: 'Ecke SO', shortName: 'SO' },
+            // { id: 'east', type: 'facade', name: 'Ost', shortName: 'O', length: 18.0, fields: 7, levels: 9, color: '#ec4899' },
+            // etc.
+        ];
+        
+        // Facade state (removed cells, lift, stairs)
+        const facadeState = {};
+        elements.filter(e => e.type === 'facade').forEach(e => {
+            facadeState[e.id] = {
+                removed: new Set(),
+                liftPosition: null,
+                stairsPosition: null
+            };
+        });
+        
+        const config = {
+            fieldWidth: 2.57,
+            levelHeight: 2.0
+        };
+        
+        // ============ TAB NAVIGATION ============
+        function showMainTab(tab) {
+            currentTab = tab;
+            ['overview', 'editor', '3d'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+                const btn = document.getElementById(`main-tab-${t}`);
+                btn.classList.toggle('active', t === tab);
+                btn.classList.toggle('text-gray-500', t !== tab);
+            });
+            if (tab === 'editor') {
+                renderCarousel();
+                renderEditor();
+            }
+        }
+        
+        // ============ CAROUSEL ============
+        function renderCarousel() {
+            const container = document.getElementById('carouselContainer');
+            const dots = document.getElementById('carouselDots');
+            const total = elements.length;
+            
+            // Berechne sichtbare Indizes (immer 3: links, mitte, rechts)
+            const prevIdx = (currentIndex - 1 + total) % total;
+            const nextIdx = (currentIndex + 1) % total;
+            
+            container.innerHTML = `
+                <button class="carousel-arrow text-gray-400 hover:text-gray-600" onclick="navigateCarousel(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div class="carousel-item side" onclick="navigateCarousel(-1)">
+                    ${renderCarouselItem(elements[prevIdx], false)}
+                </div>
+                
+                <div class="carousel-item center">
+                    ${renderCarouselItem(elements[currentIndex], true)}
+                </div>
+                
+                <div class="carousel-item side" onclick="navigateCarousel(1)">
+                    ${renderCarouselItem(elements[nextIdx], false)}
+                </div>
+                
+                <button class="carousel-arrow text-gray-400 hover:text-gray-600" onclick="navigateCarousel(1)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+            
+            // Dots
+            dots.innerHTML = elements.map((el, idx) => {
+                const isActive = idx === currentIndex;
+                const isCorner = el.type === 'corner';
+                const color = isActive 
+                    ? (isCorner ? 'bg-amber-500' : 'bg-red-500')
+                    : (isCorner ? 'bg-amber-200' : 'bg-gray-300');
+                return `<button onclick="jumpToIndex(${idx})" class="${color} w-2 h-2 rounded-full hover:scale-125 transition-all"></button>`;
+            }).join('');
+        }
+        
+        function renderCarouselItem(el, isCenter) {
+            const isCorner = el.type === 'corner';
+            
+            if (isCorner) {
+                const bg = isCenter ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700';
+                const size = isCenter ? 'px-5 py-3' : 'px-3 py-2';
+                const font = isCenter ? 'font-semibold' : 'text-sm';
+                return `
+                    <div class="${bg} ${size} ${font} rounded-xl border-2 border-amber-400 shadow-sm">
+                        <i class="fas fa-vector-square mr-1.5"></i>${el.name}
+                    </div>
+                `;
+            } else {
+                const bg = isCenter ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600';
+                const border = isCenter ? 'border-red-500' : 'border-gray-200';
+                const size = isCenter ? 'px-5 py-3' : 'px-3 py-2';
+                const font = isCenter ? 'font-semibold' : 'text-sm';
+                return `
+                    <div class="${bg} ${size} ${font} rounded-xl border-2 ${border} shadow-sm">
+                        ${el.name} <span class="opacity-70">(${el.length}m)</span>
+                    </div>
+                `;
+            }
+        }
+        
+        function navigateCarousel(direction) {
+            const total = elements.length;
+            currentIndex = (currentIndex + direction + total) % total;
+            renderCarousel();
+            renderEditor();
+        }
+        
+        function jumpToIndex(idx) {
+            currentIndex = idx;
+            renderCarousel();
+            renderEditor();
+        }
+        
+        // ============ TOOLS ============
+        function setTool(tool) {
+            currentTool = tool;
+            ['select', 'remove', 'removeRow', 'removeLevel', 'lift', 'stairs'].forEach(t => {
+                const btn = document.getElementById(`tool-${t}`);
+                if (btn) btn.classList.toggle('active', t === tool);
+            });
+            
+            const hints = {
+                select: 'Klicke auf ein Feld für Details',
+                remove: 'Klicke auf Felder zum Entfernen/Wiederherstellen',
+                removeRow: 'Klicke um ganze Reihe (vertikal) zu entfernen',
+                removeLevel: 'Klicke um ganze Schicht (horizontal) zu entfernen',
+                lift: 'Klicke wo der Lift platziert werden soll',
+                stairs: 'Klicke wo die Treppe platziert werden soll'
+            };
+            document.getElementById('toolHint').textContent = hints[tool] || '';
+        }
+        
+        // ============ EDITOR ============
+        function renderEditor() {
+            const el = elements[currentIndex];
+            const isCorner = el.type === 'corner';
+            
+            // Toggle views
+            document.getElementById('cornerInfo').classList.toggle('hidden', !isCorner);
+            document.getElementById('gridContainer').classList.toggle('hidden', isCorner);
+            document.getElementById('gridLegend').classList.toggle('hidden', isCorner);
+            
+            // Title
+            document.getElementById('editorTitle').textContent = isCorner ? el.name : `${el.name}-Fassade`;
+            document.getElementById('editorDimensions').textContent = isCorner ? 'Automatisch' : `${el.length}m × 16.2m`;
+            
+            if (isCorner) {
+                updateStats();
+                return;
+            }
+            
+            renderScaffoldGrid(el);
+            updateStats();
+        }
+        
+        function renderScaffoldGrid(el) {
+            const state = facadeState[el.id];
+            const cells = document.getElementById('scaffoldCells');
+            const extras = document.getElementById('scaffoldExtras');
+            const hMarkers = document.getElementById('heightMarkers');
+            const wMarkers = document.getElementById('widthMarkers');
+            
+            cells.innerHTML = '';
+            extras.innerHTML = '';
+            hMarkers.innerHTML = '';
+            wMarkers.innerHTML = '';
+            
+            const cellW = 52;
+            const cellH = 30;
+            const startX = 50;
+            const startY = 320;
+            
+            // Adjust SVG viewBox
+            const svgWidth = startX + (el.fields * cellW) + 30;
+            document.getElementById('scaffoldSvg').setAttribute('viewBox', `0 0 ${svgWidth} 360`);
+            
+            // Height markers
+            for (let l = 0; l <= el.levels; l++) {
+                const y = startY - (l * cellH);
+                hMarkers.innerHTML += `<text x="38" y="${y+4}" text-anchor="end" fill="#9ca3af" font-size="9">${(l * config.levelHeight).toFixed(1)}m</text>`;
+            }
+            
+            // Width markers
+            for (let f = 0; f <= el.fields; f++) {
+                const x = startX + (f * cellW);
+                wMarkers.innerHTML += `<text x="${x}" y="340" text-anchor="middle" fill="#9ca3af" font-size="9">${(f * config.fieldWidth).toFixed(1)}m</text>`;
+            }
+            
+            // Cells
+            for (let level = 0; level < el.levels; level++) {
+                for (let field = 0; field < el.fields; field++) {
+                    const x = startX + (field * cellW);
+                    const y = startY - ((level + 1) * cellH);
+                    const key = `${field}-${level}`;
+                    const removed = state.removed.has(key);
+                    
+                    cells.innerHTML += `
+                        <rect x="${x}" y="${y}" width="${cellW-2}" height="${cellH-2}" rx="3"
+                              fill="${removed ? '#fecaca' : el.color}" 
+                              stroke="${removed ? '#f87171' : '#b91c1c'}"
+                              opacity="${removed ? 0.4 : 1}"
+                              class="scaffold-cell"
+                              onclick="handleCellClick(${field}, ${level})"/>
+                    `;
+                }
+            }
+            
+            // Lift
+            if (state.liftPosition !== null) {
+                const lx = startX + (state.liftPosition * cellW);
+                const ly = startY - (el.levels * cellH);
+                const lh = el.levels * cellH;
+                extras.innerHTML += `
+                    <g onclick="handleCellClick(${state.liftPosition}, 0)" class="cursor-pointer">
+                        <rect x="${lx-2}" y="${ly}" width="${cellW+4}" height="${lh}" fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="2" rx="4"/>
+                        <rect x="${lx+10}" y="${ly+8}" width="${cellW-22}" height="${lh-16}" fill="#fbbf24" stroke="#d97706" rx="2"/>
+                        <text x="${lx+cellW/2}" y="${startY-6}" text-anchor="middle" fill="#92400e" font-size="9" font-weight="bold">LIFT</text>
+                    </g>
+                `;
+            }
+            
+            // Stairs
+            if (state.stairsPosition !== null) {
+                const sx = startX + (state.stairsPosition * cellW);
+                const sy = startY - (el.levels * cellH);
+                const sh = el.levels * cellH;
+                let steps = '';
+                for (let i = 0; i < el.levels; i++) {
+                    steps += `<line x1="${sx+6}" y1="${sy + i*cellH + cellH/2}" x2="${sx+cellW-8}" y2="${sy + i*cellH + cellH/2}" stroke="#059669" stroke-width="2"/>`;
+                }
+                extras.innerHTML += `
+                    <g onclick="handleCellClick(${state.stairsPosition}, 0)" class="cursor-pointer">
+                        <rect x="${sx-2}" y="${sy}" width="${cellW+4}" height="${sh}" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="2" rx="4"/>
+                        ${steps}
+                        <text x="${sx+cellW/2}" y="${startY-6}" text-anchor="middle" fill="#065f46" font-size="8" font-weight="bold">TREPPE</text>
+                    </g>
+                `;
+            }
+        }
+        
+        function handleCellClick(field, level) {
+            const el = elements[currentIndex];
+            if (el.type === 'corner') return;
+            
+            const state = facadeState[el.id];
+            const key = `${field}-${level}`;
+            
+            switch (currentTool) {
+                case 'remove':
+                    state.removed.has(key) ? state.removed.delete(key) : state.removed.add(key);
+                    break;
+                case 'removeRow':
+                    toggleRow(el, state, field);
+                    break;
+                case 'removeLevel':
+                    toggleLevel(el, state, level);
+                    break;
+                case 'lift':
+                    state.liftPosition = (state.liftPosition === field) ? null : field;
+                    if (state.stairsPosition === field) state.stairsPosition = null;
+                    break;
+                case 'stairs':
+                    state.stairsPosition = (state.stairsPosition === field) ? null : field;
+                    if (state.liftPosition === field) state.liftPosition = null;
+                    break;
+            }
+            
+            renderEditor();
+        }
+        
+        function toggleRow(el, state, field) {
+            let count = 0;
+            for (let l = 0; l < el.levels; l++) {
+                if (state.removed.has(`${field}-${l}`)) count++;
+            }
+            const restore = count > el.levels / 2;
+            for (let l = 0; l < el.levels; l++) {
+                const key = `${field}-${l}`;
+                restore ? state.removed.delete(key) : state.removed.add(key);
+            }
+        }
+        
+        function toggleLevel(el, state, level) {
+            let count = 0;
+            for (let f = 0; f < el.fields; f++) {
+                if (state.removed.has(`${f}-${level}`)) count++;
+            }
+            const restore = count > el.fields / 2;
+            for (let f = 0; f < el.fields; f++) {
+                const key = `${f}-${level}`;
+                restore ? state.removed.delete(key) : state.removed.add(key);
+            }
+        }
+        
+        function updateStats() {
+            const el = elements[currentIndex];
+            
+            if (el.type === 'corner') {
+                document.getElementById('statFields').textContent = '—';
+                document.getElementById('statRemoved').textContent = '—';
+                document.getElementById('statArea').textContent = '—';
+                document.getElementById('statExtras').textContent = '22';
+                return;
+            }
+            
+            const state = facadeState[el.id];
+            const total = el.fields * el.levels;
+            const removed = state.removed.size;
+            const active = total - removed;
+            const area = Math.round(active * config.fieldWidth * config.levelHeight);
+            let extras = 0;
+            if (state.liftPosition !== null) extras++;
+            if (state.stairsPosition !== null) extras++;
+            
+            document.getElementById('statFields').textContent = active;
+            document.getElementById('statRemoved').textContent = removed;
+            document.getElementById('statArea').textContent = area;
+            document.getElementById('statExtras').textContent = extras;
+        }
+        
+        // Init
+        renderCarousel();
+    </script>
+
+</body>
+</html>

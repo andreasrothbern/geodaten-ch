@@ -1,5 +1,6 @@
 import { FileText, Link2, Camera, Pen, AlertCircle } from 'lucide-react'
-import AddressAutocomplete from '../../ui/AddressAutocomplete'
+// AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
+// import AddressAutocomplete from '../../ui/AddressAutocomplete'
 import type { ExtractedProjectData } from '../../../types/project'
 
 interface ReviewStepProps {
@@ -99,9 +100,11 @@ export default function ReviewStep({
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Adresse *
           </label>
-          <AddressAutocomplete
+          <input
+            type="text"
+            className="input-field"
             value={data.address || ''}
-            onChange={(value) => updateField('address', value)}
+            onChange={(e) => updateField('address', e.target.value)}
             placeholder="Strasse Nr, PLZ Ort"
             required
           />

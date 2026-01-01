@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Neubau anlegen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .input-group input:focus {
+            border-color: #dc2626;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+        }
+        .drawing-canvas {
+            background: 
+                linear-gradient(90deg, #f0f0f0 1px, transparent 1px),
+                linear-gradient(#f0f0f0 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .upload-zone {
+            transition: all 0.2s;
+        }
+        .upload-zone:hover {
+            border-color: #dc2626;
+            background-color: #fef2f2;
+        }
+        .upload-zone.dragover {
+            border-color: #dc2626;
+            background-color: #fee2e2;
+        }
+        .source-tab {
+            transition: all 0.15s;
+        }
+        .source-tab.active {
+            background-color: #dc2626;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-6">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <button onclick="history.back()" class="p-2 -ml-2 hover:bg-red-700 rounded-lg transition-colors">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <div class="text-center flex-1">
+                <h1 class="font-semibold text-lg">Neubau anlegen</h1>
+                <p class="text-xs text-red-200">FORUM UZH</p>
+            </div>
+            <button onclick="saveBuilding()" class="px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30">
+                Speichern
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto p-4 space-y-4">
+        
+        <!-- Info Banner -->
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-info-circle text-amber-500 text-xl mt-0.5"></i>
+                <div>
+                    <p class="font-medium text-amber-800">Keine Geodaten verfügbar</p>
+                    <p class="text-sm text-amber-700 mt-1">
+                        Für diesen Standort sind keine 3D-Gebäudedaten vorhanden. 
+                        Bitte definieren Sie das Gebäude manuell oder laden Sie Pläne hoch.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Source Selection -->
+        <div class="bg-white rounded-xl p-4 shadow-sm">
+            <h3 class="font-semibold text-gray-700 mb-3">Datenquelle wählen</h3>
+            <div class="flex gap-2">
+                <button class="source-tab active flex-1 py-3 rounded-xl text-sm font-medium border" onclick="showSource('manual')">
+                    <i class="fas fa-edit mr-2"></i>Manuell eingeben
+                </button>
+                <button class="source-tab flex-1 py-3 rounded-xl text-sm font-medium border bg-white text-gray-600" onclick="showSource('upload')">
+                    <i class="fas fa-file-upload mr-2"></i>Pläne hochladen
+                </button>
+                <button class="source-tab flex-1 py-3 rounded-xl text-sm font-medium border bg-white text-gray-600" onclick="showSource('draw')">
+                    <i class="fas fa-draw-polygon mr-2"></i>Auf Karte zeichnen
+                </button>
+            </div>
+        </div>
+        
+        <!-- Manual Input Section -->
+        <div id="manualSection" class="space-y-4">
+            
+            <!-- Basic Info -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Grunddaten</h3>
+                
+                <div class="space-y-3">
+                    <div class="input-group">
+                        <label class="text-sm text-gray-600 block mb-1">Bezeichnung *</label>
+                        <input type="text" value="FORUM UZH Hauptgebäude" class="w-full p-3 border rounded-xl focus:outline-none">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label class="text-sm text-gray-600 block mb-1">Gebäudetyp</label>
+                        <select class="w-full p-3 border rounded-xl bg-white focus:outline-none">
+                            <option>Universität / Hochschule</option>
+                            <option>Schulhaus</option>
+                            <option>Bürogebäude</option>
+                            <option>Wohngebäude</option>
+                            <option>Industriebau</option>
+                            <option>Andere</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dimensions -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Abmessungen</h3>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="input-group">
+                        <label class="text-sm text-gray-600 block mb-1">Länge (m) *</label>
+                        <input type="number" id="length" value="120" oninput="calculateDimensions()" class="w-full p-3 border rounded-xl focus:outline-none">
+                    </div>
+                    <div class="input-group">
+                        <label class="text-sm text-gray-600 block mb-1">Breite (m) *</label>
+                        <input type="number" id="width" value="65" oninput="calculateDimensions()" class="w-full p-3 border rounded-xl focus:outline-none">
+                    </div>
+                </div>
+                
+                <!-- Preview -->
+                <div class="mt-4 p-4 bg-gray-50 rounded-xl">
+                    <p class="text-xs text-gray-500 mb-2">Vorschau Grundriss</p>
+                    <div class="aspect-video bg-white border rounded-lg flex items-center justify-center relative">
+                        <div id="previewRect" class="border-2 border-red-500 bg-red-50" style="width: 60%; height: 35%;">
+                            <span class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs text-red-600 font-medium">
+                                120m × 65m
+                            </span>
+                        </div>
+                        <!-- Grid lines -->
+                        <div class="absolute inset-0 drawing-canvas opacity-30"></div>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2 text-center">Grundfläche: <span id="calcArea">7'800</span> m²</p>
+                </div>
+            </div>
+            
+            <!-- Height Info -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Höhenangaben</h3>
+                
+                <div class="space-y-4">
+                    <!-- From Tender -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                        <p class="text-xs text-blue-600 font-medium mb-2">
+                            <i class="fas fa-file-alt mr-1"></i>Aus Ausschreibung extrahiert:
+                        </p>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                                <span class="text-gray-500">Geschosse total:</span>
+                                <span class="font-medium ml-1">11 (UG03 - OG07)</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">GF:</span>
+                                <span class="font-medium ml-1">66'597 m²</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">GV:</span>
+                                <span class="font-medium ml-1">320'000 m³</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="input-group">
+                            <label class="text-sm text-gray-600 block mb-1">Oberirdische Geschosse *</label>
+                            <input type="number" id="floorsAbove" value="7" oninput="calculateHeight()" class="w-full p-3 border rounded-xl focus:outline-none">
+                        </div>
+                        <div class="input-group">
+                            <label class="text-sm text-gray-600 block mb-1">Unterirdische Geschosse</label>
+                            <input type="number" id="floorsBelow" value="3" class="w-full p-3 border rounded-xl focus:outline-none">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="input-group">
+                            <label class="text-sm text-gray-600 block mb-1">Ø Geschosshöhe (m)</label>
+                            <input type="number" id="floorHeight" value="3.8" step="0.1" oninput="calculateHeight()" class="w-full p-3 border rounded-xl focus:outline-none">
+                        </div>
+                        <div class="input-group">
+                            <label class="text-sm text-gray-600 block mb-1">Dachaufbau (m)</label>
+                            <input type="number" id="roofHeight" value="2.5" step="0.1" oninput="calculateHeight()" class="w-full p-3 border rounded-xl focus:outline-none">
+                        </div>
+                    </div>
+                    
+                    <!-- Calculated Heights -->
+                    <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                        <p class="text-xs text-green-600 font-medium mb-3">
+                            <i class="fas fa-calculator mr-1"></i>Berechnete Höhen:
+                        </p>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="text-center">
+                                <p class="text-3xl font-bold text-green-700" id="calcTrauf">26.6</p>
+                                <p class="text-xs text-green-600">Traufhöhe (m)</p>
+                                <p class="text-xs text-gray-400 mt-1">7 × 3.8m</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-3xl font-bold text-green-700" id="calcFirst">29.1</p>
+                                <p class="text-xs text-green-600">Firsthöhe (m)</p>
+                                <p class="text-xs text-gray-400 mt-1">+ 2.5m Dach</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Or manual override -->
+                    <div class="border-t pt-4">
+                        <label class="flex items-center gap-2 text-sm text-gray-600 mb-3 cursor-pointer">
+                            <input type="checkbox" id="manualHeight" onchange="toggleManualHeight()" class="w-4 h-4 text-red-600 rounded">
+                            Höhen manuell eingeben (z.B. aus Plänen)
+                        </label>
+                        <div id="manualHeightInputs" class="hidden grid grid-cols-2 gap-3">
+                            <div class="input-group">
+                                <label class="text-sm text-gray-600 block mb-1">Traufhöhe (m)</label>
+                                <input type="number" placeholder="26.6" class="w-full p-3 border rounded-xl focus:outline-none">
+                            </div>
+                            <div class="input-group">
+                                <label class="text-sm text-gray-600 block mb-1">Firsthöhe (m)</label>
+                                <input type="number" placeholder="29.1" class="w-full p-3 border rounded-xl focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Roof Type -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Dachform</h3>
+                <div class="grid grid-cols-4 gap-2">
+                    <button class="p-3 border-2 border-red-500 bg-red-50 rounded-xl text-center" onclick="selectRoof(this)">
+                        <div class="text-2xl mb-1">⬜</div>
+                        <span class="text-xs text-gray-600">Flachdach</span>
+                    </button>
+                    <button class="p-3 border-2 border-gray-200 rounded-xl text-center hover:border-gray-400" onclick="selectRoof(this)">
+                        <div class="text-2xl mb-1">🏠</div>
+                        <span class="text-xs text-gray-600">Satteldach</span>
+                    </button>
+                    <button class="p-3 border-2 border-gray-200 rounded-xl text-center hover:border-gray-400" onclick="selectRoof(this)">
+                        <div class="text-2xl mb-1">⛺</div>
+                        <span class="text-xs text-gray-600">Walmdach</span>
+                    </button>
+                    <button class="p-3 border-2 border-gray-200 rounded-xl text-center hover:border-gray-400" onclick="selectRoof(this)">
+                        <div class="text-2xl mb-1">🔷</div>
+                        <span class="text-xs text-gray-600">Komplex</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Upload Section (hidden by default) -->
+        <div id="uploadSection" class="hidden space-y-4">
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Pläne hochladen</h3>
+                
+                <div class="upload-zone border-2 border-dashed border-gray-300 rounded-xl p-8 text-center" 
+                     ondragover="handleDragOver(event)" 
+                     ondragleave="handleDragLeave(event)" 
+                     ondrop="handleDrop(event)">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-gray-300 mb-3"></i>
+                    <p class="text-gray-600 mb-2">Pläne hier ablegen oder</p>
+                    <button class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+                        Dateien auswählen
+                    </button>
+                    <p class="text-xs text-gray-400 mt-3">DXF, DWG, PDF bis 50 MB</p>
+                </div>
+                
+                <!-- Uploaded Files -->
+                <div class="mt-4 space-y-2">
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div class="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
+                            <i class="fas fa-file-alt text-blue-600"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">FORUM_UZH_Grundriss_EG.dwg</p>
+                            <p class="text-xs text-gray-400">4.2 MB • Hochgeladen</p>
+                        </div>
+                        <span class="text-green-500"><i class="fas fa-check-circle"></i></span>
+                    </div>
+                    
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div class="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
+                            <i class="fas fa-file-alt text-blue-600"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">FORUM_UZH_Schnitt_NS.pdf</p>
+                            <p class="text-xs text-gray-400">2.8 MB • Hochgeladen</p>
+                        </div>
+                        <span class="text-green-500"><i class="fas fa-check-circle"></i></span>
+                    </div>
+                </div>
+                
+                <div class="mt-4 p-4 bg-blue-50 rounded-xl">
+                    <p class="text-sm text-blue-700">
+                        <i class="fas fa-magic mr-2"></i>
+                        <strong>KI-Extraktion:</strong> Dimensionen und Höhen werden automatisch aus den Plänen extrahiert.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Draw Section (hidden by default) -->
+        <div id="drawSection" class="hidden space-y-4">
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">Auf Karte zeichnen</h3>
+                
+                <div class="drawing-canvas h-64 rounded-xl border relative">
+                    <!-- Simplified map background -->
+                    <div class="absolute inset-0 bg-green-50 rounded-xl"></div>
+                    
+                    <!-- Instructions overlay -->
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="text-center">
+                            <i class="fas fa-draw-polygon text-4xl text-gray-300 mb-2"></i>
+                            <p class="text-gray-500">Klicken Sie, um Eckpunkte zu setzen</p>
+                            <p class="text-xs text-gray-400 mt-1">Doppelklick zum Abschließen</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Tool buttons -->
+                    <div class="absolute top-2 right-2 flex flex-col gap-1">
+                        <button class="w-8 h-8 bg-white rounded shadow flex items-center justify-center hover:bg-gray-50">
+                            <i class="fas fa-draw-polygon text-gray-600 text-sm"></i>
+                        </button>
+                        <button class="w-8 h-8 bg-white rounded shadow flex items-center justify-center hover:bg-gray-50">
+                            <i class="fas fa-vector-square text-gray-600 text-sm"></i>
+                        </button>
+                        <button class="w-8 h-8 bg-white rounded shadow flex items-center justify-center hover:bg-gray-50">
+                            <i class="fas fa-undo text-gray-600 text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <p class="text-xs text-gray-400 mt-2 text-center">
+                    Tipp: Für rechteckige Gebäude nutzen Sie das Rechteck-Werkzeug
+                </p>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="flex gap-3 mt-6">
+            <button onclick="history.back()" class="flex-1 py-3 border border-gray-300 bg-white rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-arrow-left mr-2"></i>Abbrechen
+            </button>
+            <button onclick="saveBuilding()" class="flex-1 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 shadow-sm">
+                <i class="fas fa-save mr-2"></i>Gebäude speichern
+            </button>
+        </div>
+        
+    </main>
+
+    <script>
+        function showSource(source) {
+            // Update tabs
+            document.querySelectorAll('.source-tab').forEach(tab => {
+                tab.classList.remove('active');
+                tab.classList.add('bg-white', 'text-gray-600');
+            });
+            event.target.classList.add('active');
+            event.target.classList.remove('bg-white', 'text-gray-600');
+            
+            // Show/hide sections
+            document.getElementById('manualSection').classList.add('hidden');
+            document.getElementById('uploadSection').classList.add('hidden');
+            document.getElementById('drawSection').classList.add('hidden');
+            
+            document.getElementById(source + 'Section').classList.remove('hidden');
+        }
+        
+        function calculateDimensions() {
+            const length = parseFloat(document.getElementById('length').value) || 0;
+            const width = parseFloat(document.getElementById('width').value) || 0;
+            const area = length * width;
+            document.getElementById('calcArea').textContent = area.toLocaleString('de-CH');
+        }
+        
+        function calculateHeight() {
+            const floors = parseFloat(document.getElementById('floorsAbove').value) || 0;
+            const floorHeight = parseFloat(document.getElementById('floorHeight').value) || 3.0;
+            const roofHeight = parseFloat(document.getElementById('roofHeight').value) || 0;
+            
+            const trauf = floors * floorHeight;
+            const first = trauf + roofHeight;
+            
+            document.getElementById('calcTrauf').textContent = trauf.toFixed(1);
+            document.getElementById('calcFirst').textContent = first.toFixed(1);
+        }
+        
+        function toggleManualHeight() {
+            const inputs = document.getElementById('manualHeightInputs');
+            inputs.classList.toggle('hidden');
+        }
+        
+        function selectRoof(btn) {
+            document.querySelectorAll('[onclick="selectRoof(this)"]').forEach(b => {
+                b.classList.remove('border-red-500', 'bg-red-50');
+                b.classList.add('border-gray-200');
+            });
+            btn.classList.add('border-red-500', 'bg-red-50');
+            btn.classList.remove('border-gray-200');
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('dragover');
+        }
+        
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('dragover');
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('dragover');
+            // Handle file upload
+        }
+        
+        function saveBuilding() {
+            // Save and return to building selection
+            location.href = 'multi_building_select.html';
+        }
+    </script>
+
+</body>
+</html>

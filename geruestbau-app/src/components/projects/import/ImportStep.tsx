@@ -11,7 +11,8 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import FileUpload from '../../ui/FileUpload'
-import AddressAutocomplete from '../../ui/AddressAutocomplete'
+// AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
+// import AddressAutocomplete from '../../ui/AddressAutocomplete'
 import type { OcrExtractionResult, ExtractedProjectData } from '../../../types/project'
 
 interface ImportStepProps {
@@ -322,10 +323,12 @@ export default function ImportStep({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Adresse *
               </label>
-              <AddressAutocomplete
+              <input
+                type="text"
+                className="input-field"
                 value={manualForm.address}
-                onChange={(value) =>
-                  setManualForm({ ...manualForm, address: value })
+                onChange={(e) =>
+                  setManualForm({ ...manualForm, address: e.target.value })
                 }
                 placeholder="Strasse Nr, PLZ Ort"
                 required

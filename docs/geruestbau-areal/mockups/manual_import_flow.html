@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerüstbau-App - Manueller Import Flow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .step-hidden { display: none; }
+        .step-active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-red-600 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+        <div class="flex items-center justify-between max-w-lg mx-auto">
+            <button class="p-2 -ml-2" onclick="goBack()">
+                <i class="fas fa-arrow-left text-xl"></i>
+            </button>
+            <h1 class="font-semibold text-lg" id="headerTitle">Neues Projekt</h1>
+            <div class="w-10"></div>
+        </div>
+    </header>
+
+    <!-- Progress Bar -->
+    <div class="bg-white border-b px-4 py-2">
+        <div class="max-w-lg mx-auto">
+            <div class="flex items-center justify-between text-sm text-gray-500 mb-2">
+                <span id="stepLabel">Schritt 1 von 4</span>
+                <span id="stepName">Import-Methode</span>
+            </div>
+            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div id="progressBar" class="h-full bg-red-600 transition-all duration-300" style="width: 25%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-lg mx-auto p-4">
+        
+        <!-- ========== STEP 1: Import-Methode ========== -->
+        <div id="step1" class="step-active space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Wie möchtest du das Projekt erfassen?</h2>
+            
+            <!-- Option 1: Von simap.ch -->
+            <button onclick="selectMethod('simap')" class="w-full bg-white rounded-xl p-4 shadow-sm border-2 border-transparent hover:border-red-500 transition-all text-left flex items-start gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-globe text-blue-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-gray-800">Von simap.ch importieren</h3>
+                    <p class="text-sm text-gray-500 mt-1">Öffne die Ausschreibung im Browser und übertrage die Daten</p>
+                    <span class="inline-block mt-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                        <i class="fas fa-star mr-1"></i>Empfohlen
+                    </span>
+                </div>
+                <i class="fas fa-chevron-right text-gray-400 mt-3"></i>
+            </button>
+            
+            <!-- Option 2: Manuell -->
+            <button onclick="selectMethod('manual')" class="w-full bg-white rounded-xl p-4 shadow-sm border-2 border-transparent hover:border-red-500 transition-all text-left flex items-start gap-4">
+                <div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-pen text-gray-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-gray-800">Manuell erfassen</h3>
+                    <p class="text-sm text-gray-500 mt-1">Projektdaten selbst eingeben</p>
+                </div>
+                <i class="fas fa-chevron-right text-gray-400 mt-3"></i>
+            </button>
+            
+            <!-- Option 3: Foto -->
+            <button onclick="selectMethod('photo')" class="w-full bg-white rounded-xl p-4 shadow-sm border-2 border-transparent hover:border-red-500 transition-all text-left flex items-start gap-4">
+                <div class="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-camera text-amber-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-gray-800">Bauaushang fotografieren</h3>
+                    <p class="text-sm text-gray-500 mt-1">Foto aufnehmen, Text wird erkannt (OCR)</p>
+                    <span class="inline-block mt-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                        Bald verfügbar
+                    </span>
+                </div>
+                <i class="fas fa-chevron-right text-gray-400 mt-3"></i>
+            </button>
+            
+            <!-- Quick Link -->
+            <div class="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 mt-6">
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-lightbulb text-blue-600 mt-1"></i>
+                    <div>
+                        <h4 class="font-medium text-blue-900">Gerüstbau-Ausschreibungen finden</h4>
+                        <p class="text-sm text-blue-700 mt-1">Öffne simap.ch mit voreingestelltem Filter:</p>
+                        <a href="https://www.simap.ch/de?cpvCodes=[%2244212310%22,%2245262100%22]&newestPubTypes=[%22tender%22]&orderAddressCountryOnlySwitzerland=true" 
+                           target="_blank"
+                           class="inline-flex items-center gap-2 mt-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-external-link-alt"></i>
+                            simap.ch öffnen
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== STEP 2: simap.ch Import ========== -->
+        <div id="step2-simap" class="step-hidden space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Von simap.ch importieren</h2>
+            
+            <!-- Anleitung -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-semibold text-gray-700 mb-3">
+                    <i class="fas fa-list-ol text-red-600 mr-2"></i>So geht's:
+                </h3>
+                <ol class="space-y-3 text-sm">
+                    <li class="flex gap-3">
+                        <span class="w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">1</span>
+                        <span>Öffne die Ausschreibung auf simap.ch</span>
+                    </li>
+                    <li class="flex gap-3">
+                        <span class="w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">2</span>
+                        <span>Kopiere den <strong>Link</strong> aus der Adresszeile</span>
+                    </li>
+                    <li class="flex gap-3">
+                        <span class="w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">3</span>
+                        <span>Füge die wichtigsten Daten unten ein</span>
+                    </li>
+                </ol>
+            </div>
+            
+            <!-- Link Input -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        simap.ch Link <span class="text-gray-400">(optional)</span>
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="url" id="simapLink" 
+                               placeholder="https://www.simap.ch/de/project-detail/..."
+                               class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm">
+                        <button onclick="openSimapLink()" class="px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
+                            <i class="fas fa-external-link-alt text-gray-600"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Wird als Referenz gespeichert</p>
+                </div>
+            </div>
+            
+            <!-- Hauptdaten -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-4">
+                <h3 class="font-semibold text-gray-700">
+                    <i class="fas fa-file-alt text-red-600 mr-2"></i>Projektdaten
+                </h3>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Projekttitel <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="projectTitle" 
+                           placeholder="z.B. Gerüstarbeiten Sanierung Schulhaus Länggasse"
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Adresse / Ausführungsort <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="projectAddress" 
+                           placeholder="z.B. Länggassstrasse 40, 3012 Bern"
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                    <p class="text-xs text-gray-500 mt-1">
+                        <i class="fas fa-magic text-green-600 mr-1"></i>
+                        Geodaten werden automatisch geladen
+                    </p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Auftraggeber
+                    </label>
+                    <input type="text" id="projectClient" 
+                           placeholder="z.B. Stadt Bern, Hochbauamt"
+                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Eingabefrist
+                        </label>
+                        <input type="date" id="projectDeadline" 
+                               class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Verfahrensart
+                        </label>
+                        <select id="projectProcedure" 
+                                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white">
+                            <option value="">-- wählen --</option>
+                            <option value="open">Offenes Verfahren</option>
+                            <option value="selective">Selektives Verfahren</option>
+                            <option value="invitation">Einladungsverfahren</option>
+                            <option value="direct">Freihändige Vergabe</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Beschreibung / Notizen
+                    </label>
+                    <textarea id="projectDescription" rows="3"
+                              placeholder="Weitere Details zur Ausschreibung..."
+                              class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"></textarea>
+                </div>
+            </div>
+            
+            <!-- Dokumente Hinweis -->
+            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                <div class="flex gap-3">
+                    <i class="fas fa-file-pdf text-amber-600 text-xl"></i>
+                    <div>
+                        <h4 class="font-medium text-amber-900">Ausschreibungsunterlagen</h4>
+                        <p class="text-sm text-amber-700 mt-1">
+                            Lade die Dokumente von simap.ch herunter. Du kannst sie im nächsten Schritt zum Projekt hinzufügen.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3 pt-4">
+                <button onclick="goToStep(1)" class="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="goToStep(3)" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    Weiter
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== STEP 3: Geodaten ========== -->
+        <div id="step3" class="step-hidden space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Geodaten laden</h2>
+            
+            <!-- Loading State -->
+            <div id="geodataLoading" class="bg-white rounded-xl p-6 shadow-sm text-center">
+                <div class="w-16 h-16 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mx-auto"></div>
+                <p class="mt-4 text-gray-600">Geodaten werden geladen...</p>
+                <p class="text-sm text-gray-400 mt-1" id="loadingAddress">Länggassstrasse 40, 3012 Bern</p>
+            </div>
+            
+            <!-- Success State -->
+            <div id="geodataSuccess" class="hidden space-y-4">
+                <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-check text-green-600"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-green-900">Geodaten gefunden!</h3>
+                            <p class="text-sm text-green-700">Gebäudedaten wurden erfolgreich geladen</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Gebäudedaten -->
+                <div class="bg-white rounded-xl p-4 shadow-sm space-y-3">
+                    <h3 class="font-semibold text-gray-700">
+                        <i class="fas fa-building text-red-600 mr-2"></i>Gebäudedaten
+                    </h3>
+                    
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-gray-500 text-xs">EGID</p>
+                            <p class="font-mono font-medium">302145678</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-gray-500 text-xs">Baujahr</p>
+                            <p class="font-medium">1965</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-gray-500 text-xs">Gebäudetyp</p>
+                            <p class="font-medium">Schulgebäude</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-gray-500 text-xs">Geschosse</p>
+                            <p class="font-medium">4</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-3 text-sm">
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <p class="text-gray-500 text-xs">Traufhöhe</p>
+                            <p class="font-bold text-lg text-red-600">12.4m</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <p class="text-gray-500 text-xs">Firsthöhe</p>
+                            <p class="font-bold text-lg text-red-600">16.2m</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <p class="text-gray-500 text-xs">Grundfläche</p>
+                            <p class="font-bold text-lg text-red-600">850m²</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Karte Placeholder -->
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="h-48 bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center">
+                        <div class="text-center">
+                            <i class="fas fa-map-marked-alt text-4xl text-gray-400"></i>
+                            <p class="text-sm text-gray-500 mt-2">Kartenansicht</p>
+                        </div>
+                    </div>
+                    <div class="p-3 border-t text-center">
+                        <button class="text-sm text-red-600 font-medium">
+                            <i class="fas fa-expand mr-1"></i>Vollbild anzeigen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3 pt-4">
+                <button onclick="goToStep(2)" class="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="goToStep(4)" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">
+                    Weiter
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== STEP 4: Dokumente & Abschluss ========== -->
+        <div id="step4" class="step-hidden space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Dokumente & Abschluss</h2>
+            
+            <!-- Dokumente Upload -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-4">
+                <h3 class="font-semibold text-gray-700">
+                    <i class="fas fa-paperclip text-red-600 mr-2"></i>Ausschreibungsunterlagen
+                </h3>
+                
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-red-500 transition-colors cursor-pointer">
+                    <input type="file" id="fileUpload" multiple class="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf">
+                    <label for="fileUpload" class="cursor-pointer">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400"></i>
+                        <p class="mt-2 font-medium text-gray-700">Dateien hochladen</p>
+                        <p class="text-sm text-gray-500">PDF, Word, Excel, DWG, DXF</p>
+                    </label>
+                </div>
+                
+                <!-- Hochgeladene Dateien -->
+                <div id="uploadedFiles" class="space-y-2">
+                    <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                        <i class="fas fa-file-pdf text-red-500 text-xl"></i>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-sm truncate">Ausschreibung_Schulhaus_2024.pdf</p>
+                            <p class="text-xs text-gray-500">2.4 MB</p>
+                        </div>
+                        <button class="text-gray-400 hover:text-red-500">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                        <i class="fas fa-file-excel text-green-500 text-xl"></i>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-sm truncate">Leistungsverzeichnis.xlsx</p>
+                            <p class="text-xs text-gray-500">156 KB</p>
+                        </div>
+                        <button class="text-gray-400 hover:text-red-500">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Zusammenfassung -->
+            <div class="bg-white rounded-xl p-4 shadow-sm space-y-3">
+                <h3 class="font-semibold text-gray-700">
+                    <i class="fas fa-clipboard-check text-red-600 mr-2"></i>Zusammenfassung
+                </h3>
+                
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between py-2 border-b">
+                        <span class="text-gray-500">Projekt</span>
+                        <span class="font-medium text-right">Gerüstarbeiten Sanierung Schulhaus</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b">
+                        <span class="text-gray-500">Adresse</span>
+                        <span class="font-medium">Länggassstrasse 40, 3012 Bern</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b">
+                        <span class="text-gray-500">Auftraggeber</span>
+                        <span class="font-medium">Stadt Bern, Hochbauamt</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b">
+                        <span class="text-gray-500">Frist</span>
+                        <span class="font-medium text-red-600">15.02.2025</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b">
+                        <span class="text-gray-500">Gebäudehöhe</span>
+                        <span class="font-medium">16.2m (First)</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-500">Dokumente</span>
+                        <span class="font-medium">2 Dateien</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Nächste Schritte -->
+            <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                <h4 class="font-medium text-blue-900">
+                    <i class="fas fa-arrow-right mr-2"></i>Nächste Schritte
+                </h4>
+                <ul class="mt-2 space-y-1 text-sm text-blue-800">
+                    <li><i class="fas fa-camera text-blue-500 mr-2"></i>Fotos vor Ort aufnehmen</li>
+                    <li><i class="fas fa-cube text-blue-500 mr-2"></i>Gerüst konfigurieren</li>
+                    <li><i class="fas fa-file-invoice text-blue-500 mr-2"></i>Offerte erstellen</li>
+                </ul>
+            </div>
+            
+            <!-- Navigation -->
+            <div class="flex gap-3 pt-4">
+                <button onclick="goToStep(3)" class="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                    Zurück
+                </button>
+                <button onclick="createProject()" class="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i>
+                    Projekt erstellen
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== SUCCESS SCREEN ========== -->
+        <div id="successScreen" class="step-hidden">
+            <div class="text-center py-8">
+                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-check text-green-600 text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800">Projekt erstellt!</h2>
+                <p class="text-gray-600 mt-2">Das Projekt wurde erfolgreich angelegt.</p>
+                
+                <div class="mt-8 space-y-3">
+                    <button class="w-full px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 flex items-center justify-center gap-2">
+                        <i class="fas fa-camera"></i>
+                        Fotos aufnehmen
+                    </button>
+                    <button class="w-full px-4 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50">
+                        Zur Projektübersicht
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Bottom Navigation (nur auf Hauptseiten) -->
+    <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+        <div class="max-w-lg mx-auto flex">
+            <a href="#" class="flex-1 py-3 text-center text-gray-400">
+                <i class="fas fa-home text-xl"></i>
+                <span class="block text-xs mt-1">Start</span>
+            </a>
+            <a href="#" class="flex-1 py-3 text-center text-red-600">
+                <i class="fas fa-folder text-xl"></i>
+                <span class="block text-xs mt-1">Projekte</span>
+            </a>
+            <a href="#" class="flex-1 py-3 text-center text-gray-400">
+                <i class="fas fa-plus-circle text-xl"></i>
+                <span class="block text-xs mt-1">Neu</span>
+            </a>
+            <a href="#" class="flex-1 py-3 text-center text-gray-400">
+                <i class="fas fa-cog text-xl"></i>
+                <span class="block text-xs mt-1">Mehr</span>
+            </a>
+        </div>
+    </nav>
+
+    <script>
+        let currentStep = 1;
+        let importMethod = 'simap';
+        
+        const stepConfig = {
+            1: { label: 'Schritt 1 von 4', name: 'Import-Methode', progress: 25, title: 'Neues Projekt' },
+            2: { label: 'Schritt 2 von 4', name: 'Projektdaten', progress: 50, title: 'Projektdaten' },
+            3: { label: 'Schritt 3 von 4', name: 'Geodaten', progress: 75, title: 'Geodaten' },
+            4: { label: 'Schritt 4 von 4', name: 'Abschluss', progress: 100, title: 'Abschluss' },
+        };
+        
+        function selectMethod(method) {
+            importMethod = method;
+            if (method === 'simap' || method === 'manual') {
+                goToStep(2);
+            } else {
+                alert('Diese Funktion ist bald verfügbar!');
+            }
+        }
+        
+        function goToStep(step) {
+            // Hide all steps
+            document.querySelectorAll('[id^="step"]').forEach(el => {
+                el.classList.remove('step-active');
+                el.classList.add('step-hidden');
+            });
+            document.getElementById('successScreen').classList.add('step-hidden');
+            
+            // Show current step
+            if (step === 2) {
+                document.getElementById('step2-simap').classList.remove('step-hidden');
+                document.getElementById('step2-simap').classList.add('step-active');
+            } else {
+                const stepEl = document.getElementById('step' + step);
+                if (stepEl) {
+                    stepEl.classList.remove('step-hidden');
+                    stepEl.classList.add('step-active');
+                }
+            }
+            
+            // Update progress
+            const config = stepConfig[step];
+            if (config) {
+                document.getElementById('stepLabel').textContent = config.label;
+                document.getElementById('stepName').textContent = config.name;
+                document.getElementById('progressBar').style.width = config.progress + '%';
+                document.getElementById('headerTitle').textContent = config.title;
+            }
+            
+            currentStep = step;
+            
+            // Simulate geodata loading
+            if (step === 3) {
+                simulateGeodataLoading();
+            }
+        }
+        
+        function goBack() {
+            if (currentStep > 1) {
+                goToStep(currentStep - 1);
+            }
+        }
+        
+        function openSimapLink() {
+            const link = document.getElementById('simapLink').value;
+            if (link) {
+                window.open(link, '_blank');
+            } else {
+                window.open('https://www.simap.ch/de?cpvCodes=[%2244212310%22,%2245262100%22]&newestPubTypes=[%22tender%22]&orderAddressCountryOnlySwitzerland=true', '_blank');
+            }
+        }
+        
+        function simulateGeodataLoading() {
+            const address = document.getElementById('projectAddress')?.value || 'Länggassstrasse 40, 3012 Bern';
+            document.getElementById('loadingAddress').textContent = address;
+            document.getElementById('geodataLoading').classList.remove('hidden');
+            document.getElementById('geodataSuccess').classList.add('hidden');
+            
+            // Simulate loading
+            setTimeout(() => {
+                document.getElementById('geodataLoading').classList.add('hidden');
+                document.getElementById('geodataSuccess').classList.remove('hidden');
+            }, 2000);
+        }
+        
+        function createProject() {
+            // Hide all steps
+            document.querySelectorAll('[id^="step"]').forEach(el => {
+                el.classList.add('step-hidden');
+            });
+            
+            // Show success
+            document.getElementById('successScreen').classList.remove('step-hidden');
+            document.getElementById('successScreen').classList.add('step-active');
+            document.getElementById('headerTitle').textContent = 'Fertig!';
+            document.getElementById('bottomNav').classList.add('hidden');
+        }
+    </script>
+
+</body>
+</html>

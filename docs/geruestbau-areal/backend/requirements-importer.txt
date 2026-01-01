@@ -1,0 +1,6 @@
+# URL-Importer Dependencies
+# Zu backend/requirements.txt hinzufügen
+
+httpx>=0.25.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0  # Schnellerer HTML-Parser
