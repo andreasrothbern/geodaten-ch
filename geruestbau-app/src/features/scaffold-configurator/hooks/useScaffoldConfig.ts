@@ -19,6 +19,7 @@ import type {
   MainTab,
   SelectedFacade,
   FacadeDirection,
+  RoofData,
 } from '../types/scaffold.types';
 import { FACADE_COLORS } from '../types/scaffold.types';
 
@@ -72,7 +73,8 @@ interface ScaffoldConfigState {
     buildingName: string,
     buildingAddress: string,
     facades: SelectedFacade[],
-    buildingPolygon?: [number, number][]
+    buildingPolygon?: [number, number][],
+    roof?: RoofData
   ) => void;
   reset: () => void;
 
@@ -610,7 +612,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       },
 
       // Initialization
-      initializeFromFacades: (projectId, buildingName, buildingAddress, facades, buildingPolygon) => {
+      initializeFromFacades: (projectId, buildingName, buildingAddress, facades, buildingPolygon, roof) => {
         const settings = createDefaultSettings();
         const elements = createElementsFromFacades(facades, settings);
         const now = new Date().toISOString();
@@ -631,6 +633,8 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
           },
           // Store building polygon for 3D visualization
           buildingPolygon,
+          // Store roof data for 3D visualization
+          roof,
         };
 
         set({

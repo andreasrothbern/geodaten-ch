@@ -12,6 +12,7 @@ from ..models.geruestbau import (
 from ..services.geruestbau.project_service import ProjectService
 from ..services.swissbuildings3d_service import get_swissbuildings3d_service
 from ..services.swisstopo import SwisstopoService
+from ..services.roof import get_roof_service
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
@@ -296,7 +297,19 @@ async def get_facade_data_for_configurator(
         }
         selected_facades.append(facade)
 
-    # 4. Response im ProjectInput-Format zusammenstellen
+    # 4. Dach-Daten berechnen
+    roof_service = get_roof_service()
+    trauf_height = building.trauf_height_m or default_height
+    first_height = building.first_height_m or (default_height + 3)
+
+    roof_data = roof_service.calculate(
+        traufhoehe_m=trauf_height,
+        firsthoehe_m=first_height,
+        ground_area_m2=building.area_m2,
+        polygon=[(p[0], p[1]) for p in building.polygon],
+    )
+
+    # 5. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
 
     response = {
@@ -306,19 +319,20 @@ async def get_facade_data_for_configurator(
             "address": geocode_result.matched_address or address,
             "name": geocode_result.matched_address.split(",")[0] if geocode_result.matched_address else address,
             "polygon": [(p[0], p[1]) for p in building.polygon],
-            "trauf_height_m": building.trauf_height_m or default_height,
-            "first_height_m": building.first_height_m or (default_height + 3),
+            "trauf_height_m": trauf_height,
+            "first_height_m": first_height,
             "center_e": e,
             "center_n": n,
         },
         "selected_facades": selected_facades,
+        "roof": roof_data.to_dict(),
         "metadata": {
             "source": "swissBUILDINGS3D_composite",
             "polygon_points": len(building.polygon),
             "facade_count": len(selected_facades),
             "perimeter_m": building.perimeter_m,
             "area_m2": building.area_m2,
-            "roof_type": building.roof_type,
+            "roof_type": roof_data.roof_type.value,
             "roof_surfaces_count": len(building.roof_surfaces) if building.roof_surfaces else 0,
             "height_source": building.height_source,
             "confidence": building.confidence,

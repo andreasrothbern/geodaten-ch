@@ -56,6 +56,16 @@ export interface ScaffoldSettings {
   weather_cover: boolean;
 }
 
+// Roof data from backend calculation
+export interface RoofData {
+  roof_type: string;        // flachdach, satteldach, walmdach, pultdach, etc.
+  roof_angle_deg: number;
+  roof_orientation: string;
+  trauf_to_first_m: number;
+  scaffolding_height_m: number;
+  confidence: number;
+}
+
 export interface ScaffoldConfiguration {
   project_id: string;
   created_at: string;
@@ -65,6 +75,8 @@ export interface ScaffoldConfiguration {
   totals: ScaffoldTotals;
   // Building polygon for 3D visualization (LV95 coordinates)
   buildingPolygon?: [number, number][];
+  // Roof data for 3D visualization
+  roof?: RoofData;
 }
 
 export interface ScaffoldTotals {

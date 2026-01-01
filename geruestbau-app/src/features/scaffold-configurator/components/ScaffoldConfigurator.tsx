@@ -6,7 +6,7 @@
 import { useEffect } from 'react';
 import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
-import type { MainTab, SelectedFacade } from '../types/scaffold.types';
+import type { MainTab, SelectedFacade, RoofData } from '../types/scaffold.types';
 
 // Panels
 import FacadePanel from './FacadePanel';
@@ -20,6 +20,7 @@ interface ScaffoldConfiguratorProps {
   buildingAddress: string;
   buildingPolygon?: [number, number][];
   selectedFacades: SelectedFacade[];
+  roof?: RoofData;
   onBack?: () => void;
   onComplete?: () => void; // Will be used when completing configuration
 }
@@ -30,6 +31,7 @@ export default function ScaffoldConfigurator({
   buildingAddress,
   buildingPolygon,
   selectedFacades,
+  roof,
   onBack,
   onComplete: _onComplete, // Will be used when completing configuration
 }: ScaffoldConfiguratorProps) {
@@ -44,9 +46,9 @@ export default function ScaffoldConfigurator({
   // Initialize configuration on mount
   useEffect(() => {
     if (!configuration || configuration.project_id !== projectId) {
-      initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon);
+      initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
     }
-  }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, configuration, initializeFromFacades]);
+  }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof, configuration, initializeFromFacades]);
 
   const tabs: { id: MainTab; label: string; icon: React.ReactNode }[] = [
     { id: 'facade', label: 'Fassade', icon: <Layers className="w-4 h-4" /> },

@@ -84,14 +84,14 @@ export default function FacadePanel() {
     // Create polygon path
     const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
 
-    // Create facade segments
+    // Create facade segments - uniform line width, no circles
+    const lineWidth = width * 0.025; // Gleichmässige Liniendicke
+
     const facadeElements = facades.map((facade) => {
       if (!facade.start_point || !facade.end_point) return null;
 
       const isEnabled = facade.enabled;
       const color = getFacadeColor(facade.direction);
-      const midX = (facade.start_point[0] + facade.end_point[0]) / 2;
-      const midY = (facade.start_point[1] + facade.end_point[1]) / 2;
 
       return (
         <g key={facade.id} onClick={() => toggleFacadeEnabled(facade.id)} style={{ cursor: 'pointer' }}>
@@ -105,37 +105,16 @@ export default function FacadePanel() {
             strokeWidth={width * 0.08}
             strokeLinecap="round"
           />
-          {/* Visible facade line */}
+          {/* Visible facade line - uniform width */}
           <line
             x1={facade.start_point[0]}
             y1={facade.start_point[1]}
             x2={facade.end_point[0]}
             y2={facade.end_point[1]}
             stroke={isEnabled ? color : '#ccc'}
-            strokeWidth={isEnabled ? width * 0.03 : width * 0.018}
+            strokeWidth={lineWidth}
             strokeLinecap="round"
           />
-          {/* Selection indicator (checkmark area) */}
-          <circle
-            cx={midX}
-            cy={midY}
-            r={width * 0.035}
-            fill={isEnabled ? color : '#fff'}
-            stroke={color}
-            strokeWidth={width * 0.008}
-          />
-          {/* Label */}
-          <text
-            x={midX}
-            y={midY}
-            dy={width * 0.07}
-            textAnchor="middle"
-            fontSize={width * 0.035}
-            fill={isEnabled ? '#333' : '#999'}
-            fontWeight={isEnabled ? 'bold' : 'normal'}
-          >
-            {facade.direction} ({facade.length_m.toFixed(1)}m)
-          </text>
         </g>
       );
     });

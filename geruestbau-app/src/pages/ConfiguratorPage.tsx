@@ -21,6 +21,19 @@ import type { SelectedFacade } from '../features/scaffold-configurator/types/sca
 // API Base URL - use environment variable or default
 const API_BASE = import.meta.env.VITE_API_URL || 'https://acceptable-trust-production.up.railway.app';
 
+interface RoofData {
+  roof_type: string;
+  roof_angle_deg: number;
+  roof_orientation: string;
+  first_azimuth_deg: number;
+  roof_area_m2: number;
+  roof_overhang_m: number;
+  trauf_to_first_m: number;
+  scaffolding_height_m: number;
+  data_source: string;
+  confidence: number;
+}
+
 interface ConfiguratorBuildingData {
   project_id: string;
   building: {
@@ -42,6 +55,7 @@ interface ConfiguratorBuildingData {
     start_point: [number, number];
     end_point: [number, number];
   }>;
+  roof?: RoofData;
   metadata: {
     source: string;
     polygon_points: number;
@@ -252,6 +266,12 @@ function convertStoredDataToConfiguratorFormat(
     ?? project.egid
     ?? 'unknown';
 
+  // Extract roof data if available
+  const storedRoof = (storedData as Record<string, unknown>).roof as RoofData | undefined;
+  const roofType = storedRoof?.roof_type
+    ?? (storedData as Record<string, unknown>).roof_type as string | undefined
+    ?? null;
+
   return {
     project_id: project.id,
     building: {
@@ -265,13 +285,14 @@ function convertStoredDataToConfiguratorFormat(
       center_n: center[1],
     },
     selected_facades: facades,
+    roof: storedRoof,
     metadata: {
       source: preSelectedFacades ? 'facade_selection' : 'stored_project',
       polygon_points: polygon.length,
       facade_count: facades.length,
       perimeter_m: Math.round(perimeter * 100) / 100,
       area_m2: Math.round(calculateArea(polygon) * 100) / 100,
-      roof_type: null,
+      roof_type: roofType,
       roof_surfaces_count: 0,
       height_source: storedData.heights?.source || 'stored',
       confidence: 1.0,
@@ -538,6 +559,19 @@ export default function ConfiguratorPage() {
     );
   }
 
+  // Convert roof data to the format expected by ScaffoldConfigurator
+  const convertRoofData = (data: ConfiguratorBuildingData) => {
+    if (!data.roof) return undefined;
+    return {
+      roof_type: data.roof.roof_type,
+      roof_angle_deg: data.roof.roof_angle_deg,
+      roof_orientation: data.roof.roof_orientation,
+      trauf_to_first_m: data.roof.trauf_to_first_m,
+      scaffolding_height_m: data.roof.scaffolding_height_m,
+      confidence: data.roof.confidence,
+    };
+  };
+
   // Render Scaffold Configurator with loaded data
   return (
     <ScaffoldConfigurator
@@ -546,12 +580,13 @@ export default function ConfiguratorPage() {
       buildingAddress={buildingData.building.address}
       buildingPolygon={buildingData.building.polygon}
       selectedFacades={convertToSelectedFacades(buildingData)}
+      roof={convertRoofData(buildingData)}
       onBack={() => {
         setBuildingData(null);
         setLoadingState('idle');
-        // If we came from a project, go back to facade selection
+        // If we came from a project, go back to project details
         if (project) {
-          navigate(`/projects/${project.id}/facades`);
+          navigate(`/projects/${project.id}`);
         }
       }}
       onComplete={() => {

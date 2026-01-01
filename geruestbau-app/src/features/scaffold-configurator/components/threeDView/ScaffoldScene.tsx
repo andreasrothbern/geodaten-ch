@@ -113,11 +113,12 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
 }
 
 // Helper to create roof geometry that follows the actual polygon shape
-// Creates a hip/pyramid roof where each polygon edge slopes up to the center
+// Supports different roof types: flachdach, satteldach, walmdach/zeltdach, pultdach
 function createRoofFromPolygon(
   normalized: [number, number][],
   buildingHeight: number,
-  roofHeight: number
+  roofHeight: number,
+  roofType: string = 'walmdach'  // Default to hip roof
 ): THREE.Group {
   const group = new THREE.Group();
 
@@ -132,6 +133,8 @@ function createRoofFromPolygon(
   const maxY = Math.max(...normalized.map(p => p[1]));
   const bboxCenterX = (minX + maxX) / 2;
   const bboxCenterY = (minY + maxY) / 2;
+  const bboxWidth = maxX - minX;
+  const bboxDepth = maxY - minY;
 
   // Transform polygon points to be centered at origin (matching building)
   // Polygon coords: X stays X, Y becomes -Z in THREE.js
@@ -144,43 +147,151 @@ function createRoofFromPolygon(
   const yEaves = buildingHeight;  // Traufe
   const yPeak = buildingHeight + roofHeight;  // First/Spitze
 
-  // Peak is at the centroid of the polygon (center of roof)
-  const peakX = 0;  // Already centered
-  const peakZ = 0;
-
-  // Build vertices: all eave points + one peak point
-  const vertices: number[] = [];
-  const indices: number[] = [];
-
-  // Add eave vertices (at polygon corners)
-  centeredPoints.forEach(p => {
-    vertices.push(p.x, yEaves, p.z);
-  });
-
-  // Add peak vertex (last vertex)
-  const peakIndex = centeredPoints.length;
-  vertices.push(peakX, yPeak, peakZ);
-
-  // Create triangular roof faces from each edge to the peak
-  for (let i = 0; i < centeredPoints.length; i++) {
-    const nextI = (i + 1) % centeredPoints.length;
-    // Triangle: current corner, next corner, peak
-    indices.push(i, nextI, peakIndex);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshStandardMaterial({
+  const roofMaterial = new THREE.MeshStandardMaterial({
     color: 0x8b5cf6,
     side: THREE.DoubleSide,
   });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
 
-  group.add(mesh);
+  // Different roof geometries based on type
+  if (roofType === 'flachdach') {
+    // Flat roof - just a plane at building height
+    const shape = new THREE.Shape();
+    shape.moveTo(centeredPoints[0].x, centeredPoints[0].z);
+    for (let i = 1; i < centeredPoints.length; i++) {
+      shape.lineTo(centeredPoints[i].x, centeredPoints[i].z);
+    }
+    shape.closePath();
+
+    const geometry = new THREE.ShapeGeometry(shape);
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = yEaves + 0.1; // Slightly above building
+    group.add(mesh);
+
+  } else if (roofType === 'satteldach') {
+    // Gable roof - ridge along the longer axis
+    const isWiderThanDeep = bboxWidth > bboxDepth;
+
+    // Ridge line positions (along longer axis)
+    const ridgeHalfLen = (isWiderThanDeep ? bboxWidth : bboxDepth) / 2;
+    const ridgeOffset = (isWiderThanDeep ? bboxDepth : bboxWidth) / 2;
+
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    if (isWiderThanDeep) {
+      // Ridge runs along X axis (East-West)
+      // Left slope
+      vertices.push(-ridgeHalfLen, yEaves, ridgeOffset);   // 0: front-left eave
+      vertices.push(ridgeHalfLen, yEaves, ridgeOffset);    // 1: front-right eave
+      vertices.push(ridgeHalfLen, yPeak, 0);               // 2: ridge right
+      vertices.push(-ridgeHalfLen, yPeak, 0);              // 3: ridge left
+
+      // Right slope
+      vertices.push(-ridgeHalfLen, yEaves, -ridgeOffset);  // 4: back-left eave
+      vertices.push(ridgeHalfLen, yEaves, -ridgeOffset);   // 5: back-right eave
+
+      // Gable triangles
+      vertices.push(-ridgeHalfLen, yEaves, ridgeOffset);   // 6: left gable front
+      vertices.push(-ridgeHalfLen, yEaves, -ridgeOffset);  // 7: left gable back
+      vertices.push(ridgeHalfLen, yEaves, ridgeOffset);    // 8: right gable front
+      vertices.push(ridgeHalfLen, yEaves, -ridgeOffset);   // 9: right gable back
+
+      // Front slope: 0, 1, 2, 3
+      indices.push(0, 1, 2, 0, 2, 3);
+      // Back slope: 4, 3, 2, 5
+      indices.push(4, 3, 2, 4, 2, 5);
+      // Left gable: 6, 7, 3
+      indices.push(6, 7, 3);
+      // Right gable: 8, 2, 9
+      indices.push(8, 2, 9);
+    } else {
+      // Ridge runs along Z axis (North-South)
+      vertices.push(ridgeOffset, yEaves, -ridgeHalfLen);   // 0
+      vertices.push(ridgeOffset, yEaves, ridgeHalfLen);    // 1
+      vertices.push(0, yPeak, ridgeHalfLen);               // 2
+      vertices.push(0, yPeak, -ridgeHalfLen);              // 3
+
+      vertices.push(-ridgeOffset, yEaves, -ridgeHalfLen);  // 4
+      vertices.push(-ridgeOffset, yEaves, ridgeHalfLen);   // 5
+
+      // Right slope
+      indices.push(0, 1, 2, 0, 2, 3);
+      // Left slope
+      indices.push(4, 3, 2, 4, 2, 5);
+      // Gables
+      indices.push(0, 4, 3);
+      indices.push(1, 2, 5);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    mesh.castShadow = true;
+    group.add(mesh);
+
+  } else if (roofType === 'pultdach') {
+    // Shed roof - single slope
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    // Low edge (south/front)
+    vertices.push(-bboxWidth/2, yEaves, bboxDepth/2);       // 0
+    vertices.push(bboxWidth/2, yEaves, bboxDepth/2);        // 1
+    // High edge (north/back)
+    vertices.push(bboxWidth/2, yPeak, -bboxDepth/2);        // 2
+    vertices.push(-bboxWidth/2, yPeak, -bboxDepth/2);       // 3
+
+    // Main slope
+    indices.push(0, 1, 2, 0, 2, 3);
+
+    // Side triangles (gables)
+    vertices.push(-bboxWidth/2, yEaves, -bboxDepth/2);      // 4 (left back bottom)
+    vertices.push(bboxWidth/2, yEaves, -bboxDepth/2);       // 5 (right back bottom)
+
+    indices.push(0, 3, 4);  // Left gable
+    indices.push(1, 5, 2);  // Right gable
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    mesh.castShadow = true;
+    group.add(mesh);
+
+  } else {
+    // Default: walmdach/zeltdach - hip/pyramid roof (original implementation)
+    // All edges slope up to center point
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    // Add eave vertices (at polygon corners)
+    centeredPoints.forEach(p => {
+      vertices.push(p.x, yEaves, p.z);
+    });
+
+    // Add peak vertex (last vertex)
+    const peakIndex = centeredPoints.length;
+    vertices.push(0, yPeak, 0);  // Peak at center
+
+    // Create triangular roof faces from each edge to the peak
+    for (let i = 0; i < centeredPoints.length; i++) {
+      const nextI = (i + 1) % centeredPoints.length;
+      indices.push(i, nextI, peakIndex);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+
   return group;
 }
 
@@ -644,8 +755,10 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       scene.add(createBuildingFromPolygon(normalized, buildingHeight));
 
       // Add roof (always show for visualization)
-      // Use the new function that creates roof directly in 3D space
-      scene.add(createRoofFromPolygon(normalized, buildingHeight, 3));
+      // Use roof data from configuration if available
+      const roofType = config.roof?.roof_type || 'walmdach';
+      const roofHeight = config.roof?.trauf_to_first_m || 3;
+      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType));
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
       // Use bboxCenter instead of centroid for consistent alignment
