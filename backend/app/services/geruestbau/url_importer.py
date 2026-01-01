@@ -210,10 +210,24 @@ class UrlImporter:
         result = UrlImportResult(source_id=project_id)
 
         # Extract data from API response
-        # The structure may vary - try common field names
+        # The structure has nested multilingual fields
+
+        # Helper to get first non-null language value
+        def get_multilingual(obj: dict) -> Optional[str]:
+            if not isinstance(obj, dict):
+                return str(obj) if obj else None
+            # Prefer German, then French, Italian, English
+            for lang in ['de', 'fr', 'it', 'en']:
+                if obj.get(lang):
+                    return obj[lang]
+            return None
+
+        # Project title is in latestPublication.title (multilingual)
+        latest_pub = data.get('latestPublication') or {}
+        title_obj = latest_pub.get('title') or data.get('title') or {}
         result.project_name = (
+            get_multilingual(title_obj) or
             data.get('projectTitle') or
-            data.get('title') or
             data.get('publicationTitle') or
             data.get('name')
         )
@@ -243,20 +257,33 @@ class UrlImporter:
         if not result.address:
             result.address = data.get('deliveryAddress') or data.get('locationDescription')
 
-        # Deadline
-        deadline = data.get('submissionDeadline') or data.get('deadline') or data.get('tenderDeadline')
+        # Deadline - check latestPublication.dates first
+        pub_dates = latest_pub.get('dates') or {}
+        deadline = (
+            pub_dates.get('offerDeadline') or
+            data.get('submissionDeadline') or
+            data.get('deadline') or
+            data.get('tenderDeadline')
+        )
         if deadline:
             # API might return ISO format or Swiss format
             if isinstance(deadline, str):
-                if 'T' in deadline:  # ISO format
+                if 'T' in deadline:  # ISO format (2026-01-26T16:30:00+01:00)
                     result.submission_deadline = deadline.split('T')[0]
                 else:
                     result.submission_deadline = self._convert_date(deadline)
 
-        # Procedure type
-        procedure = data.get('procedureType') or data.get('procedure')
+        # Procedure type - processType is at root level
+        procedure = data.get('processType') or data.get('procedureType') or data.get('procedure')
         if procedure:
-            result.procedure = self._extract_procedure(str(procedure))
+            # Map API values to our internal values
+            procedure_map = {
+                'open': 'open',
+                'selective': 'selective',
+                'invitation': 'invitation',
+                'negotiated': 'negotiated',
+            }
+            result.procedure = procedure_map.get(procedure.lower()) or self._extract_procedure(str(procedure))
 
         # Description
         result.description = (
@@ -267,8 +294,12 @@ class UrlImporter:
         if result.description and len(result.description) > 500:
             result.description = result.description[:500] + '...'
 
-        # Tender number
-        result.tender_number = data.get('referenceNumber') or data.get('projectNumber')
+        # Tender number - projectNumber is at root level
+        result.tender_number = (
+            data.get('projectNumber') or
+            data.get('referenceNumber') or
+            latest_pub.get('publicationNumber')
+        )
 
         # Project dates
         execution = data.get('executionPeriod') or {}
