@@ -110,24 +110,34 @@ export default function FacadePanel() {
 
       return (
         <g key={facade.id} onClick={() => toggleFacadeEnabled(facade.id)} style={{ cursor: 'pointer' }}>
-          {/* Facade line */}
+          {/* Invisible hit area for easier clicking */}
+          <line
+            x1={facade.start_point[0]}
+            y1={facade.start_point[1]}
+            x2={facade.end_point[0]}
+            y2={facade.end_point[1]}
+            stroke="transparent"
+            strokeWidth={width * 0.08}
+            strokeLinecap="round"
+          />
+          {/* Visible facade line */}
           <line
             x1={facade.start_point[0]}
             y1={facade.start_point[1]}
             x2={facade.end_point[0]}
             y2={facade.end_point[1]}
             stroke={isEnabled ? color : '#ccc'}
-            strokeWidth={isEnabled ? width * 0.025 : width * 0.015}
+            strokeWidth={isEnabled ? width * 0.03 : width * 0.018}
             strokeLinecap="round"
           />
-          {/* Selection indicator */}
+          {/* Selection indicator (checkmark area) */}
           <circle
             cx={midX}
             cy={midY}
-            r={width * 0.03}
+            r={width * 0.035}
             fill={isEnabled ? color : '#fff'}
             stroke={color}
-            strokeWidth={width * 0.006}
+            strokeWidth={width * 0.008}
           />
           {/* Label */}
           <text
