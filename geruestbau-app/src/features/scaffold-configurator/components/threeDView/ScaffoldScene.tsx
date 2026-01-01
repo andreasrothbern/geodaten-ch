@@ -141,59 +141,62 @@ function createRoofFromPolygon(
   let vertices: Float32Array;
   let indices: number[];
 
+  // Note: Building polygon Y (N coordinate) maps to -Z after rotation
+  // So we negate Z coordinates to match building orientation
+
   if (isWidthLonger) {
     // Ridge runs along X (longer axis)
-    // Gables at Z ends (front = -halfDepth, back = +halfDepth)
+    // Gables at Z ends - note: Z is negated to match building rotation
     vertices = new Float32Array([
-      // Front gable triangle
-      -halfWidth, y0, -halfDepth,  // 0: bottom left front
-      halfWidth, y0, -halfDepth,   // 1: bottom right front
-      0, yTop, -halfDepth,         // 2: peak front
+      // Front gable triangle (positive Z = back in polygon terms)
+      -halfWidth, y0, halfDepth,   // 0: bottom left front
+      halfWidth, y0, halfDepth,    // 1: bottom right front
+      0, yTop, halfDepth,          // 2: peak front
 
-      // Back gable triangle
-      -halfWidth, y0, halfDepth,   // 3: bottom left back
-      halfWidth, y0, halfDepth,    // 4: bottom right back
-      0, yTop, halfDepth,          // 5: peak back
+      // Back gable triangle (negative Z = front in polygon terms)
+      -halfWidth, y0, -halfDepth,  // 3: bottom left back
+      halfWidth, y0, -halfDepth,   // 4: bottom right back
+      0, yTop, -halfDepth,         // 5: peak back
     ]);
 
     indices = [
       // Front gable
-      0, 2, 1,
+      0, 1, 2,
       // Back gable
-      3, 4, 5,
+      3, 5, 4,
       // Left roof slope
-      0, 3, 5,
-      0, 5, 2,
+      0, 2, 5,
+      0, 5, 3,
       // Right roof slope
-      1, 2, 5,
-      1, 5, 4,
+      1, 4, 5,
+      1, 5, 2,
     ];
   } else {
     // Ridge runs along Z (longer axis)
-    // Gables at X ends (left = -halfWidth, right = +halfWidth)
+    // Gables at X ends
     vertices = new Float32Array([
       // Left gable triangle
-      -halfWidth, y0, -halfDepth,  // 0
-      -halfWidth, y0, halfDepth,   // 1
+      -halfWidth, y0, halfDepth,   // 0
+      -halfWidth, y0, -halfDepth,  // 1
       -halfWidth, yTop, 0,         // 2: peak left
 
       // Right gable triangle
-      halfWidth, y0, -halfDepth,   // 3
-      halfWidth, y0, halfDepth,    // 4
+      halfWidth, y0, halfDepth,    // 3
+      halfWidth, y0, -halfDepth,   // 4
       halfWidth, yTop, 0,          // 5: peak right
     ]);
 
     indices = [
       // Left gable
-      0, 1, 2,
+      0, 2, 1,
       // Right gable
-      3, 5, 4,
+      3, 4, 5,
       // Front roof slope
-      0, 2, 5,
-      0, 5, 3,
+      0, 3, 5,
+      0, 5, 2,
       // Back roof slope
-      1, 4, 5,
-      1, 5, 2,
+      1, 2, 5,
+      1, 5, 4,
     ];
   }
 
