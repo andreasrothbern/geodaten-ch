@@ -7,6 +7,7 @@
 | swisstopo API | Geocoding, GWR, Terrain | Live |
 | swissBUILDINGS3D | Höhe + Polygon | On-Demand STAC |
 | swissALTI3D | Terrain-Höhe (m ü.M.) | Live |
+| Sonnendach.ch (BFE) | Dachgeometrie, Neigung, Überstand | Live |
 | ~~geodienste.ch WFS~~ | ~~Gebäude-Polygon~~ | **Deaktiviert** |
 
 > **Änderung 01.01.2026:** geodienste.ch wurde deaktiviert.
@@ -32,6 +33,23 @@
 3. Suche nächstes Gebäude (±50m Toleranz)
 4. Rückgabe: Polygon + Seiten + Höhen
 ```
+
+## Sonnendach.ch (NEU 01.01.2026)
+
+Präzise Dachgeometrie vom Bundesamt für Energie (BFE).
+
+```
+API: api3.geo.admin.ch/identify
+Layer: ch.bfe.solarenergie-eignung-daecher
+```
+
+**Liefert:**
+- `roof_surfaces` - Dachflächen mit Neigung/Azimut
+- `roof_tilt_deg` - Exakte Dachneigung
+- `roof_azimuth_deg` - Ausrichtung (0-360°)
+- Polygon für Dachüberstand-Berechnung
+
+**Fallback:** Standard 40cm Dachüberstand wenn nicht verfügbar.
 
 ## Koordinatensysteme
 

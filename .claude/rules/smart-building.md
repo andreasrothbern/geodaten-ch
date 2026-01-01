@@ -1,18 +1,28 @@
 # SmartBuildingService
 
-## 10-Schritte Pipeline
+## Pipeline (Phasen)
 
 ```
-1. Geocoding (swisstopo)
-2. GWR-Daten (Geschosse, Fläche, Kategorie)
-3. Höhendaten (swissBUILDINGS3D)
-4. Terrain (swissALTI3D)
-5. Polygon (swissBUILDINGS3D)
-6. Dach-Analyse (berechnet)
-7. Recherche (bekannte Gebäude → Claude Sonnet)
-8. Zonen-Analyse (bei komplexen Gebäuden)
-9. SUVA Zugänge (max 50m Abstand)
-10. Qualitätsbewertung
+PHASE 1 (sequentiell):
+  1. Geocoding (swisstopo) → Koordinaten, EGID
+
+PHASE 2 (parallel):
+  2. GWR-Daten (Geschosse, Fläche, Kategorie)
+  3. Höhendaten (swissBUILDINGS3D)
+  4. Terrain (swissALTI3D)
+  5. Polygon (swissBUILDINGS3D)
+
+PHASE 3 (parallel, braucht Phase 2):
+  6a. Dach-Analyse (berechnet aus Höhen + Polygon)
+  6b. Sonnendach.ch (BFE) → Dachüberstand, Neigung
+  7. Recherche (bekannte Gebäude → Claude Sonnet)
+
+PHASE 4 (sequentiell):
+  8. Zonen-Analyse (bei komplexen Gebäuden)
+
+PHASE 5 (synchron):
+  9. SUVA Zugänge (max 50m Abstand)
+  10. Qualitätsbewertung
 ```
 
 ## Dateien

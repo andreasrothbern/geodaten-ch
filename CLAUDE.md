@@ -366,6 +366,111 @@ result = roof_service.calculate(
 - **Komplexe Gebäude:** Für Bundeshaus, Kirchen → Option A/B nötig
 - **Konfidenz:** Gibt an wie verlässlich die Berechnung ist (0-1)
 
+### Dach-Orientierung (WICHTIG!)
+
+Die `roof_orientation` beschreibt, **wohin das Dach ZEIGT** (Neigungsrichtung), NICHT wo der First verläuft!
+
+```
+roof_orientation = "O-W" (Ost-West)
+→ Dach NEIGT sich nach Osten und Westen
+→ Regenwasser fliesst nach Ost und West ab
+→ Dachrinnen sind an Ost- und West-Seite
+→ FIRST verläuft Nord-Süd (senkrecht zur Neigung!)
+```
+
+| `roof_orientation` | Dach zeigt nach | First verläuft |
+|--------------------|-----------------|----------------|
+| `O-W` oder `E-W` | Ost ↔ West | Nord-Süd |
+| `N-S` | Nord ↔ Süd | Ost-West |
+| `NW-SO` etc. | Diagonal | Senkrecht dazu |
+
+## Sonnendach.ch Integration (NEU 01.01.2026)
+
+Präzise Dachgeometrie aus dem BFE Sonnendach.ch-Dienst.
+
+### Datenfluss
+
+```
+SmartBuildingService (Phase 3)
+    │
+    └─ _collect_sonnendach_data(bundle)
+           │
+           ├─ SonnendachService.analyze_roof(egid, coords)
+           │
+           └─ Falls verfügbar:
+                ├─ roof_surfaces (Dachflächen mit Neigung/Azimut)
+                ├─ roof_tilt_deg (Exakte Neigung in Grad)
+                ├─ roof_azimuth_deg (Exakte Ausrichtung 0-360°)
+                ├─ roof_overhang_m (Berechnet aus Polygon-Differenz)
+                └─ sonnendach_available = true
+```
+
+### API-Endpunkt
+
+```
+GET https://api3.geo.admin.ch/rest/services/api/MapServer/identify
+    ?geometryType=esriGeometryPoint
+    &geometry={e},{n}
+    &layers=all:ch.bfe.solarenergie-eignung-daecher
+    &tolerance=50
+```
+
+### BuildingDataBundle Felder
+
+```python
+# Neue Felder in models.py (seit 01.01.2026)
+roof_overhang_m: float = 0.4      # Dachüberstand (Standard: 40cm)
+roof_surfaces: Optional[List[Dict]]  # Dachflächen aus Sonnendach
+roof_tilt_deg: Optional[float]    # Genaue Neigung
+roof_azimuth_deg: Optional[float] # Genaue Ausrichtung (0-360°)
+sonnendach_available: bool = False
+```
+
+### Dachüberstand-Berechnung
+
+Wenn Sonnendach.ch ein Dach-Polygon liefert, wird der Überstand berechnet:
+
+```python
+# Durchschnittlicher Abstand zwischen Dach- und Gebäude-Polygon
+overhang = avg_distance(roof_polygon, building_polygon)
+```
+
+**Fallback:** 40cm (0.4m) wenn keine Sonnendach-Daten verfügbar.
+
+## 3D-Dachvisualisierung (NEU 01.01.2026)
+
+Der 3D-Viewer im Scaffold Configurator rendert Dächer polygon-basiert.
+
+### Rendering-Strategie
+
+| Dachtyp | Methode | Beschreibung |
+|---------|---------|--------------|
+| `flachdach` | Polygon | Horizontale Fläche folgt Grundriss |
+| `satteldach` | Polygon + First | Kanten zum First, Giebel an Enden |
+| `pultdach` | Polygon + Interpolation | Höhe variiert über Polygon |
+| `walmdach` | Polygon + Spitze | Alle Kanten zur Mitte |
+
+### Dachüberstand im 3D
+
+Polygon-Punkte werden radial nach aussen skaliert:
+
+```typescript
+// ScaffoldScene.tsx - createRoofFromPolygon()
+const scale = dist > 0 ? (dist + roofOverhang) / dist : 1;
+return {
+  x: dx * scale,
+  z: -(dy * scale),
+};
+```
+
+### Code-Referenzen
+
+| Datei | Funktion |
+|-------|----------|
+| `ScaffoldScene.tsx:117` | `createRoofFromPolygon()` |
+| `service.py:695` | `_collect_sonnendach_data()` |
+| `models.py:192` | `roof_overhang_m`, `sonnendach_available` |
+
 ## Orthofoto-Service (NEU 28.12.2025)
 
 Ruft Luftbilder (Orthofotos) von swisstopo WMS ab für Claude-Analyse.
