@@ -33,8 +33,8 @@ export default function EditorPanel() {
   const tools: { id: EditorTool; label: string; icon: React.ReactNode }[] = [
     { id: 'select', label: 'Auswählen', icon: <MousePointer className="w-4 h-4" /> },
     { id: 'remove', label: 'Feld ±', icon: <Eraser className="w-4 h-4" /> },
-    { id: 'removeRow', label: 'Reihe ±', icon: <ArrowLeftRight className="w-4 h-4" /> },
-    { id: 'removeLevel', label: 'Schicht ±', icon: <ArrowUpDown className="w-4 h-4" /> },
+    { id: 'removeRow', label: 'Reihe ±', icon: <ArrowUpDown className="w-4 h-4" /> },
+    { id: 'removeLevel', label: 'Schicht ±', icon: <ArrowLeftRight className="w-4 h-4" /> },
     { id: 'lift', label: 'Lift', icon: <ArrowUpFromLine className="w-4 h-4" /> },
     { id: 'stairs', label: 'Treppe', icon: <Footprints className="w-4 h-4" /> },
   ];
