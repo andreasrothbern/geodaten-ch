@@ -428,6 +428,10 @@ export default function ScaffoldGrid({
             <stop offset="0%" stopColor="#8b5cf6" />
             <stop offset="100%" stopColor="#a78bfa" />
           </linearGradient>
+          <linearGradient id="skyGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" stopColor="#f8fafc" />
+            <stop offset="100%" stopColor="#e0f2fe" />
+          </linearGradient>
           <pattern id="groundHatch" patternUnits="userSpaceOnUse" width={8} height={8}>
             <path d="M0,8 L8,0" stroke="#666" strokeWidth={0.5} />
           </pattern>
@@ -442,7 +446,7 @@ export default function ScaffoldGrid({
           y={0}
           width={facade.fields * dims.cellWidth}
           height={dims.startY - facade.levels * dims.cellHeight}
-          fill="linear-gradient(to bottom, #e0f2fe, #f8fafc)"
+          fill="url(#skyGradient)"
         />
 
         {/* Render layers */}
