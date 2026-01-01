@@ -234,8 +234,8 @@ async def get_facade_data_for_configurator(
     if not geocode_result:
         raise HTTPException(status_code=404, detail="Adresse nicht gefunden")
 
-    e = geocode_result.lv95_e
-    n = geocode_result.lv95_n
+    e = geocode_result.coordinates.lv95_e
+    n = geocode_result.coordinates.lv95_n
 
     # 2. Gebäudedaten vom Composite Service holen
     service = get_swissbuildings3d_service()
@@ -286,8 +286,8 @@ async def get_facade_data_for_configurator(
         "project_id": project_id,
         "building": {
             "egid": building.egid or "",
-            "address": geocode_result.label or address,
-            "name": geocode_result.label.split(",")[0] if geocode_result.label else address,
+            "address": geocode_result.matched_address or address,
+            "name": geocode_result.matched_address.split(",")[0] if geocode_result.matched_address else address,
             "polygon": [(p[0], p[1]) for p in building.polygon],
             "trauf_height_m": building.trauf_height_m or default_height,
             "first_height_m": building.first_height_m or (default_height + 3),
