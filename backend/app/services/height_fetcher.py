@@ -29,6 +29,10 @@ from app.services.height_db import (
     log_import,
     get_db_path
 )
+from app.services.geodienste import (
+    simplify_polygon_douglas_peucker,
+    merge_collinear_segments,
+)
 
 # STAC API base URL
 STAC_API_BASE = "https://data.geo.admin.ch/api/stac/v0.9"
@@ -812,6 +816,34 @@ def parse_gdb_for_building_polygon(
 
         # Round coordinates
         polygon_coords = [[round(c[0], 2), round(c[1], 2)] for c in polygon_coords]
+
+        # Simplify polygon to reduce facade segments (same as geodienste.py)
+        # Convert to tuples for simplification functions
+        polygon_tuples = [(p[0], p[1]) for p in polygon_coords]
+
+        # Calculate perimeter for dynamic epsilon
+        perimeter = sum(
+            math.sqrt((polygon_tuples[i+1][0] - polygon_tuples[i][0])**2 +
+                      (polygon_tuples[i+1][1] - polygon_tuples[i][1])**2)
+            for i in range(len(polygon_tuples) - 1)
+        )
+
+        # Dynamic epsilon based on building size
+        if perimeter > 200:  # Large buildings
+            epsilon = 1.5
+        elif perimeter > 50:  # MFH
+            epsilon = 0.8
+        else:  # EFH
+            epsilon = 0.3
+
+        # 1. Douglas-Peucker simplification
+        simplified = simplify_polygon_douglas_peucker(polygon_tuples, epsilon=epsilon)
+
+        # 2. Merge collinear segments (8° tolerance)
+        simplified = merge_collinear_segments(simplified, angle_tolerance_deg=8.0)
+
+        # Convert back to list format
+        polygon_coords = [[p[0], p[1]] for p in simplified]
 
         # Calculate sides (facade segments) - matching frontend Side interface
         sides = []
