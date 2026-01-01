@@ -194,8 +194,8 @@ function createScaffoldFacadeAlongEdge(
   const dirZ = dz / length;
 
   // Perpendicular direction (outward from building)
-  const perpX = dirZ;
-  const perpZ = -dirX;
+  const perpX = -dirZ;
+  const perpZ = dirX;
 
   // Offset scaffolds outward from building edge
   const offsetX = perpX * (scaffoldGap + cellDepth / 2);
