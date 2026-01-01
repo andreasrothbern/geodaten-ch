@@ -178,10 +178,11 @@ function createScaffoldFacadeAlongEdge(
   }
 
   // Normalize coordinates relative to center
+  // IMPORTANT: Flip Z because building mesh uses -Y for north after rotation
   const startX = facade.start_point[0] - center[0];
-  const startZ = facade.start_point[1] - center[1];
+  const startZ = -(facade.start_point[1] - center[1]);  // Flip Z to match building orientation
   const endX = facade.end_point[0] - center[0];
-  const endZ = facade.end_point[1] - center[1];
+  const endZ = -(facade.end_point[1] - center[1]);  // Flip Z to match building orientation
 
   // Calculate facade direction vector
   const dx = endX - startX;
