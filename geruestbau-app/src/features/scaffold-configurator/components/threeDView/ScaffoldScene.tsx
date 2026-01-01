@@ -345,6 +345,7 @@ function createScaffoldCorner(
 
   const group = new THREE.Group();
   const cornerColor = 0xf59e0b; // Amber for corners
+  const cellDepth = 0.73;
 
   // Find the two connected facades
   const facade1 = facades.find(f => f.id === corner.connects[0]);
@@ -357,6 +358,16 @@ function createScaffoldCorner(
   const cornerX = facade1.end_point[0] - center[0];
   const cornerZ = -(facade1.end_point[1] - center[1]);
 
+  // Calculate outward direction from building center (0,0) to corner
+  const distFromCenter = Math.sqrt(cornerX * cornerX + cornerZ * cornerZ);
+  const outwardX = distFromCenter > 0 ? cornerX / distFromCenter : 1;
+  const outwardZ = distFromCenter > 0 ? cornerZ / distFromCenter : 0;
+
+  // Offset corner outward (same as facades: scaffoldGap + cellDepth/2)
+  const offset = scaffoldGap + cellDepth / 2;
+  const offsetCornerX = cornerX + outwardX * offset;
+  const offsetCornerZ = cornerZ + outwardZ * offset;
+
   // Get number of levels from connected facades
   const levels = Math.max(facade1.levels, facade2.levels);
 
@@ -366,12 +377,13 @@ function createScaffoldCorner(
   const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 8);
   const postMaterial = new THREE.MeshStandardMaterial({ color: cornerColor });
 
-  // Position posts at corner with offset outward
+  // Position posts around the offset corner position
+  const postSpread = 0.3;
   const postPositions = [
-    { x: cornerX + scaffoldGap, z: cornerZ + scaffoldGap },
-    { x: cornerX + scaffoldGap, z: cornerZ - scaffoldGap },
-    { x: cornerX - scaffoldGap, z: cornerZ + scaffoldGap },
-    { x: cornerX - scaffoldGap, z: cornerZ - scaffoldGap },
+    { x: offsetCornerX + postSpread, z: offsetCornerZ + postSpread },
+    { x: offsetCornerX + postSpread, z: offsetCornerZ - postSpread },
+    { x: offsetCornerX - postSpread, z: offsetCornerZ + postSpread },
+    { x: offsetCornerX - postSpread, z: offsetCornerZ - postSpread },
   ];
 
   postPositions.slice(0, corner.corner_posts).forEach(pos => {
@@ -386,8 +398,8 @@ function createScaffoldCorner(
     for (let level = 0; level < levels; level++) {
       const y = level * levelHeight + levelHeight / 2;
       const points = [
-        new THREE.Vector3(cornerX + scaffoldGap, y, cornerZ + scaffoldGap),
-        new THREE.Vector3(cornerX - scaffoldGap, y, cornerZ - scaffoldGap),
+        new THREE.Vector3(offsetCornerX + postSpread, y, offsetCornerZ + postSpread),
+        new THREE.Vector3(offsetCornerX - postSpread, y, offsetCornerZ - postSpread),
       ];
       const diagGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const diag = new THREE.Line(diagGeometry, diagMaterial);
