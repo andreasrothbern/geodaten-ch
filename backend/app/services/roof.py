@@ -54,6 +54,7 @@ class RoofData:
     roof_overhang_m: float             # Dachüberstand (Standard 0.5m)
 
     # Gerüstbau-relevant
+    traufhoehe_m: float                # Absolute Traufhöhe (für 3D-Visualisierung)
     trauf_to_first_m: float            # Höhendifferenz Traufe-First
     scaffolding_height_m: float        # Gerüsthöhe (First + 1m)
 
@@ -69,6 +70,7 @@ class RoofData:
             "first_azimuth_deg": round(self.first_azimuth_deg, 1),
             "roof_area_m2": round(self.roof_area_m2, 1),
             "roof_overhang_m": self.roof_overhang_m,
+            "traufhoehe_m": round(self.traufhoehe_m, 2),  # Für 3D-Visualisierung
             "trauf_to_first_m": round(self.trauf_to_first_m, 2),
             "scaffolding_height_m": round(self.scaffolding_height_m, 1),
             "data_source": self.data_source,
@@ -484,6 +486,7 @@ def calculate_roof_data(
         first_azimuth_deg=azimuth,
         roof_area_m2=roof_area,
         roof_overhang_m=0.5,
+        traufhoehe_m=traufhoehe_m or 8.0,  # Für 3D-Visualisierung
         trauf_to_first_m=trauf_to_first,
         scaffolding_height_m=scaffolding_height,
         data_source=data_source,

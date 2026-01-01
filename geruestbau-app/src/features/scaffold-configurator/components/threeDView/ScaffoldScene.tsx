@@ -808,9 +808,10 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       const maxY = Math.max(...config.buildingPolygon!.map(p => p[1]));
       const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
-      // Calculate building height from ENABLED facades only
+      // Calculate building height: use actual traufhoehe if available, otherwise estimate
       const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
-      const buildingHeight = Math.max(8, maxFacadeHeight * 0.8);
+      // Traufhöhe = Gebäudehöhe bis Dachansatz (wo das Dach startet)
+      const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - (config.roof?.trauf_to_first_m || 0));
 
       // Add building from actual polygon
       scene.add(createBuildingFromPolygon(normalized, buildingHeight));
@@ -849,7 +850,8 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       const buildingWidth = Math.max(10, nsLength);
       const buildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
       const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
-      const buildingHeight = Math.max(8, maxFacadeHeight * 0.8);
+      // Traufhöhe = Gebäudehöhe bis Dachansatz
+      const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - 3);
 
       // Add simple box building
       scene.add(createBuilding(buildingWidth, buildingDepth, buildingHeight));
