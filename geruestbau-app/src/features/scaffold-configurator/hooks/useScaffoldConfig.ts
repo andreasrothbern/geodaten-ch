@@ -230,7 +230,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
   persist(
     (set, get) => ({
       // Initial state
-      currentTab: 'overview',
+      currentTab: 'facade',
       currentElementIndex: 0,
       currentTool: 'select',
       configuration: null,
@@ -600,7 +600,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
           buildingName,
           buildingAddress,
           currentElementIndex: 0,
-          currentTab: 'overview',
+          currentTab: 'facade',
           currentTool: 'select',
           isDirty: false,
           error: null,
@@ -608,7 +608,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       },
 
       reset: () => set({
-        currentTab: 'overview',
+        currentTab: 'facade',
         currentElementIndex: 0,
         currentTool: 'select',
         configuration: null,

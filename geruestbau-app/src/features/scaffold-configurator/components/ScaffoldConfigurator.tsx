@@ -4,11 +4,12 @@
  */
 
 import { useEffect } from 'react';
-import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
 import type { MainTab, SelectedFacade } from '../types/scaffold.types';
 
-// Placeholder panels (to be implemented in Phase 2 & 3)
+// Panels
+import FacadePanel from './FacadePanel';
 import OverviewPanel from './OverviewPanel';
 import EditorPanel from './EditorPanel';
 import ThreeDPanel from './ThreeDPanel';
@@ -48,9 +49,10 @@ export default function ScaffoldConfigurator({
   }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, configuration, initializeFromFacades]);
 
   const tabs: { id: MainTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'overview', label: 'Übersicht', icon: <LayoutGrid className="w-4 h-4" /> },
+    { id: 'facade', label: 'Fassade', icon: <Layers className="w-4 h-4" /> },
+    { id: 'overview', label: 'Gerüst', icon: <LayoutGrid className="w-4 h-4" /> },
     { id: 'editor', label: 'Editor', icon: <Edit3 className="w-4 h-4" /> },
-    { id: '3d', label: '3D-Ansicht', icon: <Box className="w-4 h-4" /> },
+    { id: '3d', label: '3D', icon: <Box className="w-4 h-4" /> },
   ];
 
   return (
@@ -96,6 +98,7 @@ export default function ScaffoldConfigurator({
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4">
+        {currentTab === 'facade' && <FacadePanel />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
         {currentTab === '3d' && <ThreeDPanel />}

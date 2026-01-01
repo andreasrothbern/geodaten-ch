@@ -104,6 +104,38 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
   return mesh;
 }
 
+// Helper to find the longest edge in a polygon (for roof orientation)
+function findLongestEdge(polygon: [number, number][]): {
+  start: [number, number];
+  end: [number, number];
+  length: number;
+  angle: number;
+} {
+  let maxLength = 0;
+  let longestEdge = {
+    start: polygon[0],
+    end: polygon[1],
+    length: 0,
+    angle: 0
+  };
+
+  for (let i = 0; i < polygon.length; i++) {
+    const start = polygon[i];
+    const end = polygon[(i + 1) % polygon.length];
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length > maxLength) {
+      maxLength = length;
+      const angle = Math.atan2(dy, dx);
+      longestEdge = { start, end, length, angle };
+    }
+  }
+
+  return longestEdge;
+}
+
 // Helper to create roof geometry directly in 3D space
 // Uses normalized polygon coordinates to create a properly oriented roof
 function createRoofFromPolygon(
@@ -117,88 +149,56 @@ function createRoofFromPolygon(
     return group;
   }
 
-  // Calculate bounding box in polygon coordinates
+  // Find the longest edge to determine roof ridge direction
+  const longestEdge = findLongestEdge(normalized);
+
+  // Calculate bounding box for roof size
   const minX = Math.min(...normalized.map(p => p[0]));
   const maxX = Math.max(...normalized.map(p => p[0]));
   const minY = Math.min(...normalized.map(p => p[1]));
   const maxY = Math.max(...normalized.map(p => p[1]));
 
-  const width = maxX - minX;  // X extent
-  const depth = maxY - minY;  // Y extent (becomes -Z in 3D)
-
-  // Determine roof ridge direction (along longer axis)
-  // Note: Roof is centered at (0,0) to match the normalized polygon centroid
-  const isWidthLonger = width >= depth;
+  const bboxWidth = maxX - minX;
+  const bboxDepth = maxY - minY;
 
   // Y positions
   const y0 = buildingHeight;  // Eaves
   const yTop = buildingHeight + roofHeight;  // Ridge
 
-  // Roof dimensions centered at (0,0) like the building
-  const halfWidth = width / 2;
-  const halfDepth = depth / 2;
+  // Create roof aligned with building's longest edge
+  // The roof ridge runs parallel to the longest edge
+  const ridgeAngle = longestEdge.angle;
 
-  let vertices: Float32Array;
-  let indices: number[];
+  // Calculate roof dimensions based on bounding box diagonal
+  const diagonal = Math.sqrt(bboxWidth * bboxWidth + bboxDepth * bboxDepth);
+  const halfLength = diagonal / 2 * 0.9; // Slightly smaller than diagonal
+  const halfWidth = Math.min(bboxWidth, bboxDepth) / 2 * 1.1;
 
-  // Note: Building polygon Y (N coordinate) maps to -Z after rotation
-  // So we negate Z coordinates to match building orientation
+  // Create a standard gable roof aligned with X axis, then rotate
+  const vertices = new Float32Array([
+    // Front gable (positive local Z)
+    -halfLength, y0, halfWidth,   // 0: bottom left
+    halfLength, y0, halfWidth,    // 1: bottom right
+    0, yTop, halfWidth,           // 2: peak
 
-  if (isWidthLonger) {
-    // Ridge runs along X (longer axis)
-    // Gables at Z ends - note: Z is negated to match building rotation
-    vertices = new Float32Array([
-      // Front gable triangle (positive Z = back in polygon terms)
-      -halfWidth, y0, halfDepth,   // 0: bottom left front
-      halfWidth, y0, halfDepth,    // 1: bottom right front
-      0, yTop, halfDepth,          // 2: peak front
+    // Back gable (negative local Z)
+    -halfLength, y0, -halfWidth,  // 3: bottom left
+    halfLength, y0, -halfWidth,   // 4: bottom right
+    0, yTop, -halfWidth,          // 5: peak
+  ]);
 
-      // Back gable triangle (negative Z = front in polygon terms)
-      -halfWidth, y0, -halfDepth,  // 3: bottom left back
-      halfWidth, y0, -halfDepth,   // 4: bottom right back
-      0, yTop, -halfDepth,         // 5: peak back
-    ]);
-
-    indices = [
-      // Front gable
-      0, 1, 2,
-      // Back gable
-      3, 5, 4,
-      // Left roof slope
-      0, 2, 5,
-      0, 5, 3,
-      // Right roof slope
-      1, 4, 5,
-      1, 5, 2,
-    ];
-  } else {
-    // Ridge runs along Z (longer axis)
-    // Gables at X ends
-    vertices = new Float32Array([
-      // Left gable triangle
-      -halfWidth, y0, halfDepth,   // 0
-      -halfWidth, y0, -halfDepth,  // 1
-      -halfWidth, yTop, 0,         // 2: peak left
-
-      // Right gable triangle
-      halfWidth, y0, halfDepth,    // 3
-      halfWidth, y0, -halfDepth,   // 4
-      halfWidth, yTop, 0,          // 5: peak right
-    ]);
-
-    indices = [
-      // Left gable
-      0, 2, 1,
-      // Right gable
-      3, 4, 5,
-      // Front roof slope
-      0, 3, 5,
-      0, 5, 2,
-      // Back roof slope
-      1, 2, 5,
-      1, 5, 4,
-    ];
-  }
+  const indices = [
+    // Front gable
+    0, 1, 2,
+    // Back gable
+    3, 5, 4,
+    // Left roof slope
+    0, 2, 5,
+    0, 5, 3,
+    // Right roof slope
+    1, 4, 5,
+    1, 5, 2,
+  ];
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -211,6 +211,11 @@ function createRoofFromPolygon(
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
+
+  // Rotate roof to align with building's longest edge
+  // ridgeAngle is in polygon coordinates where Y is north
+  // In 3D, we need to rotate around Y axis, and account for the -Z flip
+  mesh.rotation.y = -ridgeAngle;
 
   group.add(mesh);
   return group;

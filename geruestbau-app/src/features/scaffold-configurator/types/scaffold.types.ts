@@ -151,7 +151,7 @@ export interface ScaffoldSegment {
 // ============ UI STATE ============
 
 export type EditorTool = 'select' | 'remove' | 'removeRow' | 'removeLevel' | 'lift' | 'stairs';
-export type MainTab = 'overview' | 'editor' | '3d';
+export type MainTab = 'facade' | 'overview' | 'editor' | '3d';
 export type View3D = 'isometric' | 'north' | 'east' | 'south' | 'west' | 'top';
 
 export interface SVGDimensions {
