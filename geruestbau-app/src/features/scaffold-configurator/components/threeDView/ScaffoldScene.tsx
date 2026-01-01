@@ -311,7 +311,10 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
     // Use actual facade lengths for building dimensions
     const buildingWidth = Math.max(10, nsLength);
     const buildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
-    const buildingHeight = config.totals.max_height_m * 0.8;
+
+    // Calculate building height directly from facades (totals may not be ready yet)
+    const maxFacadeHeight = facades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * config.settings.level_height_m), 10);
+    const buildingHeight = Math.max(8, maxFacadeHeight * 0.8);
 
     const fieldWidth = config.settings.field_width_m;
     const levelHeight = config.settings.level_height_m;
