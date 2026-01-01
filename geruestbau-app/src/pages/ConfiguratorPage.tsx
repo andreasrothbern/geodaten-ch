@@ -133,21 +133,66 @@ function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildin
   }
 }
 
+// Helper: Extract polygon from stored data (handles both flat array and GeoJSON formats)
+function extractPolygon(storedData: StoredBuildingData): [number, number][] | null {
+  const rawPolygon = storedData.polygon;
+  if (!rawPolygon) return null;
+
+  // Check if it's a flat array [[e, n], ...]
+  if (Array.isArray(rawPolygon) && rawPolygon.length > 0) {
+    const first = rawPolygon[0];
+    if (Array.isArray(first) && typeof first[0] === 'number') {
+      return rawPolygon as [number, number][];
+    }
+  }
+
+  // Check if it's GeoJSON format { type: "Polygon", coordinates: [[[e,n],...]] }
+  const geoJson = rawPolygon as { type?: string; coordinates?: number[][][] };
+  if (geoJson.coordinates && geoJson.coordinates[0]) {
+    return geoJson.coordinates[0] as [number, number][];
+  }
+
+  return null;
+}
+
+// Helper: Get height values from stored data (handles both direct and nested formats)
+function extractHeights(storedData: StoredBuildingData): { trauf: number; first: number } {
+  // Direct format from SmartBuilding API
+  const directTrauf = (storedData as Record<string, unknown>).traufhoehe_m as number | undefined;
+  const directFirst = (storedData as Record<string, unknown>).firsthoehe_m as number | undefined;
+
+  if (directTrauf !== undefined) {
+    return { trauf: directTrauf, first: directFirst ?? directTrauf + 2 };
+  }
+
+  // Nested format (heights object)
+  const heights = storedData.heights;
+  if (heights) {
+    return {
+      trauf: heights.traufhoehe_m ?? 10,
+      first: heights.firsthoehe_m ?? (heights.traufhoehe_m ?? 10) + 2,
+    };
+  }
+
+  return { trauf: 10, first: 12 };
+}
+
 // Helper: Convert stored building_data to configurator format
 function convertStoredDataToConfiguratorFormat(
   project: Project,
   storedData: StoredBuildingData
 ): ConfiguratorBuildingData | null {
-  // Need polygon to calculate facades
-  if (!storedData.polygon?.coordinates?.[0]) {
-    console.warn('No polygon in stored building_data');
+  // Extract polygon (handles both formats)
+  const polygon = extractPolygon(storedData);
+  if (!polygon || polygon.length < 3) {
+    console.warn('No valid polygon in stored building_data');
     return null;
   }
 
-  const polygon = storedData.polygon.coordinates[0] as [number, number][];
   const center = calculateCenter(polygon);
-  const traufHeight = storedData.heights?.traufhoehe_m || 10;
-  const firstHeight = storedData.heights?.firsthoehe_m || traufHeight + 2;
+  const heights = extractHeights(storedData);
+  const traufHeight = heights.trauf;
+  const firstHeight = heights.first;
 
   // Check if we have pre-selected facades from FacadeSelectionPage
   const preSelectedFacades = getSelectedFacadesFromSession(traufHeight);
@@ -187,10 +232,16 @@ function convertStoredDataToConfiguratorFormat(
     }
   }
 
+  // Get EGID from various sources
+  const egid = (storedData as Record<string, unknown>).egid as string | undefined
+    ?? storedData.gwr?.egid
+    ?? project.egid
+    ?? 'unknown';
+
   return {
     project_id: project.id,
     building: {
-      egid: storedData.gwr?.egid || project.egid || 'unknown',
+      egid,
       address: project.address,
       name: project.name,
       polygon: polygon,
