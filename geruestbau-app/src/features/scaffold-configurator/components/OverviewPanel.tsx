@@ -26,7 +26,6 @@ export default function OverviewPanel() {
     setSystem,
     setBayWidth,
     toggleOption,
-    jumpToElement,
   } = useScaffoldConfig();
 
   const totals = useTotals();
@@ -72,16 +71,6 @@ export default function OverviewPanel() {
   // Handle facade selection from cards
   const handleSelectFacade = (index: number) => {
     setFacadeCardIndex(index);
-  };
-
-  // Handle jumping to editor with facade
-  const handleEditFacade = (index: number) => {
-    // Find the actual element index (facades + corners interleaved)
-    const facadeId = facades[index]?.id;
-    const elementIndex = elements.findIndex((el) => el.id === facadeId);
-    if (elementIndex !== -1) {
-      jumpToElement(elementIndex);
-    }
   };
 
   if (!settings) {
@@ -131,6 +120,14 @@ export default function OverviewPanel() {
       {/* Summary Stats */}
       <SummaryStats totals={totals} settings={settings} maxSlope={maxSlope} />
 
+      {/* Global Options (Safety Net, Weather Cover) */}
+      <GlobalOptions
+        safetyNet={settings.safety_net}
+        weatherCover={settings.weather_cover}
+        onSafetyNetChange={() => toggleOption('safety_net')}
+        onWeatherCoverChange={() => toggleOption('weather_cover')}
+      />
+
       {/* Facade Cards Carousel */}
       {facades.length > 0 && (
         <div>
@@ -149,44 +146,6 @@ export default function OverviewPanel() {
           />
         </div>
       )}
-
-      {/* Global Options (Safety Net, Weather Cover) */}
-      <GlobalOptions
-        safetyNet={settings.safety_net}
-        weatherCover={settings.weather_cover}
-        onSafetyNetChange={() => toggleOption('safety_net')}
-        onWeatherCoverChange={() => toggleOption('weather_cover')}
-      />
-
-      {/* Quick Access: Enabled Facades Grid */}
-      <div className="bg-white rounded-xl p-4 shadow-sm">
-        <h3 className="font-semibold text-gray-700 mb-3 flex items-center justify-between">
-          <span>Ausgewählte Fassaden</span>
-          <span className="text-xs text-gray-400 font-normal">{facades.length} von {allFacades.length}</span>
-        </h3>
-
-        <div className="grid grid-cols-2 gap-2">
-          {facades.map((facade, index) => (
-            <button
-              key={facade.id}
-              onClick={() => handleEditFacade(index)}
-              className="text-left rounded-lg p-3 border-l-4 bg-gray-50 hover:bg-gray-100 transition-colors"
-              style={{ borderLeftColor: facade.color }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-800 text-sm">{facade.name}</span>
-                <span className="text-xs text-gray-500">
-                  {facade.fields}×{facade.levels}
-                </span>
-              </div>
-              <p className="text-lg font-bold text-gray-800">
-                {facade.length_m.toFixed(1)}
-                <span className="text-sm font-normal text-gray-500 ml-0.5">m</span>
-              </p>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Action Button */}
       <div className="flex gap-3">
