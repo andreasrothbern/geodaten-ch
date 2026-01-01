@@ -242,7 +242,24 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       isDirty: false,
 
       // Navigation actions
-      setCurrentTab: (tab) => set({ currentTab: tab }),
+      setCurrentTab: (tab) => {
+        const { configuration, currentElementIndex } = get();
+
+        // When switching to editor, ensure we're on an enabled element
+        if (tab === 'editor' && configuration) {
+          const currentEl = configuration.elements[currentElementIndex];
+          if (!currentEl?.enabled) {
+            // Find first enabled element
+            const firstEnabledIdx = configuration.elements.findIndex(el => el.enabled);
+            if (firstEnabledIdx !== -1) {
+              set({ currentTab: tab, currentElementIndex: firstEnabledIdx });
+              return;
+            }
+          }
+        }
+
+        set({ currentTab: tab });
+      },
 
       navigateCarousel: (direction) => {
         const { configuration, currentElementIndex } = get();
@@ -368,7 +385,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
 
       // Facade Management
       toggleFacadeEnabled: (facadeId) => {
-        const { configuration } = get();
+        const { configuration, currentElementIndex } = get();
         if (!configuration) return;
 
         const newElements = configuration.elements.map((el) => {
@@ -396,12 +413,23 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
           return el;
         });
 
+        // Check if current element became disabled, jump to first enabled
+        const currentEl = newElements[currentElementIndex];
+        let newIndex = currentElementIndex;
+        if (currentEl && !currentEl.enabled) {
+          const firstEnabledIdx = newElements.findIndex(el => el.enabled);
+          if (firstEnabledIdx !== -1) {
+            newIndex = firstEnabledIdx;
+          }
+        }
+
         set({
           configuration: {
             ...configuration,
             elements: newElements,
             updated_at: new Date().toISOString(),
           },
+          currentElementIndex: newIndex,
           isDirty: true,
         });
       },
