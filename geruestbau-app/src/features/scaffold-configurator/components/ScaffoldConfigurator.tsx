@@ -17,6 +17,7 @@ interface ScaffoldConfiguratorProps {
   projectId: string;
   buildingName: string;
   buildingAddress: string;
+  buildingPolygon?: [number, number][];
   selectedFacades: SelectedFacade[];
   onBack?: () => void;
   onComplete?: () => void; // Will be used when completing configuration
@@ -26,6 +27,7 @@ export default function ScaffoldConfigurator({
   projectId,
   buildingName,
   buildingAddress,
+  buildingPolygon,
   selectedFacades,
   onBack,
   onComplete: _onComplete, // Will be used when completing configuration
@@ -41,9 +43,9 @@ export default function ScaffoldConfigurator({
   // Initialize configuration on mount
   useEffect(() => {
     if (!configuration || configuration.project_id !== projectId) {
-      initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades);
+      initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon);
     }
-  }, [projectId, buildingName, buildingAddress, selectedFacades, configuration, initializeFromFacades]);
+  }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, configuration, initializeFromFacades]);
 
   const tabs: { id: MainTab; label: string; icon: React.ReactNode }[] = [
     { id: 'overview', label: 'Übersicht', icon: <LayoutGrid className="w-4 h-4" /> },

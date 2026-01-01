@@ -380,7 +380,7 @@ export default function ConfiguratorPage() {
     }
   }, [address, fetchBuildingData, project]);
 
-  // Convert API response to SelectedFacade format
+  // Convert API response to SelectedFacade format (including coordinates for 3D)
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
     return data.selected_facades.map((facade) => ({
       id: facade.id,
@@ -388,6 +388,8 @@ export default function ConfiguratorPage() {
       length_m: facade.length_m,
       height_m: facade.height_m,
       slope_percent: facade.slope_percent,
+      start_point: facade.start_point,
+      end_point: facade.end_point,
     }));
   };
 
@@ -528,6 +530,7 @@ export default function ConfiguratorPage() {
       projectId={buildingData.project_id}
       buildingName={buildingData.building.name}
       buildingAddress={buildingData.building.address}
+      buildingPolygon={buildingData.building.polygon}
       selectedFacades={convertToSelectedFacades(buildingData)}
       onBack={() => {
         setBuildingData(null);

@@ -67,7 +67,8 @@ interface ScaffoldConfigState {
     projectId: string,
     buildingName: string,
     buildingAddress: string,
-    facades: SelectedFacade[]
+    facades: SelectedFacade[],
+    buildingPolygon?: [number, number][]
   ) => void;
   reset: () => void;
 
@@ -152,6 +153,9 @@ const createFacadeElement = (
       lift_position: null,
       stairs_position: null,
     },
+    // Include coordinates for 3D positioning
+    start_point: facade.start_point,
+    end_point: facade.end_point,
   };
 };
 
@@ -501,7 +505,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       },
 
       // Initialization
-      initializeFromFacades: (projectId, buildingName, buildingAddress, facades) => {
+      initializeFromFacades: (projectId, buildingName, buildingAddress, facades, buildingPolygon) => {
         const settings = createDefaultSettings();
         const elements = createElementsFromFacades(facades, settings);
         const now = new Date().toISOString();
@@ -520,6 +524,8 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
             perimeter_m: 0,
             estimated_weight_kg: 0,
           },
+          // Store building polygon for 3D visualization
+          buildingPolygon,
         };
 
         set({

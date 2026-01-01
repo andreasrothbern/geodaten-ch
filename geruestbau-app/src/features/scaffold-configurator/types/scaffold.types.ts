@@ -26,6 +26,9 @@ export interface SelectedFacade {
   slope_percent: number;
   photo_url?: string;
   detected_features?: DetectedFeature[];
+  // Coordinates for 3D positioning (LV95)
+  start_point?: [number, number];
+  end_point?: [number, number];
 }
 
 export type FacadeDirection = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -60,6 +63,8 @@ export interface ScaffoldConfiguration {
   settings: ScaffoldSettings;
   elements: ScaffoldElement[];
   totals: ScaffoldTotals;
+  // Building polygon for 3D visualization (LV95 coordinates)
+  buildingPolygon?: [number, number][];
 }
 
 export interface ScaffoldTotals {
@@ -88,6 +93,9 @@ export interface ScaffoldFacade {
   levels: number;
   color: string;
   modifications: FacadeModifications;
+  // Coordinates for 3D positioning (LV95)
+  start_point?: [number, number];
+  end_point?: [number, number];
 }
 
 export interface FacadeModifications {
