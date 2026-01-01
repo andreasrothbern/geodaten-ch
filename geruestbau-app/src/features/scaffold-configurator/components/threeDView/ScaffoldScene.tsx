@@ -178,11 +178,11 @@ function createScaffoldFacadeAlongEdge(
   }
 
   // Normalize coordinates relative to center
-  // IMPORTANT: Flip Z because building mesh uses -Y for north after rotation
-  const startX = facade.start_point[0] - center[0];
-  const startZ = -(facade.start_point[1] - center[1]);  // Flip Z to match building orientation
-  const endX = facade.end_point[0] - center[0];
-  const endZ = -(facade.end_point[1] - center[1]);  // Flip Z to match building orientation
+  // Swap start/end to match polygon winding order
+  const startX = facade.end_point[0] - center[0];
+  const startZ = -(facade.end_point[1] - center[1]);
+  const endX = facade.start_point[0] - center[0];
+  const endZ = -(facade.start_point[1] - center[1]);
 
   // Calculate facade direction vector
   const dx = endX - startX;
@@ -194,9 +194,8 @@ function createScaffoldFacadeAlongEdge(
   const dirZ = dz / length;
 
   // Perpendicular direction (outward from building)
-  // Note: swissBUILDINGS3D polygons are clockwise, so we flip the perpendicular
-  const perpX = dirZ;   // Was: -dirZ (for counter-clockwise geodienste.ch)
-  const perpZ = -dirX;  // Was: dirX
+  const perpX = dirZ;
+  const perpZ = -dirX;
 
   // Offset scaffolds outward from building edge
   const offsetX = perpX * (scaffoldGap + cellDepth / 2);
