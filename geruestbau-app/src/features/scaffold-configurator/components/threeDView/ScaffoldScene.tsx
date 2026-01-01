@@ -189,6 +189,22 @@ function createRoofFromPolygon(
       roofOrientation
     );
 
+    // DEBUG: Log roof geometry
+    console.log('Satteldach Debug:', {
+      roofOrientation,
+      yEaves,
+      yPeak,
+      vertexCount: roofGeom.vertices.length / 3,
+      vertices: roofGeom.vertices,
+      indices: roofGeom.indices,
+      centeredPointsBbox: {
+        minX: Math.min(...centeredPoints.map(p => p.x)),
+        maxX: Math.max(...centeredPoints.map(p => p.x)),
+        minZ: Math.min(...centeredPoints.map(p => p.z)),
+        maxZ: Math.max(...centeredPoints.map(p => p.z)),
+      }
+    });
+
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(roofGeom.vertices), 3));
     geometry.setIndex(roofGeom.indices);
@@ -196,6 +212,15 @@ function createRoofFromPolygon(
     const mesh = new THREE.Mesh(geometry, roofMaterial);
     mesh.castShadow = true;
     group.add(mesh);
+
+    // DEBUG: Add ridge line (red) to visualize first position
+    const ridgePoints = [];
+    // Ridge is at vertices 4 and 5 for Satteldach
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14])); // vertex 4
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17])); // vertex 5
+    const ridgeGeometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
+    const ridgeLine = new THREE.Line(ridgeGeometry, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 5 }));
+    group.add(ridgeLine);
 
   } else if (roofType === 'pultdach') {
     // Shed roof following actual polygon shape - single slope

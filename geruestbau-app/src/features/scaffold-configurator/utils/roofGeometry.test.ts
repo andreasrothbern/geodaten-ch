@@ -8,6 +8,8 @@ import {
   validateRoofGeometry,
   getVertex,
   getVertices,
+  calculateTriangleNormal,
+  getAllTriangleNormals,
   type Point2D,
 } from './roofGeometry';
 
@@ -375,6 +377,154 @@ describe('roofGeometry', () => {
       // Check ridge runs along X (Z should be center = 0)
       expect(ridgeVertices[0][2]).toBe(0);
       expect(ridgeVertices[1][2]).toBe(0);
+    });
+  });
+
+  describe('Triangle normals (winding order validation)', () => {
+    describe('O-W orientation (ridge N-S)', () => {
+      const geometry = createSatteldachGeometry(rectangularPolygon, 6, 9, 'O-W');
+      const normals = getAllTriangleNormals(geometry);
+
+      // Triangle layout for O-W:
+      // 0,1: West slope (2 triangles)
+      // 2,3: East slope (2 triangles)
+      // 4: North gable
+      // 5: South gable
+
+      it('should have West slope normals pointing West-Up (-X, +Y)', () => {
+        // Triangles 0 and 1 are West slope
+        const westNormal1 = normals[0];
+        const westNormal2 = normals[1];
+
+        // X component should be negative (pointing West)
+        expect(westNormal1[0]).toBeLessThan(0);
+        expect(westNormal2[0]).toBeLessThan(0);
+
+        // Y component should be positive (pointing Up)
+        expect(westNormal1[1]).toBeGreaterThan(0);
+        expect(westNormal2[1]).toBeGreaterThan(0);
+      });
+
+      it('should have East slope normals pointing East-Up (+X, +Y)', () => {
+        // Triangles 2 and 3 are East slope
+        const eastNormal1 = normals[2];
+        const eastNormal2 = normals[3];
+
+        // X component should be positive (pointing East)
+        expect(eastNormal1[0]).toBeGreaterThan(0);
+        expect(eastNormal2[0]).toBeGreaterThan(0);
+
+        // Y component should be positive (pointing Up)
+        expect(eastNormal1[1]).toBeGreaterThan(0);
+        expect(eastNormal2[1]).toBeGreaterThan(0);
+      });
+
+      it('should have North gable normal pointing North (-Z)', () => {
+        // Triangle 4 is North gable
+        const northNormal = normals[4];
+
+        // Z component should be negative (pointing North)
+        expect(northNormal[2]).toBeLessThan(0);
+      });
+
+      it('should have South gable normal pointing South (+Z)', () => {
+        // Triangle 5 is South gable
+        const southNormal = normals[5];
+
+        // Z component should be positive (pointing South)
+        expect(southNormal[2]).toBeGreaterThan(0);
+      });
+
+      it('should have all roof slope normals with positive Y (pointing upward)', () => {
+        // All roof faces (0-3) should point somewhat upward
+        for (let i = 0; i < 4; i++) {
+          expect(normals[i][1]).toBeGreaterThan(0);
+        }
+      });
+    });
+
+    describe('N-S orientation (ridge E-W)', () => {
+      const geometry = createSatteldachGeometry(rectangularPolygon, 6, 9, 'N-S');
+      const normals = getAllTriangleNormals(geometry);
+
+      // Triangle layout for N-S:
+      // 0,1: North slope (2 triangles)
+      // 2,3: South slope (2 triangles)
+      // 4: West gable
+      // 5: East gable
+
+      it('should have North slope normals pointing North-Up (-Z, +Y)', () => {
+        const northNormal1 = normals[0];
+        const northNormal2 = normals[1];
+
+        // Z component should be negative (pointing North)
+        expect(northNormal1[2]).toBeLessThan(0);
+        expect(northNormal2[2]).toBeLessThan(0);
+
+        // Y component should be positive (pointing Up)
+        expect(northNormal1[1]).toBeGreaterThan(0);
+        expect(northNormal2[1]).toBeGreaterThan(0);
+      });
+
+      it('should have South slope normals pointing South-Up (+Z, +Y)', () => {
+        const southNormal1 = normals[2];
+        const southNormal2 = normals[3];
+
+        // Z component should be positive (pointing South)
+        expect(southNormal1[2]).toBeGreaterThan(0);
+        expect(southNormal2[2]).toBeGreaterThan(0);
+
+        // Y component should be positive (pointing Up)
+        expect(southNormal1[1]).toBeGreaterThan(0);
+        expect(southNormal2[1]).toBeGreaterThan(0);
+      });
+
+      it('should have West gable normal pointing West (-X)', () => {
+        const westNormal = normals[4];
+        expect(westNormal[0]).toBeLessThan(0);
+      });
+
+      it('should have East gable normal pointing East (+X)', () => {
+        const eastNormal = normals[5];
+        expect(eastNormal[0]).toBeGreaterThan(0);
+      });
+    });
+
+    describe('calculateTriangleNormal', () => {
+      it('should calculate correct normal for simple triangle', () => {
+        // Triangle in XY plane, counter-clockwise from +Z
+        const geometry = {
+          vertices: [
+            0, 0, 0,  // v0: origin
+            1, 0, 0,  // v1: +X
+            0, 1, 0,  // v2: +Y
+          ],
+          indices: [0, 1, 2],
+        };
+
+        const normal = calculateTriangleNormal(geometry, 0);
+
+        // Normal should point in +Z direction
+        expect(normal[0]).toBeCloseTo(0);
+        expect(normal[1]).toBeCloseTo(0);
+        expect(normal[2]).toBeCloseTo(1);
+      });
+
+      it('should return normalized vector', () => {
+        const geometry = {
+          vertices: [
+            0, 0, 0,
+            10, 0, 0,  // Large triangle
+            0, 10, 0,
+          ],
+          indices: [0, 1, 2],
+        };
+
+        const normal = calculateTriangleNormal(geometry, 0);
+        const length = Math.sqrt(normal[0]**2 + normal[1]**2 + normal[2]**2);
+
+        expect(length).toBeCloseTo(1);
+      });
     });
   });
 });

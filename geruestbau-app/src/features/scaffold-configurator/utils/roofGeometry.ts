@@ -304,3 +304,44 @@ export function getVertices(geometry: RoofGeometry): [number, number, number][] 
   }
   return result;
 }
+
+/**
+ * Calculate normal vector for a triangle using cross product
+ * Returns normalized vector [nx, ny, nz]
+ */
+export function calculateTriangleNormal(
+  geometry: RoofGeometry,
+  triangleIndex: number
+): [number, number, number] {
+  const baseIdx = triangleIndex * 3;
+  const v0 = getVertex(geometry, geometry.indices[baseIdx]);
+  const v1 = getVertex(geometry, geometry.indices[baseIdx + 1]);
+  const v2 = getVertex(geometry, geometry.indices[baseIdx + 2]);
+
+  // Edge vectors
+  const e1: [number, number, number] = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+  const e2: [number, number, number] = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+
+  // Cross product e1 × e2
+  const nx = e1[1] * e2[2] - e1[2] * e2[1];
+  const ny = e1[2] * e2[0] - e1[0] * e2[2];
+  const nz = e1[0] * e2[1] - e1[1] * e2[0];
+
+  // Normalize
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (len === 0) return [0, 0, 0];
+
+  return [nx / len, ny / len, nz / len];
+}
+
+/**
+ * Get all triangle normals
+ */
+export function getAllTriangleNormals(geometry: RoofGeometry): [number, number, number][] {
+  const triangleCount = geometry.indices.length / 3;
+  const normals: [number, number, number][] = [];
+  for (let i = 0; i < triangleCount; i++) {
+    normals.push(calculateTriangleNormal(geometry, i));
+  }
+  return normals;
+}
