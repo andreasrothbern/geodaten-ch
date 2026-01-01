@@ -138,14 +138,15 @@ const createFacadeElement = (
     type: 'facade',
     id: facade.id,
     facade_ref: facade.id,
-    name: directionNames[facade.direction],
+    name: directionNames[facade.direction] || facade.direction,  // Fallback to raw direction code
     direction: facade.direction,
     length_m: facade.length_m,
     target_height_m: targetHeight,
     slope_percent: facade.slope_percent,
     fields,
     levels,
-    color: FACADE_COLORS[facade.direction],
+    // Fallback color for unknown direction codes (supports both German NO/O/SO and English NE/E/SE)
+    color: FACADE_COLORS[facade.direction] || '#6B7280',  // gray-500 as fallback
     modifications: {
       removed_cells: new Set<string>(),
       lift_position: null,
