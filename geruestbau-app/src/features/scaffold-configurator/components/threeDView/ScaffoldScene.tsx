@@ -246,9 +246,10 @@ function createScaffoldFacadeAlongEdge(
 
       // Position and rotate to align with facade
       cellGroup.position.set(cellX, cellY, cellZ);
-      // Rotate to face perpendicular to facade direction
-      const angle = Math.atan2(dirX, dirZ);
-      cellGroup.rotation.y = angle;
+      // Rotate cell so its width aligns with facade direction
+      // atan2(dirZ, dirX) gives angle from X-axis to direction vector
+      const angle = Math.atan2(dirZ, dirX);
+      cellGroup.rotation.y = -angle;  // Negative because Y rotation is clockwise
 
       group.add(cellGroup);
     }
