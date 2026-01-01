@@ -84,8 +84,8 @@ export default function FacadePanel() {
     // Create polygon path
     const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
 
-    // Create facade segments - uniform line width, no circles
-    const lineWidth = width * 0.025; // Gleichmässige Liniendicke
+    // Create facade segments - thicker lines for better visibility
+    const lineWidth = width * 0.06; // Dickere Linien für bessere Farbsichtbarkeit
 
     const facadeElements = facades.map((facade) => {
       if (!facade.start_point || !facade.end_point) return null;
