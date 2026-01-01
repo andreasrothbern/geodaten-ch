@@ -209,6 +209,12 @@ class SmartBuildingService:
             "roof_type": bundle.roof_type,
             "roof_angle_deg": bundle.roof_angle_deg,
             "roof_orientation": bundle.roof_orientation,
+            # Sonnendach.ch Daten
+            "roof_overhang_m": bundle.roof_overhang_m,
+            "roof_surfaces": bundle.roof_surfaces,
+            "roof_tilt_deg": bundle.roof_tilt_deg,
+            "roof_azimuth_deg": bundle.roof_azimuth_deg,
+            "sonnendach_available": bundle.sonnendach_available,
             "zones": [
                 {
                     "id": z.id,
@@ -261,6 +267,12 @@ class SmartBuildingService:
             roof_type=data.get("roof_type"),
             roof_angle_deg=data.get("roof_angle_deg"),
             roof_orientation=data.get("roof_orientation"),
+            # Sonnendach.ch Daten
+            roof_overhang_m=data.get("roof_overhang_m", 0.4),  # Standard 40cm
+            roof_surfaces=data.get("roof_surfaces"),
+            roof_tilt_deg=data.get("roof_tilt_deg"),
+            roof_azimuth_deg=data.get("roof_azimuth_deg"),
+            sonnendach_available=data.get("sonnendach_available", False),
             complexity=data.get("complexity", "simple"),
             warnings=data.get("warnings", []),
         )
@@ -400,6 +412,7 @@ class SmartBuildingService:
             # PHASE 3: Parallel - brauchen Ergebnisse aus Phase 2
             phase3_tasks = [
                 self._calculate_roof_data(bundle),  # braucht Höhen + Polygon
+                self._collect_sonnendach_data(bundle),  # Sonnendach.ch für präzise Dachgeometrie
             ]
             if include_research:
                 phase3_tasks.append(self._collect_research_data(bundle, force_refresh))  # braucht GWR
@@ -691,6 +704,143 @@ class SmartBuildingService:
 
         except Exception as e:
             logger.error(f"Roof calculation error: {e}")
+
+    async def _collect_sonnendach_data(self, bundle: BuildingDataBundle):
+        """Schritt 6b: Detaillierte Dachgeometrie aus Sonnendach.ch (BFE)
+
+        Liefert:
+        - Exakte Dachflächen-Polygone
+        - Neigung pro Dachfläche (tilt)
+        - Ausrichtung (Azimut 0-360°)
+        - Dachüberstand (berechnet aus Polygon-Differenz)
+
+        Falls keine Daten: Standard-Dachüberstand 40cm wird verwendet.
+        """
+        if not bundle.lv95_e or not bundle.lv95_n:
+            return
+
+        try:
+            from app.services.sonnendach_service import get_sonnendach_service
+
+            sonnendach = get_sonnendach_service()
+            analysis = await sonnendach.analyze_roof(bundle.lv95_e, bundle.lv95_n)
+
+            if analysis.has_data and analysis.surfaces:
+                bundle.sonnendach_available = True
+                bundle.add_source(DataSource.SONNENDACH)
+
+                # Dachflächen speichern
+                bundle.roof_surfaces = [
+                    {
+                        "id": s.id,
+                        "area_m2": s.area_m2,
+                        "tilt_deg": s.tilt_degrees,
+                        "azimuth_deg": s.azimuth_degrees,
+                        "eignung": s.eignung,
+                        "polygon": s.polygon,
+                    }
+                    for s in analysis.surfaces
+                ]
+
+                # Aggregierte Werte übernehmen (bessere Genauigkeit als berechnet)
+                if analysis.main_tilt_degrees:
+                    bundle.roof_tilt_deg = analysis.main_tilt_degrees
+                    # Überschreibe berechneten Wert wenn Sonnendach genauer
+                    if bundle.roof_angle_deg is None or bundle.roof_confidence < 0.8:
+                        bundle.roof_angle_deg = analysis.main_tilt_degrees
+                        bundle.roof_confidence = 0.9
+
+                # Dachtyp aus Sonnendach
+                if analysis.roof_type:
+                    sonnendach_roof_type = analysis.roof_type
+                    # Mapping: flat→flachdach, gabled→satteldach, hipped→walmdach
+                    type_map = {
+                        "flat": "flachdach",
+                        "gabled": "satteldach",
+                        "hipped": "walmdach",
+                        "complex": "komplex",
+                    }
+                    bundle.roof_type = type_map.get(sonnendach_roof_type, bundle.roof_type)
+
+                # Dachüberstand aus Polygon-Differenz berechnen
+                overhang = self._calculate_roof_overhang(bundle, analysis.surfaces)
+                if overhang is not None:
+                    bundle.roof_overhang_m = overhang
+                    logger.info(f"Dachüberstand aus Sonnendach berechnet: {overhang:.2f}m")
+
+                logger.info(f"Sonnendach.ch: {len(analysis.surfaces)} Dachflächen, "
+                           f"Typ={analysis.roof_type}, Neigung={analysis.main_tilt_degrees}°")
+            else:
+                logger.debug(f"Keine Sonnendach.ch Daten für E={bundle.lv95_e}, N={bundle.lv95_n}")
+                # Standard-Dachüberstand bleibt bei 0.4m (Model-Default)
+
+        except Exception as e:
+            logger.warning(f"Sonnendach.ch error: {e}")
+            # Standard-Dachüberstand bleibt bei 0.4m
+
+    def _calculate_roof_overhang(
+        self,
+        bundle: BuildingDataBundle,
+        roof_surfaces: list
+    ) -> Optional[float]:
+        """
+        Berechnet Dachüberstand aus Differenz zwischen Dach-Polygon und Gebäude-Polygon.
+
+        Der Dachüberstand ist der Abstand zwischen der Gebäudekante und dem
+        äussersten Punkt des Daches in derselben Richtung.
+
+        Returns:
+            Dachüberstand in Metern oder None wenn nicht berechenbar
+        """
+        if not bundle.polygon or not roof_surfaces:
+            return None
+
+        try:
+            # Gebäude Bounding Box
+            bldg_xs = [p[0] for p in bundle.polygon]
+            bldg_ys = [p[1] for p in bundle.polygon]
+            bldg_min_x, bldg_max_x = min(bldg_xs), max(bldg_xs)
+            bldg_min_y, bldg_max_y = min(bldg_ys), max(bldg_ys)
+
+            # Alle Dach-Polygone zu einer Bounding Box kombinieren
+            roof_xs = []
+            roof_ys = []
+            for surface in roof_surfaces:
+                polygon = surface.polygon if hasattr(surface, 'polygon') else surface.get('polygon', [])
+                if polygon:
+                    roof_xs.extend([p[0] for p in polygon])
+                    roof_ys.extend([p[1] for p in polygon])
+
+            if not roof_xs or not roof_ys:
+                return None
+
+            roof_min_x, roof_max_x = min(roof_xs), max(roof_xs)
+            roof_min_y, roof_max_y = min(roof_ys), max(roof_ys)
+
+            # Überhang in jede Richtung
+            overhang_left = bldg_min_x - roof_min_x
+            overhang_right = roof_max_x - bldg_max_x
+            overhang_bottom = bldg_min_y - roof_min_y
+            overhang_top = roof_max_y - bldg_max_y
+
+            # Durchschnitt der positiven Überhänge (Dach ragt über Gebäude)
+            overhangs = [o for o in [overhang_left, overhang_right, overhang_bottom, overhang_top] if o > 0]
+
+            if overhangs:
+                avg_overhang = sum(overhangs) / len(overhangs)
+                # Plausibilitätsprüfung: 0.2m bis 1.5m ist realistisch
+                if 0.2 <= avg_overhang <= 1.5:
+                    return round(avg_overhang, 2)
+                elif avg_overhang < 0.2:
+                    return 0.3  # Minimum
+                else:
+                    return 1.0  # Maximum für normale Gebäude
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Roof overhang calculation error: {e}")
+            return None
 
     async def _collect_research_data(self, bundle: BuildingDataBundle, force_refresh: bool = False):
         """Schritt 7: Gebäude-Recherche (bekannte Gebäude + Claude)"""

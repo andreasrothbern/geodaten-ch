@@ -20,6 +20,7 @@ class DataSource(str, Enum):
     SWISSBUILDINGS3D = "swissbuildings3d"
     SWISSALTI3D = "swissalti3d"
     GEODIENSTE_WFS = "geodienste_wfs"
+    SONNENDACH = "sonnendach"  # BFE Sonnendach.ch Dachgeometrie
     CLAUDE_RESEARCH = "claude_research"
     CLAUDE_ANALYSIS = "claude_analysis"
     CALCULATED = "calculated"
@@ -185,6 +186,14 @@ class BuildingDataBundle:
     roof_orientation: Optional[str] = None  # O-W, N-S
     roof_area_m2: Optional[float] = None
     roof_confidence: float = 0.5
+
+    # === DACH (SONNENDACH.CH) ===
+    # Detaillierte Dachgeometrie aus Sonnendach.ch (BFE)
+    roof_overhang_m: float = 0.4  # Dachüberstand (Standard: 40cm)
+    roof_surfaces: Optional[List[Dict[str, Any]]] = None  # Dachflächen aus Sonnendach
+    roof_tilt_deg: Optional[float] = None  # Genaue Neigung aus Sonnendach
+    roof_azimuth_deg: Optional[float] = None  # Genaue Ausrichtung (0-360°)
+    sonnendach_available: bool = False  # Sonnendach.ch Daten verfügbar?
 
     # === ZONEN ===
     zones: List[ZoneInfo] = field(default_factory=list)

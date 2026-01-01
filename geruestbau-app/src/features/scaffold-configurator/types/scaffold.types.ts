@@ -64,6 +64,8 @@ export interface RoofData {
   trauf_to_first_m: number;
   scaffolding_height_m: number;
   confidence: number;
+  // Dachüberstand (aus Sonnendach.ch oder Standard 40cm)
+  roof_overhang_m?: number; // Default: 0.4m
 }
 
 export interface ScaffoldConfiguration {

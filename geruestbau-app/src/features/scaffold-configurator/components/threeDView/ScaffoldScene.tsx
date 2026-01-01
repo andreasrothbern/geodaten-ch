@@ -119,7 +119,8 @@ function createRoofFromPolygon(
   buildingHeight: number,
   roofHeight: number,
   roofType: string = 'walmdach',  // Default to hip roof
-  roofOrientation: string = ''    // 'N-S' or 'O-W' for ridge direction
+  roofOrientation: string = '',   // 'N-S' or 'O-W' for ridge direction
+  roofOverhang: number = 0.4      // Dachüberstand in Metern (Standard: 40cm)
 ): THREE.Group {
   const group = new THREE.Group();
 
@@ -134,15 +135,23 @@ function createRoofFromPolygon(
   const maxY = Math.max(...normalized.map(p => p[1]));
   const bboxCenterX = (minX + maxX) / 2;
   const bboxCenterY = (minY + maxY) / 2;
-  const bboxWidth = maxX - minX;
-  const bboxDepth = maxY - minY;
+  const bboxWidth = maxX - minX + roofOverhang * 2;  // Add overhang on both sides
+  const bboxDepth = maxY - minY + roofOverhang * 2;  // Add overhang on both sides
 
   // Transform polygon points to be centered at origin (matching building)
   // Polygon coords: X stays X, Y becomes -Z in THREE.js
-  const centeredPoints = normalized.map(p => ({
-    x: p[0] - bboxCenterX,
-    z: -(p[1] - bboxCenterY),  // Negate for THREE.js coordinate system
-  }));
+  // Apply roof overhang by scaling points outward from center
+  const centeredPoints = normalized.map(p => {
+    const dx = p[0] - bboxCenterX;
+    const dy = p[1] - bboxCenterY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Scale outward by adding overhang along the radial direction
+    const scale = dist > 0 ? (dist + roofOverhang) / dist : 1;
+    return {
+      x: dx * scale,
+      z: -(dy * scale),  // Negate for THREE.js coordinate system
+    };
+  });
 
   // Y positions in THREE.js (Y is up)
   const yEaves = buildingHeight;  // Traufe
@@ -772,7 +781,8 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       const roofType = config.roof?.roof_type || 'walmdach';
       const roofHeight = config.roof?.trauf_to_first_m || 3;
       const roofOrientation = config.roof?.roof_orientation || '';
-      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation));
+      const roofOverhang = config.roof?.roof_overhang_m || 0.4;  // Standard 40cm
+      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
       // Use bboxCenter instead of centroid for consistent alignment
