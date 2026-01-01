@@ -182,98 +182,119 @@ function createRoofFromPolygon(
     group.add(mesh);
 
   } else if (roofType === 'satteldach') {
-    // Gable roof following actual polygon shape
+    // Classic gable roof (Satteldach)
     // roofOrientation describes which way the roof FACES (slopes toward)
-    // O-W means roof faces East/West → ridge runs North-South (along Z axis)
-    // N-S means roof faces North/South → ridge runs East-West (along X axis)
-    let ridgeAlongX: boolean;
+    // O-W means roof slopes East/West → ridge runs North-South
+    // N-S means roof slopes North/South → ridge runs East-West
+
+    // Determine ridge direction based on orientation
+    // In THREE.js: X = East-West, Z = North-South (inverted from LV95)
+    let ridgeAlongZ: boolean; // true = ridge runs N-S, false = ridge runs E-W
     if (roofOrientation === 'O-W' || roofOrientation === 'E-W') {
-      ridgeAlongX = false; // Roof faces E/W → ridge runs N-S (along Z)
+      ridgeAlongZ = true;  // Roof slopes E/W → ridge runs N-S (along Z)
     } else if (roofOrientation === 'N-S') {
-      ridgeAlongX = true;  // Roof faces N/S → ridge runs E-W (along X)
+      ridgeAlongZ = false; // Roof slopes N/S → ridge runs E-W (along X)
     } else {
-      // Fallback: ridge along shorter axis (perpendicular to longer side)
-      ridgeAlongX = bboxDepth > bboxWidth;
+      // Fallback: ridge along longer building dimension
+      ridgeAlongZ = bboxDepth > bboxWidth;
     }
 
-    // Find min/max along ridge axis to determine ridge line endpoints
-    const ridgeMin = Math.min(...centeredPoints.map(p => ridgeAlongX ? p.x : p.z));
-    const ridgeMax = Math.max(...centeredPoints.map(p => ridgeAlongX ? p.x : p.z));
+    // Calculate bounding box for ridge placement
+    const minX = Math.min(...centeredPoints.map(p => p.x));
+    const maxX = Math.max(...centeredPoints.map(p => p.x));
+    const minZ = Math.min(...centeredPoints.map(p => p.z));
+    const maxZ = Math.max(...centeredPoints.map(p => p.z));
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
 
-    // Ridge line at center (slopeAxis = 0)
-    const ridgeStart = ridgeAlongX
-      ? { x: ridgeMin, y: yPeak, z: 0 }
-      : { x: 0, y: yPeak, z: ridgeMin };
-    const ridgeEnd = ridgeAlongX
-      ? { x: ridgeMax, y: yPeak, z: 0 }
-      : { x: 0, y: yPeak, z: ridgeMax };
-
-    // Separate polygon points into front (+slopeAxis) and back (-slopeAxis)
-    const frontPoints = centeredPoints.filter(p => (ridgeAlongX ? p.z : p.x) >= 0);
-    const backPoints = centeredPoints.filter(p => (ridgeAlongX ? p.z : p.x) < 0);
-
-    // Sort points along ridge axis for proper face creation
-    const sortByRidge = (a: {x: number, z: number}, b: {x: number, z: number}) =>
-      ridgeAlongX ? a.x - b.x : a.z - b.z;
-    frontPoints.sort(sortByRidge);
-    backPoints.sort(sortByRidge);
+    // Ridge line endpoints
+    let ridge1: {x: number, z: number}, ridge2: {x: number, z: number};
+    if (ridgeAlongZ) {
+      // Ridge runs N-S (along Z axis) at center X
+      ridge1 = { x: centerX, z: minZ };
+      ridge2 = { x: centerX, z: maxZ };
+    } else {
+      // Ridge runs E-W (along X axis) at center Z
+      ridge1 = { x: minX, z: centerZ };
+      ridge2 = { x: maxX, z: centerZ };
+    }
 
     const vertices: number[] = [];
     const indices: number[] = [];
 
-    // Helper to add vertex and return its index
-    const addVertex = (x: number, y: number, z: number): number => {
-      const idx = vertices.length / 3;
-      vertices.push(x, y, z);
-      return idx;
-    };
+    // Add ridge vertices (at peak height)
+    vertices.push(ridge1.x, yPeak, ridge1.z); // idx 0
+    vertices.push(ridge2.x, yPeak, ridge2.z); // idx 1
 
-    // Add ridge vertices
-    const ridgeStartIdx = addVertex(ridgeStart.x, ridgeStart.y, ridgeStart.z);
-    const ridgeEndIdx = addVertex(ridgeEnd.x, ridgeEnd.y, ridgeEnd.z);
+    // Add eave vertices (at eave height) for all polygon corners
+    const eaveStartIdx = 2;
+    centeredPoints.forEach(p => {
+      vertices.push(p.x, yEaves, p.z);
+    });
 
-    // Create front slope - triangles from polygon edge to ridge
-    if (frontPoints.length >= 2) {
-      for (let i = 0; i < frontPoints.length - 1; i++) {
-        const p1 = frontPoints[i];
-        const p2 = frontPoints[i + 1];
-        const v1 = addVertex(p1.x, yEaves, p1.z);
-        const v2 = addVertex(p2.x, yEaves, p2.z);
-        // Create quad from eave edge to ridge (as 2 triangles)
-        indices.push(v1, v2, ridgeEndIdx);
-        indices.push(v1, ridgeEndIdx, ridgeStartIdx);
+    // Separate points into two sides based on ridge position
+    const side1Points: number[] = []; // indices of points on one side
+    const side2Points: number[] = []; // indices of points on other side
+
+    centeredPoints.forEach((p, i) => {
+      const idx = eaveStartIdx + i;
+      if (ridgeAlongZ) {
+        // Ridge along Z: split by X position
+        if (p.x >= centerX) {
+          side1Points.push(idx); // East side
+        }
+        if (p.x <= centerX) {
+          side2Points.push(idx); // West side
+        }
+      } else {
+        // Ridge along X: split by Z position
+        if (p.z >= centerZ) {
+          side1Points.push(idx); // South side
+        }
+        if (p.z <= centerZ) {
+          side2Points.push(idx); // North side
+        }
       }
+    });
+
+    // Sort points along ridge direction for proper face creation
+    const sortFn = ridgeAlongZ
+      ? (a: number, b: number) => vertices[a * 3 + 2] - vertices[b * 3 + 2] // sort by Z
+      : (a: number, b: number) => vertices[a * 3] - vertices[b * 3]; // sort by X
+    side1Points.sort(sortFn);
+    side2Points.sort(sortFn);
+
+    // Create roof slope on side 1 (e.g., East side for O-W)
+    for (let i = 0; i < side1Points.length - 1; i++) {
+      const v1 = side1Points[i];
+      const v2 = side1Points[i + 1];
+      // Triangle: eave point 1, eave point 2, ridge point 2
+      indices.push(v1, v2, 1);
+      // Triangle: eave point 1, ridge point 2, ridge point 1
+      indices.push(v1, 1, 0);
     }
 
-    // Create back slope - triangles from polygon edge to ridge
-    if (backPoints.length >= 2) {
-      for (let i = 0; i < backPoints.length - 1; i++) {
-        const p1 = backPoints[i];
-        const p2 = backPoints[i + 1];
-        const v1 = addVertex(p1.x, yEaves, p1.z);
-        const v2 = addVertex(p2.x, yEaves, p2.z);
-        // Create quad from eave edge to ridge (as 2 triangles)
-        indices.push(v2, v1, ridgeStartIdx);
-        indices.push(v2, ridgeStartIdx, ridgeEndIdx);
-      }
+    // Create roof slope on side 2 (e.g., West side for O-W)
+    for (let i = 0; i < side2Points.length - 1; i++) {
+      const v1 = side2Points[i];
+      const v2 = side2Points[i + 1];
+      // Triangle: eave point 2, eave point 1, ridge point 1 (reversed winding)
+      indices.push(v2, v1, 0);
+      // Triangle: eave point 2, ridge point 1, ridge point 2
+      indices.push(v2, 0, 1);
     }
 
     // Create gable ends (triangular faces at ridge ends)
-    // Left gable
-    if (frontPoints.length > 0 && backPoints.length > 0) {
-      const frontLeft = frontPoints[0];
-      const backLeft = backPoints[0];
-      const gv1 = addVertex(frontLeft.x, yEaves, frontLeft.z);
-      const gv2 = addVertex(backLeft.x, yEaves, backLeft.z);
-      indices.push(gv1, gv2, ridgeStartIdx);
-    }
-    // Right gable
-    if (frontPoints.length > 0 && backPoints.length > 0) {
-      const frontRight = frontPoints[frontPoints.length - 1];
-      const backRight = backPoints[backPoints.length - 1];
-      const gv1 = addVertex(frontRight.x, yEaves, frontRight.z);
-      const gv2 = addVertex(backRight.x, yEaves, backRight.z);
-      indices.push(gv2, gv1, ridgeEndIdx);
+    if (side1Points.length > 0 && side2Points.length > 0) {
+      // Gable at ridge1 end
+      const g1s1 = side1Points[0];
+      const g1s2 = side2Points[0];
+      indices.push(g1s1, g1s2, 0);
+
+      // Gable at ridge2 end
+      const g2s1 = side1Points[side1Points.length - 1];
+      const g2s2 = side2Points[side2Points.length - 1];
+      indices.push(g2s2, g2s1, 1);
     }
 
     const geometry = new THREE.BufferGeometry();
