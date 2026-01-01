@@ -105,7 +105,15 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
 }
 
 // Helper to create roof geometry
-function createRoof(width: number, depth: number, roofHeight: number, buildingHeight: number): THREE.Group {
+// centerX, centerZ: center position of roof in world coordinates
+function createRoof(
+  width: number,
+  depth: number,
+  roofHeight: number,
+  buildingHeight: number,
+  centerX: number = 0,
+  centerZ: number = 0
+): THREE.Group {
   const group = new THREE.Group();
 
   const shape = new THREE.Shape();
@@ -120,7 +128,8 @@ function createRoof(width: number, depth: number, roofHeight: number, buildingHe
   const mesh = new THREE.Mesh(geometry, material);
 
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(0, buildingHeight, -depth / 2);
+  // Position at center of bounding box, on top of building
+  mesh.position.set(centerX, buildingHeight, centerZ - depth / 2);
   mesh.castShadow = true;
 
   group.add(mesh);
@@ -534,7 +543,10 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       const maxY = Math.max(...normalized.map(p => p[1]));
       const polyWidth = maxX - minX;
       const polyDepth = maxY - minY;
-      scene.add(createRoof(polyWidth + 1, polyDepth + 1, 3, buildingHeight));
+      // Calculate center of bounding box (Y in polygon → -Z in THREE.js)
+      const roofCenterX = (minX + maxX) / 2;
+      const roofCenterZ = -((minY + maxY) / 2);
+      scene.add(createRoof(polyWidth + 1, polyDepth + 1, 3, buildingHeight, roofCenterX, roofCenterZ));
 
       // Add scaffolds along actual facade edges
       facades.forEach((facade) => {
