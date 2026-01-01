@@ -215,12 +215,21 @@ function createRoofFromPolygon(
 
     // DEBUG: Add ridge line (red) to visualize first position
     const ridgePoints = [];
-    // Ridge is at vertices 4 and 5 for Satteldach
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14])); // vertex 4
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17])); // vertex 5
+    // Ridge is at vertices 4 and 5 for Satteldach (indices 12-14 and 15-17)
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14])); // vertex 4: Ridge-N
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17])); // vertex 5: Ridge-S
     const ridgeGeometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
     const ridgeLine = new THREE.Line(ridgeGeometry, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 5 }));
     group.add(ridgeLine);
+
+    // DEBUG: Add eave corner markers (green spheres)
+    const markerGeo = new THREE.SphereGeometry(0.3);
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    for (let i = 0; i < 4; i++) {
+      const marker = new THREE.Mesh(markerGeo, markerMat);
+      marker.position.set(roofGeom.vertices[i*3], roofGeom.vertices[i*3+1], roofGeom.vertices[i*3+2]);
+      group.add(marker);
+    }
 
   } else if (roofType === 'pultdach') {
     // Shed roof following actual polygon shape - single slope

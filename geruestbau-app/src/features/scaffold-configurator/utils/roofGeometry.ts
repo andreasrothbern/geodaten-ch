@@ -92,44 +92,48 @@ export function createSatteldachGeometry(
   if (ridgeAlongZ) {
     // Ridge runs N-S (along Z): roof slopes to East and West
     //
-    // Top view (looking down, +Y is up):
-    //   -Z (North)
-    //      ^
-    //      |
-    //  NW--+--NE
-    //  |   R   |   R = Ridge (centerX)
-    //  SW--+--SE
-    //      |
-    //      v
-    //   +Z (South)
+    // Cross-section view (looking from North to South):
     //
-    // -X (West) <---> +X (East)
+    //            Ridge (yPeak)
+    //              /\
+    //             /  \
+    //            /    \
+    //    West   /      \   East
+    //    slope /        \ slope
+    //         /          \
+    //    ----+------------+----  Traufe (yEaves)
+    //      minX   centerX   maxX
+    //
+    // 6 vertices: 4 eave corners + 2 ridge points
 
     // Eave corners at trauf height
-    vertices.push(bbox.minX, yEaves, bbox.minZ); // 0: NW corner (North-West, low Z, low X)
-    vertices.push(bbox.minX, yEaves, bbox.maxZ); // 1: SW corner (South-West, high Z, low X)
-    vertices.push(bbox.maxX, yEaves, bbox.minZ); // 2: NE corner (North-East, low Z, high X)
-    vertices.push(bbox.maxX, yEaves, bbox.maxZ); // 3: SE corner (South-East, high Z, high X)
+    vertices.push(bbox.minX, yEaves, bbox.minZ); // 0: NW
+    vertices.push(bbox.minX, yEaves, bbox.maxZ); // 1: SW
+    vertices.push(bbox.maxX, yEaves, bbox.minZ); // 2: NE
+    vertices.push(bbox.maxX, yEaves, bbox.maxZ); // 3: SE
 
-    // Ridge points at first height (center X, spanning Z)
-    vertices.push(bbox.centerX, yPeak, bbox.minZ); // 4: Ridge North
-    vertices.push(bbox.centerX, yPeak, bbox.maxZ); // 5: Ridge South
+    // Ridge points at first height (center X, spanning full Z)
+    vertices.push(bbox.centerX, yPeak, bbox.minZ); // 4: Ridge-N
+    vertices.push(bbox.centerX, yPeak, bbox.maxZ); // 5: Ridge-S
 
-    // Create triangles (counter-clockwise winding for outward-facing normals)
-    // Calculated using cross-product: V1 × V2 should point outward
+    // Triangles with correct winding (outward-facing normals)
     indices.push(
-      // West roof slope (Normale: -X, +Y = West-Up)
+      // West slope: quad NW-SW-Ridge-S-Ridge-N as 2 triangles
+      // Normal should point West-Up (-X, +Y)
       0, 1, 5,  // NW, SW, Ridge-S
       0, 5, 4,  // NW, Ridge-S, Ridge-N
 
-      // East roof slope (Normale: +X, +Y = East-Up)
-      2, 4, 3,  // NE, Ridge-N, SE
-      3, 4, 5,  // SE, Ridge-N, Ridge-S
+      // East slope: quad NE-SE-Ridge-S-Ridge-N as 2 triangles
+      // Normal should point East-Up (+X, +Y)
+      2, 4, 5,  // NE, Ridge-N, Ridge-S
+      2, 5, 3,  // NE, Ridge-S, SE
 
-      // North gable (Normale: -Z = North)
+      // North gable: triangle NW-NE-Ridge-N
+      // Normal should point North (-Z)
       0, 4, 2,  // NW, Ridge-N, NE
 
-      // South gable (Normale: +Z = South)
+      // South gable: triangle SW-SE-Ridge-S
+      // Normal should point South (+Z)
       1, 3, 5,  // SW, SE, Ridge-S
     );
   } else {
