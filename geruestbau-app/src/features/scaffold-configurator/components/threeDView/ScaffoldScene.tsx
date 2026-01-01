@@ -480,13 +480,17 @@ function createScaffoldFacadeAlongEdge(
   const offsetX = perpX * (scaffoldGap + cellDepth / 2);
   const offsetZ = perpZ * (scaffoldGap + cellDepth / 2);
 
+  // Inset scaffolds slightly at corners to avoid overlap (half cell width on each end)
+  const cornerInset = 0.5 / facade.fields; // ~half a cell at each end
+
   for (let level = 0; level < facade.levels; level++) {
     for (let field = 0; field < facade.fields; field++) {
       const key = `${field}-${level}`;
       if (facade.modifications.removed_cells.has(key)) continue;
 
-      // Position along the facade edge
-      const t = (field + 0.5) / facade.fields; // 0 to 1 along the edge
+      // Position along the facade edge (with corner inset to avoid overlap)
+      const tRaw = (field + 0.5) / facade.fields; // 0 to 1 along the edge
+      const t = cornerInset + tRaw * (1 - 2 * cornerInset); // Shrink range to avoid corners
       const cellX = startX + dx * t + offsetX;
       const cellZ = startZ + dz * t + offsetZ;
       const cellY = level * levelHeight + levelHeight / 2;
