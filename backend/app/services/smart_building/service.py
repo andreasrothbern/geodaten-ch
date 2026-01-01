@@ -611,28 +611,40 @@ class SmartBuildingService:
             bundle.add_warning(f"Terrain-Daten nicht verfügbar: {str(e)}")
 
     async def _collect_polygon_data(self, bundle: BuildingDataBundle):
-        """Schritt 5: Polygon und Fassaden"""
+        """Schritt 5: Polygon und Fassaden (aus swissBUILDINGS3D)
+
+        WICHTIG: geodienste.ch wurde deaktiviert (01.01.2026).
+        Alle Polygondaten kommen jetzt aus swissBUILDINGS3D.
+        Das funktioniert für ALLE Kantone (auch LU, NE, GE, VD, VS).
+        """
         if not bundle.lv95_e or not bundle.lv95_n:
             return
 
         try:
-            from app.services.geodienste import GeodiensteService
-            geodienste = GeodiensteService()
+            # NEU: swissBUILDINGS3D statt geodienste.ch
+            from app.services.height_fetcher import fetch_building_polygon_for_coordinates
 
-            geometry = await geodienste.get_building_geometry(
-                x=bundle.lv95_e,
-                y=bundle.lv95_n,
-                tolerance=50,
-                egid=int(bundle.egid) if bundle.egid else None
+            result = await fetch_building_polygon_for_coordinates(
+                e=bundle.lv95_e,
+                n=bundle.lv95_n,
+                tolerance_m=50.0
             )
 
-            if geometry:
-                bundle.polygon = geometry.polygon
-                bundle.sides = geometry.sides
-                bundle.perimeter_m = geometry.perimeter_m
-                bundle.footprint_area_m2 = bundle.footprint_area_m2 or geometry.area_m2  # Aus Polygon falls GWR fehlt
-                bundle.polygon_simplified = getattr(geometry, 'simplified', False)  # Optional
-                bundle.add_source(DataSource.GEODIENSTE_WFS)
+            if result:
+                bundle.polygon = result.get("polygon")
+                bundle.sides = result.get("sides")
+                bundle.perimeter_m = result.get("perimeter_m")
+                bundle.footprint_area_m2 = bundle.footprint_area_m2 or result.get("area_m2")
+                bundle.polygon_simplified = False  # swissBUILDINGS3D liefert bereits vereinfachte Polygone
+                bundle.add_source(DataSource.SWISSBUILDINGS3D)
+
+                # Höhendaten aus swissBUILDINGS3D übernehmen falls noch nicht gesetzt
+                if not bundle.traufhoehe_m and result.get("traufhoehe_m"):
+                    bundle.traufhoehe_m = result.get("traufhoehe_m")
+                if not bundle.firsthoehe_m and result.get("firsthoehe_m"):
+                    bundle.firsthoehe_m = result.get("firsthoehe_m")
+
+                logger.info(f"Polygon aus swissBUILDINGS3D: {len(bundle.polygon)} Punkte, Match-Distanz: {result.get('match_distance_m', 'N/A')}m")
 
                 # Bounding Box berechnen
                 if bundle.polygon:
@@ -649,9 +661,11 @@ class SmartBuildingService:
                         logger.debug(f"Shape analysis: {bundle.building_shape} (concavity={getattr(bundle, 'concavity_ratio', 'N/A')})")
                     except Exception as shape_error:
                         logger.warning(f"Shape analysis failed: {shape_error}")
+            else:
+                bundle.add_warning("Gebäudepolygon nicht in swissBUILDINGS3D gefunden")
 
         except Exception as e:
-            logger.error(f"Polygon error: {e}")
+            logger.error(f"Polygon error (swissBUILDINGS3D): {e}")
             bundle.add_warning(f"Gebäudegeometrie nicht verfügbar: {str(e)}")
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):

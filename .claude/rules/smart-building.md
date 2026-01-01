@@ -7,7 +7,7 @@
 2. GWR-Daten (Geschosse, Fläche, Kategorie)
 3. Höhendaten (swissBUILDINGS3D)
 4. Terrain (swissALTI3D)
-5. Polygon (geodienste.ch WFS)
+5. Polygon (swissBUILDINGS3D)
 6. Dach-Analyse (berechnet)
 7. Recherche (bekannte Gebäude → Claude Sonnet)
 8. Zonen-Analyse (bei komplexen Gebäuden)

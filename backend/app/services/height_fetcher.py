@@ -644,3 +644,265 @@ async def fetch_heights_for_area(
     # For now, just fetch the single tile
     # In the future, could expand to fetch multiple tiles for larger areas
     return await fetch_height_for_coordinates(e, n)
+
+
+async def fetch_building_polygon_for_coordinates(
+    e: float,
+    n: float,
+    tolerance_m: float = 30.0
+) -> Optional[Dict[str, Any]]:
+    """
+    Fetch building polygon from swissBUILDINGS3D for given coordinates.
+
+    This replaces geodienste.ch WFS and works for ALL Swiss cantons.
+
+    Args:
+        e: LV95 Easting
+        n: LV95 Northing
+        tolerance_m: Search radius around the point
+
+    Returns:
+        Dict with polygon, sides, perimeter, area, heights or None
+    """
+    # Ensure coordinates are in LV95 format
+    e, n = ensure_lv95(e, n)
+
+    # Find the tile for these coordinates
+    tile_info = await find_tile_for_coordinates(e, n)
+
+    if not tile_info:
+        return None
+
+    # Download and parse the tile
+    temp_dir = Path(tempfile.mkdtemp())
+
+    try:
+        # Download
+        data_path = download_and_extract_tile(tile_info["download_url"], temp_dir)
+
+        # Parse with polygon extraction
+        result = parse_gdb_for_building_polygon(data_path, e, n, tolerance_m)
+
+        if result:
+            result["tile_id"] = tile_info["id"]
+            result["source"] = "swissBUILDINGS3D_3.0"
+
+        return result
+
+    finally:
+        # Cleanup
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def parse_gdb_for_building_polygon(
+    gdb_path: Path,
+    target_e: float,
+    target_n: float,
+    tolerance_m: float = 30.0
+) -> Optional[Dict[str, Any]]:
+    """
+    Parse GDB and find the building polygon closest to target coordinates.
+
+    Args:
+        gdb_path: Path to GDB directory
+        target_e: Target LV95 Easting
+        target_n: Target LV95 Northing
+        tolerance_m: Maximum distance to consider a match
+
+    Returns:
+        Dict with polygon, sides, heights, etc. or None
+    """
+    try:
+        import geopandas as gpd
+        import fiona
+        from shapely.geometry import Point
+        from shapely.ops import transform
+    except ImportError:
+        raise ImportError("geopandas/fiona/shapely required for polygon parsing")
+
+    try:
+        # List available layers
+        layers = fiona.listlayers(gdb_path)
+
+        # Find building layer
+        target_layer = None
+        for layer in layers:
+            if 'building' in layer.lower() and 'solid' in layer.lower():
+                target_layer = layer
+                break
+
+        if not target_layer:
+            for layer in layers:
+                if 'building' in layer.lower():
+                    target_layer = layer
+                    break
+
+        if not target_layer and layers:
+            target_layer = layers[0]
+
+        if not target_layer:
+            return None
+
+        # Read with geometry
+        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
+
+        # Create target point
+        target_point = Point(target_e, target_n)
+
+        # Find closest building
+        best_match = None
+        best_distance = float('inf')
+
+        for _, row in gdf.iterrows():
+            geom = row.get('geometry')
+            if geom is None:
+                continue
+
+            try:
+                # Get 2D footprint (project to XY plane)
+                # swissBUILDINGS3D has 3D geometries - we need the 2D footprint
+                if hasattr(geom, 'geoms'):
+                    # MultiPolygon - find the largest/main polygon
+                    all_coords_2d = []
+                    for g in geom.geoms:
+                        if hasattr(g, 'exterior'):
+                            coords = [(c[0], c[1]) for c in g.exterior.coords]
+                            all_coords_2d.extend(coords)
+                    if not all_coords_2d:
+                        continue
+                    # Use convex hull of all points as approximation
+                    from shapely.geometry import MultiPoint, Polygon
+                    hull = MultiPoint(all_coords_2d).convex_hull
+                    footprint = hull
+                elif hasattr(geom, 'exterior'):
+                    # Single Polygon
+                    coords_2d = [(c[0], c[1]) for c in geom.exterior.coords]
+                    from shapely.geometry import Polygon
+                    footprint = Polygon(coords_2d)
+                else:
+                    continue
+
+                # Calculate distance
+                distance = footprint.centroid.distance(target_point)
+
+                if distance < tolerance_m and distance < best_distance:
+                    best_distance = distance
+                    best_match = {
+                        "geometry": footprint,
+                        "row": row
+                    }
+
+            except Exception:
+                continue
+
+        if not best_match:
+            return None
+
+        # Extract polygon coordinates
+        footprint = best_match["geometry"]
+        row = best_match["row"]
+
+        # Get exterior coordinates as list
+        if hasattr(footprint, 'exterior'):
+            polygon_coords = list(footprint.exterior.coords)
+        elif hasattr(footprint, 'coords'):
+            polygon_coords = list(footprint.coords)
+        else:
+            return None
+
+        # Round coordinates
+        polygon_coords = [[round(c[0], 2), round(c[1], 2)] for c in polygon_coords]
+
+        # Calculate sides (facade segments)
+        sides = []
+        for i in range(len(polygon_coords) - 1):
+            p1 = polygon_coords[i]
+            p2 = polygon_coords[i + 1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.sqrt(dx*dx + dy*dy)
+
+            # Calculate direction (azimuth in degrees)
+            azimuth = math.degrees(math.atan2(dx, dy))
+            if azimuth < 0:
+                azimuth += 360
+
+            # Determine cardinal direction
+            direction = _azimuth_to_direction(azimuth)
+
+            sides.append({
+                "id": f"side_{i+1}",
+                "start_point": p1,
+                "end_point": p2,
+                "length_m": round(length, 2),
+                "azimuth_deg": round(azimuth, 1),
+                "direction": direction
+            })
+
+        # Calculate perimeter and area
+        perimeter = sum(s["length_m"] for s in sides)
+        area = abs(footprint.area) if hasattr(footprint, 'area') else 0
+
+        # Extract heights from row
+        dach_max = row.get('DACH_MAX')
+        dach_min = row.get('DACH_MIN')
+        gelaendepunkt = row.get('GELAENDEPUNKT')
+        gesamthoehe = row.get('GESAMTHOEHE')
+        egid = row.get('EGID')
+
+        # Calculate heights
+        terrain_f = float(gelaendepunkt) if gelaendepunkt is not None else None
+        dach_max_f = float(dach_max) if dach_max is not None else None
+        dach_min_f = float(dach_min) if dach_min is not None else None
+        gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
+
+        traufhoehe = None
+        firsthoehe = None
+
+        if terrain_f is not None:
+            if dach_min_f is not None:
+                traufhoehe = round(dach_min_f - terrain_f, 2)
+            if dach_max_f is not None:
+                firsthoehe = round(dach_max_f - terrain_f, 2)
+
+        return {
+            "polygon": polygon_coords,
+            "sides": sides,
+            "perimeter_m": round(perimeter, 2),
+            "area_m2": round(area, 2),
+            "egid": int(egid) if egid else None,
+            "traufhoehe_m": traufhoehe,
+            "firsthoehe_m": firsthoehe,
+            "gebaeudehoehe_m": round(gesamt_f, 2) if gesamt_f else (firsthoehe or traufhoehe),
+            "terrain_m": round(terrain_f, 2) if terrain_f else None,
+            "match_distance_m": round(best_distance, 2)
+        }
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error parsing GDB for polygon: {e}")
+        return None
+
+
+def _azimuth_to_direction(azimuth: float) -> str:
+    """Convert azimuth (0-360) to cardinal/ordinal direction."""
+    # Normalize to 0-360
+    azimuth = azimuth % 360
+
+    # Define direction ranges (N is centered at 0/360)
+    if azimuth >= 337.5 or azimuth < 22.5:
+        return "N"
+    elif azimuth < 67.5:
+        return "NE"
+    elif azimuth < 112.5:
+        return "E"
+    elif azimuth < 157.5:
+        return "SE"
+    elif azimuth < 202.5:
+        return "S"
+    elif azimuth < 247.5:
+        return "SW"
+    elif azimuth < 292.5:
+        return "W"
+    else:
+        return "NW"

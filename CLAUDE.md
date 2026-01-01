@@ -98,7 +98,7 @@ Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeli
 │  │  2. GWR-Daten (Geschosse, Fläche)       │                   │
 │  │  3. Höhendaten (swissBUILDINGS3D)       │                   │
 │  │  4. Terrain (swissALTI3D, Hanglage)     │                   │
-│  │  5. Polygon (geodienste.ch WFS)         │                   │
+│  │  5. Polygon (swissBUILDINGS3D)           │                   │
 │  │  6. Dach-Analyse (berechnet)            │                   │
 │  │  7. Recherche (Claude Sonnet)           │ ← building_name   │
 │  │  8. Zonen-Analyse (bei komplexen)       │                   │
@@ -128,9 +128,13 @@ Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeli
 |--------|-------|-------------|--------|
 | **swisstopo API** | Geokodierung, GWR, Terrain | ±1m | Live-API |
 | **GWR (BFS)** | EGID, Adresse, Geschosse, Kategorie, Baujahr | Amtlich, aktuell | via swisstopo |
-| **geodienste.ch WFS** | Gebäudegrundriss (Polygon) | ±10cm (AV-Daten) | Live-API |
-| **swissBUILDINGS3D 3.0** | Gemessene Gebäudehöhe | ±50cm (Photogrammetrie) | DB + On-Demand |
+| **swissBUILDINGS3D 3.0** | Gebäudehöhe + Polygon | ±50cm | On-Demand STAC |
 | **swissALTI3D** | Terrain-Höhen (m ü.M.) | ±0.5m (LiDAR) | Live-API |
+| ~~geodienste.ch WFS~~ | ~~Gebäudegrundriss~~ | - | **Deaktiviert** |
+
+> **Änderung 01.01.2026:** geodienste.ch wurde deaktiviert. Alle Polygon-Daten
+> kommen jetzt aus swissBUILDINGS3D. Das funktioniert für ALLE Schweizer Kantone,
+> inkl. LU, NE, GE, VD, VS (die vorher nicht unterstützt waren).
 
 ### Höhendaten-Verfügbarkeit
 
