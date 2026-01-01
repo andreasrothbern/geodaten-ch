@@ -2,7 +2,13 @@
 URL-Import Service für Ausschreibungen
 ======================================
 
-Importiert Ausschreibungsdaten von simap.ch URLs.
+Importiert Ausschreibungsdaten von simap.ch URLs via REST API.
+
+simap.ch ist eine JavaScript SPA - HTML-Scraping funktioniert nicht.
+Stattdessen nutzen wir die offizielle REST API.
+
+API-Endpunkt:
+    GET https://www.simap.ch/api/publications/v2/project/{projectId}/project-header
 
 Verwendung:
     from app.services.geruestbau.url_importer import UrlImporter
@@ -10,15 +16,14 @@ Verwendung:
     importer = UrlImporter()
     result = await importer.import_from_url(url)
 
-Stand: 31.12.2025
+Stand: 01.01.2026
 """
 
 import re
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
 import httpx
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -66,16 +71,18 @@ class UrlImportResult:
 
 
 class UrlImporter:
-    """Service für den Import von Ausschreibungen via URL"""
+    """
+    Service für den Import von Ausschreibungen via URL.
+
+    WICHTIG: simap.ch ist eine JavaScript SPA. HTML-Scraping funktioniert NICHT.
+    Wir nutzen die offizielle simap.ch REST API.
+    """
 
     # simap.ch project-detail URL pattern
     SIMAP_PATTERN = re.compile(
         r'simap\.ch/(?:de|fr|it)/project-detail/([a-f0-9-]+)',
         re.IGNORECASE
     )
-
-    # Date pattern for Swiss format (DD.MM.YYYY)
-    DATE_PATTERN = re.compile(r'(\d{1,2})\.(\d{1,2})\.(\d{4})')
 
     def __init__(self):
         self._client = None
@@ -87,7 +94,9 @@ class UrlImporter:
                 timeout=30.0,
                 follow_redirects=True,
                 headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json',
+                    'Accept-Language': 'de,fr,it,en',
                 }
             )
         return self._client
@@ -101,36 +110,14 @@ class UrlImporter:
         match = self.SIMAP_PATTERN.search(url)
         return match.group(1) if match else None
 
-    def _convert_date(self, date_str: str) -> Optional[str]:
-        """Konvertiert Schweizer Datum (DD.MM.YYYY) zu ISO (YYYY-MM-DD)"""
-        match = self.DATE_PATTERN.search(date_str)
-        if match:
-            day, month, year = match.groups()
-            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        return None
-
-    def _extract_procedure(self, text: str) -> Optional[str]:
-        """Erkennt Vergabeverfahren aus Text"""
-        text_lower = text.lower()
-        if 'offenes verfahren' in text_lower or 'procédure ouverte' in text_lower:
-            return 'open'
-        elif 'selektives verfahren' in text_lower or 'procédure sélective' in text_lower:
-            return 'selective'
-        elif 'einladungsverfahren' in text_lower or 'procédure sur invitation' in text_lower:
-            return 'invitation'
-        elif 'freihändiges verfahren' in text_lower or 'procédure de gré à gré' in text_lower:
-            return 'negotiated'
-        return None
-
     async def import_from_url(self, url: str) -> UrlImportResult:
         """
-        Importiert Ausschreibungsdaten von einer URL.
+        Importiert Ausschreibungsdaten von einer simap.ch URL.
 
-        Unterstützte URLs:
-        - simap.ch Projekt-Details
+        Nutzt die offizielle simap.ch REST API.
 
         Args:
-            url: Die URL zum Importieren
+            url: Die simap.ch URL (z.B. https://www.simap.ch/de/project-detail/uuid)
 
         Returns:
             UrlImportResult mit extrahierten Daten
@@ -148,8 +135,15 @@ class UrlImporter:
                 error="Ungültige simap.ch URL - keine Projekt-ID gefunden"
             )
 
+        # Validate UUID length (36 chars: 32 hex + 4 hyphens)
+        if len(project_id) < 36:
+            return UrlImportResult(
+                success=False,
+                error=f"Projekt-ID unvollständig ({len(project_id)} Zeichen). Bitte vollständige URL kopieren."
+            )
+
         try:
-            return await self._import_from_simap(url, project_id)
+            return await self._import_from_simap_api(project_id)
         except Exception as e:
             logger.exception(f"Fehler beim Import von {url}: {e}")
             return UrlImportResult(
@@ -157,92 +151,115 @@ class UrlImporter:
                 error=f"Fehler beim Abrufen der Daten: {str(e)}"
             )
 
-    async def _import_from_simap(self, url: str, project_id: str) -> UrlImportResult:
-        """Importiert von simap.ch"""
+    def _get_multilingual_value(self, obj: Any) -> Optional[str]:
+        """
+        Extrahiert ersten nicht-leeren Wert aus mehrsprachigem Objekt.
+
+        simap.ch API liefert Felder als {de: "...", fr: "...", it: "...", en: "..."}
+        Wir bevorzugen: de > fr > it > en
+        """
+        if obj is None:
+            return None
+        if isinstance(obj, str):
+            return obj if obj else None
+        if isinstance(obj, dict):
+            for lang in ['de', 'fr', 'it', 'en']:
+                value = obj.get(lang)
+                if value:
+                    return value
+        return None
+
+    async def _import_from_simap_api(self, project_id: str) -> UrlImportResult:
+        """
+        Importiert von simap.ch via offizielle REST API.
+
+        API-Endpunkt: GET /api/publications/v2/project/{id}/project-header
+        """
         client = await self._get_client()
+        api_url = f"https://www.simap.ch/api/publications/v2/project/{project_id}/project-header"
 
-        # Fetch the page
-        response = await client.get(url)
-        response.raise_for_status()
+        logger.info(f"Fetching simap.ch API: {api_url}")
 
-        # Parse HTML
-        soup = BeautifulSoup(response.text, 'html.parser')
+        try:
+            response = await client.get(api_url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"simap.ch API returned HTTP {e.response.status_code}")
+            return UrlImportResult(
+                success=False,
+                error=f"simap.ch API Fehler (HTTP {e.response.status_code})"
+            )
+        except httpx.RequestError as e:
+            logger.warning(f"simap.ch API request failed: {e}")
+            return UrlImportResult(
+                success=False,
+                error="simap.ch API nicht erreichbar"
+            )
+
+        # Parse JSON
+        try:
+            data = response.json()
+            logger.debug(f"simap.ch API response keys: {data.keys()}")
+        except Exception as e:
+            logger.error(f"Failed to parse simap.ch response: {e}")
+            return UrlImportResult(
+                success=False,
+                error="Ungültige Antwort von simap.ch"
+            )
 
         # Initialize result
         result = UrlImportResult(source_id=project_id)
 
-        # Extract title
-        title_elem = soup.find('h1') or soup.find('h2', class_='project-title')
-        if title_elem:
-            result.project_name = title_elem.get_text(strip=True)
+        # Extract from latestPublication (nested structure)
+        latest_pub = data.get('latestPublication') or {}
+        pub_dates = latest_pub.get('dates') or {}
 
-        # Extract data from definition lists or tables
-        # simap.ch uses various HTML structures
-        for dt in soup.find_all(['dt', 'th', 'label']):
-            label = dt.get_text(strip=True).lower()
-            # Find corresponding value
-            if dt.name == 'dt':
-                dd = dt.find_next_sibling('dd')
-                value = dd.get_text(strip=True) if dd else None
-            elif dt.name == 'th':
-                td = dt.find_next_sibling('td')
-                value = td.get_text(strip=True) if td else None
-            else:
-                # For label, look for next input or span
-                next_elem = dt.find_next(['input', 'span', 'p'])
-                value = next_elem.get_text(strip=True) if next_elem else None
+        # Project title - in latestPublication.title (multilingual)
+        title_obj = latest_pub.get('title') or {}
+        result.project_name = self._get_multilingual_value(title_obj)
 
-            if not value:
-                continue
+        # Tender/Project number
+        result.tender_number = (
+            data.get('projectNumber') or
+            latest_pub.get('publicationNumber')
+        )
 
-            # Map to fields
-            if any(k in label for k in ['auftraggeber', 'mandant', 'bauherr', 'adjudicateur']):
-                result.client_name = value
-            elif any(k in label for k in ['eingabefrist', 'délai', 'frist']):
-                result.submission_deadline = self._convert_date(value)
-            elif any(k in label for k in ['adresse', 'standort', 'ort', 'lieu']):
-                result.address = value
-            elif any(k in label for k in ['vergabeverfahren', 'verfahren', 'procédure']):
-                result.procedure = self._extract_procedure(value)
-            elif any(k in label for k in ['projektnummer', 'projekt-nr', 'numéro']):
-                result.tender_number = value
-            elif any(k in label for k in ['ausführungsbeginn', 'début']):
-                result.project_start = self._convert_date(value)
-            elif any(k in label for k in ['ausführungsende', 'fin']):
-                result.project_end = self._convert_date(value)
+        # Submission deadline
+        deadline = pub_dates.get('offerDeadline')
+        if deadline and isinstance(deadline, str):
+            # Format: "2026-01-26T16:30:00+01:00" -> "2026-01-26"
+            result.submission_deadline = deadline.split('T')[0] if 'T' in deadline else deadline
 
-        # Extract description from various possible elements
-        desc_elem = soup.find(['article', 'div'], class_=['description', 'content', 'project-description'])
-        if desc_elem:
-            result.description = desc_elem.get_text(strip=True)[:500]  # Limit length
+        # Procedure type
+        process_type = data.get('processType')
+        if process_type:
+            procedure_map = {
+                'open': 'open',
+                'selective': 'selective',
+                'invitation': 'invitation',
+                'negotiated': 'negotiated',
+            }
+            result.procedure = procedure_map.get(process_type.lower(), process_type)
 
-        # Try to find address in the full text if not found
-        if not result.address:
-            # Look for Swiss postal code pattern
-            address_pattern = re.compile(
-                r'([A-Za-zäöüÄÖÜéèà\s-]+\s+\d+[a-z]?\s*,?\s*\d{4}\s+[A-Za-zäöüÄÖÜéèà\s-]+)',
-                re.IGNORECASE
-            )
-            text = soup.get_text()
-            match = address_pattern.search(text)
-            if match:
-                result.address = match.group(1).strip()
+        # Note: simap.ch API does NOT provide address or client details
+        # These must be entered manually or extracted from downloaded PDF
 
-        # Calculate confidence
-        confidence_score = 0.0
+        # Calculate confidence based on available data
+        confidence = 0.0
         if result.project_name:
-            confidence_score += 0.3
-        if result.address:
-            confidence_score += 0.3
-        if result.client_name:
-            confidence_score += 0.2
+            confidence += 0.4
+        if result.tender_number:
+            confidence += 0.2
         if result.submission_deadline:
-            confidence_score += 0.1
+            confidence += 0.2
         if result.procedure:
-            confidence_score += 0.1
+            confidence += 0.2
 
-        result.confidence = min(confidence_score, 1.0)
+        result.confidence = min(confidence, 1.0)
         result.success = result.project_name is not None
+
+        if not result.success:
+            result.error = "Keine Projektdaten in simap.ch API gefunden"
 
         return result
 
