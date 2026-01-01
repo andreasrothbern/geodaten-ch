@@ -22,6 +22,7 @@ export default function EditorPanel() {
     toggleLevel,
     setLift,
     setStairs,
+    toggleCornerEnabled,
   } = useScaffoldConfig();
 
   const visibleElements = useVisibleElements();
@@ -215,20 +216,42 @@ export default function EditorPanel() {
 
         {/* Grid or Corner Info */}
         {currentElement?.type === 'corner' ? (
-          <div className="text-center py-8 bg-amber-50 rounded-xl border-2 border-amber-200 border-dashed">
-            <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-amber-500 text-2xl">⌐</span>
+          <div className={`text-center py-8 rounded-xl border-2 border-dashed transition-all ${
+            currentElement.enabled
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-gray-100 border-gray-300 opacity-60'
+          }`}>
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+              currentElement.enabled ? 'bg-amber-100' : 'bg-gray-200'
+            }`}>
+              <span className={`text-2xl ${currentElement.enabled ? 'text-amber-500' : 'text-gray-400'}`}>⌐</span>
             </div>
-            <h4 className="font-semibold text-amber-800">{currentElement.name}</h4>
-            <p className="text-sm text-amber-600 mt-1">Wird automatisch berechnet</p>
-            <div className="flex justify-center gap-3 mt-4">
-              <span className="bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-full">
-                {currentElement.corner_posts} Eckpfosten
-              </span>
-              <span className="bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-full">
-                {currentElement.diagonals} Diagonalen
-              </span>
-            </div>
+            <h4 className={`font-semibold ${currentElement.enabled ? 'text-amber-800' : 'text-gray-500'}`}>
+              {currentElement.name}
+            </h4>
+            <p className={`text-sm mt-1 ${currentElement.enabled ? 'text-amber-600' : 'text-gray-400'}`}>
+              {currentElement.enabled ? 'Wird automatisch berechnet' : 'Ecke entfernt'}
+            </p>
+            {currentElement.enabled && (
+              <div className="flex justify-center gap-3 mt-4">
+                <span className="bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-full">
+                  {currentElement.corner_posts} Eckpfosten
+                </span>
+                <span className="bg-amber-100 text-amber-700 text-sm px-3 py-1.5 rounded-full">
+                  {currentElement.diagonals} Diagonalen
+                </span>
+              </div>
+            )}
+            <button
+              onClick={() => toggleCornerEnabled(currentElement.id)}
+              className={`mt-4 px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentElement.enabled
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+              }`}
+            >
+              {currentElement.enabled ? 'Ecke entfernen' : 'Ecke wiederherstellen'}
+            </button>
           </div>
         ) : currentElement?.type === 'facade' ? (
           <div className="overflow-hidden border rounded-xl bg-gradient-to-b from-sky-50 to-gray-50">

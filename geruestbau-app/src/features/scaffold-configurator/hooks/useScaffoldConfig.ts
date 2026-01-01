@@ -57,6 +57,7 @@ interface ScaffoldConfigState {
 
   // Actions - Facade Management
   toggleFacadeEnabled: (facadeId: string) => void;
+  toggleCornerEnabled: (cornerId: string) => void;
 
   // Actions - Editor
   toggleCell: (facadeId: string, field: number, level: number) => void;
@@ -380,6 +381,27 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
               const cornerEnabled = newFacadeEnabled && (otherFacade?.enabled ?? false);
               return { ...el, enabled: cornerEnabled };
             }
+          }
+          return el;
+        });
+
+        set({
+          configuration: {
+            ...configuration,
+            elements: newElements,
+            updated_at: new Date().toISOString(),
+          },
+          isDirty: true,
+        });
+      },
+
+      toggleCornerEnabled: (cornerId) => {
+        const { configuration } = get();
+        if (!configuration) return;
+
+        const newElements = configuration.elements.map((el) => {
+          if (el.type === 'corner' && el.id === cornerId) {
+            return { ...el, enabled: !el.enabled };
           }
           return el;
         });
