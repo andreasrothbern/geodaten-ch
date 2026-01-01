@@ -104,38 +104,6 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
   return mesh;
 }
 
-// Helper to find the longest edge in a polygon (for roof orientation)
-function findLongestEdge(polygon: [number, number][]): {
-  start: [number, number];
-  end: [number, number];
-  length: number;
-  angle: number;
-} {
-  let maxLength = 0;
-  let longestEdge = {
-    start: polygon[0],
-    end: polygon[1],
-    length: 0,
-    angle: 0
-  };
-
-  for (let i = 0; i < polygon.length; i++) {
-    const start = polygon[i];
-    const end = polygon[(i + 1) % polygon.length];
-    const dx = end[0] - start[0];
-    const dy = end[1] - start[1];
-    const length = Math.sqrt(dx * dx + dy * dy);
-
-    if (length > maxLength) {
-      maxLength = length;
-      const angle = Math.atan2(dy, dx);
-      longestEdge = { start, end, length, angle };
-    }
-  }
-
-  return longestEdge;
-}
-
 // Helper to create roof geometry directly in 3D space
 // Uses normalized polygon coordinates to create a properly oriented roof
 function createRoofFromPolygon(
@@ -149,39 +117,47 @@ function createRoofFromPolygon(
     return group;
   }
 
-  // Find the longest edge to determine roof ridge direction
-  const longestEdge = findLongestEdge(normalized);
-
   // Calculate bounding box for roof size
   const minX = Math.min(...normalized.map(p => p[0]));
   const maxX = Math.max(...normalized.map(p => p[0]));
   const minY = Math.min(...normalized.map(p => p[1]));
   const maxY = Math.max(...normalized.map(p => p[1]));
 
-  const bboxWidth = maxX - minX;
-  const bboxDepth = maxY - minY;
+  // In normalized polygon coords: X is E-W, Y is N-S
+  // In THREE.js: X is E-W, Z is N-S (Y is up)
+  const widthX = maxX - minX;  // E-W extent
+  const depthZ = maxY - minY;  // N-S extent
 
   // Y positions
   const y0 = buildingHeight;  // Eaves
   const yTop = buildingHeight + roofHeight;  // Ridge
 
-  // Create roof aligned with building's longest edge
-  // The roof ridge runs parallel to the longest edge
-  const ridgeAngle = longestEdge.angle;
+  // Determine roof orientation: ridge runs along the LONGER side
+  // If building is longer in X (E-W), ridge runs along X
+  // If building is longer in Z (N-S), ridge runs along Z
+  const ridgeAlongX = widthX >= depthZ;
 
-  // Calculate roof dimensions based on bounding box diagonal
-  const diagonal = Math.sqrt(bboxWidth * bboxWidth + bboxDepth * bboxDepth);
-  const halfLength = diagonal / 2 * 0.9; // Slightly smaller than diagonal
-  const halfWidth = Math.min(bboxWidth, bboxDepth) / 2 * 1.1;
+  let halfLength: number;  // Half-length along ridge
+  let halfWidth: number;   // Half-width perpendicular to ridge
 
-  // Create a standard gable roof aligned with X axis, then rotate
+  if (ridgeAlongX) {
+    // Ridge runs along X (E-W), roof slopes in Z direction
+    halfLength = (widthX / 2) * 1.05;  // Slight overhang
+    halfWidth = (depthZ / 2) * 1.05;
+  } else {
+    // Ridge runs along Z (N-S), roof slopes in X direction
+    halfLength = (depthZ / 2) * 1.05;
+    halfWidth = (widthX / 2) * 1.05;
+  }
+
+  // Create gable roof with ridge along X axis
   const vertices = new Float32Array([
-    // Front gable (positive local Z)
+    // Front gable (positive Z)
     -halfLength, y0, halfWidth,   // 0: bottom left
     halfLength, y0, halfWidth,    // 1: bottom right
     0, yTop, halfWidth,           // 2: peak
 
-    // Back gable (negative local Z)
+    // Back gable (negative Z)
     -halfLength, y0, -halfWidth,  // 3: bottom left
     halfLength, y0, -halfWidth,   // 4: bottom right
     0, yTop, -halfWidth,          // 5: peak
@@ -212,10 +188,10 @@ function createRoofFromPolygon(
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
 
-  // Rotate roof to align with building's longest edge
-  // ridgeAngle is in polygon coordinates where Y is north
-  // In 3D, we need to rotate around Y axis, and account for the -Z flip
-  mesh.rotation.y = -ridgeAngle;
+  // If ridge should run along Z instead of X, rotate 90°
+  if (!ridgeAlongX) {
+    mesh.rotation.y = Math.PI / 2;
+  }
 
   group.add(mesh);
   return group;
