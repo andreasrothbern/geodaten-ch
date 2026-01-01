@@ -3,7 +3,7 @@
  * Global settings, summary stats, and facade cards
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useScaffoldConfig, useTotals, useSettings, useElements } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade, WorkType, ScaffoldSystem, BayWidth } from '../types/scaffold.types';
 
@@ -35,12 +35,24 @@ export default function OverviewPanel() {
   // Local state for facade cards carousel
   const [facadeCardIndex, setFacadeCardIndex] = useState(0);
 
-  // Filter facades from elements
-  const facades = useMemo(() => {
+  // Filter facades from elements - all facades and enabled only
+  const allFacades = useMemo(() => {
     return elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
   }, [elements]);
 
-  // Calculate max slope from all facades
+  // Only enabled facades for display and calculations
+  const facades = useMemo(() => {
+    return allFacades.filter(f => f.enabled);
+  }, [allFacades]);
+
+  // Reset carousel index if out of bounds when facades change
+  useEffect(() => {
+    if (facadeCardIndex >= facades.length && facades.length > 0) {
+      setFacadeCardIndex(0);
+    }
+  }, [facades.length, facadeCardIndex]);
+
+  // Calculate max slope from enabled facades
   const maxSlope = useMemo(() => {
     return facades.reduce((max, f) => Math.max(max, f.slope_percent), 0);
   }, [facades]);
@@ -91,8 +103,8 @@ export default function OverviewPanel() {
 
         {/* Mini Floor Plan + Legend */}
         <div className="mt-4 flex items-center gap-6">
-          <MiniFloorPlan facades={facades.filter(f => f.enabled)} size={96} />
-          <FloorPlanLegend facades={facades.filter(f => f.enabled)} />
+          <MiniFloorPlan facades={facades} size={96} />
+          <FloorPlanLegend facades={facades} />
         </div>
       </div>
 
@@ -140,11 +152,11 @@ export default function OverviewPanel() {
         onWeatherCoverChange={() => toggleOption('weather_cover')}
       />
 
-      {/* Quick Access: All Elements Grid */}
+      {/* Quick Access: Enabled Facades Grid */}
       <div className="bg-white rounded-xl p-4 shadow-sm">
         <h3 className="font-semibold text-gray-700 mb-3 flex items-center justify-between">
-          <span>Alle Elemente</span>
-          <span className="text-xs text-gray-400 font-normal">{elements.length} Elemente</span>
+          <span>Ausgewählte Fassaden</span>
+          <span className="text-xs text-gray-400 font-normal">{facades.length} von {allFacades.length}</span>
         </h3>
 
         <div className="grid grid-cols-2 gap-2">
