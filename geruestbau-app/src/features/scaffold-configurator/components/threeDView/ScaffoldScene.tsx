@@ -125,36 +125,35 @@ function createRoofFromPolygon(
 
   const width = maxX - minX;  // X extent
   const depth = maxY - minY;  // Y extent (becomes -Z in 3D)
-  const centerX = (minX + maxX) / 2;
 
   // Determine roof ridge direction (along longer axis)
+  // Note: Roof is centered at (0,0) to match the normalized polygon centroid
   const isWidthLonger = width >= depth;
 
   // Y positions
   const y0 = buildingHeight;  // Eaves
   const yTop = buildingHeight + roofHeight;  // Ridge
 
-  // Convert polygon Y to THREE.js Z (negated)
-  const zFront = -maxY;  // Front in THREE.js (more negative polygon Y)
-  const zBack = -minY;   // Back in THREE.js (less negative polygon Y)
-  const zCenter = -(minY + maxY) / 2;
+  // Roof dimensions centered at (0,0) like the building
+  const halfWidth = width / 2;
+  const halfDepth = depth / 2;
 
   let vertices: Float32Array;
   let indices: number[];
 
   if (isWidthLonger) {
     // Ridge runs along X (longer axis)
-    // Gables at Z ends
+    // Gables at Z ends (front = -halfDepth, back = +halfDepth)
     vertices = new Float32Array([
       // Front gable triangle
-      minX, y0, zFront,      // 0: bottom left front
-      maxX, y0, zFront,      // 1: bottom right front
-      centerX, yTop, zFront, // 2: peak front
+      -halfWidth, y0, -halfDepth,  // 0: bottom left front
+      halfWidth, y0, -halfDepth,   // 1: bottom right front
+      0, yTop, -halfDepth,         // 2: peak front
 
       // Back gable triangle
-      minX, y0, zBack,       // 3: bottom left back
-      maxX, y0, zBack,       // 4: bottom right back
-      centerX, yTop, zBack,  // 5: peak back
+      -halfWidth, y0, halfDepth,   // 3: bottom left back
+      halfWidth, y0, halfDepth,    // 4: bottom right back
+      0, yTop, halfDepth,          // 5: peak back
     ]);
 
     indices = [
@@ -171,17 +170,17 @@ function createRoofFromPolygon(
     ];
   } else {
     // Ridge runs along Z (longer axis)
-    // Gables at X ends
+    // Gables at X ends (left = -halfWidth, right = +halfWidth)
     vertices = new Float32Array([
       // Left gable triangle
-      minX, y0, zFront,      // 0
-      minX, y0, zBack,       // 1
-      minX, yTop, zCenter,   // 2: peak left
+      -halfWidth, y0, -halfDepth,  // 0
+      -halfWidth, y0, halfDepth,   // 1
+      -halfWidth, yTop, 0,         // 2: peak left
 
       // Right gable triangle
-      maxX, y0, zFront,      // 3
-      maxX, y0, zBack,       // 4
-      maxX, yTop, zCenter,   // 5: peak right
+      halfWidth, y0, -halfDepth,   // 3
+      halfWidth, y0, halfDepth,    // 4
+      halfWidth, yTop, 0,          // 5: peak right
     ]);
 
     indices = [
