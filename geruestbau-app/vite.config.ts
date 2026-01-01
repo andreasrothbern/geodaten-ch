@@ -33,15 +33,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Don't cache API requests - prevents CORS errors from being cached
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/acceptable-trust-production\.up\.railway\.app\/.*/i,
-            handler: 'NetworkFirst',
+            // Only cache swisstopo tile requests, not our API
+            urlPattern: /^https:\/\/api3\.geo\.admin\.ch\/.*/i,
+            handler: 'CacheFirst',
             options: {
-              cacheName: 'api-cache',
+              cacheName: 'swisstopo-cache',
               expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
               }
             }
           }
