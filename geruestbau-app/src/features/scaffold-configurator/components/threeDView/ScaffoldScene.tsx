@@ -194,8 +194,9 @@ function createScaffoldFacadeAlongEdge(
   const dirZ = dz / length;
 
   // Perpendicular direction (outward from building)
-  const perpX = -dirZ;
-  const perpZ = dirX;
+  // Note: swissBUILDINGS3D polygons are clockwise, so we flip the perpendicular
+  const perpX = dirZ;   // Was: -dirZ (for counter-clockwise geodienste.ch)
+  const perpZ = -dirX;  // Was: dirX
 
   // Offset scaffolds outward from building edge
   const offsetX = perpX * (scaffoldGap + cellDepth / 2);
