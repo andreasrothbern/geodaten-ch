@@ -290,6 +290,167 @@ describe('roofGeometry', () => {
     });
   });
 
+  describe('CRITICAL: Ridge must be in the CENTER, not at edge', () => {
+    /**
+     * THE ACTUAL BUG: If the ridge collapses to the edge, we get a Pultdach instead of Satteldach!
+     */
+    it('should have ridge at centerX for O-W orientation', () => {
+      const polygon: Point2D[] = [
+        { x: -6, z: -5 },
+        { x: 6, z: -5 },
+        { x: 6, z: 5 },
+        { x: -6, z: 5 },
+      ];
+      const geometry = createSatteldachGeometry(polygon, 7.5, 10.5, 'O-W');
+      const vertices = getVertices(geometry);
+
+      // Ridge vertices are 4 and 5
+      const ridgeN = vertices[4];
+      const ridgeS = vertices[5];
+
+      // Ridge MUST be at centerX = 0, NOT at minX = -6 or maxX = 6!
+      expect(ridgeN[0]).toBe(0);  // x = centerX
+      expect(ridgeS[0]).toBe(0);  // x = centerX
+
+      // Ridge must be at yPeak, not yEaves
+      expect(ridgeN[1]).toBe(10.5);
+      expect(ridgeS[1]).toBe(10.5);
+
+      // Ridge must span from minZ to maxZ
+      expect(ridgeN[2]).toBe(-5);  // z = minZ
+      expect(ridgeS[2]).toBe(5);   // z = maxZ
+    });
+
+    it('should have TWO DISTINCT roof slopes (not one collapsed slope)', () => {
+      const polygon: Point2D[] = [
+        { x: -6, z: -5 },
+        { x: 6, z: -5 },
+        { x: 6, z: 5 },
+        { x: -6, z: 5 },
+      ];
+      const geometry = createSatteldachGeometry(polygon, 7.5, 10.5, 'O-W');
+      const vertices = getVertices(geometry);
+
+      // West slope triangles use vertices: 0 (NW), 1 (SW), 4 (Ridge-N), 5 (Ridge-S)
+      // East slope triangles use vertices: 2 (NE), 3 (SE), 4 (Ridge-N), 5 (Ridge-S)
+
+      // NW corner (vertex 0) should be at x = -6 (West edge)
+      expect(vertices[0][0]).toBe(-6);
+
+      // NE corner (vertex 2) should be at x = +6 (East edge)
+      expect(vertices[2][0]).toBe(6);
+
+      // Ridge (vertices 4,5) should be at x = 0 (CENTER!)
+      expect(vertices[4][0]).toBe(0);
+      expect(vertices[5][0]).toBe(0);
+
+      // The distance from West edge to Ridge must equal Ridge to East edge
+      const westToRidge = Math.abs(vertices[4][0] - vertices[0][0]);
+      const ridgeToEast = Math.abs(vertices[2][0] - vertices[4][0]);
+      expect(westToRidge).toBe(ridgeToEast);
+      expect(westToRidge).toBe(6);  // 6 meters each way
+    });
+  });
+
+  describe('LV95 to THREE.js transformation (like ScaffoldScene)', () => {
+    /**
+     * This test simulates what ScaffoldScene.tsx does:
+     * 1. Takes LV95 coordinates [E, N] from backend
+     * 2. Centers them
+     * 3. Transforms: x = E - centerE, z = -(N - centerN)
+     * 4. Calls createSatteldachGeometry
+     */
+    function transformLV95ToThreeJS(lv95Polygon: [number, number][]): Point2D[] {
+      // Calculate bbox center (like ScaffoldScene lines 136-141)
+      const minE = Math.min(...lv95Polygon.map(p => p[0]));
+      const maxE = Math.max(...lv95Polygon.map(p => p[0]));
+      const minN = Math.min(...lv95Polygon.map(p => p[1]));
+      const maxN = Math.max(...lv95Polygon.map(p => p[1]));
+      const centerE = (minE + maxE) / 2;
+      const centerN = (minN + maxN) / 2;
+
+      // Transform (like ScaffoldScene lines 146-156, without overhang scaling)
+      return lv95Polygon.map(p => ({
+        x: p[0] - centerE,         // Easting → x
+        z: -(p[1] - centerN),      // Northing → -z (inverted!)
+      }));
+    }
+
+    it('should correctly transform LV95 polygon and create O-W Satteldach', () => {
+      // Realistic LV95 coordinates for a rectangular building
+      // E (Easting) increases to East, N (Northing) increases to North
+      const lv95Polygon: [number, number][] = [
+        [2600000, 1200010],  // SW corner (low E, high N)
+        [2600012, 1200010],  // SE corner (high E, high N)
+        [2600012, 1200000],  // NE corner (high E, low N)
+        [2600000, 1200000],  // NW corner (low E, low N)
+      ];
+      // Building: 12m East-West, 10m North-South
+
+      const centeredPoints = transformLV95ToThreeJS(lv95Polygon);
+
+      // Verify transformation
+      // Center should be at E=2600006, N=1200005
+      // SW: E-center=-6, N-center=+5 → x=-6, z=-5 (because z=-dN!)
+      expect(centeredPoints[0].x).toBeCloseTo(-6, 5);
+      expect(centeredPoints[0].z).toBeCloseTo(-5, 5);  // z = -(1200010-1200005) = -5
+
+      // SE: E-center=+6, N-center=+5 → x=+6, z=-5
+      expect(centeredPoints[1].x).toBeCloseTo(6, 5);
+      expect(centeredPoints[1].z).toBeCloseTo(-5, 5);
+
+      // NE: E-center=+6, N-center=-5 → x=+6, z=+5
+      expect(centeredPoints[2].x).toBeCloseTo(6, 5);
+      expect(centeredPoints[2].z).toBeCloseTo(5, 5);  // z = -(1200000-1200005) = +5
+
+      // NW: E-center=-6, N-center=-5 → x=-6, z=+5
+      expect(centeredPoints[3].x).toBeCloseTo(-6, 5);
+      expect(centeredPoints[3].z).toBeCloseTo(5, 5);
+
+      // Now create Satteldach with O-W orientation
+      const geometry = createSatteldachGeometry(centeredPoints, 7.5, 10.5, 'O-W');
+      const validation = validateRoofGeometry(geometry);
+      expect(validation.valid).toBe(true);
+
+      // Verify ridge runs North-South (along Z axis, from z=-5 to z=+5)
+      const vertices = getVertices(geometry);
+      const ridgeVertices = vertices.filter(v => v[1] === 10.5);
+      expect(ridgeVertices).toHaveLength(2);
+
+      // Ridge at center X
+      ridgeVertices.forEach(v => {
+        expect(v[0]).toBe(0);
+      });
+
+      // Ridge spans full Z (from minZ to maxZ in centered coords)
+      const ridgeZs = ridgeVertices.map(v => v[2]).sort((a, b) => a - b);
+      expect(ridgeZs[0]).toBe(-5);  // -Z = NORTH in THREE.js (high N in LV95)
+      expect(ridgeZs[1]).toBe(5);   // +Z = SOUTH in THREE.js (low N in LV95)
+    });
+
+    it('should have correct THREE.js orientation: -Z=North, +Z=South', () => {
+      // This is the CRITICAL test: In THREE.js, -Z is North, +Z is South
+      // In LV95, higher Northing is North
+      // So: high LV95 N → high (N-center) → z = -high = low z = -Z = North ✓
+
+      const lv95Polygon: [number, number][] = [
+        [0, 100],  // Point A: far North in LV95 (high N)
+        [10, 100], // Point B: far North in LV95
+        [10, 0],   // Point C: far South in LV95 (low N)
+        [0, 0],    // Point D: far South in LV95
+      ];
+      // centerN = 50
+
+      const centeredPoints = transformLV95ToThreeJS(lv95Polygon);
+
+      // Point A (high N=100): dN = 100-50 = 50, z = -50 → far -Z (North in THREE.js) ✓
+      expect(centeredPoints[0].z).toBe(-50);
+
+      // Point C (low N=0): dN = 0-50 = -50, z = +50 → far +Z (South in THREE.js) ✓
+      expect(centeredPoints[2].z).toBe(50);
+    });
+  });
+
   describe('Real-world scenarios', () => {
     it('should handle Knospenweg 4 scenario (O-W, rectangular)', () => {
       // Simulated building dimensions similar to Knospenweg 4

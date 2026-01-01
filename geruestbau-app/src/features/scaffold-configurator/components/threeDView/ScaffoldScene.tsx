@@ -205,22 +205,66 @@ function createRoofFromPolygon(
       }
     });
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(roofGeom.vertices), 3));
-    geometry.setIndex(roofGeom.indices);
-    geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, roofMaterial);
-    mesh.castShadow = true;
-    group.add(mesh);
+    // DEBUG: Render each triangle SEPARATELY with different colors to see what's happening
+    const triangleColors = [
+      0xff0000,  // West slope triangle 1: RED
+      0xff4444,  // West slope triangle 2: LIGHT RED
+      0x0000ff,  // East slope triangle 1: BLUE
+      0x4444ff,  // East slope triangle 2: LIGHT BLUE
+      0x00ff00,  // North gable: GREEN
+      0xffff00,  // South gable: YELLOW
+    ];
 
-    // DEBUG: Add ridge line (red) to visualize first position
+    // Create separate meshes for each triangle to visualize them
+    for (let triIdx = 0; triIdx < roofGeom.indices.length / 3; triIdx++) {
+      const i0 = roofGeom.indices[triIdx * 3];
+      const i1 = roofGeom.indices[triIdx * 3 + 1];
+      const i2 = roofGeom.indices[triIdx * 3 + 2];
+
+      const triGeom = new THREE.BufferGeometry();
+      const triVerts = new Float32Array([
+        roofGeom.vertices[i0 * 3], roofGeom.vertices[i0 * 3 + 1], roofGeom.vertices[i0 * 3 + 2],
+        roofGeom.vertices[i1 * 3], roofGeom.vertices[i1 * 3 + 1], roofGeom.vertices[i1 * 3 + 2],
+        roofGeom.vertices[i2 * 3], roofGeom.vertices[i2 * 3 + 1], roofGeom.vertices[i2 * 3 + 2],
+      ]);
+      triGeom.setAttribute('position', new THREE.BufferAttribute(triVerts, 3));
+      triGeom.setIndex([0, 1, 2]);
+      triGeom.computeVertexNormals();
+
+      const triMat = new THREE.MeshStandardMaterial({
+        color: triangleColors[triIdx % triangleColors.length],
+        side: THREE.DoubleSide,
+      });
+      const triMesh = new THREE.Mesh(triGeom, triMat);
+      group.add(triMesh);
+
+      // Log each triangle for debugging
+      console.log(`Triangle ${triIdx}:`, {
+        indices: [i0, i1, i2],
+        v0: [roofGeom.vertices[i0 * 3], roofGeom.vertices[i0 * 3 + 1], roofGeom.vertices[i0 * 3 + 2]],
+        v1: [roofGeom.vertices[i1 * 3], roofGeom.vertices[i1 * 3 + 1], roofGeom.vertices[i1 * 3 + 2]],
+        v2: [roofGeom.vertices[i2 * 3], roofGeom.vertices[i2 * 3 + 1], roofGeom.vertices[i2 * 3 + 2]],
+        color: triangleColors[triIdx % triangleColors.length].toString(16),
+      });
+    }
+
+    // DEBUG: Add ridge line (CYAN thick line) to visualize first position
     const ridgePoints = [];
-    // Ridge is at vertices 4 and 5 for Satteldach (indices 12-14 and 15-17)
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14])); // vertex 4: Ridge-N
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17])); // vertex 5: Ridge-S
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14]));
+    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17]));
     const ridgeGeometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
-    const ridgeLine = new THREE.Line(ridgeGeometry, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 5 }));
+    const ridgeLine = new THREE.Line(ridgeGeometry, new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 10 }));
     group.add(ridgeLine);
+
+    // Add CYAN spheres at ridge points
+    const ridgeMarkerGeo = new THREE.SphereGeometry(0.5);
+    const ridgeMarkerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+    const ridgeN = new THREE.Mesh(ridgeMarkerGeo, ridgeMarkerMat);
+    ridgeN.position.set(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14]);
+    group.add(ridgeN);
+    const ridgeS = new THREE.Mesh(ridgeMarkerGeo, ridgeMarkerMat);
+    ridgeS.position.set(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17]);
+    group.add(ridgeS);
 
     // DEBUG: Add eave corner markers (green spheres)
     const markerGeo = new THREE.SphereGeometry(0.3);
@@ -776,6 +820,24 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       const roofHeight = config.roof?.trauf_to_first_m || 3;
       const roofOrientation = config.roof?.roof_orientation || '';
       const roofOverhang = config.roof?.roof_overhang_m || 0.4;  // Standard 40cm
+
+      // DEBUG: Log ALL roof parameters to find the bug!
+      console.log('=== ROOF DEBUG ===', {
+        roofType,
+        roofOrientation,
+        roofHeight,
+        roofOverhang,
+        buildingHeight,
+        'config.roof': config.roof,
+        'normalized polygon': normalized,
+        'polygon bbox': {
+          minX: Math.min(...normalized.map(p => p[0])),
+          maxX: Math.max(...normalized.map(p => p[0])),
+          minY: Math.min(...normalized.map(p => p[1])),
+          maxY: Math.max(...normalized.map(p => p[1])),
+        }
+      });
+
       scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
