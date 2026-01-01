@@ -118,7 +118,8 @@ function createRoofFromPolygon(
   normalized: [number, number][],
   buildingHeight: number,
   roofHeight: number,
-  roofType: string = 'walmdach'  // Default to hip roof
+  roofType: string = 'walmdach',  // Default to hip roof
+  roofOrientation: string = ''    // 'N-S' or 'O-W' for ridge direction
 ): THREE.Group {
   const group = new THREE.Group();
 
@@ -169,8 +170,19 @@ function createRoofFromPolygon(
     group.add(mesh);
 
   } else if (roofType === 'satteldach') {
-    // Gable roof - ridge along the longer axis
-    const isWiderThanDeep = bboxWidth > bboxDepth;
+    // Gable roof - ridge direction from roofOrientation or fallback to geometry
+    // O-W means ridge runs East-West (along X axis)
+    // N-S means ridge runs North-South (along Z axis)
+    let ridgeAlongX: boolean;
+    if (roofOrientation === 'O-W' || roofOrientation === 'E-W') {
+      ridgeAlongX = true;  // Ridge runs along X (East-West)
+    } else if (roofOrientation === 'N-S') {
+      ridgeAlongX = false; // Ridge runs along Z (North-South)
+    } else {
+      // Fallback: ridge along shorter axis (perpendicular to longer side)
+      ridgeAlongX = bboxDepth > bboxWidth;
+    }
+    const isWiderThanDeep = ridgeAlongX;
 
     // Ridge line positions (along longer axis)
     const ridgeHalfLen = (isWiderThanDeep ? bboxWidth : bboxDepth) / 2;
@@ -758,7 +770,8 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       // Use roof data from configuration if available
       const roofType = config.roof?.roof_type || 'walmdach';
       const roofHeight = config.roof?.trauf_to_first_m || 3;
-      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType));
+      const roofOrientation = config.roof?.roof_orientation || '';
+      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation));
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
       // Use bboxCenter instead of centroid for consistent alignment
