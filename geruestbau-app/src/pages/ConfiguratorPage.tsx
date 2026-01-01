@@ -109,6 +109,19 @@ interface SelectedSide {
   angle_deg: number;
 }
 
+// IMPORTANT: Clear Zustand store cache when new facade selection exists
+// This prevents stale data from overriding fresh selections
+function invalidateStoreIfNewSelection() {
+  const hasNewSelection = sessionStorage.getItem('selectedFacades');
+  if (hasNewSelection) {
+    console.log('New facade selection detected - clearing Zustand store cache');
+    localStorage.removeItem('scaffold-config-store');
+  }
+}
+
+// Call immediately on module load (before Zustand hydrates)
+invalidateStoreIfNewSelection();
+
 function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildingData['selected_facades'] | null {
   try {
     const stored = sessionStorage.getItem('selectedFacades');
