@@ -259,7 +259,7 @@ export default function EditorPanel() {
             </button>
           </div>
         ) : currentElement?.type === 'facade' ? (
-          <div className="overflow-hidden border rounded-xl bg-gradient-to-b from-sky-50 to-gray-50">
+          <div className="overflow-auto border rounded-xl bg-gradient-to-b from-sky-50 to-gray-50">
             <ScaffoldGrid
               facade={currentElement as ScaffoldFacade}
               settings={settings}

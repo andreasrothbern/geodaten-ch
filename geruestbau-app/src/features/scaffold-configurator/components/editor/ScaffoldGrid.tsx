@@ -411,12 +411,16 @@ export default function ScaffoldGrid({
   };
 
   return (
-    <div ref={containerRef} className="scaffold-grid w-full overflow-hidden">
+    <div
+      ref={containerRef}
+      className="scaffold-grid w-full overflow-auto"
+      style={{ touchAction: 'pinch-zoom pan-x pan-y' }}
+    >
       <svg
         viewBox={`0 0 ${dims.svgWidth} ${dims.svgHeight}`}
         preserveAspectRatio="xMidYMid meet"
         className="w-full h-auto"
-        style={{ minHeight: 200 }}
+        style={{ minHeight: 200, minWidth: 320 }}
       >
         {/* Defs */}
         <defs>
