@@ -813,7 +813,7 @@ def parse_gdb_for_building_polygon(
         # Round coordinates
         polygon_coords = [[round(c[0], 2), round(c[1], 2)] for c in polygon_coords]
 
-        # Calculate sides (facade segments)
+        # Calculate sides (facade segments) - matching frontend Side interface
         sides = []
         for i in range(len(polygon_coords) - 1):
             p1 = polygon_coords[i]
@@ -830,12 +830,17 @@ def parse_gdb_for_building_polygon(
             # Determine cardinal direction
             direction = _azimuth_to_direction(azimuth)
 
+            # Format matching frontend Side interface:
+            # { index, start: {x,y}, end: {x,y}, length_m, direction, angle_deg }
             sides.append({
-                "id": f"side_{i+1}",
-                "start_point": p1,
-                "end_point": p2,
+                "index": i,
+                "start": {"x": p1[0], "y": p1[1]},
+                "end": {"x": p2[0], "y": p2[1]},
+                "start_point": p1,  # Keep for backwards compatibility
+                "end_point": p2,    # Keep for backwards compatibility
                 "length_m": round(length, 2),
                 "azimuth_deg": round(azimuth, 1),
+                "angle_deg": round(azimuth, 1),  # Alias for frontend
                 "direction": direction
             })
 
