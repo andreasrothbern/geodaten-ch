@@ -23,8 +23,7 @@ interface GeodataStepProps {
 interface LoadingState {
   geocoding: 'pending' | 'loading' | 'success' | 'error'
   gwr: 'pending' | 'loading' | 'success' | 'error'
-  heights: 'pending' | 'loading' | 'success' | 'error'
-  polygon: 'pending' | 'loading' | 'success' | 'error'
+  building3d: 'pending' | 'loading' | 'success' | 'error'  // Höhen + Polygon aus swissBUILDINGS3D
 }
 
 export default function GeodataStep({
@@ -40,8 +39,7 @@ export default function GeodataStep({
   const [loadingStates, setLoadingStates] = useState<LoadingState>({
     geocoding: 'pending',
     gwr: 'pending',
-    heights: 'pending',
-    polygon: 'pending',
+    building3d: 'pending',
   })
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -54,7 +52,7 @@ export default function GeodataStep({
     setBuildingData(null)
 
     // Simulate progressive loading
-    setLoadingStates({ geocoding: 'loading', gwr: 'pending', heights: 'pending', polygon: 'pending' })
+    setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending' })
 
     try {
       // Small delay to show animation
@@ -62,15 +60,12 @@ export default function GeodataStep({
       setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
 
       await new Promise((r) => setTimeout(r, 200))
-      setLoadingStates((s) => ({ ...s, gwr: 'success', heights: 'loading' }))
+      setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
 
-      await new Promise((r) => setTimeout(r, 200))
-      setLoadingStates((s) => ({ ...s, heights: 'success', polygon: 'loading' }))
-
-      // Actually load the data
+      // Actually load the data (swissBUILDINGS3D: Höhen + Polygon in einem Aufruf)
       const result = await loadGeodata(data.address)
 
-      setLoadingStates((s) => ({ ...s, polygon: 'success' }))
+      setLoadingStates((s) => ({ ...s, building3d: 'success' }))
       setBuildingData(result)
 
       if (!result) {
@@ -82,8 +77,7 @@ export default function GeodataStep({
       setLoadingStates({
         geocoding: 'error',
         gwr: 'error',
-        heights: 'error',
-        polygon: 'error',
+        building3d: 'error',
       })
     } finally {
       setIsLoading(false)
@@ -131,12 +125,8 @@ export default function GeodataStep({
             <span className="text-sm">GWR-Daten abrufen (EGID, Geschosse)</span>
           </div>
           <div className="flex items-center gap-3">
-            {getStatusIcon(loadingStates.heights)}
-            <span className="text-sm">Gebäudedaten laden (3D-Modell)</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {getStatusIcon(loadingStates.polygon)}
-            <span className="text-sm">Gebäudepolygon abrufen (geodienste.ch)</span>
+            {getStatusIcon(loadingStates.building3d)}
+            <span className="text-sm">3D-Gebäudedaten laden (swissBUILDINGS3D)</span>
           </div>
         </div>
       </div>
