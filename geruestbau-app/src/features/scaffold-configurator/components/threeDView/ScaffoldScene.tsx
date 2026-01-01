@@ -171,13 +171,14 @@ function createRoofFromPolygon(
 
   } else if (roofType === 'satteldach') {
     // Gable roof - ridge direction from roofOrientation or fallback to geometry
-    // O-W means ridge runs East-West (along X axis)
-    // N-S means ridge runs North-South (along Z axis)
+    // roofOrientation describes which way the roof FACES (slopes toward)
+    // O-W means roof faces East/West → ridge runs North-South (along Z axis)
+    // N-S means roof faces North/South → ridge runs East-West (along X axis)
     let ridgeAlongX: boolean;
     if (roofOrientation === 'O-W' || roofOrientation === 'E-W') {
-      ridgeAlongX = true;  // Ridge runs along X (East-West)
+      ridgeAlongX = false; // Roof faces E/W → ridge runs N-S (along Z)
     } else if (roofOrientation === 'N-S') {
-      ridgeAlongX = false; // Ridge runs along Z (North-South)
+      ridgeAlongX = true;  // Roof faces N/S → ridge runs E-W (along X)
     } else {
       // Fallback: ridge along shorter axis (perpendicular to longer side)
       ridgeAlongX = bboxDepth > bboxWidth;
