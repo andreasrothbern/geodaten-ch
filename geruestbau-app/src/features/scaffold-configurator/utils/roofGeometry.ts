@@ -116,24 +116,21 @@ export function createSatteldachGeometry(
     vertices.push(bbox.centerX, yPeak, bbox.maxZ); // 5: Ridge South
 
     // Create triangles (counter-clockwise winding for outward-facing normals)
+    // Calculated using cross-product: V1 × V2 should point outward
     indices.push(
-      // West roof slope (faces West, -X direction)
-      // Quad: NW(0), SW(1), Ridge-S(5), Ridge-N(4)
-      0, 4, 5,  // NW, Ridge-N, Ridge-S
-      0, 5, 1,  // NW, Ridge-S, SW
+      // West roof slope (Normale: -X, +Y = West-Up)
+      0, 1, 5,  // NW, SW, Ridge-S
+      0, 5, 4,  // NW, Ridge-S, Ridge-N
 
-      // East roof slope (faces East, +X direction)
-      // Quad: NE(2), Ridge-N(4), Ridge-S(5), SE(3)
-      2, 5, 4,  // NE, Ridge-S, Ridge-N (reversed winding)
-      2, 3, 5,  // NE, SE, Ridge-S
+      // East roof slope (Normale: +X, +Y = East-Up)
+      2, 4, 3,  // NE, Ridge-N, SE
+      3, 4, 5,  // SE, Ridge-N, Ridge-S
 
-      // North gable (faces North, -Z direction)
-      // Triangle: NW(0), NE(2), Ridge-N(4)
-      0, 2, 4,  // NW, NE, Ridge-N
+      // North gable (Normale: -Z = North)
+      0, 4, 2,  // NW, Ridge-N, NE
 
-      // South gable (faces South, +Z direction)
-      // Triangle: SW(1), SE(3), Ridge-S(5)
-      1, 5, 3,  // SW, Ridge-S, SE (reversed)
+      // South gable (Normale: +Z = South)
+      1, 3, 5,  // SW, SE, Ridge-S
     );
   } else {
     // Ridge runs E-W (along X): roof slopes to North and South
@@ -159,23 +156,21 @@ export function createSatteldachGeometry(
     vertices.push(bbox.minX, yPeak, bbox.centerZ); // 4: Ridge West
     vertices.push(bbox.maxX, yPeak, bbox.centerZ); // 5: Ridge East
 
+    // Create triangles (counter-clockwise winding for outward-facing normals)
+    // Calculated using cross-product: V1 × V2 should point outward
     indices.push(
-      // North roof slope (faces North, -Z direction)
-      // Quad: NW(0), NE(1), Ridge-E(5), Ridge-W(4)
-      0, 4, 5,  // NW, Ridge-W, Ridge-E
-      0, 5, 1,  // NW, Ridge-E, NE
+      // North roof slope (Normale: 0, +Y, -Z = North-Up)
+      0, 4, 1,  // NW, Ridge-W, NE
+      1, 4, 5,  // NE, Ridge-W, Ridge-E
 
-      // South roof slope (faces South, +Z direction)
-      // Quad: SW(2), Ridge-W(4), Ridge-E(5), SE(3)
-      2, 5, 4,  // SW, Ridge-E, Ridge-W (reversed)
+      // South roof slope (Normale: 0, +Y, +Z = South-Up)
       2, 3, 5,  // SW, SE, Ridge-E
+      2, 5, 4,  // SW, Ridge-E, Ridge-W
 
-      // West gable (faces West, -X direction)
-      // Triangle: NW(0), SW(2), Ridge-W(4)
+      // West gable (Normale: -X = West)
       0, 2, 4,  // NW, SW, Ridge-W
 
-      // East gable (faces East, +X direction)
-      // Triangle: NE(1), SE(3), Ridge-E(5)
+      // East gable (Normale: +X = East)
       1, 5, 3,  // NE, Ridge-E, SE
     );
   }
