@@ -128,6 +128,12 @@ function createRoofFromPolygon(
   const widthX = maxX - minX;  // E-W extent
   const depthZ = maxY - minY;  // N-S extent
 
+  // Calculate bounding box center (may differ from centroid at 0,0)
+  // The building uses centroid (0,0), but for irregular polygons
+  // the bbox center is different. We offset the roof to match.
+  const bboxCenterX = (minX + maxX) / 2;
+  const bboxCenterY = (minY + maxY) / 2;
+
   // Y positions
   const y0 = buildingHeight;  // Eaves
   const yTop = buildingHeight + roofHeight;  // Ridge
@@ -194,6 +200,12 @@ function createRoofFromPolygon(
   }
 
   group.add(mesh);
+
+  // Offset roof to match building position
+  // Building uses centroid (0,0), roof uses bbox center
+  // Polygon Y becomes -Z in 3D (due to building rotation)
+  group.position.set(bboxCenterX, 0, -bboxCenterY);
+
   return group;
 }
 
