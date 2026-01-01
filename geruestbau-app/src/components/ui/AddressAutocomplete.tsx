@@ -77,13 +77,17 @@ export default function AddressAutocomplete({
       const data = await response.json()
 
       // Map swisstopo results to our format
-      const mapped: AddressSuggestion[] = (data.results || []).map((result: any) => ({
-        label: result.attrs.label.replace(/<[^>]*>/g, ''),  // Remove HTML tags
-        detail: result.attrs.detail || '',
-        lat: result.attrs.lat,
-        lon: result.attrs.lon,
-        attrs: result.attrs,
-      }))
+      // TODO: Filter für Strassen ohne Hausnummer (enthält "#") ist deaktiviert
+      // Grund: Bei Neubauten gibt es noch keine Gebäudeadresse, nur Strassen
+      // .filter((result: any) => !result.attrs.label?.includes(' # '))
+      const mapped: AddressSuggestion[] = (data.results || [])
+        .map((result: any) => ({
+          label: result.attrs.label.replace(/<[^>]*>/g, ''),  // Remove HTML tags
+          detail: result.attrs.detail || '',
+          lat: result.attrs.lat,
+          lon: result.attrs.lon,
+          attrs: result.attrs,
+        }))
 
       setSuggestions(mapped)
       setIsOpen(true)  // Keep open to show "no results" message if empty

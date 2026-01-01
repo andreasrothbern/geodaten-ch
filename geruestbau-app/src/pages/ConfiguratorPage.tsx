@@ -119,8 +119,9 @@ function invalidateStoreIfNewSelection() {
   }
 }
 
+// TODO: Deaktiviert - Cache-Invalidierung muss anders gelöst werden
 // Call immediately on module load (before Zustand hydrates)
-invalidateStoreIfNewSelection();
+// invalidateStoreIfNewSelection();
 
 function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildingData['selected_facades'] | null {
   try {

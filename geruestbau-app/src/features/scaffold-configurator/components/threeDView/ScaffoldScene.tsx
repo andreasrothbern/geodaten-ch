@@ -104,32 +104,160 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
   return mesh;
 }
 
-// Helper to create roof geometry
-// centerX, centerZ: center position of roof in world coordinates
+// Helper to create roof geometry directly in 3D space
+// Uses normalized polygon coordinates to create a properly oriented roof
+function createRoofFromPolygon(
+  normalized: [number, number][],
+  buildingHeight: number,
+  roofHeight: number
+): THREE.Group {
+  const group = new THREE.Group();
+
+  if (!normalized || normalized.length < 3) {
+    return group;
+  }
+
+  // Calculate bounding box in polygon coordinates
+  const minX = Math.min(...normalized.map(p => p[0]));
+  const maxX = Math.max(...normalized.map(p => p[0]));
+  const minY = Math.min(...normalized.map(p => p[1]));
+  const maxY = Math.max(...normalized.map(p => p[1]));
+
+  const width = maxX - minX;  // X extent
+  const depth = maxY - minY;  // Y extent (becomes -Z in 3D)
+  const centerX = (minX + maxX) / 2;
+
+  // Determine roof ridge direction (along longer axis)
+  const isWidthLonger = width >= depth;
+
+  // Y positions
+  const y0 = buildingHeight;  // Eaves
+  const yTop = buildingHeight + roofHeight;  // Ridge
+
+  // Convert polygon Y to THREE.js Z (negated)
+  const zFront = -maxY;  // Front in THREE.js (more negative polygon Y)
+  const zBack = -minY;   // Back in THREE.js (less negative polygon Y)
+  const zCenter = -(minY + maxY) / 2;
+
+  let vertices: Float32Array;
+  let indices: number[];
+
+  if (isWidthLonger) {
+    // Ridge runs along X (longer axis)
+    // Gables at Z ends
+    vertices = new Float32Array([
+      // Front gable triangle
+      minX, y0, zFront,      // 0: bottom left front
+      maxX, y0, zFront,      // 1: bottom right front
+      centerX, yTop, zFront, // 2: peak front
+
+      // Back gable triangle
+      minX, y0, zBack,       // 3: bottom left back
+      maxX, y0, zBack,       // 4: bottom right back
+      centerX, yTop, zBack,  // 5: peak back
+    ]);
+
+    indices = [
+      // Front gable
+      0, 2, 1,
+      // Back gable
+      3, 4, 5,
+      // Left roof slope
+      0, 3, 5,
+      0, 5, 2,
+      // Right roof slope
+      1, 2, 5,
+      1, 5, 4,
+    ];
+  } else {
+    // Ridge runs along Z (longer axis)
+    // Gables at X ends
+    vertices = new Float32Array([
+      // Left gable triangle
+      minX, y0, zFront,      // 0
+      minX, y0, zBack,       // 1
+      minX, yTop, zCenter,   // 2: peak left
+
+      // Right gable triangle
+      maxX, y0, zFront,      // 3
+      maxX, y0, zBack,       // 4
+      maxX, yTop, zCenter,   // 5: peak right
+    ]);
+
+    indices = [
+      // Left gable
+      0, 1, 2,
+      // Right gable
+      3, 5, 4,
+      // Front roof slope
+      0, 2, 5,
+      0, 5, 3,
+      // Back roof slope
+      1, 4, 5,
+      1, 5, 2,
+    ];
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x8b5cf6,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+
+  group.add(mesh);
+  return group;
+}
+
+// Legacy helper to create roof geometry (for fallback box-based buildings)
 function createRoof(
   width: number,
   depth: number,
   roofHeight: number,
-  buildingHeight: number,
-  centerX: number = 0,
-  centerZ: number = 0
+  buildingHeight: number
 ): THREE.Group {
   const group = new THREE.Group();
 
-  const shape = new THREE.Shape();
-  shape.moveTo(-width / 2, 0);
-  shape.lineTo(0, roofHeight);
-  shape.lineTo(width / 2, 0);
-  shape.closePath();
+  // Create vertices directly in 3D space for the roof
+  const y0 = buildingHeight;
+  const yTop = buildingHeight + roofHeight;
+  const halfW = width / 2;
+  const halfD = depth / 2;
 
-  const extrudeSettings = { depth: depth, bevelEnabled: false };
-  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  const material = new THREE.MeshStandardMaterial({ color: 0x8b5cf6 });
+  const vertices = new Float32Array([
+    // Front gable
+    -halfW, y0, halfD,    // 0
+    halfW, y0, halfD,     // 1
+    0, yTop, halfD,       // 2
+
+    // Back gable
+    -halfW, y0, -halfD,   // 3
+    halfW, y0, -halfD,    // 4
+    0, yTop, -halfD,      // 5
+  ]);
+
+  const indices = [
+    0, 2, 1,  // Front gable
+    3, 4, 5,  // Back gable
+    0, 3, 5, 0, 5, 2,  // Left slope
+    1, 2, 5, 1, 5, 4,  // Right slope
+  ];
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x8b5cf6,
+    side: THREE.DoubleSide,
+  });
   const mesh = new THREE.Mesh(geometry, material);
-
-  mesh.rotation.x = -Math.PI / 2;
-  // Position at center of bounding box, on top of building
-  mesh.position.set(centerX, buildingHeight, centerZ - depth / 2);
   mesh.castShadow = true;
 
   group.add(mesh);
@@ -537,16 +665,8 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       scene.add(createBuildingFromPolygon(normalized, buildingHeight));
 
       // Add roof (always show for visualization)
-      const minX = Math.min(...normalized.map(p => p[0]));
-      const maxX = Math.max(...normalized.map(p => p[0]));
-      const minY = Math.min(...normalized.map(p => p[1]));
-      const maxY = Math.max(...normalized.map(p => p[1]));
-      const polyWidth = maxX - minX;
-      const polyDepth = maxY - minY;
-      // Calculate center of bounding box (Y in polygon → -Z in THREE.js)
-      const roofCenterX = (minX + maxX) / 2;
-      const roofCenterZ = -((minY + maxY) / 2);
-      scene.add(createRoof(polyWidth + 1, polyDepth + 1, 3, buildingHeight, roofCenterX, roofCenterZ));
+      // Use the new function that creates roof directly in 3D space
+      scene.add(createRoofFromPolygon(normalized, buildingHeight, 3));
 
       // Add scaffolds along actual facade edges
       facades.forEach((facade) => {
