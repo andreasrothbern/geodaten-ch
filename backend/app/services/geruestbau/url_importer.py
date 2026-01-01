@@ -205,12 +205,22 @@ class UrlImporter:
             )
 
     async def _import_simap(self, url: str, project_id: Optional[str]) -> UrlImportResult:
-        """Importiert von simap.ch - versucht API, dann Web-Scraping."""
+        """
+        Importiert von simap.ch.
+
+        HINWEIS (01.2026): simap.ch ist eine JavaScript-SPA und die öffentliche API
+        wurde eingeschränkt. Viele Projekt-IDs geben 404 zurück.
+
+        Fallback-Strategie:
+        1. API v1 (oft 404)
+        2. Titel aus HTML extrahieren (oft leer wegen SPA)
+        3. Klare Fehlermeldung mit Handlungsempfehlung
+        """
 
         if not project_id:
             return UrlImportResult(
                 success=False,
-                error="Keine Projekt-ID in URL gefunden"
+                error="Keine Projekt-ID in URL gefunden. Bitte vollständige simap.ch URL kopieren."
             )
 
         # Validate UUID length (36 chars: 32 hex + 4 hyphens)
@@ -225,9 +235,23 @@ class UrlImporter:
         if api_result and api_result.success:
             return api_result
 
-        # Fallback: Web-Scraping
-        logger.info(f"API failed, trying web scraping for {project_id}")
-        return await self._scrape_simap(url, project_id)
+        # API hat 404 zurückgegeben - Projekt existiert nicht (mehr) in der API
+        # Web-Scraping funktioniert bei simap.ch nicht (JavaScript-SPA)
+        logger.warning(f"simap.ch API returned 404 for project {project_id}")
+
+        return UrlImportResult(
+            success=False,
+            source_id=project_id,
+            error="simap.ch Projekt nicht gefunden. Mögliche Ursachen:\n"
+                  "• Das Projekt wurde gelöscht oder archiviert\n"
+                  "• Die simap.ch API ist nicht mehr öffentlich zugänglich\n"
+                  "\nBitte die Projektdaten manuell eingeben.",
+            extraction_notes=[
+                "simap.ch API v1 returned 404",
+                "Web scraping not possible (JavaScript SPA)",
+                "Manual data entry recommended"
+            ]
+        )
 
     async def _try_simap_api(self, project_id: str) -> Optional[UrlImportResult]:
         """
