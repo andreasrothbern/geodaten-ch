@@ -112,8 +112,8 @@ function createBuilding(width: number, depth: number, height: number): THREE.Mes
   return mesh;
 }
 
-// Helper to create roof geometry directly in 3D space
-// Uses normalized polygon coordinates to create a properly oriented roof
+// Helper to create roof geometry that follows the actual polygon shape
+// Creates a hip/pyramid roof where each polygon edge slopes up to the center
 function createRoofFromPolygon(
   normalized: [number, number][],
   buildingHeight: number,
@@ -125,67 +125,51 @@ function createRoofFromPolygon(
     return group;
   }
 
-  // Calculate bounding box for roof size
+  // Calculate bounding box center (must match building centering)
   const minX = Math.min(...normalized.map(p => p[0]));
   const maxX = Math.max(...normalized.map(p => p[0]));
   const minY = Math.min(...normalized.map(p => p[1]));
   const maxY = Math.max(...normalized.map(p => p[1]));
+  const bboxCenterX = (minX + maxX) / 2;
+  const bboxCenterY = (minY + maxY) / 2;
 
-  // In normalized polygon coords: X is E-W, Y is N-S
-  // In THREE.js: X is E-W, Z is N-S (Y is up)
-  const widthX = maxX - minX;  // E-W extent
-  const depthZ = maxY - minY;  // N-S extent
+  // Transform polygon points to be centered at origin (matching building)
+  // Polygon coords: X stays X, Y becomes -Z in THREE.js
+  const centeredPoints = normalized.map(p => ({
+    x: p[0] - bboxCenterX,
+    z: -(p[1] - bboxCenterY),  // Negate for THREE.js coordinate system
+  }));
 
-  // Y positions
-  const y0 = buildingHeight;  // Eaves
-  const yTop = buildingHeight + roofHeight;  // Ridge
+  // Y positions in THREE.js (Y is up)
+  const yEaves = buildingHeight;  // Traufe
+  const yPeak = buildingHeight + roofHeight;  // First/Spitze
 
-  // Determine roof orientation: ridge runs along the LONGER side
-  // If building is longer in X (E-W), ridge runs along X
-  // If building is longer in Z (N-S), ridge runs along Z
-  const ridgeAlongX = widthX >= depthZ;
+  // Peak is at the centroid of the polygon (center of roof)
+  const peakX = 0;  // Already centered
+  const peakZ = 0;
 
-  let halfLength: number;  // Half-length along ridge
-  let halfWidth: number;   // Half-width perpendicular to ridge
+  // Build vertices: all eave points + one peak point
+  const vertices: number[] = [];
+  const indices: number[] = [];
 
-  if (ridgeAlongX) {
-    // Ridge runs along X (E-W), roof slopes in Z direction
-    halfLength = (widthX / 2) * 1.05;  // Slight overhang
-    halfWidth = (depthZ / 2) * 1.05;
-  } else {
-    // Ridge runs along Z (N-S), roof slopes in X direction
-    halfLength = (depthZ / 2) * 1.05;
-    halfWidth = (widthX / 2) * 1.05;
+  // Add eave vertices (at polygon corners)
+  centeredPoints.forEach(p => {
+    vertices.push(p.x, yEaves, p.z);
+  });
+
+  // Add peak vertex (last vertex)
+  const peakIndex = centeredPoints.length;
+  vertices.push(peakX, yPeak, peakZ);
+
+  // Create triangular roof faces from each edge to the peak
+  for (let i = 0; i < centeredPoints.length; i++) {
+    const nextI = (i + 1) % centeredPoints.length;
+    // Triangle: current corner, next corner, peak
+    indices.push(i, nextI, peakIndex);
   }
 
-  // Create gable roof with ridge along X axis
-  const vertices = new Float32Array([
-    // Front gable (positive Z)
-    -halfLength, y0, halfWidth,   // 0: bottom left
-    halfLength, y0, halfWidth,    // 1: bottom right
-    0, yTop, halfWidth,           // 2: peak
-
-    // Back gable (negative Z)
-    -halfLength, y0, -halfWidth,  // 3: bottom left
-    halfLength, y0, -halfWidth,   // 4: bottom right
-    0, yTop, -halfWidth,          // 5: peak
-  ]);
-
-  const indices = [
-    // Front gable
-    0, 1, 2,
-    // Back gable
-    3, 5, 4,
-    // Left roof slope
-    0, 2, 5,
-    0, 5, 3,
-    // Right roof slope
-    1, 4, 5,
-    1, 5, 2,
-  ];
-
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
@@ -195,11 +179,6 @@ function createRoofFromPolygon(
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
-
-  // If ridge should run along Z instead of X, rotate 90°
-  if (!ridgeAlongX) {
-    mesh.rotation.y = Math.PI / 2;
-  }
 
   group.add(mesh);
   return group;
