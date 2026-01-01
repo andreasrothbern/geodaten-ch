@@ -82,7 +82,15 @@ function createBuildingFromPolygon(polygon: [number, number][], height: number):
   const mesh = new THREE.Mesh(geometry, material);
   // Rotate so extrusion goes up (Y axis)
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0;
+
+  // Center the geometry at origin (polygon centroid may not be at bbox center)
+  geometry.computeBoundingBox();
+  const bbox = geometry.boundingBox!;
+  const centerX = (bbox.min.x + bbox.max.x) / 2;
+  const centerY = (bbox.min.y + bbox.max.y) / 2;
+  // After rotation: geometry X stays X, geometry Y becomes -Z
+  mesh.position.set(-centerX, 0, centerY);
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -127,12 +135,6 @@ function createRoofFromPolygon(
   // In THREE.js: X is E-W, Z is N-S (Y is up)
   const widthX = maxX - minX;  // E-W extent
   const depthZ = maxY - minY;  // N-S extent
-
-  // Calculate bounding box center (may differ from centroid at 0,0)
-  // The building uses centroid (0,0), but for irregular polygons
-  // the bbox center is different. We offset the roof to match.
-  const bboxCenterX = (minX + maxX) / 2;
-  const bboxCenterY = (minY + maxY) / 2;
 
   // Y positions
   const y0 = buildingHeight;  // Eaves
@@ -200,12 +202,6 @@ function createRoofFromPolygon(
   }
 
   group.add(mesh);
-
-  // Offset roof to match building position
-  // Building uses centroid (0,0), roof uses bbox center
-  // Polygon Y becomes -Z in 3D (due to building rotation)
-  group.position.set(bboxCenterX, 0, -bboxCenterY);
-
   return group;
 }
 
@@ -651,7 +647,15 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
 
     if (hasPolygon && hasCoordinates) {
       // NEW: Use actual polygon and facade coordinates
-      const { normalized, center } = normalizePolygon(config.buildingPolygon!);
+      const { normalized } = normalizePolygon(config.buildingPolygon!);
+
+      // Calculate bounding box center (may differ from centroid)
+      // This must match the building's centering logic
+      const minX = Math.min(...config.buildingPolygon!.map(p => p[0]));
+      const maxX = Math.max(...config.buildingPolygon!.map(p => p[0]));
+      const minY = Math.min(...config.buildingPolygon!.map(p => p[1]));
+      const maxY = Math.max(...config.buildingPolygon!.map(p => p[1]));
+      const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
       // Calculate building height from ENABLED facades only
       const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
@@ -665,13 +669,14 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       scene.add(createRoofFromPolygon(normalized, buildingHeight, 3));
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
+      // Use bboxCenter instead of centroid for consistent alignment
       enabledFacades.forEach((facade) => {
-        scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, center));
+        scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter));
       });
 
       // Add corners (only if enabled)
       corners.forEach((corner) => {
-        const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, center);
+        const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, bboxCenter);
         if (cornerGroup) {
           scene.add(cornerGroup);
         }
