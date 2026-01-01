@@ -55,6 +55,9 @@ interface ScaffoldConfigState {
   setBayWidth: (width: BayWidth) => void;
   toggleOption: (option: 'safety_net' | 'weather_cover') => void;
 
+  // Actions - Facade Management
+  toggleFacadeEnabled: (facadeId: string) => void;
+
   // Actions - Editor
   toggleCell: (facadeId: string, field: number, level: number) => void;
   toggleRow: (facadeId: string, field: number) => void;
@@ -148,6 +151,7 @@ const createFacadeElement = (
     levels,
     // Fallback color for unknown direction codes (supports both German NO/O/SO and English NE/E/SE)
     color: FACADE_COLORS[facade.direction] || '#6B7280',  // gray-500 as fallback
+    enabled: true, // All facades enabled by default
     modifications: {
       removed_cells: new Set<string>(),
       lift_position: null,
@@ -344,6 +348,46 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
               ...configuration.settings,
               [option]: !configuration.settings[option],
             },
+            updated_at: new Date().toISOString(),
+          },
+          isDirty: true,
+        });
+      },
+
+      // Facade Management
+      toggleFacadeEnabled: (facadeId) => {
+        const { configuration } = get();
+        if (!configuration) return;
+
+        const newElements = configuration.elements.map((el) => {
+          if (el.type === 'facade' && el.id === facadeId) {
+            return { ...el, enabled: !el.enabled };
+          }
+          // Also toggle related corners
+          if (el.type === 'corner') {
+            const [id1, id2] = el.connects;
+            // Find if this corner connects to the toggled facade
+            const facade = configuration.elements.find(
+              (e) => e.type === 'facade' && e.id === facadeId
+            ) as ScaffoldFacade | undefined;
+            if (facade && (id1 === facadeId || id2 === facadeId)) {
+              // Corner is enabled only if BOTH facades are enabled
+              const otherFacadeId = id1 === facadeId ? id2 : id1;
+              const otherFacade = configuration.elements.find(
+                (e) => e.type === 'facade' && e.id === otherFacadeId
+              ) as ScaffoldFacade | undefined;
+              const newFacadeEnabled = !facade.enabled;
+              const cornerEnabled = newFacadeEnabled && (otherFacade?.enabled ?? false);
+              return { ...el, enabled: cornerEnabled };
+            }
+          }
+          return el;
+        });
+
+        set({
+          configuration: {
+            ...configuration,
+            elements: newElements,
             updated_at: new Date().toISOString(),
           },
           isDirty: true,
@@ -597,6 +641,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
 
         configuration.elements.forEach((el) => {
           if (el.type === 'facade') {
+            if (!el.enabled) return; // Skip disabled facades
             facadeCount++;
             const totalCells = el.fields * el.levels;
             const removedCells = el.modifications.removed_cells.size;
@@ -605,7 +650,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
             totalArea += activeCells * cellArea;
             maxHeight = Math.max(maxHeight, el.target_height_m);
             perimeter += el.length_m;
-          } else {
+          } else if (el.type === 'corner' && el.enabled) {
             cornerCount++;
           }
         });

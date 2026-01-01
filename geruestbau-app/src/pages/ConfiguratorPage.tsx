@@ -115,7 +115,7 @@ function invalidateStoreIfNewSelection() {
   const hasNewSelection = sessionStorage.getItem('selectedFacades');
   if (hasNewSelection) {
     console.log('New facade selection detected - clearing Zustand store cache');
-    localStorage.removeItem('scaffold-config-store');
+    localStorage.removeItem('scaffold-config-storage'); // Correct key from useScaffoldConfig
   }
 }
 

@@ -14,32 +14,28 @@ import {
 import { geruestbauApi } from '../api/geruestbau'
 import type { Project } from '../types/project'
 
-// Progress step configuration (same as ProjectsPage)
+// Progress step configuration - 4 steps (Fassaden + Geruest combined)
 const PROGRESS_STEPS = [
   { id: 1, label: 'Import', shortLabel: 'Import' },
-  { id: 2, label: 'Fassaden', shortLabel: 'Fassaden' },
-  { id: 3, label: 'Geruest', shortLabel: 'Geruest' },
-  { id: 4, label: 'Dokumente', shortLabel: 'Doku' },
-  { id: 5, label: 'Export', shortLabel: 'Export' },
+  { id: 2, label: 'Geruest', shortLabel: 'Geruest' },  // Combined: Fassaden + Geruest
+  { id: 3, label: 'Dokumente', shortLabel: 'Doku' },
+  { id: 4, label: 'Export', shortLabel: 'Export' },
 ]
 
-// Map project status to progress step
+// Map project status to progress step (4-step workflow)
 function getProgressStep(status: string): number {
   switch (status) {
     case 'draft':
       return 1
     case 'captured':
-      return 2
     case 'enriched':
-      return 2
+      return 2  // Geruest (includes facade selection)
     case 'reviewed':
-      return 3
     case 'planned':
-      return 4
+      return 3  // Dokumente
     case 'quoted':
-      return 5
     case 'commissioned':
-      return 6
+      return 4  // Export
     default:
       return 1
   }
@@ -129,7 +125,7 @@ export default function ProjectDetailPage() {
   }
 
   const currentStep = getProgressStep(project.status)
-  const needsFacadeSelection = ['draft', 'captured', 'enriched'].includes(project.status)
+  const needsScaffoldConfig = ['draft', 'captured', 'enriched'].includes(project.status)
 
   return (
     <div className="space-y-4 pb-24">
@@ -155,17 +151,17 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Next Step Action - prominent CTA */}
-      {needsFacadeSelection && (
+      {needsScaffoldConfig && (
         <button
-          onClick={() => navigate(`/projects/${id}/facades`)}
+          onClick={() => navigate(`/configurator?projectId=${id}`)}
           className="w-full card bg-red-600 text-white hover:bg-red-700 transition-colors"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Layers className="w-6 h-6" />
               <div className="text-left">
-                <p className="font-semibold">Fassaden auswaehlen</p>
-                <p className="text-sm text-red-200">Naechster Schritt</p>
+                <p className="font-semibold">Geruest konfigurieren</p>
+                <p className="text-sm text-red-200">Fassaden + Geruest</p>
               </div>
             </div>
             <ArrowRight className="w-5 h-5" />

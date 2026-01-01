@@ -4,6 +4,7 @@
  */
 
 import { useState, useMemo } from 'react';
+import { Check } from 'lucide-react';
 import { useScaffoldConfig, useTotals, useSettings, useElements } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade, WorkType, ScaffoldSystem, BayWidth } from '../types/scaffold.types';
 
@@ -25,6 +26,7 @@ export default function OverviewPanel() {
     setSystem,
     setBayWidth,
     toggleOption,
+    toggleFacadeEnabled,
     jumpToElement,
   } = useScaffoldConfig();
 
@@ -91,8 +93,47 @@ export default function OverviewPanel() {
 
         {/* Mini Floor Plan + Legend */}
         <div className="mt-4 flex items-center gap-6">
-          <MiniFloorPlan facades={facades} size={96} />
-          <FloorPlanLegend facades={facades} />
+          <MiniFloorPlan facades={facades.filter(f => f.enabled)} size={96} />
+          <FloorPlanLegend facades={facades.filter(f => f.enabled)} />
+        </div>
+      </div>
+
+      {/* Facade Selection */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-semibold text-gray-700 mb-3 flex items-center justify-between">
+          <span>Fassaden auswählen</span>
+          <span className="text-xs text-gray-400 font-normal">
+            {facades.filter(f => f.enabled).length} / {facades.length} aktiv
+          </span>
+        </h3>
+        <div className="grid grid-cols-2 gap-2">
+          {facades.map((facade) => (
+            <button
+              key={facade.id}
+              onClick={() => toggleFacadeEnabled(facade.id)}
+              className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                facade.enabled
+                  ? 'border-green-300 bg-green-50'
+                  : 'border-gray-200 bg-gray-50 opacity-60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: facade.color }}
+                />
+                <div className="text-left">
+                  <p className="font-medium text-sm">{facade.name}</p>
+                  <p className="text-xs text-gray-500">{facade.length_m.toFixed(1)} m</p>
+                </div>
+              </div>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                facade.enabled ? 'bg-green-500 text-white' : 'bg-gray-200'
+              }`}>
+                {facade.enabled && <Check className="w-3 h-3" />}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 

@@ -92,6 +92,7 @@ export interface ScaffoldFacade {
   fields: number;
   levels: number;
   color: string;
+  enabled: boolean; // Whether this facade is included in scaffold
   modifications: FacadeModifications;
   // Coordinates for 3D positioning (LV95)
   start_point?: [number, number];
