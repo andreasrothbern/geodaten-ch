@@ -4,6 +4,7 @@
  */
 
 import type { ScaffoldFacade } from '../../types/scaffold.types';
+import { getFacadeColor } from '../../types/scaffold.types';
 
 interface MiniFloorPlanProps {
   facades: ScaffoldFacade[];       // Enabled/selected facades
@@ -70,7 +71,7 @@ export default function MiniFloorPlan({
                   y1={facade.start_point[1]}
                   x2={facade.end_point[0]}
                   y2={facade.end_point[1]}
-                  stroke={isEnabled ? facade.color : '#d1d5db'}
+                  stroke={isEnabled ? getFacadeColor(facade.direction) : '#d1d5db'}
                   strokeWidth={isEnabled ? strokeWidthEnabled : strokeWidthDisabled}
                   strokeLinecap="round"
                 />
@@ -152,7 +153,7 @@ export function FloorPlanLegend({ facades }: FloorPlanLegendProps) {
         <div key={facade.id} className="flex items-center gap-2">
           <span
             className="w-3 h-3 rounded"
-            style={{ backgroundColor: facade.color }}
+            style={{ backgroundColor: getFacadeColor(facade.direction) }}
           />
           <span className="text-gray-600">
             {facade.name} ({facade.length_m.toFixed(1)}m)

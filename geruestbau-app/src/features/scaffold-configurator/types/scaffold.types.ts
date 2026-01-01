@@ -167,16 +167,26 @@ export interface SVGDimensions {
 
 // ============ FACADE COLORS ============
 
-export const FACADE_COLORS: Record<FacadeDirection, string> = {
-  'N': '#ef4444',  // red-500
-  'NE': '#f43f5e', // rose-500
-  'E': '#f43f5e',  // rose-500
-  'SE': '#ec4899', // pink-500
-  'S': '#ec4899',  // pink-500
-  'SW': '#f97316', // orange-500
-  'W': '#f97316',  // orange-500
-  'NW': '#ef4444', // red-500
+// Intuitive color scheme: N=blue (cold), S=red (warm/sun), W=yellow (sunset), E=violet
+export const FACADE_COLORS: Record<string, string> = {
+  'N': '#3B82F6',   // Blue (north = cold)
+  'NE': '#6366F1',  // Indigo
+  'E': '#8B5CF6',   // Violet (east = sunrise)
+  'SE': '#EC4899',  // Pink
+  'S': '#EF4444',   // Red (south = warm/sun)
+  'SW': '#F97316',  // Orange
+  'W': '#EAB308',   // Yellow (west = sunset)
+  'NW': '#22C55E',  // Green
+  // German direction codes (aliases)
+  'NO': '#6366F1',  // Indigo (NordOst)
+  'O': '#8B5CF6',   // Violet (Ost)
+  'SO': '#EC4899',  // Pink (SüdOst)
 };
+
+// Helper to get facade color by direction (with fallback)
+export function getFacadeColor(direction: string, fallback = '#666666'): string {
+  return FACADE_COLORS[direction] || fallback;
+}
 
 export const CORNER_COLOR = '#f59e0b'; // amber-500
 

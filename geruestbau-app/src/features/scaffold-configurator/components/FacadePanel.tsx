@@ -8,22 +8,7 @@ import { useMemo } from 'react';
 import { Check, ArrowRight, Compass } from 'lucide-react';
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade } from '../types/scaffold.types';
-
-// Direction colors for visual distinction (same as FacadeSelectionPage)
-const DIRECTION_COLORS: Record<string, string> = {
-  'N': '#3B82F6',  // Blue
-  'NE': '#6366F1', // Indigo
-  'E': '#8B5CF6',  // Violet
-  'SE': '#EC4899', // Pink
-  'S': '#EF4444',  // Red
-  'SW': '#F97316', // Orange
-  'W': '#EAB308',  // Yellow
-  'NW': '#22C55E', // Green
-  // German direction codes
-  'NO': '#6366F1', // Indigo
-  'O': '#8B5CF6',  // Violet
-  'SO': '#EC4899', // Pink
-};
+import { getFacadeColor } from '../types/scaffold.types';
 
 export default function FacadePanel() {
   const {
@@ -104,7 +89,7 @@ export default function FacadePanel() {
       if (!facade.start_point || !facade.end_point) return null;
 
       const isEnabled = facade.enabled;
-      const color = DIRECTION_COLORS[facade.direction] || facade.color || '#666';
+      const color = getFacadeColor(facade.direction);
       const midX = (facade.start_point[0] + facade.end_point[0]) / 2;
       const midY = (facade.start_point[1] + facade.end_point[1]) / 2;
 
@@ -238,7 +223,7 @@ export default function FacadePanel() {
         <div className="space-y-2">
           {facades.map((facade) => {
             const isEnabled = facade.enabled;
-            const color = DIRECTION_COLORS[facade.direction] || facade.color || '#666';
+            const color = getFacadeColor(facade.direction);
 
             return (
               <button
