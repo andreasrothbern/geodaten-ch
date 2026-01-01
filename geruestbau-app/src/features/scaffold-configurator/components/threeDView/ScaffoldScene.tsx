@@ -179,7 +179,7 @@ function createRoofFromPolygon(
     group.add(mesh);
 
   } else if (roofType === 'satteldach') {
-    // Gable roof - ridge direction from roofOrientation or fallback to geometry
+    // Gable roof following actual polygon shape
     // roofOrientation describes which way the roof FACES (slopes toward)
     // O-W means roof faces East/West → ridge runs North-South (along Z axis)
     // N-S means roof faces North/South → ridge runs East-West (along X axis)
@@ -192,58 +192,85 @@ function createRoofFromPolygon(
       // Fallback: ridge along shorter axis (perpendicular to longer side)
       ridgeAlongX = bboxDepth > bboxWidth;
     }
-    const isWiderThanDeep = ridgeAlongX;
 
-    // Ridge line positions (along longer axis)
-    const ridgeHalfLen = (isWiderThanDeep ? bboxWidth : bboxDepth) / 2;
-    const ridgeOffset = (isWiderThanDeep ? bboxDepth : bboxWidth) / 2;
+    // Find min/max along ridge axis to determine ridge line endpoints
+    const ridgeMin = Math.min(...centeredPoints.map(p => ridgeAlongX ? p.x : p.z));
+    const ridgeMax = Math.max(...centeredPoints.map(p => ridgeAlongX ? p.x : p.z));
+
+    // Ridge line at center (slopeAxis = 0)
+    const ridgeStart = ridgeAlongX
+      ? { x: ridgeMin, y: yPeak, z: 0 }
+      : { x: 0, y: yPeak, z: ridgeMin };
+    const ridgeEnd = ridgeAlongX
+      ? { x: ridgeMax, y: yPeak, z: 0 }
+      : { x: 0, y: yPeak, z: ridgeMax };
+
+    // Separate polygon points into front (+slopeAxis) and back (-slopeAxis)
+    const frontPoints = centeredPoints.filter(p => (ridgeAlongX ? p.z : p.x) >= 0);
+    const backPoints = centeredPoints.filter(p => (ridgeAlongX ? p.z : p.x) < 0);
+
+    // Sort points along ridge axis for proper face creation
+    const sortByRidge = (a: {x: number, z: number}, b: {x: number, z: number}) =>
+      ridgeAlongX ? a.x - b.x : a.z - b.z;
+    frontPoints.sort(sortByRidge);
+    backPoints.sort(sortByRidge);
 
     const vertices: number[] = [];
     const indices: number[] = [];
 
-    if (isWiderThanDeep) {
-      // Ridge runs along X axis (East-West)
-      // Left slope
-      vertices.push(-ridgeHalfLen, yEaves, ridgeOffset);   // 0: front-left eave
-      vertices.push(ridgeHalfLen, yEaves, ridgeOffset);    // 1: front-right eave
-      vertices.push(ridgeHalfLen, yPeak, 0);               // 2: ridge right
-      vertices.push(-ridgeHalfLen, yPeak, 0);              // 3: ridge left
+    // Helper to add vertex and return its index
+    const addVertex = (x: number, y: number, z: number): number => {
+      const idx = vertices.length / 3;
+      vertices.push(x, y, z);
+      return idx;
+    };
 
-      // Right slope
-      vertices.push(-ridgeHalfLen, yEaves, -ridgeOffset);  // 4: back-left eave
-      vertices.push(ridgeHalfLen, yEaves, -ridgeOffset);   // 5: back-right eave
+    // Add ridge vertices
+    const ridgeStartIdx = addVertex(ridgeStart.x, ridgeStart.y, ridgeStart.z);
+    const ridgeEndIdx = addVertex(ridgeEnd.x, ridgeEnd.y, ridgeEnd.z);
 
-      // Gable triangles
-      vertices.push(-ridgeHalfLen, yEaves, ridgeOffset);   // 6: left gable front
-      vertices.push(-ridgeHalfLen, yEaves, -ridgeOffset);  // 7: left gable back
-      vertices.push(ridgeHalfLen, yEaves, ridgeOffset);    // 8: right gable front
-      vertices.push(ridgeHalfLen, yEaves, -ridgeOffset);   // 9: right gable back
+    // Create front slope - triangles from polygon edge to ridge
+    if (frontPoints.length >= 2) {
+      for (let i = 0; i < frontPoints.length - 1; i++) {
+        const p1 = frontPoints[i];
+        const p2 = frontPoints[i + 1];
+        const v1 = addVertex(p1.x, yEaves, p1.z);
+        const v2 = addVertex(p2.x, yEaves, p2.z);
+        // Create quad from eave edge to ridge (as 2 triangles)
+        indices.push(v1, v2, ridgeEndIdx);
+        indices.push(v1, ridgeEndIdx, ridgeStartIdx);
+      }
+    }
 
-      // Front slope: 0, 1, 2, 3
-      indices.push(0, 1, 2, 0, 2, 3);
-      // Back slope: 4, 3, 2, 5
-      indices.push(4, 3, 2, 4, 2, 5);
-      // Left gable: 6, 7, 3
-      indices.push(6, 7, 3);
-      // Right gable: 8, 2, 9
-      indices.push(8, 2, 9);
-    } else {
-      // Ridge runs along Z axis (North-South)
-      vertices.push(ridgeOffset, yEaves, -ridgeHalfLen);   // 0
-      vertices.push(ridgeOffset, yEaves, ridgeHalfLen);    // 1
-      vertices.push(0, yPeak, ridgeHalfLen);               // 2
-      vertices.push(0, yPeak, -ridgeHalfLen);              // 3
+    // Create back slope - triangles from polygon edge to ridge
+    if (backPoints.length >= 2) {
+      for (let i = 0; i < backPoints.length - 1; i++) {
+        const p1 = backPoints[i];
+        const p2 = backPoints[i + 1];
+        const v1 = addVertex(p1.x, yEaves, p1.z);
+        const v2 = addVertex(p2.x, yEaves, p2.z);
+        // Create quad from eave edge to ridge (as 2 triangles)
+        indices.push(v2, v1, ridgeStartIdx);
+        indices.push(v2, ridgeStartIdx, ridgeEndIdx);
+      }
+    }
 
-      vertices.push(-ridgeOffset, yEaves, -ridgeHalfLen);  // 4
-      vertices.push(-ridgeOffset, yEaves, ridgeHalfLen);   // 5
-
-      // Right slope
-      indices.push(0, 1, 2, 0, 2, 3);
-      // Left slope
-      indices.push(4, 3, 2, 4, 2, 5);
-      // Gables
-      indices.push(0, 4, 3);
-      indices.push(1, 2, 5);
+    // Create gable ends (triangular faces at ridge ends)
+    // Left gable
+    if (frontPoints.length > 0 && backPoints.length > 0) {
+      const frontLeft = frontPoints[0];
+      const backLeft = backPoints[0];
+      const gv1 = addVertex(frontLeft.x, yEaves, frontLeft.z);
+      const gv2 = addVertex(backLeft.x, yEaves, backLeft.z);
+      indices.push(gv1, gv2, ridgeStartIdx);
+    }
+    // Right gable
+    if (frontPoints.length > 0 && backPoints.length > 0) {
+      const frontRight = frontPoints[frontPoints.length - 1];
+      const backRight = backPoints[backPoints.length - 1];
+      const gv1 = addVertex(frontRight.x, yEaves, frontRight.z);
+      const gv2 = addVertex(backRight.x, yEaves, backRight.z);
+      indices.push(gv2, gv1, ridgeEndIdx);
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -255,26 +282,38 @@ function createRoofFromPolygon(
     group.add(mesh);
 
   } else if (roofType === 'pultdach') {
-    // Shed roof - single slope
+    // Shed roof following actual polygon shape - single slope
+    // Low edge at positive Z (front/south), high edge at negative Z (back/north)
     const vertices: number[] = [];
     const indices: number[] = [];
 
-    // Low edge (south/front)
-    vertices.push(-bboxWidth/2, yEaves, bboxDepth/2);       // 0
-    vertices.push(bboxWidth/2, yEaves, bboxDepth/2);        // 1
-    // High edge (north/back)
-    vertices.push(bboxWidth/2, yPeak, -bboxDepth/2);        // 2
-    vertices.push(-bboxWidth/2, yPeak, -bboxDepth/2);       // 3
+    // Separate points into front (low) and back (high) based on Z position
+    const zMin = Math.min(...centeredPoints.map(p => p.z));
+    const zMax = Math.max(...centeredPoints.map(p => p.z));
 
-    // Main slope
-    indices.push(0, 1, 2, 0, 2, 3);
+    // Create roof surface - each point's height depends on its Z position
+    // Front (positive Z) = yEaves, Back (negative Z) = yPeak
+    centeredPoints.forEach(p => {
+      // Interpolate height based on Z position
+      const t = (p.z - zMin) / (zMax - zMin); // 0 = back (high), 1 = front (low)
+      const y = yPeak + t * (yEaves - yPeak);
+      vertices.push(p.x, y, p.z);
+    });
 
-    // Side triangles (gables)
-    vertices.push(-bboxWidth/2, yEaves, -bboxDepth/2);      // 4 (left back bottom)
-    vertices.push(bboxWidth/2, yEaves, -bboxDepth/2);       // 5 (right back bottom)
+    // Create roof surface using triangulation from centroid
+    // Add centroid vertex at interpolated height
+    const centroidX = centeredPoints.reduce((sum, p) => sum + p.x, 0) / centeredPoints.length;
+    const centroidZ = centeredPoints.reduce((sum, p) => sum + p.z, 0) / centeredPoints.length;
+    const centroidT = (centroidZ - zMin) / (zMax - zMin);
+    const centroidY = yPeak + centroidT * (yEaves - yPeak);
+    const centroidIdx = centeredPoints.length;
+    vertices.push(centroidX, centroidY, centroidZ);
 
-    indices.push(0, 3, 4);  // Left gable
-    indices.push(1, 5, 2);  // Right gable
+    // Create triangular faces from each edge to centroid
+    for (let i = 0; i < centeredPoints.length; i++) {
+      const nextI = (i + 1) % centeredPoints.length;
+      indices.push(i, nextI, centroidIdx);
+    }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
