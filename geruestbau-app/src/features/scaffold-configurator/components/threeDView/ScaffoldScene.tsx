@@ -9,6 +9,7 @@ import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D } from '../../types/scaffold.types';
+import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
 interface ScaffoldSceneProps {
   configuration: ScaffoldConfiguration;
@@ -138,8 +139,6 @@ function createRoofFromPolygon(
   const maxY = Math.max(...normalized.map(p => p[1]));
   const bboxCenterX = (minX + maxX) / 2;
   const bboxCenterY = (minY + maxY) / 2;
-  const bboxWidth = maxX - minX + roofOverhang * 2;  // Add overhang on both sides
-  const bboxDepth = maxY - minY + roofOverhang * 2;  // Add overhang on both sides
 
   // Transform polygon points to be centered at origin (matching building)
   // Polygon coords: X stays X, Y becomes -Z in THREE.js
@@ -182,98 +181,21 @@ function createRoofFromPolygon(
     group.add(mesh);
 
   } else if (roofType === 'satteldach') {
-    // Classic gable roof (Satteldach) - simplified bounding box approach
-    // roofOrientation describes which way the roof FACES (slopes toward)
-    // O-W means roof slopes East/West → ridge runs North-South
-    // N-S means roof slopes North/South → ridge runs East-West
+    // Classic gable roof (Satteldach) - use tested utility function
+    const roofGeom = createSatteldachGeometry(
+      centeredPoints as Point2D[],
+      yEaves,
+      yPeak,
+      roofOrientation
+    );
 
-    // Calculate bounding box
-    const minX = Math.min(...centeredPoints.map(p => p.x));
-    const maxX = Math.max(...centeredPoints.map(p => p.x));
-    const minZ = Math.min(...centeredPoints.map(p => p.z));
-    const maxZ = Math.max(...centeredPoints.map(p => p.z));
-    const centerX = (minX + maxX) / 2;
-    const centerZ = (minZ + maxZ) / 2;
-
-    // Determine ridge direction
-    let ridgeAlongZ: boolean;
-    if (roofOrientation === 'O-W' || roofOrientation === 'E-W') {
-      ridgeAlongZ = true;  // Roof slopes E/W → ridge runs N-S
-    } else if (roofOrientation === 'N-S') {
-      ridgeAlongZ = false; // Roof slopes N/S → ridge runs E-W
-    } else {
-      ridgeAlongZ = bboxDepth > bboxWidth;
-    }
-
-    // Use simplified bounding box geometry for clean gable roof
-    // 6 vertices: 4 corners at eave height + 2 ridge points at peak
-    const vertices: number[] = [];
-
-    if (ridgeAlongZ) {
-      // Ridge runs N-S (along Z): roof slopes to East and West
-      // Eave corners (at trauf height)
-      vertices.push(minX, yEaves, minZ); // 0: SW corner (West side)
-      vertices.push(minX, yEaves, maxZ); // 1: NW corner (West side)
-      vertices.push(maxX, yEaves, minZ); // 2: SE corner (East side)
-      vertices.push(maxX, yEaves, maxZ); // 3: NE corner (East side)
-      // Ridge points (at first height)
-      vertices.push(centerX, yPeak, minZ); // 4: Ridge South
-      vertices.push(centerX, yPeak, maxZ); // 5: Ridge North
-
-      // Indices for triangles (counter-clockwise when viewed from outside)
-      const indices = [
-        // West roof slope (faces west): SW, NW, Ridge-N, Ridge-S
-        0, 1, 5,  // SW, NW, Ridge-N
-        0, 5, 4,  // SW, Ridge-N, Ridge-S
-        // East roof slope (faces east): SE, Ridge-S, Ridge-N, NE
-        2, 4, 5,  // SE, Ridge-S, Ridge-N
-        2, 5, 3,  // SE, Ridge-N, NE
-        // South gable (triangle): SW, SE, Ridge-S
-        0, 4, 2,  // SW, Ridge-S, SE (reversed for correct facing)
-        // North gable (triangle): NW, NE, Ridge-N
-        1, 3, 5,  // NW, NE, Ridge-N
-      ];
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      const mesh = new THREE.Mesh(geometry, roofMaterial);
-      mesh.castShadow = true;
-      group.add(mesh);
-    } else {
-      // Ridge runs E-W (along X): roof slopes to North and South
-      // Eave corners (at trauf height)
-      vertices.push(minX, yEaves, minZ); // 0: SW corner (South side)
-      vertices.push(maxX, yEaves, minZ); // 1: SE corner (South side)
-      vertices.push(minX, yEaves, maxZ); // 2: NW corner (North side)
-      vertices.push(maxX, yEaves, maxZ); // 3: NE corner (North side)
-      // Ridge points (at first height)
-      vertices.push(minX, yPeak, centerZ); // 4: Ridge West
-      vertices.push(maxX, yPeak, centerZ); // 5: Ridge East
-
-      // Indices for triangles
-      const indices = [
-        // South roof slope: SW, SE, Ridge-E, Ridge-W
-        0, 1, 5,  // SW, SE, Ridge-E
-        0, 5, 4,  // SW, Ridge-E, Ridge-W
-        // North roof slope: NW, Ridge-W, Ridge-E, NE
-        2, 4, 5,  // NW, Ridge-W, Ridge-E
-        2, 5, 3,  // NW, Ridge-E, NE
-        // West gable (triangle): SW, NW, Ridge-W
-        0, 4, 2,  // SW, Ridge-W, NW
-        // East gable (triangle): SE, NE, Ridge-E
-        1, 3, 5,  // SE, NE, Ridge-E
-      ];
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      const mesh = new THREE.Mesh(geometry, roofMaterial);
-      mesh.castShadow = true;
-      group.add(mesh);
-    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(roofGeom.vertices), 3));
+    geometry.setIndex(roofGeom.indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    mesh.castShadow = true;
+    group.add(mesh);
 
   } else if (roofType === 'pultdach') {
     // Shed roof following actual polygon shape - single slope
