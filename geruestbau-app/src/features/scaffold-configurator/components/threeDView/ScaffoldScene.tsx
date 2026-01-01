@@ -17,11 +17,14 @@ interface ScaffoldSceneProps {
 }
 
 // Camera position presets for different views
+// Camera positions: LV95 Y (Northing) maps to -Z in THREE.js
+// So "north" view = camera at -Z looking toward +Z (toward south in LV95)
+// This means we swap north/south positions to match real-world orientation
 const VIEW_POSITIONS: Record<View3D, { position: THREE.Vector3; target: THREE.Vector3 }> = {
   isometric: { position: new THREE.Vector3(30, 25, 30), target: new THREE.Vector3(0, 8, 0) },
-  north: { position: new THREE.Vector3(0, 10, 40), target: new THREE.Vector3(0, 8, 0) },
+  north: { position: new THREE.Vector3(0, 10, -40), target: new THREE.Vector3(0, 8, 0) },  // Looking from south toward north
   east: { position: new THREE.Vector3(40, 10, 0), target: new THREE.Vector3(0, 8, 0) },
-  south: { position: new THREE.Vector3(0, 10, -40), target: new THREE.Vector3(0, 8, 0) },
+  south: { position: new THREE.Vector3(0, 10, 40), target: new THREE.Vector3(0, 8, 0) },   // Looking from north toward south
   west: { position: new THREE.Vector3(-40, 10, 0), target: new THREE.Vector3(0, 8, 0) },
   top: { position: new THREE.Vector3(0, 50, 0.1), target: new THREE.Vector3(0, 0, 0) },
 };
