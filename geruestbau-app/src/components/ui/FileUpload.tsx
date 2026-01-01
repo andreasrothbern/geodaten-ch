@@ -82,18 +82,15 @@ export default function FileUpload({
               {formatFileSize(selectedFile.size)}
             </p>
           </div>
-          {loading ? (
-            <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
-          ) : (
-            onClear && (
-              <button
-                type="button"
-                onClick={onClear}
-                className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )
+          {/* Clear button nur wenn nicht loading */}
+          {!loading && onClear && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           )}
         </div>
         {loading && (
