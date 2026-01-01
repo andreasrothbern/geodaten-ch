@@ -299,10 +299,18 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
   function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration) {
     const facades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
 
-    // Calculate building dimensions
-    const totalLength = facades.reduce((sum, f) => sum + f.length_m, 0) / 2;
-    const buildingWidth = Math.max(10, totalLength / 2);
-    const buildingDepth = Math.max(8, totalLength / 3);
+    // Calculate building dimensions based on facade directions
+    // Group facades by orientation (N/S are width, E/W are depth)
+    const nsLength = facades
+      .filter(f => ['N', 'S', 'NE', 'NW', 'SE', 'SW'].includes(f.direction))
+      .reduce((sum, f) => Math.max(sum, f.length_m), 10);
+    const ewLength = facades
+      .filter(f => ['E', 'W'].includes(f.direction))
+      .reduce((sum, f) => Math.max(sum, f.length_m), 8);
+
+    // Use actual facade lengths for building dimensions
+    const buildingWidth = Math.max(10, nsLength);
+    const buildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
     const buildingHeight = config.totals.max_height_m * 0.8;
 
     const fieldWidth = config.settings.field_width_m;
@@ -316,26 +324,54 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
       scene.add(createRoof(buildingWidth + 1, buildingDepth + 1, 3, buildingHeight));
     }
 
+    // Track which directions we've seen to position facades correctly
+    const directionCount: Record<string, number> = {};
+
     // Get scaffold offset based on direction
-    const getOffset = (direction: string): { offset: THREE.Vector3; dir: 'x' | 'z' } => {
+    const getOffset = (facade: ScaffoldFacade): { offset: THREE.Vector3; dir: 'x' | 'z' } => {
       const gap = 0.5;
-      switch (direction) {
+      const dir = facade.direction;
+
+      // Count how many of this direction we've seen (for stacking multiple facades)
+      directionCount[dir] = (directionCount[dir] || 0);
+      const stackOffset = directionCount[dir] * 3; // Stack multiple same-direction facades
+      directionCount[dir]++;
+
+      // Map directions to positions around building
+      // N, NE, NW = front (positive Z)
+      // S, SE, SW = back (negative Z)
+      // E = right (positive X)
+      // W = left (negative X)
+      switch (dir) {
         case 'N':
-          return { offset: new THREE.Vector3(-buildingWidth / 2, 0, buildingDepth / 2 + gap), dir: 'x' };
+        case 'NE':
+        case 'NW':
+          return { offset: new THREE.Vector3(-facade.length_m / 2, 0, buildingDepth / 2 + gap + stackOffset), dir: 'x' };
         case 'S':
-          return { offset: new THREE.Vector3(-buildingWidth / 2, 0, -buildingDepth / 2 - gap - 0.73), dir: 'x' };
+        case 'SE':
+        case 'SW':
+          return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -buildingDepth / 2 - gap - 0.73 - stackOffset), dir: 'x' };
         case 'E':
-          return { offset: new THREE.Vector3(buildingWidth / 2 + gap, 0, -buildingDepth / 2), dir: 'z' };
+          return { offset: new THREE.Vector3(buildingWidth / 2 + gap + stackOffset, 0, -facade.length_m / 2), dir: 'z' };
         case 'W':
-          return { offset: new THREE.Vector3(-buildingWidth / 2 - gap - 0.73, 0, -buildingDepth / 2), dir: 'z' };
+          return { offset: new THREE.Vector3(-buildingWidth / 2 - gap - 0.73 - stackOffset, 0, -facade.length_m / 2), dir: 'z' };
         default:
-          return { offset: new THREE.Vector3(0, 0, 0), dir: 'x' };
+          // For unknown directions, distribute facades around the building
+          const fallbackIndex = Object.keys(directionCount).filter(k => k === dir).length;
+          const side = fallbackIndex % 4;
+          switch (side) {
+            case 0: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, buildingDepth / 2 + gap), dir: 'x' };
+            case 1: return { offset: new THREE.Vector3(buildingWidth / 2 + gap, 0, -facade.length_m / 2), dir: 'z' };
+            case 2: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -buildingDepth / 2 - gap - 0.73), dir: 'x' };
+            case 3: return { offset: new THREE.Vector3(-buildingWidth / 2 - gap - 0.73, 0, -facade.length_m / 2), dir: 'z' };
+            default: return { offset: new THREE.Vector3(0, 0, 0), dir: 'x' };
+          }
       }
     };
 
     // Add scaffolds
     facades.forEach((facade) => {
-      const { offset, dir } = getOffset(facade.direction);
+      const { offset, dir } = getOffset(facade);
       scene.add(createScaffoldFacade(facade, fieldWidth, levelHeight, offset, dir));
 
       // Add lift marker
