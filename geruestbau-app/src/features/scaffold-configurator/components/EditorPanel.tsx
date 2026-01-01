@@ -147,23 +147,28 @@ export default function EditorPanel() {
           </button>
         </div>
 
-        {/* Dots */}
+        {/* Dots - only enabled elements */}
         <div className="flex justify-center gap-1.5 pb-3">
-          {elements.map((el, idx) => (
-            <button
-              key={el.id}
-              onClick={() => {
-                jumpToElement(idx);
-                setCurrentTab('editor'); // Stay on editor
-              }}
-              className={`w-2 h-2 rounded-full transition-all hover:scale-125 ${
-                idx === currentElementIndex
-                  ? el.type === 'corner' ? 'bg-amber-500 w-4' : 'bg-red-500 w-4'
-                  : el.type === 'corner' ? 'bg-amber-200' : 'bg-gray-300'
-              }`}
-              title={el.name}
-            />
-          ))}
+          {elements
+            .filter(el => el.enabled)
+            .map((el) => {
+              const actualIdx = elements.findIndex(e => e.id === el.id);
+              return (
+                <button
+                  key={el.id}
+                  onClick={() => {
+                    jumpToElement(actualIdx);
+                    setCurrentTab('editor'); // Stay on editor
+                  }}
+                  className={`w-2 h-2 rounded-full transition-all hover:scale-125 ${
+                    actualIdx === currentElementIndex
+                      ? el.type === 'corner' ? 'bg-amber-500 w-4' : 'bg-red-500 w-4'
+                      : el.type === 'corner' ? 'bg-amber-200' : 'bg-gray-300'
+                  }`}
+                  title={el.name}
+                />
+              );
+            })}
         </div>
       </div>
 

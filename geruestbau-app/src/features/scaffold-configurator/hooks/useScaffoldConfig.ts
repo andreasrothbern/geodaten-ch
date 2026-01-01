@@ -248,8 +248,19 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         const { configuration, currentElementIndex } = get();
         if (!configuration) return;
 
-        const total = configuration.elements.length;
-        const newIndex = (currentElementIndex + direction + total) % total;
+        const elements = configuration.elements;
+        const total = elements.length;
+
+        // Find next enabled element in the given direction
+        let newIndex = currentElementIndex;
+        for (let i = 0; i < total; i++) {
+          newIndex = (newIndex + direction + total) % total;
+          const el = elements[newIndex];
+          // Skip disabled facades and corners of disabled facades
+          if (el.type === 'facade' && el.enabled) break;
+          if (el.type === 'corner' && el.enabled) break;
+        }
+
         set({ currentElementIndex: newIndex });
       },
 
@@ -631,14 +642,30 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         const { configuration, currentElementIndex } = get();
         if (!configuration || configuration.elements.length === 0) return null;
 
-        const total = configuration.elements.length;
-        const prevIdx = (currentElementIndex - 1 + total) % total;
-        const nextIdx = (currentElementIndex + 1) % total;
+        const elements = configuration.elements;
+        const total = elements.length;
+        const current = elements[currentElementIndex];
+
+        // Find prev enabled element
+        let prevIdx = currentElementIndex;
+        for (let i = 0; i < total; i++) {
+          prevIdx = (prevIdx - 1 + total) % total;
+          const el = elements[prevIdx];
+          if ((el.type === 'facade' || el.type === 'corner') && el.enabled) break;
+        }
+
+        // Find next enabled element
+        let nextIdx = currentElementIndex;
+        for (let i = 0; i < total; i++) {
+          nextIdx = (nextIdx + 1) % total;
+          const el = elements[nextIdx];
+          if ((el.type === 'facade' || el.type === 'corner') && el.enabled) break;
+        }
 
         return {
-          prev: configuration.elements[prevIdx],
-          current: configuration.elements[currentElementIndex],
-          next: configuration.elements[nextIdx],
+          prev: elements[prevIdx],
+          current: current,
+          next: elements[nextIdx],
         };
       },
 
