@@ -109,17 +109,16 @@ interface SelectedSide {
   angle_deg: number;
 }
 
+// TODO: Deaktiviert - Cache-Invalidierung muss anders gelöst werden
 // IMPORTANT: Clear Zustand store cache when new facade selection exists
 // This prevents stale data from overriding fresh selections
-function invalidateStoreIfNewSelection() {
-  const hasNewSelection = sessionStorage.getItem('selectedFacades');
-  if (hasNewSelection) {
-    console.log('New facade selection detected - clearing Zustand store cache');
-    localStorage.removeItem('scaffold-config-storage'); // Correct key from useScaffoldConfig
-  }
-}
-
-// TODO: Deaktiviert - Cache-Invalidierung muss anders gelöst werden
+// function invalidateStoreIfNewSelection() {
+//   const hasNewSelection = sessionStorage.getItem('selectedFacades');
+//   if (hasNewSelection) {
+//     console.log('New facade selection detected - clearing Zustand store cache');
+//     localStorage.removeItem('scaffold-config-storage'); // Correct key from useScaffoldConfig
+//   }
+// }
 // Call immediately on module load (before Zustand hydrates)
 // invalidateStoreIfNewSelection();
 
