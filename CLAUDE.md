@@ -96,9 +96,8 @@ Der zentrale SmartBuildingService sammelt alle Daten in einer 10-Schritte Pipeli
 │  ├─────────────────────────────────────────┤                   │
 │  │  1. Geocoding (swisstopo)               │                   │
 │  │  2. GWR-Daten (Geschosse, Fläche)       │                   │
-│  │  3. Höhendaten (swissBUILDINGS3D)       │                   │
+│  │  3+5. 3D-Daten (Polygon + Höhen)        │ ← EIN Aufruf!     │
 │  │  4. Terrain (swissALTI3D, Hanglage)     │                   │
-│  │  5. Polygon (swissBUILDINGS3D)           │                   │
 │  │  6. Dach-Analyse (berechnet)            │                   │
 │  │  7. Recherche (Claude Sonnet)           │ ← building_name   │
 │  │  8. Zonen-Analyse (bei komplexen)       │                   │

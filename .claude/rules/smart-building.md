@@ -8,9 +8,8 @@ PHASE 1 (sequentiell):
 
 PHASE 2 (parallel):
   2. GWR-Daten (Geschosse, Fläche, Kategorie)
-  3. Höhendaten (swissBUILDINGS3D)
+  3+5. 3D-Daten (swissBUILDINGS3D) → Polygon + Höhen in EINEM Aufruf
   4. Terrain (swissALTI3D)
-  5. Polygon (swissBUILDINGS3D)
 
 PHASE 3 (parallel, braucht Phase 2):
   6a. Dach-Analyse (berechnet aus Höhen + Polygon)
@@ -24,6 +23,9 @@ PHASE 5 (synchron):
   9. SUVA Zugänge (max 50m Abstand)
   10. Qualitätsbewertung
 ```
+
+> **Optimierung 01.01.2026:** Höhen + Polygon werden jetzt in einem
+> einzigen STAC-API-Aufruf geholt (statt zwei separate).
 
 ## Dateien
 

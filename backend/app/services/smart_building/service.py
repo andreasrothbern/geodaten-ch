@@ -395,16 +395,16 @@ class SmartBuildingService:
             # PHASE 2a: GWR zuerst (setzt EGID, die Heights braucht)
             await self._collect_gwr_data(bundle)
 
-            # PHASE 2b: Parallel - Heights braucht EGID von GWR
+            # PHASE 2b: Parallel - 3D-Daten + Terrain
+            # OPTIMIERT (01.01.2026): Ein Aufruf für Polygon + Höhen
             phase2_tasks = [
-                self._collect_height_data(bundle),
-                self._collect_polygon_data(bundle),
+                self._collect_building_3d_data(bundle),  # Polygon + Höhen in EINEM Aufruf
             ]
             if include_terrain:
                 phase2_tasks.append(self._collect_terrain_data(bundle))
 
             await asyncio.gather(*phase2_tasks, return_exceptions=True)
-            logger.info(f"Phase 2 complete: GWR, Heights, Polygon, Terrain")
+            logger.info(f"Phase 2 complete: GWR, Building3D (Polygon+Heights), Terrain")
 
             # VALIDIERUNG: Höhen-Plausibilität prüfen (BUG-011)
             validate_heights(bundle)
@@ -494,30 +494,91 @@ class SmartBuildingService:
             logger.error(f"GWR error: {e}")
             bundle.add_warning(f"GWR-Daten nicht verfügbar: {str(e)}")
 
-    async def _collect_height_data(self, bundle: BuildingDataBundle):
-        """Schritt 3: Höhendaten aus swissBUILDINGS3D
+    async def _collect_building_3d_data(self, bundle: BuildingDataBundle):
+        """Schritt 3+5 kombiniert: Polygon UND Höhen aus swissBUILDINGS3D
 
-        Nutzt die vollständige Lookup-Strategie aus geodienste.py:
-        1. EGID-Lookup (building_heights_detailed)
-        2. EGID-Legacy (building_heights)
-        3. Koordinaten-Lookup (building_heights_by_coord)
-        4. Geschätzt aus GWR-Daten (Geschosse × Geschosshöhe)
-        5. Standard nach Kategorie (EFH: 8m, MFH: 12m, etc.)
+        OPTIMIERUNG (01.01.2026): Ein STAC-API-Aufruf statt zwei!
+        swissBUILDINGS3D liefert in einem Feature sowohl:
+        - Gebäudepolygon (geometry)
+        - Höhendaten (DACHHOEHE, TRAUFHOEHE, GESAMTHOEHE)
 
-        Falls lokal keine Daten: On-Demand Import via STAC API.
+        Fallback-Strategie für Höhen falls kein Polygon gefunden:
+        1. EGID-Lookup in lokaler DB
+        2. Koordinaten-Lookup in lokaler DB
+        3. Geschätzt aus GWR-Daten (Geschosse × 3.2m)
         """
+        if not bundle.lv95_e or not bundle.lv95_n:
+            return
+
+        try:
+            from app.services.height_fetcher import fetch_building_polygon_for_coordinates
+
+            # EIN Aufruf für Polygon + Höhen
+            result = await fetch_building_polygon_for_coordinates(
+                e=bundle.lv95_e,
+                n=bundle.lv95_n,
+                tolerance_m=50.0
+            )
+
+            if result:
+                # === POLYGON ===
+                bundle.polygon = result.get("polygon")
+                bundle.sides = result.get("sides")
+                bundle.perimeter_m = result.get("perimeter_m")
+                bundle.footprint_area_m2 = bundle.footprint_area_m2 or result.get("area_m2")
+                bundle.polygon_simplified = False  # swissBUILDINGS3D liefert bereits vereinfachte Polygone
+
+                # === HÖHEN (aus demselben Feature) ===
+                bundle.traufhoehe_m = result.get("traufhoehe_m")
+                bundle.firsthoehe_m = result.get("firsthoehe_m")
+                bundle.gebaeudehoehe_m = result.get("gebaeudehoehe_m")
+
+                if bundle.traufhoehe_m or bundle.firsthoehe_m:
+                    bundle.height_source = DataSource.SWISSBUILDINGS3D
+                    bundle.height_quality = DataQuality.HIGH
+
+                bundle.add_source(DataSource.SWISSBUILDINGS3D)
+                logger.info(
+                    f"swissBUILDINGS3D: {len(bundle.polygon)} Punkte, "
+                    f"Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m, "
+                    f"Match-Distanz: {result.get('match_distance_m', 'N/A')}m"
+                )
+
+                # Bounding Box berechnen
+                if bundle.polygon:
+                    xs = [p[0] for p in bundle.polygon]
+                    ys = [p[1] for p in bundle.polygon]
+                    bundle.bbox_width_m = max(xs) - min(xs)
+                    bundle.bbox_depth_m = max(ys) - min(ys)
+
+                    # Polygon-Form-Analyse (U-Form, L-Form, etc.)
+                    try:
+                        from .polygon_analysis import enrich_bundle_with_shape_analysis
+                        enrich_bundle_with_shape_analysis(bundle)
+                        logger.debug(f"Shape: {bundle.building_shape}")
+                    except Exception as shape_error:
+                        logger.warning(f"Shape analysis failed: {shape_error}")
+
+            else:
+                bundle.add_warning("Gebäude nicht in swissBUILDINGS3D gefunden")
+
+            # === FALLBACK für Höhen wenn nicht aus swissBUILDINGS3D ===
+            if not bundle.traufhoehe_m and not bundle.firsthoehe_m:
+                await self._fallback_height_lookup(bundle)
+
+        except Exception as e:
+            logger.error(f"Building 3D data error: {e}")
+            bundle.add_warning(f"Gebäudedaten nicht verfügbar: {str(e)}")
+            # Fallback auf Höhen-Schätzung
+            await self._fallback_height_lookup(bundle)
+
+    async def _fallback_height_lookup(self, bundle: BuildingDataBundle):
+        """Fallback Höhen-Lookup wenn swissBUILDINGS3D keine Daten hat"""
         try:
             from app.services.geodienste import get_height_details
 
-            # EGID als int konvertieren
-            egid_int = None
-            if bundle.egid:
-                try:
-                    egid_int = int(bundle.egid)
-                except (ValueError, TypeError):
-                    pass
+            egid_int = int(bundle.egid) if bundle.egid else None
 
-            # Vollständige Höhen-Lookup-Strategie aus geodienste.py nutzen
             height_result = get_height_details(
                 floors=bundle.gwr_floors,
                 building_category_code=bundle.gwr_category_code,
@@ -527,61 +588,23 @@ class SmartBuildingService:
                 lv95_n=bundle.lv95_n,
             )
 
-            # Ergebnisse übernehmen
             bundle.traufhoehe_m = height_result.get('traufhoehe_m')
             bundle.firsthoehe_m = height_result.get('firsthoehe_m')
             bundle.gebaeudehoehe_m = height_result.get('gebaeudehoehe_m')
             bundle.estimated_height_m = height_result.get('estimated_height_m')
 
-            # Quelle bestimmen
             if height_result.get('measured_height_m'):
                 bundle.height_source = DataSource.SWISSBUILDINGS3D
                 bundle.height_quality = DataQuality.HIGH
-                bundle.add_source(DataSource.SWISSBUILDINGS3D)
             elif height_result.get('estimated_source') == 'calculated_from_floors':
                 bundle.height_quality = DataQuality.MEDIUM
+                bundle.add_warning(f"Höhe geschätzt aus {bundle.gwr_floors} Geschossen")
             else:
                 bundle.height_quality = DataQuality.LOW
-
-            # On-Demand Import falls keine gemessenen Höhen gefunden
-            if not height_result.get('measured_height_m') and bundle.lv95_e and bundle.lv95_n:
-                try:
-                    from app.services.height_fetcher import fetch_height_for_coordinates
-                    logger.info(f"On-demand Höhen-Import für E={bundle.lv95_e}, N={bundle.lv95_n}")
-
-                    result = await fetch_height_for_coordinates(
-                        e=bundle.lv95_e,
-                        n=bundle.lv95_n,
-                        egid=egid_int
-                    )
-
-                    if result.get("success") and result.get("heights"):
-                        heights = result["heights"]
-                        bundle.traufhoehe_m = heights.get('traufhoehe_m')
-                        bundle.firsthoehe_m = heights.get('firsthoehe_m')
-                        bundle.gebaeudehoehe_m = heights.get('gebaeudehoehe_m')
-                        bundle.height_source = DataSource.SWISSBUILDINGS3D
-                        bundle.height_quality = DataQuality.HIGH
-                        bundle.add_source(DataSource.SWISSBUILDINGS3D)
-                        logger.info(f"On-demand Import erfolgreich: {result.get('imported_count', 0)} Gebäude")
-                    elif result.get("status") == "already_exists" and result.get("heights"):
-                        heights = result["heights"]
-                        bundle.traufhoehe_m = heights.get('traufhoehe_m')
-                        bundle.firsthoehe_m = heights.get('firsthoehe_m')
-                        bundle.gebaeudehoehe_m = heights.get('gebaeudehoehe_m')
-                        bundle.height_source = DataSource.SWISSBUILDINGS3D
-                        bundle.height_quality = DataQuality.HIGH
-                        bundle.add_source(DataSource.SWISSBUILDINGS3D)
-                except Exception as fetch_error:
-                    logger.warning(f"On-demand Höhen-Import fehlgeschlagen: {fetch_error}")
-
-            # Warning falls nur geschätzte Höhe
-            if not bundle.traufhoehe_m and not bundle.firsthoehe_m:
-                bundle.add_warning(f"Höhe geschätzt: {height_result.get('estimated_source', 'unknown')}")
+                bundle.add_warning(f"Höhe geschätzt: {height_result.get('estimated_source', 'Kategorie-Standard')}")
 
         except Exception as e:
-            logger.error(f"Height data error: {e}")
-            bundle.add_warning(f"Höhendaten nicht verfügbar: {str(e)}")
+            logger.warning(f"Fallback height lookup failed: {e}")
 
     async def _collect_terrain_data(self, bundle: BuildingDataBundle):
         """Schritt 4: Terrain-Daten (Hanglage)"""
@@ -622,64 +645,6 @@ class SmartBuildingService:
         except Exception as e:
             logger.error(f"Terrain error: {e}")
             bundle.add_warning(f"Terrain-Daten nicht verfügbar: {str(e)}")
-
-    async def _collect_polygon_data(self, bundle: BuildingDataBundle):
-        """Schritt 5: Polygon und Fassaden (aus swissBUILDINGS3D)
-
-        WICHTIG: geodienste.ch wurde deaktiviert (01.01.2026).
-        Alle Polygondaten kommen jetzt aus swissBUILDINGS3D.
-        Das funktioniert für ALLE Kantone (auch LU, NE, GE, VD, VS).
-        """
-        if not bundle.lv95_e or not bundle.lv95_n:
-            return
-
-        try:
-            # NEU: swissBUILDINGS3D statt geodienste.ch
-            from app.services.height_fetcher import fetch_building_polygon_for_coordinates
-
-            result = await fetch_building_polygon_for_coordinates(
-                e=bundle.lv95_e,
-                n=bundle.lv95_n,
-                tolerance_m=50.0
-            )
-
-            if result:
-                bundle.polygon = result.get("polygon")
-                bundle.sides = result.get("sides")
-                bundle.perimeter_m = result.get("perimeter_m")
-                bundle.footprint_area_m2 = bundle.footprint_area_m2 or result.get("area_m2")
-                bundle.polygon_simplified = False  # swissBUILDINGS3D liefert bereits vereinfachte Polygone
-                bundle.add_source(DataSource.SWISSBUILDINGS3D)
-
-                # Höhendaten aus swissBUILDINGS3D übernehmen falls noch nicht gesetzt
-                if not bundle.traufhoehe_m and result.get("traufhoehe_m"):
-                    bundle.traufhoehe_m = result.get("traufhoehe_m")
-                if not bundle.firsthoehe_m and result.get("firsthoehe_m"):
-                    bundle.firsthoehe_m = result.get("firsthoehe_m")
-
-                logger.info(f"Polygon aus swissBUILDINGS3D: {len(bundle.polygon)} Punkte, Match-Distanz: {result.get('match_distance_m', 'N/A')}m")
-
-                # Bounding Box berechnen
-                if bundle.polygon:
-                    xs = [p[0] for p in bundle.polygon]
-                    ys = [p[1] for p in bundle.polygon]
-                    bundle.bbox_width_m = max(xs) - min(xs)
-                    bundle.bbox_depth_m = max(ys) - min(ys)
-
-                    # NEU 30.12.2025: Polygon-Form-Analyse (TASK 5)
-                    # Erkennt automatisch U-Form, L-Form, etc.
-                    try:
-                        from .polygon_analysis import enrich_bundle_with_shape_analysis
-                        enrich_bundle_with_shape_analysis(bundle)
-                        logger.debug(f"Shape analysis: {bundle.building_shape} (concavity={getattr(bundle, 'concavity_ratio', 'N/A')})")
-                    except Exception as shape_error:
-                        logger.warning(f"Shape analysis failed: {shape_error}")
-            else:
-                bundle.add_warning("Gebäudepolygon nicht in swissBUILDINGS3D gefunden")
-
-        except Exception as e:
-            logger.error(f"Polygon error (swissBUILDINGS3D): {e}")
-            bundle.add_warning(f"Gebäudegeometrie nicht verfügbar: {str(e)}")
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):
         """Schritt 6: Dach-Analyse (berechnet)"""

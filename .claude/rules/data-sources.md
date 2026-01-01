@@ -25,14 +25,22 @@
 6. Standard nach Kategorie
 ```
 
-## Polygon-Lookup Strategie (NEU)
+## 3D-Daten Strategie (Polygon + Höhen kombiniert)
+
+> **Optimierung 01.01.2026:** Ein einziger STAC-API-Aufruf liefert sowohl
+> das Gebäudepolygon als auch die Höhendaten (DACHHOEHE, TRAUFHOEHE, GESAMTHOEHE).
 
 ```
 1. swissBUILDINGS3D via STAC API
 2. Tile-Download (~5-10s beim ersten Mal)
 3. Suche nächstes Gebäude (±50m Toleranz)
-4. Rückgabe: Polygon + Seiten + Höhen
+4. Rückgabe: Polygon + Seiten + Höhen (alles in EINEM Feature!)
 ```
+
+**Fallback für Höhen** (wenn swissBUILDINGS3D keine Höhen hat):
+1. EGID-Lookup in lokaler DB
+2. Koordinaten-Lookup (±50m)
+3. GWR-Schätzung (Geschosse × 3.2m)
 
 ## Sonnendach.ch (NEU 01.01.2026)
 
