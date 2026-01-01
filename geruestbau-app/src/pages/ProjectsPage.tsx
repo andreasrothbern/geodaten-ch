@@ -15,32 +15,29 @@ import {
 import { geruestbauApi } from '../api/geruestbau'
 import type { Project, ProjectStatus } from '../types/project'
 
-// Progress step configuration
+// Progress step configuration (4 steps: Import → Gerüst → Doku → Export)
 const PROGRESS_STEPS = [
   { id: 1, label: 'Import', shortLabel: 'Import' },
-  { id: 2, label: 'Fassaden', shortLabel: 'Fassaden' },
-  { id: 3, label: 'Geruest', shortLabel: 'Geruest' },
-  { id: 4, label: 'Dokumente', shortLabel: 'Doku' },
-  { id: 5, label: 'Export', shortLabel: 'Export' },
+  { id: 2, label: 'Gerüst', shortLabel: 'Gerüst' },
+  { id: 3, label: 'Dokumente', shortLabel: 'Doku' },
+  { id: 4, label: 'Export', shortLabel: 'Export' },
 ]
 
-// Map project status to progress step
+// Map project status to progress step (4 steps total)
 function getProgressStep(status: ProjectStatus): number {
   switch (status) {
     case 'draft':
       return 1
     case 'captured':
-      return 2
     case 'enriched':
-      return 2
     case 'reviewed':
-      return 3
+      return 2  // Gerüst step (combined Fassaden + Gerüst)
     case 'planned':
-      return 4
+      return 3  // Doku
     case 'quoted':
-      return 5
+      return 4  // Export
     case 'commissioned':
-      return 6
+      return 5  // Completed (beyond last step)
     default:
       return 1
   }
@@ -63,7 +60,7 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     bgColor: 'bg-green-50',
     textColor: 'text-green-700',
     borderColor: 'border-green-100',
-    nextStep: 'Fassaden auswaehlen',
+    nextStep: 'Gerüst konfigurieren',
   },
   captured: {
     label: 'Erfasst',
@@ -79,10 +76,10 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     bgColor: 'bg-amber-50',
     textColor: 'text-amber-700',
     borderColor: 'border-amber-100',
-    nextStep: 'Geruest konfigurieren',
+    nextStep: 'Gerüst konfigurieren',
   },
   reviewed: {
-    label: 'Geprueft',
+    label: 'Geprüft',
     icon: Ruler,
     bgColor: 'bg-blue-50',
     textColor: 'text-blue-700',
@@ -90,7 +87,7 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     nextStep: 'Dokumente erstellen',
   },
   planned: {
-    label: 'Bereit fuer Export',
+    label: 'Bereit für Export',
     icon: FileText,
     bgColor: 'bg-blue-50',
     textColor: 'text-blue-700',
@@ -103,7 +100,7 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     bgColor: 'bg-purple-50',
     textColor: 'text-purple-700',
     borderColor: 'border-purple-100',
-    nextStep: 'Warte auf Rueckmeldung',
+    nextStep: 'Warte auf Rückmeldung',
   },
   commissioned: {
     label: 'Abgeschlossen',
@@ -121,7 +118,7 @@ const FILTERS: { id: FilterType; label: string; statuses: ProjectStatus[] }[] = 
   { id: 'all', label: 'Alle', statuses: [] },
   { id: 'inProgress', label: 'In Arbeit', statuses: ['draft', 'captured', 'enriched', 'reviewed', 'planned'] },
   { id: 'quotes', label: 'Offerten', statuses: ['quoted'] },
-  { id: 'orders', label: 'Auftraege', statuses: ['commissioned'] },
+  { id: 'orders', label: 'Aufträge', statuses: ['commissioned'] },
   { id: 'archive', label: 'Archiv', statuses: ['commissioned'] },
 ]
 
