@@ -66,7 +66,7 @@ function calculateDirection(start: [number, number], end: [number, number]): str
   const normalized = (angle + 360) % 360;
 
   // Map to cardinal directions (perpendicular to facade = viewing direction)
-  if (normalized >= 315 || normalized < 45) return 'O';    // East-facing
+  if (normalized >= 315 || normalized < 45) return 'E';    // East-facing
   if (normalized >= 45 && normalized < 135) return 'N';    // North-facing
   if (normalized >= 135 && normalized < 225) return 'W';   // West-facing
   return 'S'; // South-facing
