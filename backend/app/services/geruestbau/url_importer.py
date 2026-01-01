@@ -147,6 +147,14 @@ class UrlImporter:
                 error="Ungültige simap.ch URL - keine Projekt-ID gefunden"
             )
 
+        # UUID should be 36 characters (32 hex + 4 hyphens)
+        if len(project_id) < 36:
+            logger.warning(f"Project ID too short: '{project_id}' (expected 36 chars UUID)")
+            return UrlImportResult(
+                success=False,
+                error=f"Projekt-ID unvollständig ({len(project_id)} Zeichen). Bitte vollständige URL kopieren."
+            )
+
         try:
             return await self._import_from_simap(url, project_id)
         except Exception as e:
