@@ -380,6 +380,13 @@ export default function ConfiguratorPage() {
 
       const data: ConfiguratorBuildingData = await response.json();
 
+      // DEBUG: Log the backend response to see if roof data is present
+      console.log('=== BACKEND RESPONSE ===', {
+        hasRoof: !!data.roof,
+        roof: data.roof,
+        fullResponse: data,
+      });
+
       // If we have an existing project, use its ID
       if (existingProject) {
         data.project_id = existingProject.id;
