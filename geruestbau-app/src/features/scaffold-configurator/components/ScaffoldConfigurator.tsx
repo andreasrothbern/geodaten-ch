@@ -47,6 +47,10 @@ export default function ScaffoldConfigurator({
   useEffect(() => {
     if (!configuration || configuration.project_id !== projectId) {
       initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
+    } else if (roof && !configuration.roof) {
+      // Update roof data if configuration exists but roof was missing (from old cache)
+      console.log('Updating roof data in existing configuration:', roof);
+      initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
     }
   }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof, configuration, initializeFromFacades]);
 
