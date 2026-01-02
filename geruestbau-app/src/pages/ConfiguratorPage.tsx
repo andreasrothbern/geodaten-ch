@@ -28,6 +28,7 @@ interface RoofData {
   first_azimuth_deg: number;
   roof_area_m2: number;
   roof_overhang_m: number;
+  traufhoehe_m: number;     // Traufhöhe für 3D-Visualisierung
   trauf_to_first_m: number;
   scaffolding_height_m: number;
   data_source: string;
@@ -568,7 +569,16 @@ export default function ConfiguratorPage() {
 
   // Convert roof data to the format expected by ScaffoldConfigurator
   const convertRoofData = (data: ConfiguratorBuildingData) => {
-    if (!data.roof) return undefined;
+    // DEBUG: Log roof conversion
+    console.log('=== convertRoofData ===', {
+      hasRoof: !!data.roof,
+      roofData: data.roof,
+    });
+
+    if (!data.roof) {
+      console.warn('WARNING: No roof data in buildingData!');
+      return undefined;
+    }
     return {
       roof_type: data.roof.roof_type,
       roof_angle_deg: data.roof.roof_angle_deg,
@@ -576,6 +586,10 @@ export default function ConfiguratorPage() {
       trauf_to_first_m: data.roof.trauf_to_first_m,
       scaffolding_height_m: data.roof.scaffolding_height_m,
       confidence: data.roof.confidence,
+      // Preserve additional fields for 3D view
+      roof_overhang_m: data.roof.roof_overhang_m,
+      // Use traufhoehe from roof data (calculated by backend), fallback to building data
+      traufhoehe_m: data.roof.traufhoehe_m ?? data.building.trauf_height_m,
     };
   };
 

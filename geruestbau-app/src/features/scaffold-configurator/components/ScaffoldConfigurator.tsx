@@ -45,7 +45,17 @@ export default function ScaffoldConfigurator({
 
   // Initialize configuration on mount
   useEffect(() => {
+    // DEBUG: Log roof prop to track data flow
+    console.log('=== ScaffoldConfigurator mount ===', {
+      projectId,
+      hasRoof: !!roof,
+      roof,
+      hasConfiguration: !!configuration,
+      configurationRoof: configuration?.roof,
+    });
+
     if (!configuration || configuration.project_id !== projectId) {
+      console.log('Initializing from facades with roof:', roof);
       initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
     } else if (roof && !configuration.roof) {
       // Update roof data if configuration exists but roof was missing (from old cache)

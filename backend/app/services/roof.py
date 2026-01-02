@@ -142,6 +142,9 @@ def classify_roof_type(
     """
     Klassifiziert die Dachform basierend auf Neigung und Gebäudegeometrie.
 
+    In der Schweiz ist SATTELDACH der mit Abstand häufigste Dachtyp.
+    Walm-/Zeltdächer kommen nur bei speziellen Gebäuden vor.
+
     Args:
         roof_angle_deg: Berechnete Dachneigung
         traufhoehe_m: Traufhöhe (optional, für Plausibilität)
@@ -159,20 +162,25 @@ def classify_roof_type(
     if roof_angle_deg > 60:
         return RoofType.MANSARDDACH
 
-    # Quadratisches Gebäude → eher Walm- oder Zeltdach
-    if polygon_aspect_ratio and 0.8 < polygon_aspect_ratio < 1.25:
-        if roof_angle_deg > 30:
-            return RoofType.ZELTDACH
-        else:
-            return RoofType.WALMDACH
-
-    # Längliches Gebäude → Satteldach
-    if roof_angle_deg >= 15:
-        return RoofType.SATTELDACH
-
-    # Flaches geneigtes Dach → Pultdach
+    # Flaches geneigtes Dach → Pultdach (5-15°)
     if 5 <= roof_angle_deg < 15:
         return RoofType.PULTDACH
+
+    # HINWEIS: Das Aspektverhältnis allein reicht NICHT aus um Walm/Zelt zu bestimmen!
+    # Viele quadratische Gebäude in der CH haben trotzdem Satteldächer.
+    # Walmdach/Zeltdach nur bei sehr quadratischen UND flachen Gebäuden
+    # oder wenn die GWR-Kategorie das nahelegt (wird in calculate_roof_data geprüft)
+    if polygon_aspect_ratio and 0.9 < polygon_aspect_ratio < 1.1:
+        # Nur bei SEHR quadratischem Grundriss (10% Toleranz) Zeltdach möglich
+        if roof_angle_deg > 40:
+            return RoofType.ZELTDACH
+        # Walmdach nur bei flacheren, sehr quadratischen Grundrissen
+        # Dies ist SELTEN in der Schweiz, daher restriktiver als vorher
+        # → ENTFERNT: Wir defaulten jetzt zu Satteldach
+
+    # Standard: Satteldach (häufigster Typ in der Schweiz)
+    if roof_angle_deg >= 15:
+        return RoofType.SATTELDACH
 
     return RoofType.UNKNOWN
 

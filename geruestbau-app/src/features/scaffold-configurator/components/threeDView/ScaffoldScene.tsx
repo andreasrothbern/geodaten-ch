@@ -816,9 +816,12 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
 
       // Add roof (always show for visualization)
       // Use roof data from configuration if available
-      const roofType = config.roof?.roof_type || 'walmdach';
+      // Default to 'satteldach' (most common roof type in Switzerland)
+      const roofType = config.roof?.roof_type || 'satteldach';
       const roofHeight = config.roof?.trauf_to_first_m || 3;
-      const roofOrientation = config.roof?.roof_orientation || '';
+      // IMPORTANT: For Satteldach we MUST have orientation for correct ridge placement
+      // Default to 'O-W' (ridge runs N-S, roof slopes East-West) - most common orientation
+      const roofOrientation = config.roof?.roof_orientation || 'O-W';
       const roofOverhang = config.roof?.roof_overhang_m || 0.4;  // Standard 40cm
 
       // DEBUG: Log ALL roof parameters to find the bug!
