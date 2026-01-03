@@ -45,11 +45,11 @@ async def lifespan(app: FastAPI):
     """Startup und Shutdown Events"""
     # Startup
     cache.initialize()
-    print("✅ Geodaten API gestartet")
+    print("[OK] Geodaten API gestartet")
     yield
     # Shutdown
     cache.close()
-    print("👋 Geodaten API beendet")
+    print("[BYE] Geodaten API beendet")
 
 
 # FastAPI App
@@ -731,7 +731,7 @@ async def get_scaffolding_data(
         # 4b. Auto-Refresh: Höhen aktualisieren wenn unvollständig
         if scaffolding_data.get("needs_height_refresh"):
             try:
-                from app.services.height_fetcher import fetch_height_for_coordinates
+                from app.services.swissbuildings3d_fetcher import fetch_height_for_coordinates
                 # Höhen von swissBUILDINGS3D abrufen (asynchron im Hintergrund)
                 egid_to_refresh = building.egid if building else geometry.egid
                 refresh_result = await fetch_height_for_coordinates(
@@ -1281,7 +1281,7 @@ async def fetch_height_on_demand(
     **Beispiel:** `?e=2600000&n=1199000&egid=12345`
     """
     try:
-        from app.services.height_fetcher import fetch_height_for_coordinates
+        from app.services.swissbuildings3d_fetcher import fetch_height_for_coordinates
         result = await fetch_height_for_coordinates(e, n, egid)
         return result
     except ImportError as ie:

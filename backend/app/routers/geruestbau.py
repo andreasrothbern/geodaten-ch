@@ -6,13 +6,16 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from typing import List, Dict, Any, Optional
 
 from ..models.geruestbau import (
-    Project, ProjectCreate, ProjectUpdate, ProjectStatus,
+    Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
     PhotoAnalysis, ScaffoldConfig
 )
 from ..services.geruestbau.project_service import ProjectService
 from ..services.swissbuildings3d_service import get_swissbuildings3d_service
 from ..services.swisstopo import SwisstopoService
 from ..services.roof import get_roof_service
+from ..services.geodata_service import get_geodata_service
+from ..services.address_parser import get_address_parser
+from ..services.parzellen_service import get_parzellen_service
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
@@ -49,10 +52,10 @@ async def create_project(project: ProjectCreate):
     return await project_service.create_project(project)
 
 
-@router.get("/projects/{project_id}", response_model=Project)
+@router.get("/projects/{project_id}", response_model=ProjectWithGeodata)
 async def get_project(project_id: str):
-    """Projekt-Details abrufen."""
-    project = await project_service.get_project(project_id)
+    """Projekt-Details mit Geodaten abrufen."""
+    project = await project_service.get_project_with_geodata(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
     return project
@@ -76,7 +79,7 @@ async def delete_project(project_id: str):
     return {"status": "deleted"}
 
 
-@router.post("/projects/{project_id}/enrich", response_model=Project)
+@router.post("/projects/{project_id}/enrich", response_model=ProjectWithGeodata)
 async def enrich_project(project_id: str):
     """Projekt mit Geodaten anreichern (GWR, Höhen, Polygon)."""
     project = await project_service.enrich_with_geodata(project_id)
@@ -359,4 +362,265 @@ async def search_addresses(q: str = Query(..., min_length=3)):
             }
             for r in results
         ]
+    }
+
+
+# ============ NEIGHBORS API ============
+
+@router.get("/building/{egid}/neighbors", response_model=Dict[str, Any])
+async def get_building_neighbors(
+    egid: str,
+    radius_m: float = Query(10.0, ge=0, le=50, description="Suchradius in Metern (0=angrenzend, 10=Standard)"),
+    include_polygons: bool = Query(True, description="Polygone der Nachbarn mitliefern")
+):
+    """
+    Findet alle Nachbargebäude im Umkreis.
+
+    Für Gerüstbau: Erkennt angrenzende Gebäude die Fassaden blockieren.
+    Bei Reihenhäusern (z.B. Knospenweg 2,4,6,8,10) wird erkannt,
+    dass nur 2 von 4 Seiten eingerüstet werden können.
+
+    Args:
+        egid: EGID des Zielgebäudes
+        radius_m: Suchradius (0=nur direkt angrenzend, 5=nah, 10=Kontext)
+        include_polygons: Polygone für 3D-View mitliefern
+
+    Returns:
+        - target: Zielgebäude mit Polygon
+        - neighbors: Liste der Nachbarn mit Distanz und Richtung
+        - blocked_sides: Liste der blockierten Fassadenrichtungen
+
+    Beispiel Response:
+    ```json
+    {
+        "target_egid": "123456",
+        "target_polygon": [[x1,y1], ...],
+        "neighbors": [
+            {
+                "egid": "123457",
+                "distance_m": 0.0,
+                "direction": "E",
+                "polygon": [[x,y], ...]
+            }
+        ],
+        "blocked_sides": ["E", "W"],
+        "query_time_ms": 5.2
+    }
+    ```
+    """
+    geodata_service = get_geodata_service()
+    result = geodata_service.get_neighbors(
+        egid=egid,
+        radius_m=radius_m,
+        include_polygons=include_polygons
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Gebäude mit EGID {egid} nicht in Geodata-DB gefunden. "
+                   "Bitte zuerst über /configurator/facades laden."
+        )
+
+    # Blockierte Seiten aus Nachbarn ableiten
+    blocked_sides = []
+    for neighbor in result.neighbors:
+        if neighbor.distance_m < 0.5:  # Direkt angrenzend
+            if neighbor.direction and neighbor.direction not in blocked_sides:
+                blocked_sides.append(neighbor.direction)
+
+    response = result.to_dict()
+    response["blocked_sides"] = blocked_sides
+
+    return response
+
+
+# ============ ADDRESS RANGE API ============
+
+@router.get("/address/resolve", response_model=Dict[str, Any])
+async def resolve_address_range(
+    address: str = Query(..., description="Adresse mit Bereich, z.B. 'Knospenweg 2-10, Bern'")
+):
+    """
+    Löst eine Adresse mit Hausnummern-Bereich zu einzelnen EGIDs auf.
+
+    Unterstützte Formate:
+    - Range: "Knospenweg 2-10, Bern" → [2, 4, 6, 8, 10]
+    - Explizit: "Kramgasse 27/29, Bern" → [27, 29]
+    - Liste: "Hauptstrasse 1, 3, 5, Zürich" → [1, 3, 5]
+
+    Returns:
+        - parsed: Parsing-Ergebnis (Strasse, Nummern, Typ)
+        - buildings: Liste der gefundenen Gebäude mit EGID
+        - errors: Nicht gefundene Adressen
+
+    Beispiel Response:
+    ```json
+    {
+        "parsed": {
+            "street": "Knospenweg",
+            "city": "Bern",
+            "numbers": ["2", "4", "6", "8", "10"],
+            "range_type": "range"
+        },
+        "buildings": [
+            {"address": "Knospenweg 2, Bern", "egid": "123456", ...},
+            {"address": "Knospenweg 4, Bern", "egid": "123457", ...}
+        ],
+        "building_count": 5,
+        "errors": [],
+        "error_count": 0
+    }
+    ```
+    """
+    parser = get_address_parser()
+    result = await parser.resolve_to_egids(address)
+    return result
+
+
+@router.get("/address/parse", response_model=Dict[str, Any])
+async def parse_address_only(
+    address: str = Query(..., description="Adresse zum Parsen")
+):
+    """
+    Parst eine Adresse ohne Geocoding (nur Syntax-Analyse).
+
+    Nützlich zum Testen des Parsers oder für Vorschau.
+
+    Returns:
+        - street: Erkannte Strasse
+        - city: Erkannter Ort
+        - numbers: Liste der Hausnummern
+        - range_type: single, range, oder explicit
+        - full_addresses: Generierte vollständige Adressen
+    """
+    parser = get_address_parser()
+    parsed = parser.parse(address)
+
+    return {
+        "street": parsed.street,
+        "city": parsed.city,
+        "postal_code": parsed.postal_code,
+        "numbers": parsed.numbers,
+        "range_type": parsed.range_type.value,
+        "raw_number_part": parsed.raw_number_part,
+        "full_addresses": parsed.get_full_addresses(),
+        "original_input": parsed.original_input,
+    }
+
+
+# ============ PARZELLEN API ============
+
+@router.get("/parzelle/at", response_model=Dict[str, Any])
+async def get_parzelle_at_coordinates(
+    e: float = Query(..., description="LV95 Ost-Koordinate"),
+    n: float = Query(..., description="LV95 Nord-Koordinate"),
+    include_geometry: bool = Query(True, description="Polygon-Geometrie einbeziehen")
+):
+    """
+    Findet die Parzelle an den gegebenen LV95-Koordinaten.
+
+    Verwendet die swisstopo Identify-API für die amtliche Vermessung.
+
+    Returns:
+        - egrid: Eidg. Grundstücksidentifikator
+        - number: Parzellennummer
+        - canton: Kanton
+        - polygon: Parzellengrenze (optional)
+        - area_m2: Fläche
+        - has_building: Ob ein Gebäude auf der Parzelle existiert
+
+    Anwendungsfall Neubau:
+        Wenn kein Gebäude auf der Parzelle existiert, kann das
+        Parzellen-Polygon als Baufeld-Grenze verwendet werden.
+    """
+    parzellen_service = get_parzellen_service()
+    parzelle = await parzellen_service.get_parzelle_at_coordinates(
+        e=e,
+        n=n,
+        include_geometry=include_geometry
+    )
+
+    if not parzelle:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Keine Parzelle bei E={e}, N={n} gefunden"
+        )
+
+    return parzelle.to_dict()
+
+
+@router.get("/parzelle/by-egrid/{egrid}", response_model=Dict[str, Any])
+async def get_parzelle_by_egrid(egrid: str):
+    """
+    Findet eine Parzelle anhand der EGRID.
+
+    Args:
+        egrid: Eidg. Grundstücksidentifikator (z.B. "CH280652308630")
+
+    Returns:
+        Parzellen-Daten mit Polygon und Metadaten
+    """
+    parzellen_service = get_parzellen_service()
+    parzelle = await parzellen_service.get_parzelle_by_egrid(egrid)
+
+    if not parzelle:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Keine Parzelle mit EGRID {egrid} gefunden"
+        )
+
+    return parzelle.to_dict()
+
+
+@router.get("/parzelle/for-address", response_model=Dict[str, Any])
+async def get_parzelle_for_address(
+    address: str = Query(..., description="Adresse für Parzellen-Suche")
+):
+    """
+    Findet die Parzelle für eine Adresse.
+
+    Kombination aus Geocoding + Parzellen-Abfrage.
+
+    Returns:
+        - geocoding: Adress-Match und Koordinaten
+        - parzelle: Parzellen-Daten (EGRID, Polygon, etc.)
+        - building: Gebäude-Infos falls vorhanden
+    """
+    # 1. Geocoding
+    swisstopo = SwisstopoService()
+    geocode_result = await swisstopo.geocode(address)
+
+    if not geocode_result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Adresse nicht gefunden: {address}"
+        )
+
+    # 2. Parzelle an Koordinaten
+    parzellen_service = get_parzellen_service()
+    parzelle = await parzellen_service.get_parzelle_at_coordinates(
+        e=geocode_result.coordinates.lv95_e,
+        n=geocode_result.coordinates.lv95_n,
+        include_geometry=True
+    )
+
+    # 3. Gebäude prüfen
+    has_building = True
+    if parzelle:
+        has_building = await parzellen_service.check_building_on_parcel(parzelle)
+
+    return {
+        "geocoding": {
+            "input": address,
+            "matched_address": geocode_result.matched_address,
+            "egid": geocode_result.egid,
+            "coordinates": {
+                "lv95_e": geocode_result.coordinates.lv95_e,
+                "lv95_n": geocode_result.coordinates.lv95_n,
+            }
+        },
+        "parzelle": parzelle.to_dict() if parzelle else None,
+        "has_building": has_building,
+        "neubau_possible": not has_building,  # Neubau-Support Flag
     }
