@@ -17,6 +17,44 @@ export interface NeighborsResponse {
   query_time_ms: number
 }
 
+// Address Range API Types
+export interface AddressRangeParsed {
+  street: string
+  city: string
+  numbers: string[]
+  range_type: 'single' | 'range' | 'explicit'
+}
+
+export interface AddressRangeBuilding {
+  address: string
+  egid: string
+  polygon?: [number, number][]
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  coordinates?: {
+    lv95_e: number
+    lv95_n: number
+  }
+}
+
+// Multi-Building Data for 3D View
+export interface MultiBuildingData {
+  egid: string
+  address: string
+  polygon: [number, number][]
+  center: [number, number]  // LV95 coordinates
+  traufhoehe_m: number
+  firsthoehe_m: number
+}
+
+export interface AddressRangeResponse {
+  parsed: AddressRangeParsed
+  buildings: AddressRangeBuilding[]
+  building_count: number
+  errors: string[]
+  error_count: number
+}
+
 export const geruestbauApi = {
   // Projekte
   listProjects: () =>
@@ -83,6 +121,17 @@ export const geruestbauApi = {
     return response.json()
   },
 
+  // Adress-Bereich auflösen (z.B. "Knospenweg 2-10, Bern")
+  resolveAddressRange: async (address: string): Promise<AddressRangeResponse> => {
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/address/resolve?address=${encodeURIComponent(address)}`
+    )
+    if (!response.ok) {
+      throw new Error(`Address resolve error: ${response.status}`)
+    }
+    return response.json()
+  },
+
   // Nachbargebäude (für 3D-View und blockierte Fassaden)
   getNeighbors: async (egid: string, radiusM: number = 10, includePolygons: boolean = true) => {
     const response = await fetch(
@@ -92,6 +141,38 @@ export const geruestbauApi = {
       throw new Error(`Neighbors API error: ${response.status}`)
     }
     return response.json() as Promise<NeighborsResponse>
+  },
+
+  // Gebäude-Polygon für Multi-Building 3D-View
+  getBuildingPolygon: async (address: string): Promise<MultiBuildingData | null> => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/v1/smart-building/data?address=${encodeURIComponent(address)}&include_research=false&include_zones=false`
+      )
+      if (!response.ok) {
+        console.warn(`Failed to get polygon for ${address}: ${response.status}`)
+        return null
+      }
+      const data = await response.json()
+
+      // Extract polygon and heights from smart-building response
+      if (!data.polygon || data.polygon.length < 3) {
+        console.warn(`No polygon for ${address}`)
+        return null
+      }
+
+      return {
+        egid: data.egid || 'unknown',
+        address: data.address_matched || address,
+        polygon: data.polygon,
+        center: [data.coordinates_lv95?.[0] || 0, data.coordinates_lv95?.[1] || 0],
+        traufhoehe_m: data.traufhoehe_m || 10,
+        firsthoehe_m: data.firsthoehe_m || 13,
+      }
+    } catch (err) {
+      console.warn(`Error fetching polygon for ${address}:`, err)
+      return null
+    }
   },
 
   // URL-Import (simap.ch)

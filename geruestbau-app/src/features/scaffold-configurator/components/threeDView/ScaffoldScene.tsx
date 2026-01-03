@@ -9,7 +9,7 @@ import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D } from '../../types/scaffold.types';
-import type { NeighborBuilding } from '../../../../api/geruestbau';
+import type { NeighborBuilding, MultiBuildingData } from '../../../../api/geruestbau';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
 interface ScaffoldSceneProps {
@@ -18,6 +18,7 @@ interface ScaffoldSceneProps {
   onViewChange?: (view: View3D) => void;
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
+  additionalBuildings?: MultiBuildingData[];
 }
 
 // Camera position presets for different views
@@ -696,10 +697,14 @@ export default function ScaffoldScene({
   activeView,
   neighbors = [],
   blockedSides = [],
+  additionalBuildings = [],
 }: ScaffoldSceneProps) {
   // Log neighbors for debugging (will be used for rendering in Phase 2.3)
   if (neighbors.length > 0) {
     console.log(`ScaffoldScene: ${neighbors.length} neighbors, blocked sides: ${blockedSides.join(', ')}`);
+  }
+  if (additionalBuildings.length > 0) {
+    console.log(`ScaffoldScene: ${additionalBuildings.length} additional buildings for multi-building view`);
   }
   const containerRef = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
@@ -761,7 +766,7 @@ export default function ScaffoldScene({
         world.scene.three.add(createGrid());
 
         // Add building and scaffolds
-        addSceneContent(world.scene.three, configuration, neighbors);
+        addSceneContent(world.scene.three, configuration, neighbors, additionalBuildings);
 
         setIsLoading(false);
       } catch (err) {
@@ -795,7 +800,12 @@ export default function ScaffoldScene({
   }, [activeView]);
 
   // Add scene content
-  function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration, neighborBuildings: NeighborBuilding[] = []) {
+  function addSceneContent(
+    scene: THREE.Scene,
+    config: ScaffoldConfiguration,
+    neighborBuildings: NeighborBuilding[] = [],
+    multiBuildingData: MultiBuildingData[] = []
+  ) {
     const allFacades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
     const enabledFacades = allFacades.filter(f => f.enabled);
     const corners = config.elements.filter((el): el is ScaffoldCorner => el.type === 'corner');
@@ -918,6 +928,54 @@ export default function ScaffoldScene({
           scene.add(neighborMesh);
 
           console.log(`Added neighbor ${index + 1}/${neighborBuildings.length} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
+        });
+      }
+
+      // Add additional selected buildings (Phase 3.4 - Multi-Building View)
+      if (multiBuildingData.length > 0) {
+        const mainCenter = bboxCenter;
+        multiBuildingData.forEach((building, index) => {
+          if (!building.polygon || building.polygon.length < 3) return;
+
+          // Use building.center from API (LV95 coordinates)
+          const buildingCenterE = building.center[0];
+          const buildingCenterN = building.center[1];
+
+          // Offset from main building center
+          const offsetX = buildingCenterE - mainCenter[0];
+          const offsetZ = -(buildingCenterN - mainCenter[1]); // Y in LV95 -> -Z in THREE.js
+
+          // Normalize building polygon relative to its own center
+          const normalizedBuilding = building.polygon.map(p =>
+            [p[0] - buildingCenterE, p[1] - buildingCenterN] as [number, number]
+          );
+
+          // Create building mesh with full opacity (blue-purple tint for additional buildings)
+          const buildingHeight = building.traufhoehe_m || 10;
+          const buildingMesh = createBuildingFromPolygon(normalizedBuilding, buildingHeight);
+
+          // Apply distinct color for additional buildings
+          buildingMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material = new THREE.MeshStandardMaterial({
+                color: 0x6366f1, // Indigo/purple for additional buildings
+                transparent: true,
+                opacity: 0.7,
+              });
+            }
+          });
+
+          // Position relative to main building
+          buildingMesh.position.set(offsetX, 0, offsetZ);
+          scene.add(buildingMesh);
+
+          // Add simple roof for additional buildings
+          const roofHeight = (building.firsthoehe_m || buildingHeight + 3) - buildingHeight;
+          const additionalRoof = createRoofFromPolygon(normalizedBuilding, buildingHeight, roofHeight, 'satteldach', 'O-W');
+          additionalRoof.position.set(offsetX, 0, offsetZ);
+          scene.add(additionalRoof);
+
+          console.log(`Added additional building ${index + 1}/${multiBuildingData.length}: ${building.address} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
         });
       }
 

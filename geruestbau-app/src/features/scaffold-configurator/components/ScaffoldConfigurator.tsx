@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
 import type { MainTab, SelectedFacade, RoofData } from '../types/scaffold.types';
-import type { NeighborBuilding } from '../../../api/geruestbau';
+import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
 
 // Panels
 import FacadePanel from './FacadePanel';
@@ -24,6 +24,7 @@ interface ScaffoldConfiguratorProps {
   roof?: RoofData;
   neighbors?: NeighborBuilding[];  // Neighboring buildings for 3D view
   blockedSides?: string[];  // Facade directions blocked by neighbors
+  additionalBuildings?: MultiBuildingData[];  // Additional selected buildings for 3D view
   onBack?: () => void;
   onComplete?: () => void; // Will be used when completing configuration
 }
@@ -37,6 +38,7 @@ export default function ScaffoldConfigurator({
   roof,
   neighbors = [],
   blockedSides = [],
+  additionalBuildings = [],
   onBack,
   onComplete: _onComplete, // Will be used when completing configuration
 }: ScaffoldConfiguratorProps) {
@@ -122,7 +124,7 @@ export default function ScaffoldConfigurator({
         {currentTab === 'facade' && <FacadePanel />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
-        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} />}
+        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} />}
       </main>
     </div>
   );

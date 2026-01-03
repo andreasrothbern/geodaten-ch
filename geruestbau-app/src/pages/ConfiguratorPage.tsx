@@ -14,7 +14,7 @@ import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
 import type { SelectedFacade, RoofData } from '../features/scaffold-configurator/types/scaffold.types';
@@ -55,6 +55,14 @@ interface ConfiguratorBuildingData {
 }
 
 type LoadingState = 'idle' | 'loading' | 'success' | 'error';
+
+// Helper: Detect if address contains a range (e.g., "2-10" or "2,4,6")
+function isAddressRange(address: string): boolean {
+  // Pattern: number-number (range) or number,number (list)
+  const rangePattern = /\d+\s*[-–]\s*\d+/;  // 2-10, 2 - 10
+  const listPattern = /\d+\s*[,/]\s*\d+/;   // 2,4 or 27/29
+  return rangePattern.test(address) || listPattern.test(address);
+}
 
 // Helper: Calculate facade direction from start/end points
 function calculateDirection(start: [number, number], end: [number, number]): string {
@@ -269,6 +277,13 @@ export default function ConfiguratorPage() {
   const [blockedSides, setBlockedSides] = useState<string[]>([]);
   const [neighborsLoading, setNeighborsLoading] = useState(false);
 
+  // Multi-Building State (Phase 3)
+  const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
+  const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
+  const [isMultiMode, setIsMultiMode] = useState(false);
+  const [additionalBuildings, setAdditionalBuildings] = useState<MultiBuildingData[]>([]);
+  const [loadingAdditionalBuildings, setLoadingAdditionalBuildings] = useState(false);
+
   // Load project data if projectId is provided
   useEffect(() => {
     if (projectId) {
@@ -421,8 +436,38 @@ export default function ConfiguratorPage() {
   // }, [fetchBuildingData, project]);
 
   // Handle manual search (Enter key or button)
-  const handleSearch = useCallback(() => {
-    if (address.length >= 5) {
+  const handleSearch = useCallback(async () => {
+    if (address.length < 5) return;
+
+    // Check if address contains a range (e.g., "Knospenweg 2-10")
+    if (isAddressRange(address)) {
+      setLoadingState('loading');
+      setError(null);
+      setIsMultiMode(true);
+      try {
+        const rangeData = await geruestbauApi.resolveAddressRange(address);
+        setAddressRangeData(rangeData);
+        setSelectedBuildings([]);
+        setLoadingState('idle');
+
+        if (rangeData.building_count === 0) {
+          setError(`Keine Gebäude gefunden für: ${address}`);
+        } else if (rangeData.building_count === 1) {
+          // Single building found - load directly
+          setIsMultiMode(false);
+          fetchBuildingData(rangeData.buildings[0].address, project);
+        }
+        // Multiple buildings - show selection UI
+      } catch (err) {
+        console.error('Error resolving address range:', err);
+        setError(err instanceof Error ? err.message : 'Adressbereich konnte nicht aufgelöst werden');
+        setLoadingState('error');
+        setIsMultiMode(false);
+      }
+    } else {
+      // Single address - use existing logic
+      setIsMultiMode(false);
+      setAddressRangeData(null);
       fetchBuildingData(address, project);
     }
   }, [address, fetchBuildingData, project]);
@@ -518,6 +563,117 @@ export default function ConfiguratorPage() {
                   Tipp: Nicht alle Kantone unterstuetzen Gebaeudedaten. Versuche eine Adresse in BE, SO, BS, ZH, AG, SG, TG, BL oder SH.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Multi-Building Selection (Phase 3) */}
+          {isMultiMode && addressRangeData && addressRangeData.building_count > 1 && (
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                <h2 className="font-semibold">
+                  {addressRangeData.building_count} Gebäude gefunden
+                </h2>
+              </div>
+
+              <p className="text-sm text-gray-600 mb-3">
+                {addressRangeData.parsed.street}, {addressRangeData.parsed.city}
+              </p>
+
+              {/* Building selection list */}
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {addressRangeData.buildings.map((building) => {
+                  const isSelected = selectedBuildings.some(b => b.egid === building.egid);
+                  return (
+                    <label
+                      key={building.egid}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setSelectedBuildings(prev => prev.filter(b => b.egid !== building.egid));
+                          } else {
+                            setSelectedBuildings(prev => [...prev, building]);
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 rounded"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{building.address}</p>
+                        <p className="text-xs text-gray-500">EGID: {building.egid}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={() => {
+                    // Select all buildings
+                    setSelectedBuildings(addressRangeData.buildings);
+                  }}
+                  className="flex-1 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Alle auswählen
+                </button>
+                <button
+                  onClick={async () => {
+                    if (selectedBuildings.length === 1) {
+                      // Single building - load directly
+                      setIsMultiMode(false);
+                      setAdditionalBuildings([]);
+                      fetchBuildingData(selectedBuildings[0].address, project);
+                    } else if (selectedBuildings.length > 1) {
+                      // Multi-building mode: Load first as main, rest as additional
+                      setIsMultiMode(false);
+                      setLoadingAdditionalBuildings(true);
+
+                      // Load main building
+                      await fetchBuildingData(selectedBuildings[0].address, project);
+
+                      // Load polygons for additional buildings in parallel
+                      const additionalAddresses = selectedBuildings.slice(1).map(b => b.address);
+                      const additionalData = await Promise.all(
+                        additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
+                      );
+
+                      // Filter out failed loads
+                      const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
+                      setAdditionalBuildings(validAdditional);
+                      setLoadingAdditionalBuildings(false);
+
+                      console.log(`Loaded ${validAdditional.length} additional buildings for 3D view`);
+                    }
+                  }}
+                  disabled={selectedBuildings.length === 0 || loadingAdditionalBuildings}
+                  className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingAdditionalBuildings
+                    ? 'Lade Polygone...'
+                    : selectedBuildings.length === 0
+                    ? 'Gebäude auswählen'
+                    : selectedBuildings.length === 1
+                    ? 'Gebäude laden'
+                    : `${selectedBuildings.length} Gebäude laden`}
+                </button>
+              </div>
+
+              {/* Errors from range resolution */}
+              {addressRangeData.error_count > 0 && (
+                <div className="mt-3 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                  {addressRangeData.error_count} Adressen nicht gefunden: {addressRangeData.errors.slice(0, 3).join(', ')}
+                  {addressRangeData.errors.length > 3 && '...'}
+                </div>
+              )}
             </div>
           )}
 
@@ -653,6 +809,7 @@ export default function ConfiguratorPage() {
         roof={convertRoofData(buildingData)}
         neighbors={neighbors}
         blockedSides={blockedSides}
+        additionalBuildings={additionalBuildings}
         onBack={() => {
           setBuildingData(null);
           setLoadingState('idle');
