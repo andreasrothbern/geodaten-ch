@@ -97,7 +97,8 @@ class SwissBuildings3DService:
         e: float,
         n: float,
         tolerance: float = 50.0,
-        include_roof_analysis: bool = True
+        include_roof_analysis: bool = True,
+        simplify_epsilon: Optional[float] = None
     ) -> Optional[Building3D]:
         """
         Holt 3D-Gebäudedaten für LV95-Koordinaten.
@@ -119,7 +120,9 @@ class SwissBuildings3DService:
 
         # 1. Polygon + Höhen von swissBUILDINGS3D STAC API (EIN Aufruf!)
         try:
-            result = await fetch_building_polygon_for_coordinates(e, n, tolerance)
+            result = await fetch_building_polygon_for_coordinates(
+                e, n, tolerance, simplify_epsilon=simplify_epsilon
+            )
             if result:
                 # Polygon (ALWAYS original from swissBUILDINGS3D)
                 polygon_raw = result.get("polygon", [])

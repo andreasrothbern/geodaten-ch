@@ -218,7 +218,13 @@ def _azimuth_to_direction(azimuth: float) -> str:
 @router.get("/configurator/facades", response_model=Dict[str, Any])
 async def get_facade_data_for_configurator(
     address: str = Query(..., description="Adresse des Gebäudes"),
-    include_roof: bool = Query(True, description="Dachanalyse einbeziehen")
+    include_roof: bool = Query(True, description="Dachanalyse einbeziehen"),
+    simplify_epsilon: Optional[float] = Query(
+        None,
+        description="Douglas-Peucker Toleranz in Metern (None = dynamisch basierend auf Gebäudegrösse)",
+        ge=0.1,
+        le=5.0
+    )
 ):
     """
     Lädt Fassaden-Daten für den Scaffold Configurator.
@@ -245,7 +251,8 @@ async def get_facade_data_for_configurator(
     service = get_swissbuildings3d_service()
     building = await service.get_building_by_coordinates(
         e, n,
-        include_roof_analysis=include_roof
+        include_roof_analysis=include_roof,
+        simplify_epsilon=simplify_epsilon
     )
 
     if not building or not building.polygon:

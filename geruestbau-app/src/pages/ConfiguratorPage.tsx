@@ -277,6 +277,10 @@ export default function ConfiguratorPage() {
   const [blockedSides, setBlockedSides] = useState<string[]>([]);
   const [neighborsLoading, setNeighborsLoading] = useState(false);
 
+  // Polygon Simplification State
+  const [simplifyEpsilon, setSimplifyEpsilon] = useState<number | null>(null); // null = dynamic
+  const [simplifyLoading, setSimplifyLoading] = useState(false);
+
   // Multi-Building State (Phase 3)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
   const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
@@ -380,7 +384,8 @@ export default function ConfiguratorPage() {
   // Fetch building data from API
   const fetchBuildingData = useCallback(async (
     selectedAddress: string,
-    existingProject?: ProjectWithGeodata | null
+    existingProject?: ProjectWithGeodata | null,
+    epsilon?: number | null
   ) => {
     setLoadingState('loading');
     setError(null);
@@ -390,6 +395,11 @@ export default function ConfiguratorPage() {
         address: selectedAddress,
         include_roof: 'true',
       });
+
+      // Add simplify_epsilon if set (null/undefined = dynamic)
+      if (epsilon !== null && epsilon !== undefined) {
+        params.set('simplify_epsilon', epsilon.toString());
+      }
 
       const response = await fetch(`${API_BASE}/api/v1/geruestbau/configurator/facades?${params}`);
 
@@ -753,12 +763,62 @@ export default function ConfiguratorPage() {
     };
   };
 
+  // Handle simplify epsilon change - refetch with new value
+  const handleSimplifyChange = useCallback(async (newEpsilon: number | null) => {
+    setSimplifyEpsilon(newEpsilon);
+    if (buildingData?.building.address) {
+      setSimplifyLoading(true);
+      try {
+        await fetchBuildingData(buildingData.building.address, project, newEpsilon);
+      } finally {
+        setSimplifyLoading(false);
+      }
+    }
+  }, [buildingData?.building.address, project, fetchBuildingData]);
+
   // Render Scaffold Configurator with loaded data
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Neighbors Radius Slider */}
+      {/* Settings Bar */}
       <div className="bg-white border-b shadow-sm px-4 py-3">
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg mx-auto space-y-3">
+          {/* Polygon Simplification */}
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700">
+              Polygon-Vereinfachung:
+            </label>
+            <div className="flex items-center gap-3">
+              {[
+                { value: null, label: 'Auto' },
+                { value: 0.3, label: '0.3m' },
+                { value: 0.5, label: '0.5m' },
+                { value: 1.0, label: '1.0m' },
+                { value: 2.0, label: '2.0m' },
+              ].map((option) => (
+                <button
+                  key={option.value ?? 'auto'}
+                  onClick={() => handleSimplifyChange(option.value)}
+                  className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                    simplifyEpsilon === option.value
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+              {simplifyLoading && (
+                <Loader2 className="w-4 h-4 animate-spin text-green-600" />
+              )}
+            </div>
+          </div>
+          {buildingData?.metadata && (
+            <div className="text-xs text-gray-500 text-right">
+              Polygon: {buildingData.metadata.polygon_points} Punkte → {buildingData.selected_facades.length} Fassaden
+            </div>
+          )}
+
+          {/* Neighbors Radius */}
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">
               Nachbargebäude:
@@ -788,7 +848,7 @@ export default function ConfiguratorPage() {
           </div>
           {/* Show blocked sides warning */}
           {blockedSides.length > 0 && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>
                 Blockierte Fassaden: <strong>{blockedSides.join(', ')}</strong>

@@ -5,12 +5,18 @@
  */
 
 import { useMemo } from 'react';
-import { Check, ArrowRight, Compass } from 'lucide-react';
+import { Check, ArrowRight, Compass, AlertTriangle } from 'lucide-react';
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
+import type { NeighborBuilding } from '../../../api/geruestbau';
 
-export default function FacadePanel() {
+interface FacadePanelProps {
+  neighbors?: NeighborBuilding[];
+  blockedSides?: string[];
+}
+
+export default function FacadePanel({ neighbors = [], blockedSides = [] }: FacadePanelProps) {
   const {
     buildingName,
     buildingAddress,
@@ -63,17 +69,24 @@ export default function FacadePanel() {
     });
   };
 
+  // Check if a facade direction is blocked by neighbors
+  const isFacadeBlocked = (direction: string): boolean => {
+    return blockedSides.includes(direction);
+  };
+
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {
     if (!polygon || polygon.length < 3 || facades.length === 0) return null;
 
-    // Calculate bounds
-    const xs = polygon.map(p => p[0]);
-    const ys = polygon.map(p => p[1]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
+    // Calculate bounds including neighbors
+    const allPolygons = [polygon, ...neighbors.filter(n => n.polygon).map(n => n.polygon!)];
+    const allXs = allPolygons.flatMap(p => p.map(pt => pt[0]));
+    const allYs = allPolygons.flatMap(p => p.map(pt => pt[1]));
+
+    const minX = Math.min(...allXs);
+    const maxX = Math.max(...allXs);
+    const minY = Math.min(...allYs);
+    const maxY = Math.max(...allYs);
 
     const width = maxX - minX;
     const height = maxY - minY;
@@ -81,8 +94,23 @@ export default function FacadePanel() {
 
     const viewBox = `${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`;
 
-    // Create polygon path
+    // Create main building polygon path
     const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+
+    // Create neighbor polygon paths
+    const neighborElements = neighbors.filter(n => n.polygon && n.polygon.length >= 3).map((neighbor, idx) => {
+      const neighborPath = neighbor.polygon!.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+      return (
+        <path
+          key={`neighbor-${idx}`}
+          d={neighborPath}
+          fill="#e5e7eb"
+          stroke="#9ca3af"
+          strokeWidth={width * 0.005}
+          opacity={0.8}
+        />
+      );
+    });
 
     // Create facade segments - thicker lines for better visibility
     const lineWidth = width * 0.06; // Dickere Linien für bessere Farbsichtbarkeit
@@ -90,11 +118,16 @@ export default function FacadePanel() {
     const facadeElements = facades.map((facade) => {
       if (!facade.start_point || !facade.end_point) return null;
 
-      const isEnabled = facade.enabled;
-      const color = getFacadeColor(facade.direction);
+      const isBlocked = isFacadeBlocked(facade.direction);
+      const isEnabled = facade.enabled && !isBlocked;
+      const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 
       return (
-        <g key={facade.id} onClick={() => toggleFacadeEnabled(facade.id)} style={{ cursor: 'pointer' }}>
+        <g
+          key={facade.id}
+          onClick={() => !isBlocked && toggleFacadeEnabled(facade.id)}
+          style={{ cursor: isBlocked ? 'not-allowed' : 'pointer' }}
+        >
           {/* Invisible hit area for easier clicking */}
           <line
             x1={facade.start_point[0]}
@@ -111,10 +144,22 @@ export default function FacadePanel() {
             y1={facade.start_point[1]}
             x2={facade.end_point[0]}
             y2={facade.end_point[1]}
-            stroke={isEnabled ? color : '#ccc'}
+            stroke={isEnabled ? color : isBlocked ? '#9ca3af' : '#ccc'}
             strokeWidth={lineWidth}
             strokeLinecap="round"
+            strokeDasharray={isBlocked ? `${lineWidth * 2} ${lineWidth}` : undefined}
           />
+          {/* Blocked indicator */}
+          {isBlocked && (
+            <circle
+              cx={(facade.start_point[0] + facade.end_point[0]) / 2}
+              cy={(facade.start_point[1] + facade.end_point[1]) / 2}
+              r={width * 0.02}
+              fill="#ef4444"
+              stroke="white"
+              strokeWidth={width * 0.005}
+            />
+          )}
         </g>
       );
     });
@@ -123,6 +168,8 @@ export default function FacadePanel() {
       <svg viewBox={viewBox} className="w-full h-64 bg-gray-50 rounded-lg">
         {/* Transform to flip Y-axis (LV95 has Y increasing northward) */}
         <g transform={`translate(0, ${maxY + minY}) scale(1, -1)`}>
+          {/* Neighbor buildings (behind main building) */}
+          {neighborElements}
           {/* Building outline */}
           <path
             d={pathData}
@@ -140,7 +187,7 @@ export default function FacadePanel() {
         </g>
       </svg>
     );
-  }, [polygon, facades, toggleFacadeEnabled]);
+  }, [polygon, facades, neighbors, blockedSides, toggleFacadeEnabled]);
 
   return (
     <div className="space-y-4">
@@ -201,15 +248,19 @@ export default function FacadePanel() {
         <h3 className="font-semibold text-gray-700 mb-3">Fassaden ({facades.length})</h3>
         <div className="space-y-2">
           {facades.map((facade) => {
-            const isEnabled = facade.enabled;
-            const color = getFacadeColor(facade.direction);
+            const isBlocked = isFacadeBlocked(facade.direction);
+            const isEnabled = facade.enabled && !isBlocked;
+            const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 
             return (
               <button
                 key={facade.id}
-                onClick={() => toggleFacadeEnabled(facade.id)}
+                onClick={() => !isBlocked && toggleFacadeEnabled(facade.id)}
+                disabled={isBlocked}
                 className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${
-                  isEnabled
+                  isBlocked
+                    ? 'border-gray-300 bg-gray-100 cursor-not-allowed opacity-60'
+                    : isEnabled
                     ? 'border-green-300 bg-green-50'
                     : 'border-gray-200 bg-white hover:bg-gray-50'
                 }`}
@@ -220,14 +271,26 @@ export default function FacadePanel() {
                     style={{ backgroundColor: color }}
                   />
                   <div className="text-left">
-                    <p className="font-medium">{facade.name}</p>
+                    <p className="font-medium flex items-center gap-2">
+                      {facade.name}
+                      {isBlocked && (
+                        <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                          <AlertTriangle className="w-3 h-3" />
+                          Blockiert
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm text-gray-500">{facade.length_m.toFixed(1)} m</p>
                   </div>
                 </div>
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                  isEnabled ? 'bg-green-500 text-white' : 'bg-gray-200'
+                  isBlocked ? 'bg-red-200' : isEnabled ? 'bg-green-500 text-white' : 'bg-gray-200'
                 }`}>
-                  {isEnabled && <Check className="w-4 h-4" />}
+                  {isBlocked ? (
+                    <AlertTriangle className="w-3 h-3 text-red-600" />
+                  ) : isEnabled ? (
+                    <Check className="w-4 h-4" />
+                  ) : null}
                 </div>
               </button>
             );

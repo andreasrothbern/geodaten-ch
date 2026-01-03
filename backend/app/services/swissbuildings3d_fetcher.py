@@ -695,7 +695,8 @@ async def fetch_heights_for_area(
 async def fetch_building_polygon_for_coordinates(
     e: float,
     n: float,
-    tolerance_m: float = 30.0
+    tolerance_m: float = 30.0,
+    simplify_epsilon: Optional[float] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch building polygon from swissBUILDINGS3D for given coordinates.
@@ -729,7 +730,9 @@ async def fetch_building_polygon_for_coordinates(
     if cached_path and cached_path.exists():
         # Cache-Hit: Direkt aus lokalem GDB laden
         logger.info(f"Tile-Cache HIT: {tile_id} ({cached_path})")
-        result = parse_gdb_for_building_polygon(cached_path, e, n, tolerance_m)
+        result = parse_gdb_for_building_polygon(
+            cached_path, e, n, tolerance_m, simplify_epsilon
+        )
 
         if result:
             result["tile_id"] = tile_id
@@ -769,7 +772,9 @@ async def fetch_building_polygon_for_coordinates(
         _register_egids_from_tile(cached_path, tile_id, tile_cache)
 
         # Parse with polygon extraction
-        result = parse_gdb_for_building_polygon(cached_path, e, n, tolerance_m)
+        result = parse_gdb_for_building_polygon(
+            cached_path, e, n, tolerance_m, simplify_epsilon
+        )
 
         if result:
             result["tile_id"] = tile_id
@@ -878,7 +883,8 @@ def parse_gdb_for_building_polygon(
     gdb_path: Path,
     target_e: float,
     target_n: float,
-    tolerance_m: float = 30.0
+    tolerance_m: float = 30.0,
+    simplify_epsilon: Optional[float] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Parse GDB and find the building polygon closest to target coordinates.
@@ -888,6 +894,7 @@ def parse_gdb_for_building_polygon(
         target_e: Target LV95 Easting
         target_n: Target LV95 Northing
         tolerance_m: Maximum distance to consider a match
+        simplify_epsilon: Optional Douglas-Peucker epsilon for polygon simplification
 
     Returns:
         Dict with polygon, sides, heights, etc. or None
@@ -997,7 +1004,11 @@ def parse_gdb_for_building_polygon(
         # On-the-fly simplification for sides calculation (not stored)
         # The original polygon is always returned
         from app.services.polygon_simplifier import simplify_building_polygon
-        simplification = simplify_building_polygon(polygon_coords)
+        simplification = simplify_building_polygon(
+            polygon_coords,
+            epsilon=simplify_epsilon,  # None = dynamic epsilon based on building size
+            use_dynamic_epsilon=(simplify_epsilon is None)
+        )
 
         # Use simplified polygon for sides (better for scaffolding planning)
         sides = simplification.sides

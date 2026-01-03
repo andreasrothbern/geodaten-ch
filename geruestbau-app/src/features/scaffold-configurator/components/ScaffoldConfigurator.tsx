@@ -121,7 +121,7 @@ export default function ScaffoldConfigurator({
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4">
-        {currentTab === 'facade' && <FacadePanel />}
+        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockedSides={blockedSides} />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
         {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} />}

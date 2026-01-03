@@ -1,6 +1,6 @@
 # Aktuelle Bugs und Fixes
 
-> **Stand:** 30.12.2025
+> **Stand:** 03.01.2026
 > **Branch:** `main` (Fixes auf main, dann Feature-Branch)
 
 ---
@@ -411,6 +411,70 @@ def analyze_polygon_shape(polygon: List[Tuple[float, float]]) -> Dict:
 
 ---
 
+### FEATURE-002: Nachbargebaeude in FacadePanel SVG ✅
+
+**Status:** Gefixt (03.01.2026)
+**Prioritaet:** P2
+
+**Problem:**
+- Im Geruestkonfigurator waren Nachbargebaeude im Grundriss-SVG nicht sichtbar
+- Nur das Hauptgebaeude wurde angezeigt
+
+**Loesung:**
+- `ScaffoldConfigurator.tsx`: Props `neighbors` und `blockedSides` an `FacadePanel` weitergereicht
+- `FacadePanel.tsx`: Nachbar-Polygone werden in grau (#e5e7eb) hinter dem Hauptgebaeude gerendert
+- ViewBox-Berechnung angepasst um alle Polygone einzuschliessen
+
+**Dateien:**
+- `geruestbau-app/src/features/scaffold-configurator/components/ScaffoldConfigurator.tsx`
+- `geruestbau-app/src/features/scaffold-configurator/components/FacadePanel.tsx`
+
+---
+
+### FEATURE-003: Blockierte Fassaden nicht auswaehlbar ✅
+
+**Status:** Gefixt (03.01.2026)
+**Prioritaet:** P2
+
+**Problem:**
+- Fassaden die durch Nachbargebaeude blockiert waren, konnten trotzdem ausgewaehlt werden
+- Keine visuelle Unterscheidung zwischen blockierten und freien Fassaden
+
+**Loesung:**
+- SVG: Blockierte Fassaden werden grau (#9ca3af) mit gestrichelter Linie dargestellt
+- SVG: Roter Kreis-Indikator in der Mitte blockierter Fassaden
+- Liste: Blockierte Fassaden sind deaktiviert mit "Blockiert"-Badge
+- Click-Handler deaktiviert fuer blockierte Fassaden
+
+**Dateien:**
+- `geruestbau-app/src/features/scaffold-configurator/components/FacadePanel.tsx`
+
+---
+
+### FEATURE-004: Polygon-Vereinfachungs-Slider ✅
+
+**Status:** Gefixt (03.01.2026)
+**Prioritaet:** P2
+
+**Problem:**
+- Keine Moeglichkeit, die Polygon-Vereinfachung (Douglas-Peucker Epsilon) anzupassen
+- Komplexe Gebaeude hatten zu viele oder zu wenige Fassadensegmente
+
+**Loesung:**
+- **Backend**: Neuer Parameter `simplify_epsilon` (0.1-5.0m) in `/api/v1/geruestbau/configurator/facades`
+- **Backend**: Parameter durchgereicht durch Service → Fetcher → Simplifier
+- **Frontend**: Button-Gruppe mit Optionen: Auto | 0.3m | 0.5m | 1.0m | 2.0m
+- **Frontend**: Anzeige "Polygon: X Punkte → Y Fassaden"
+- Sofortiges Neuladen bei Aenderung der Einstellung
+
+**Dateien:**
+- `backend/app/routers/geruestbau.py` (Zeile 218-227)
+- `backend/app/services/swissbuildings3d_service.py`
+- `backend/app/services/swissbuildings3d_fetcher.py` (Zeile 695-1011)
+- `geruestbau-app/src/pages/ConfiguratorPage.tsx` (Zeile 280-282, 766-812)
+
+---
+
 ## Bug-Fix Workflow
 
 ```bash
@@ -451,8 +515,11 @@ git push -u origin feature/ml-learning-system
 - ~~**BUG-010** - Dokumentation Haiku→Sonnet~~ ✅
 - ~~**BUG-011** - Hoehen-Validierung~~ ✅
 - ~~**BUG-012** - Zone/API-Konsistenz Warnung~~ ✅
+- ~~**FEATURE-002** - Nachbargebaeude in FacadePanel SVG~~ ✅
+- ~~**FEATURE-003** - Blockierte Fassaden nicht auswaehlbar~~ ✅
+- ~~**FEATURE-004** - Polygon-Vereinfachungs-Slider~~ ✅
 
 ---
 
 *Dokument erstellt: 30.12.2025*
-*Letzte Aktualisierung: 30.12.2025 - Claude.ai Pipeline-Analyse Bugs hinzugefuegt*
+*Letzte Aktualisierung: 03.01.2026 - Features FEATURE-002/003/004 hinzugefuegt*
