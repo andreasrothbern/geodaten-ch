@@ -151,10 +151,13 @@ class BuildingDataBundle:
     gwr_dwellings: Optional[int] = None
 
     # === GEOMETRIE ===
-    # Polygon
-    polygon: Optional[List[List[float]]] = None  # [[e, n], ...]
-    polygon_source: DataSource = DataSource.GEODIENSTE_WFS
-    polygon_simplified: bool = False
+    # Polygon (ALWAYS the original from swissBUILDINGS3D)
+    polygon: Optional[List[List[float]]] = None  # [[e, n], ...] - Original
+    polygon_source: DataSource = DataSource.SWISSBUILDINGS3D
+    polygon_point_count: Optional[int] = None  # Anzahl Punkte im Original
+
+    # Sides are calculated from on-the-fly simplified polygon
+    sides_from_simplified: bool = True
 
     # Fassaden (aus Polygon berechnet)
     sides: Optional[List[Dict[str, Any]]] = None

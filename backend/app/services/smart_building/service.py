@@ -511,7 +511,7 @@ class SmartBuildingService:
             return
 
         try:
-            from app.services.height_fetcher import fetch_building_polygon_for_coordinates
+            from app.services.swissbuildings3d_fetcher import fetch_building_polygon_for_coordinates
 
             # EIN Aufruf für Polygon + Höhen
             result = await fetch_building_polygon_for_coordinates(
@@ -521,12 +521,16 @@ class SmartBuildingService:
             )
 
             if result:
-                # === POLYGON ===
+                # === POLYGON (vereinfacht für Fassaden-Auswahl) ===
+                # Polygon is ALWAYS the original from swissBUILDINGS3D
                 bundle.polygon = result.get("polygon")
+                bundle.polygon_point_count = result.get("polygon_point_count")
+                bundle.sides_from_simplified = result.get("sides_from_simplified", True)
+
+                # Sides are calculated from on-the-fly simplified polygon
                 bundle.sides = result.get("sides")
                 bundle.perimeter_m = result.get("perimeter_m")
                 bundle.footprint_area_m2 = bundle.footprint_area_m2 or result.get("area_m2")
-                bundle.polygon_simplified = False  # swissBUILDINGS3D liefert bereits vereinfachte Polygone
 
                 # === HÖHEN (aus demselben Feature) ===
                 bundle.traufhoehe_m = result.get("traufhoehe_m")
@@ -538,8 +542,10 @@ class SmartBuildingService:
                     bundle.height_quality = DataQuality.HIGH
 
                 bundle.add_source(DataSource.SWISSBUILDINGS3D)
+                original_pts = bundle.polygon_point_count or 0
+                simplified_pts = result.get("polygon_simplified_point_count", 0)
                 logger.info(
-                    f"swissBUILDINGS3D: {len(bundle.polygon)} Punkte, "
+                    f"swissBUILDINGS3D: Polygon {original_pts} Punkte (→{simplified_pts} für Fassaden), "
                     f"Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m, "
                     f"Match-Distanz: {result.get('match_distance_m', 'N/A')}m"
                 )
@@ -1292,8 +1298,10 @@ class SmartBuildingService:
         polygon_data = None
         if bundle.polygon:
             polygon_data = {
-                "coordinates": bundle.polygon,
+                "coordinates": bundle.polygon,  # Original from swissBUILDINGS3D
                 "coordinate_system": "LV95 (EPSG:2056)",
+                "point_count": len(bundle.polygon),
+                "sides_from_simplified": bundle.sides_from_simplified,
             }
 
         # Response aufbauen

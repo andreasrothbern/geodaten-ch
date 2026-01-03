@@ -1,32 +1,32 @@
 """
-swissBUILDINGS3D Composite Service
-==================================
+swissBUILDINGS3D Service
+========================
 
-Kombinierter Service für 3D-Gebäudedaten:
-- Polygon: geodienste.ch WFS (amtliche Vermessung)
-- Höhen: Lokale SQLite DB (aus swissBUILDINGS3D Import)
-- Dachflächen: sonnendach.ch API
-
-HINWEIS: Die swissBUILDINGS3D-Daten sind NICHT per API verfügbar.
-Sie müssen als GML/GeoPackage heruntergeladen und importiert werden.
-Siehe: scripts/import_building_heights.py
+Service für 3D-Gebäudedaten aus swissBUILDINGS3D.
 
 Datenquellen:
-- swissBUILDINGS3D 3.0 Beta (vorher importiert): Höhen
-- geodienste.ch WFS: Gebäudepolygone
+- swissBUILDINGS3D 3.0 via STAC API: Polygon + Höhen (on-demand)
 - sonnendach.ch API: Dachflächen mit Neigung/Ausrichtung
+- Lokale SQLite DB: Cache für bereits abgerufene Daten
+
+Änderungshistorie:
+- 01.01.2026: geodienste.ch WFS deaktiviert, alles via swissBUILDINGS3D STAC API
+- Der swissbuildings3d_fetcher.py ist der Low-Level STAC Client
 """
 
 import logging
 from typing import Optional, List, Tuple
 from dataclasses import dataclass, field
 
+from .swissbuildings3d_fetcher import (
+    fetch_building_polygon_for_coordinates,
+    fetch_height_for_coordinates,
+)
 from .height_db import (
     get_building_height,
     get_building_heights_detailed,
     get_building_height_by_coordinates,
 )
-from .geodienste import GeodiensteService, BuildingGeometry
 from .sonnendach_service import get_sonnendach_service, RoofAnalysis
 
 logger = logging.getLogger(__name__)
@@ -34,15 +34,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Building3D:
-    """3D-Gebäudedaten aus kombinierten Quellen."""
+    """3D-Gebäudedaten aus swissBUILDINGS3D."""
 
     # Identifikation
     egid: Optional[str] = None
     uuid: Optional[str] = None
     objektart: Optional[str] = None
 
-    # Polygon (LV95 Koordinaten)
+    # Polygon (LV95 Koordinaten) - ALWAYS the original from swissBUILDINGS3D
     polygon: List[Tuple[float, float]] = field(default_factory=list)
+    polygon_point_count: Optional[int] = None
+    # Sides are calculated from on-the-fly simplified polygon
+    sides_from_simplified: bool = True
 
     # Höhen (m über Terrain)
     trauf_height_m: Optional[float] = None
@@ -80,16 +83,13 @@ class Building3D:
 
 class SwissBuildings3DService:
     """
-    Kombinierter Service für 3D-Gebäudedaten.
+    Service für 3D-Gebäudedaten.
 
-    Aggregiert Daten aus:
-    - Lokaler SQLite DB (Höhen aus swissBUILDINGS3D Import)
-    - geodienste.ch WFS (Polygon)
-    - sonnendach.ch API (Dachflächen)
+    Nutzt den swissbuildings3d_fetcher für STAC API Zugriff und
+    ergänzt mit sonnendach.ch für Dachanalyse.
     """
 
     def __init__(self):
-        self._geodienste = GeodiensteService()
         self._sonnendach = get_sonnendach_service()
 
     async def get_building_by_coordinates(
@@ -103,9 +103,8 @@ class SwissBuildings3DService:
         Holt 3D-Gebäudedaten für LV95-Koordinaten.
 
         Kombiniert:
-        1. Polygon von geodienste.ch WFS
-        2. Höhen aus lokaler DB (falls vorhanden)
-        3. Dachflächen von sonnendach.ch (optional)
+        1. Polygon + Höhen von swissBUILDINGS3D STAC API
+        2. Dachflächen von sonnendach.ch (optional)
 
         Args:
             e: LV95 Ost-Koordinate
@@ -118,53 +117,76 @@ class SwissBuildings3DService:
         """
         building = Building3D(center_e=e, center_n=n)
 
-        # 1. Polygon von geodienste.ch holen
+        # 1. Polygon + Höhen von swissBUILDINGS3D STAC API (EIN Aufruf!)
         try:
-            geometry = await self._geodienste.get_building_geometry(e, n)
-            if geometry:
-                building.polygon = geometry.polygon
-                building.sides = geometry.sides
-                building.perimeter_m = geometry.perimeter_m
-                building.area_m2 = geometry.area_m2
-                if geometry.egid:
-                    building.egid = str(geometry.egid)
-                logger.info(f"Polygon found at E={e}, N={n}: {len(building.polygon)} points")
+            result = await fetch_building_polygon_for_coordinates(e, n, tolerance)
+            if result:
+                # Polygon (ALWAYS original from swissBUILDINGS3D)
+                polygon_raw = result.get("polygon", [])
+                building.polygon = [(p[0], p[1]) for p in polygon_raw]
+                building.polygon_point_count = result.get("polygon_point_count")
+                building.sides_from_simplified = result.get("sides_from_simplified", True)
+
+                # Fassaden/Seiten
+                building.sides = result.get("sides", [])
+                building.perimeter_m = result.get("perimeter_m")
+                building.area_m2 = result.get("area_m2")
+
+                # EGID
+                if result.get("egid"):
+                    building.egid = str(result.get("egid"))
+
+                # Höhen direkt aus swissBUILDINGS3D
+                building.trauf_height_m = result.get("traufhoehe_m")
+                building.first_height_m = result.get("firsthoehe_m")
+                building.building_height_m = result.get("gebaeudehoehe_m")
+                building.z_min = result.get("terrain_m")
+                building.z_max = result.get("dach_max_m")
+                building.z_trauf = result.get("dach_min_m")
+                building.height_source = "swissBUILDINGS3D_STAC"
+                building.confidence = 0.95
+
+                logger.info(
+                    f"Building found at E={e}, N={n}: "
+                    f"{len(building.polygon)} points, "
+                    f"trauf={building.trauf_height_m}m"
+                )
             else:
-                logger.debug(f"No polygon found at E={e}, N={n}")
+                logger.debug(f"No building found at E={e}, N={n}")
         except Exception as err:
-            logger.error(f"Error fetching polygon: {err}")
+            logger.error(f"Error fetching from swissBUILDINGS3D: {err}")
 
-        # 2. Höhen aus lokaler DB (versuche mehrere Methoden)
-        height_data = None
-        height_source = "none"
+        # 2. Fallback: Höhen aus lokaler DB (falls STAC keine Höhen liefert)
+        if not building.has_valid_heights():
+            height_data = None
+            height_source = "none"
 
-        # Zuerst per EGID (falls vorhanden)
-        if building.egid:
-            try:
-                egid_int = int(building.egid)
-                height_data = get_building_heights_detailed(egid_int)
+            # Per EGID
+            if building.egid:
+                try:
+                    egid_int = int(building.egid)
+                    height_data = get_building_heights_detailed(egid_int)
+                    if height_data:
+                        height_source = "database_egid"
+                except (ValueError, TypeError):
+                    pass
+
+            # Per Koordinaten
+            if not height_data:
+                height_data = get_building_height_by_coordinates(e, n, tolerance)
                 if height_data:
-                    height_source = "database_egid"
-            except (ValueError, TypeError):
-                pass
+                    height_source = "database_coord"
 
-        # Fallback: Koordinaten-basierte Suche
-        if not height_data:
-            height_data = get_building_height_by_coordinates(e, n, tolerance)
             if height_data:
-                height_source = "database_coord"
-
-        # Höhendaten übernehmen
-        if height_data:
-            building.trauf_height_m = height_data.get("traufhoehe_m")
-            building.first_height_m = height_data.get("firsthoehe_m")
-            building.building_height_m = height_data.get("gebaeudehoehe_m")
-            building.z_min = height_data.get("terrain_m")
-            building.z_max = height_data.get("dach_max_m")
-            building.z_trauf = height_data.get("dach_min_m")
-            building.height_source = height_source
-            building.confidence = 0.9 if height_source == "database_egid" else 0.7
-            logger.info(f"Heights found via {height_source}: trauf={building.trauf_height_m}m")
+                building.trauf_height_m = height_data.get("traufhoehe_m")
+                building.first_height_m = height_data.get("firsthoehe_m")
+                building.building_height_m = height_data.get("gebaeudehoehe_m")
+                building.z_min = height_data.get("terrain_m")
+                building.z_max = height_data.get("dach_max_m")
+                building.z_trauf = height_data.get("dach_min_m")
+                building.height_source = height_source
+                building.confidence = 0.9 if height_source == "database_egid" else 0.7
+                logger.info(f"Heights from DB via {height_source}: trauf={building.trauf_height_m}m")
 
         # 3. Dachanalyse von sonnendach.ch (optional)
         if include_roof_analysis:
@@ -181,11 +203,14 @@ class SwissBuildings3DService:
                         }
                         for s in roof_analysis.surfaces
                     ]
-                    logger.info(f"Roof analysis: {roof_analysis.surfaces_count} surfaces, type={roof_analysis.roof_type}")
+                    logger.info(
+                        f"Roof analysis: {roof_analysis.surfaces_count} surfaces, "
+                        f"type={roof_analysis.roof_type}"
+                    )
             except Exception as err:
                 logger.error(f"Error in roof analysis: {err}")
 
-        # Dachtyp aus Höhendifferenz schätzen (falls nicht von sonnendach)
+        # 4. Dachtyp aus Höhendifferenz schätzen (falls nicht von sonnendach)
         if not building.roof_type and building.trauf_height_m and building.first_height_m:
             diff = building.first_height_m - building.trauf_height_m
             if diff < 0.5:
@@ -200,7 +225,7 @@ class SwissBuildings3DService:
             logger.debug(f"Insufficient data at E={e}, N={n}")
             return None
 
-        building.source = "composite"
+        building.source = "swissBUILDINGS3D"
         return building
 
     async def get_building_by_egid(self, egid: str) -> Optional[Building3D]:

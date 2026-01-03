@@ -1,9 +1,19 @@
 """
-geodienste.ch WFS Adapter
-==========================
+geodienste.ch WFS Adapter (DEPRECATED)
+=======================================
 
-Adapter für die amtliche Vermessung via geodienste.ch WFS
-Liefert Gebäudegeometrien (Grundriss-Polygone)
+⚠️ DEPRECATED seit 01.01.2026 ⚠️
+
+Dieser Adapter wird nicht mehr aktiv genutzt.
+Alle Polygon-Daten kommen jetzt aus swissBUILDINGS3D via STAC API.
+Siehe: swissbuildings3d_fetcher.py
+
+Der Code bleibt als Fallback erhalten, wird aber nicht mehr
+aktiv weiterentwickelt.
+
+Ursprüngliche Funktion:
+- Adapter für die amtliche Vermessung via geodienste.ch WFS
+- Liefert Gebäudegeometrien (Grundriss-Polygone)
 """
 
 import httpx
@@ -829,7 +839,7 @@ def get_height_details(
                 try:
                     import asyncio
                     import concurrent.futures
-                    from app.services.height_fetcher import fetch_height_for_coordinates
+                    from app.services.swissbuildings3d_fetcher import fetch_height_for_coordinates
 
                     def _run_async_fetch():
                         loop = asyncio.new_event_loop()
@@ -939,7 +949,7 @@ def get_height_details(
         try:
             import asyncio
             import concurrent.futures
-            from app.services.height_fetcher import fetch_height_for_coordinates
+            from app.services.swissbuildings3d_fetcher import fetch_height_for_coordinates
 
             def _run_async_fetch_no_egid():
                 loop = asyncio.new_event_loop()

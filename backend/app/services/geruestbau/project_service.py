@@ -8,11 +8,12 @@ from typing import List, Optional
 from pathlib import Path
 
 from ...models.geruestbau import (
-    Project, ProjectCreate, ProjectUpdate, ProjectStatus,
+    Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
     PhotoAnalysis, ScaffoldConfig, ScaffoldZone
 )
 from ..swisstopo import SwisstopoService
 from ..swissbuildings3d_service import get_swissbuildings3d_service
+from ..geodata_service import get_geodata_service, BuildingGeodata
 
 
 class ProjectService:
@@ -21,6 +22,7 @@ class ProjectService:
     def __init__(self):
         self.db_path = Path(__file__).parent.parent.parent / "data" / "geruestbau.db"
         self.swisstopo = SwisstopoService()
+        self.geodata_service = get_geodata_service()
         self._init_db()
 
     def _init_db(self):
@@ -115,6 +117,23 @@ class ProjectService:
             return None
 
         return self._row_to_project(row)
+
+    async def get_project_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
+        """Projekt mit Geodaten aus Cache abrufen."""
+        project = await self.get_project(project_id)
+        if not project:
+            return None
+
+        geodata = None
+        if project.egid:
+            cached = self.geodata_service.get_by_egid(project.egid)
+            if cached:
+                geodata = cached.to_dict()
+
+        return ProjectWithGeodata(
+            **project.model_dump(),
+            geodata=geodata
+        )
 
     async def list_projects(self, status: ProjectStatus = None) -> List[Project]:
         """Alle Projekte auflisten."""
@@ -252,6 +271,24 @@ class ProjectService:
                             "area_m2": building_3d.area_m2,
                             "sides_count": len(building_3d.sides) if building_3d.sides else 0,
                         }
+                        # Geodaten im zentralen Cache speichern
+                        if egid:
+                            geodata = BuildingGeodata(
+                                egid=str(egid),
+                                address=project.address,
+                                polygon=building_3d.polygon,
+                                traufhoehe_m=building_3d.trauf_height_m,
+                                firsthoehe_m=building_3d.first_height_m,
+                                gebaeudehoehe_m=building_3d.building_height_m,
+                                area_m2=building_3d.area_m2,
+                                perimeter_m=building_3d.perimeter_m,
+                                center_e=e,
+                                center_n=n,
+                                coord_e=e,
+                                coord_n=n,
+                            )
+                            self.geodata_service.save(geodata)
+                            print(f"[Gerüstbau] Geodaten für EGID {egid} im Cache gespeichert")
 
         except Exception as e:
             print(f"[Gerüstbau] Fehler bei Geodaten-Anreicherung: {e}")
