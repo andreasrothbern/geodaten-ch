@@ -4,142 +4,196 @@ export type ProjectStatus =
   | 'enriched'
   | 'reviewed'
   | 'planned'
+  | 'configured'
   | 'quoted'
   | 'commissioned'
+  | 'completed'
 
-// Tender/Ausschreibungs-Daten (aus PDF, Foto, simap.ch)
-export interface TenderData {
-  tender_number?: string        // Ausschreibungs-Nr.
-  submission_deadline?: string  // Eingabefrist
-  project_start?: string        // Projektstart
-  project_end?: string          // Projektende
-  is_urgent?: boolean           // Dringend
-  requires_special?: boolean    // Sonderkonstruktion erforderlich
-  estimated_area_m2?: number    // Geschätzte Gerüstfläche
-  source?: 'pdf' | 'photo' | 'simap' | 'manual'  // Erfassungsmethode
-  raw_text?: string             // Original-Text aus OCR
-  confidence?: number           // OCR-Konfidenz (0-1)
+// Geodaten aus Cache (building_geodata.db)
+export interface Geodata {
+  egid: string
+  address?: string
+  polygon?: [number, number][]  // [[e, n], ...]
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  gebaeudehoehe_m?: number
+  area_m2?: number
+  perimeter_m?: number
+  center_e?: number
+  center_n?: number
+  coord_e?: number
+  coord_n?: number
+  fetched_at?: string
 }
 
-// Gebäudedaten aus geodaten-ch API
-export interface BuildingData {
-  geocode?: {
-    coordinates: { e: number; n: number }
-    lat: number
-    lon: number
-  }
-  gwr?: {
-    egid: string
-    address: string
-    floors: number
-    category: string
-    year_built?: number
-  }
-  polygon?: {
-    type: string
-    coordinates: number[][][]
-  }
-  heights?: {
-    traufhoehe_m?: number
-    firsthoehe_m?: number
-    gebaeudehoehe_m?: number
-    source: string
-  }
-  enriched_at?: string
+// Projekt-Overrides (manuelle Anpassungen)
+export interface ProjectOverrides {
+  polygon?: number[][]
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  simplify_epsilon?: number
+  simplify_angle_tolerance?: number
 }
 
-// Vollständiges Projekt
+// Gerüst-Einstellungen
+export interface ScaffoldSettings {
+  system: string  // layher_blitz, layher_allround
+  work_type: string  // facade, roof, full
+  level_height_m: number
+  field_length_ratio: number  // 0-100 Slider
+}
+
+// Fassaden-Öffnung (Fenster, Tür)
+export interface FacadeOpening {
+  type: string  // window, door
+  floor: number
+  position?: string  // left, center, right
+  width_m?: number
+  height_m?: number
+  count: number
+}
+
+// Fassaden-Hindernis
+export interface FacadeObstacle {
+  type: string  // balcony, tree, awning, sign
+  floor?: number
+  position?: string
+  depth_m?: number
+  distance_m?: number
+}
+
+// Fassaden-Konfiguration
+export interface FacadeConfig {
+  index: number
+  direction: string  // N, NE, E, SE, S, SW, W, NW
+  length_m: number
+  height_m: number
+  slope_percent: number
+  selected: boolean
+  has_lift: boolean
+  has_stairs: boolean
+  openings: FacadeOpening[]
+  obstacles: FacadeObstacle[]
+  photos: string[]  // Photo IDs
+  enrichment_source?: string
+}
+
+// Ecken-Konfiguration
+export interface CornerConfig {
+  index: number
+  type: string  // standard, innen, aussen
+}
+
+// Zugangspunkt
+export interface AccessPoint {
+  facade_index: number
+  position_m: number
+  type: string  // lift, stairs
+  width_m: number
+}
+
+// Komplette Gerüst-Konfiguration (JSON in projects.config)
+export interface ScaffoldConfig {
+  overrides: ProjectOverrides
+  settings: ScaffoldSettings
+  facades: FacadeConfig[]
+  corners: CornerConfig[]
+  access_points: AccessPoint[]
+}
+
+// Projekt (Basis)
 export interface Project {
   id: string
   name: string
   address: string
-  status: ProjectStatus
   egid?: string
+  status: ProjectStatus
+  config?: ScaffoldConfig
   client_name?: string
   client_contact?: string
   deadline?: string
-  description?: string
-  building_data?: BuildingData
-  tender_data?: TenderData
   created_at: string
   updated_at: string
 }
 
-// Gebäudedaten für Backend (3D-Modell)
-export interface BuildingDataInput {
-  egid?: string
-  coordinates?: { e: number; n: number; lat?: number; lon?: number }
-  polygon?: number[][]  // [[e, n], ...]
-  traufhoehe_m?: number
-  firsthoehe_m?: number
-  gebaeudehoehe_m?: number
-  height_source?: string
-  floors?: number
-  building_type?: string
-  year_built?: number
-  perimeter_m?: number
-  area_m2?: number
-  sides?: Array<{ start: number[]; end: number[]; length: number }>
+// Projekt mit Geodaten (von GET /projects/{id})
+export interface ProjectWithGeodata extends Project {
+  geodata?: Geodata
 }
 
-// Projekt erstellen (Input)
+// Projekt erstellen
 export interface ProjectCreate {
   name: string
   address: string
+  egid?: string
   client_name?: string
   client_contact?: string
   deadline?: string
-  description?: string
-  tender_data?: TenderData
-  building_data?: BuildingDataInput  // Geodaten für 3D-Modell
 }
 
-// Gerüst-Zonen
-export interface ScaffoldZone {
-  name: string
-  zone_type: string
-  height_m: number
-  width_m: number
-  fields: number
-  levels: number
-  requires_special: boolean
+// Projekt aktualisieren
+export interface ProjectUpdate {
+  name?: string
+  status?: ProjectStatus
+  client_name?: string
+  client_contact?: string
+  deadline?: string
+  config?: ScaffoldConfig
 }
 
-// Gerüst-Konfiguration
-export interface ScaffoldConfig {
+// Photo Enrichment Status
+export type EnrichmentStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+// Enrichment-Daten (Claude Vision Analyse)
+export interface EnrichmentData {
+  model: string
+  model_version?: string
+  analyzed_at?: string
+  confidence: number
+  openings: FacadeOpening[]
+  obstacles: FacadeObstacle[]
+  scaffolding_hints: string[]
+}
+
+// Projekt-Foto
+export interface ProjectPhoto {
+  id: string
   project_id: string
-  system: string
-  bay_width: string
-  zones: ScaffoldZone[]
-  total_area_m2: number
-  total_anchors: number
-  access_points: number
+  filename: string
+  file_path: string
+  file_size_bytes?: number
+  mime_type?: string
+  taken_at?: string
+  uploaded_at: string
+  facade_index?: number
+  view_direction?: string
+  enrichment_status: EnrichmentStatus
+  enrichment_at?: string
+  enrichment_data?: EnrichmentData
 }
 
-// Extrahierte Projektdaten (von PDF, URL oder manueller Eingabe)
+// OCR-Extraktions-Ergebnis vom Backend (für Import)
 export interface ExtractedProjectData {
   project_name?: string
   address?: string
   client_name?: string
   client_contact?: string
-  description?: string
   tender_number?: string
   submission_deadline?: string
   project_start?: string
   project_end?: string
   estimated_area_m2?: number
   requirements?: string[]
-  // simap.ch spezifische Daten
   simap_id?: string
   procedure?: 'open' | 'selective' | 'invitation' | 'negotiated'
+  description?: string  // Optional description from manual entry
 }
 
-// OCR-Extraktions-Ergebnis vom Backend
 export interface OcrExtractionResult {
   success: boolean
   data?: ExtractedProjectData
   confidence: number
   raw_text?: string
   error?: string
-  source_id?: string  // z.B. simap.ch Projekt-ID
+  source_id?: string
 }

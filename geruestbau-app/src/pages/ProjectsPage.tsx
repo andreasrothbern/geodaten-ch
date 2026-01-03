@@ -103,6 +103,22 @@ const STATUS_CONFIG: Record<ProjectStatus, StatusConfig> = {
     nextStep: 'Warte auf Rückmeldung',
   },
   commissioned: {
+    label: 'Beauftragt',
+    icon: CheckCircle,
+    bgColor: 'bg-green-50',
+    textColor: 'text-green-700',
+    borderColor: 'border-green-100',
+    nextStep: '',
+  },
+  configured: {
+    label: 'Konfiguriert',
+    icon: Ruler,
+    bgColor: 'bg-blue-50',
+    textColor: 'text-blue-700',
+    borderColor: 'border-blue-100',
+    nextStep: 'Offerte erstellen',
+  },
+  completed: {
     label: 'Abgeschlossen',
     icon: CheckCircle,
     bgColor: 'bg-gray-50',
@@ -116,10 +132,10 @@ type FilterType = 'all' | 'inProgress' | 'quotes' | 'orders' | 'archive'
 
 const FILTERS: { id: FilterType; label: string; statuses: ProjectStatus[] }[] = [
   { id: 'all', label: 'Alle', statuses: [] },
-  { id: 'inProgress', label: 'In Arbeit', statuses: ['draft', 'captured', 'enriched', 'reviewed', 'planned'] },
+  { id: 'inProgress', label: 'In Arbeit', statuses: ['draft', 'captured', 'enriched', 'reviewed', 'planned', 'configured'] },
   { id: 'quotes', label: 'Offerten', statuses: ['quoted'] },
   { id: 'orders', label: 'Aufträge', statuses: ['commissioned'] },
-  { id: 'archive', label: 'Archiv', statuses: ['commissioned'] },
+  { id: 'archive', label: 'Archiv', statuses: ['commissioned', 'completed'] },
 ]
 
 function ProgressSteps({ currentStep }: { currentStep: number }) {
@@ -189,9 +205,8 @@ function ProjectCard({ project }: { project: Project }) {
           <span className="text-xs text-gray-400 whitespace-nowrap ml-2">{getRelativeTime(project.updated_at)}</span>
         </div>
         {!isArchived && <ProgressSteps currentStep={progressStep} />}
-        {isArchived && project.building_data && (
+        {isArchived && (
           <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
-            <span><Ruler size={14} className="inline mr-1" />{project.building_data.heights?.traufhoehe_m?.toFixed(1) || '?'} m</span>
             <span><CheckCircle size={14} className="inline mr-1 text-green-500" />Abgeschlossen</span>
           </div>
         )}

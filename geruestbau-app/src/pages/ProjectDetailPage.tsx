@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { geruestbauApi } from '../api/geruestbau'
-import type { Project } from '../types/project'
+import type { ProjectWithGeodata } from '../types/project'
 
 // Progress step configuration - 4 steps (Fassaden + Geruest combined)
 const PROGRESS_STEPS = [
@@ -88,7 +88,7 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [project, setProject] = useState<Project | null>(null)
+  const [project, setProject] = useState<ProjectWithGeodata | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -170,39 +170,39 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Gebaeudedaten */}
-      {project.building_data && (
+      {project.geodata && (
         <div className="card">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-green-500" />
             Gebaeudedaten
           </h3>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            {project.building_data.heights?.traufhoehe_m && (
+            {project.geodata.traufhoehe_m && (
               <div>
                 <span className="text-gray-500">Traufhoehe:</span>
                 <span className="font-medium ml-2">
-                  {project.building_data.heights.traufhoehe_m.toFixed(1)} m
+                  {project.geodata.traufhoehe_m.toFixed(1)} m
                 </span>
               </div>
             )}
-            {project.building_data.heights?.firsthoehe_m && (
+            {project.geodata.firsthoehe_m && (
               <div>
                 <span className="text-gray-500">Firsthoehe:</span>
                 <span className="font-medium ml-2">
-                  {project.building_data.heights.firsthoehe_m.toFixed(1)} m
+                  {project.geodata.firsthoehe_m.toFixed(1)} m
                 </span>
               </div>
             )}
-            {project.building_data.gwr?.floors && (
+            {project.geodata.area_m2 && (
               <div>
-                <span className="text-gray-500">Geschosse:</span>
-                <span className="font-medium ml-2">{project.building_data.gwr.floors}</span>
+                <span className="text-gray-500">Flaeche:</span>
+                <span className="font-medium ml-2">{project.geodata.area_m2.toFixed(0)} m²</span>
               </div>
             )}
-            {project.building_data.gwr?.year_built && (
+            {project.geodata.perimeter_m && (
               <div>
-                <span className="text-gray-500">Baujahr:</span>
-                <span className="font-medium ml-2">{project.building_data.gwr.year_built}</span>
+                <span className="text-gray-500">Umfang:</span>
+                <span className="font-medium ml-2">{project.geodata.perimeter_m.toFixed(1)} m</span>
               </div>
             )}
           </div>

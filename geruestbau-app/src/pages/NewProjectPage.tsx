@@ -6,39 +6,14 @@ import StepIndicator from '../components/ui/StepIndicator'
 import { ImportStep, ReviewStep, GeodataStep } from '../components/projects/import'
 import type {
   ExtractedProjectData,
-  TenderData,
-  BuildingData,
-  BuildingDataInput,
+  Geodata,
   OcrExtractionResult,
 } from '../types/project'
 
-// Konvertiere Frontend BuildingData zu Backend BuildingDataInput
-function convertToBackendFormat(data: BuildingData | null): BuildingDataInput | undefined {
-  if (!data) return undefined
-
-  return {
-    egid: data.gwr?.egid,
-    coordinates: data.geocode?.coordinates ? {
-      e: data.geocode.coordinates.e,
-      n: data.geocode.coordinates.n,
-      lat: data.geocode.lat,
-      lon: data.geocode.lon,
-    } : undefined,
-    polygon: data.polygon?.coordinates?.[0],
-    traufhoehe_m: data.heights?.traufhoehe_m,
-    firsthoehe_m: data.heights?.firsthoehe_m,
-    gebaeudehoehe_m: data.heights?.gebaeudehoehe_m,
-    height_source: data.heights?.source,
-    floors: data.gwr?.floors,
-    building_type: data.gwr?.category,
-    year_built: data.gwr?.year_built,
-  }
-}
-
 const STEPS = [
   { id: 1, label: 'Import' },
-  { id: 2, label: 'Prüfen' },
-  { id: 3, label: 'Grunddaten' },
+  { id: 2, label: 'Pruefen' },
+  { id: 3, label: 'Geodaten' },
 ]
 
 type ImportSource = 'pdf' | 'photo' | 'url' | 'manual'
@@ -52,19 +27,18 @@ export default function NewProjectPage() {
   const [projectData, setProjectData] = useState<ExtractedProjectData>({})
   const [source, setSource] = useState<ImportSource>('manual')
   const [confidence, setConfidence] = useState<number | undefined>()
-  const [rawText, setRawText] = useState<string | undefined>()
 
   // Handle data from ImportStep
   const handleDataExtracted = useCallback(
     (data: ExtractedProjectData, extractionSource: ImportSource) => {
       setProjectData(data)
       setSource(extractionSource)
-      setCurrentStep(2) // Go to review step
+      setCurrentStep(2)
     },
     []
   )
 
-  // Handle manual entry (skip review, go straight to geodata)
+  // Handle manual entry
   const handleManualEntry = useCallback(() => {
     setSource('manual')
     setCurrentStep(2)
@@ -76,9 +50,6 @@ export default function NewProjectPage() {
       const result = await geruestbauApi.extractFromDocument(file)
       if (result.confidence) {
         setConfidence(result.confidence)
-      }
-      if (result.raw_text) {
-        setRawText(result.raw_text)
       }
       return result
     },
@@ -97,48 +68,27 @@ export default function NewProjectPage() {
     []
   )
 
-  // Load geodata for address
+  // Load geodata preview for address (optional preview)
   const loadGeodata = useCallback(
-    async (address: string): Promise<BuildingData | null> => {
+    async (address: string): Promise<Geodata | null> => {
       try {
         const response = await fetch(
-          `${import.meta.env.VITE_GEODATEN_API_URL || 'https://acceptable-trust-production.up.railway.app'}/api/v1/smart-building/data?address=${encodeURIComponent(address)}`
+          `${import.meta.env.VITE_API_URL || ''}/api/v1/smart-building/data?address=${encodeURIComponent(address)}`
         )
         if (!response.ok) return null
         const data = await response.json()
 
-        // Map SmartBuilding response to BuildingData
+        // Map to Geodata format (flat structure)
         return {
-          geocode: data.coordinates
-            ? {
-                coordinates: { e: data.coordinates.e, n: data.coordinates.n },
-                lat: data.coordinates.lat || 0,
-                lon: data.coordinates.lon || 0,
-              }
-            : undefined,
-          gwr: data.egid
-            ? {
-                egid: data.egid,
-                address: data.address_matched || address,
-                floors: data.floors || 0,
-                category: data.building_type || '',
-                year_built: data.year_built,
-              }
-            : undefined,
-          heights: data.traufhoehe_m
-            ? {
-                traufhoehe_m: data.traufhoehe_m,
-                firsthoehe_m: data.firsthoehe_m,
-                gebaeudehoehe_m: data.firsthoehe_m,
-                source: data.height_source || 'estimated',
-              }
-            : undefined,
-          polygon: data.polygon
-            ? {
-                type: 'Polygon',
-                coordinates: [data.polygon],
-              }
-            : undefined,
+          egid: data.egid || '',
+          address: data.address_matched || address,
+          traufhoehe_m: data.traufhoehe_m,
+          firsthoehe_m: data.firsthoehe_m,
+          gebaeudehoehe_m: data.firsthoehe_m,
+          area_m2: data.area_m2,
+          perimeter_m: data.perimeter_m,
+          coord_e: data.coordinates?.e,
+          coord_n: data.coordinates?.n,
         }
       } catch (error) {
         console.error('Fehler beim Laden der Geodaten:', error)
@@ -148,38 +98,25 @@ export default function NewProjectPage() {
     []
   )
 
-  // Create project - jetzt MIT building_data!
+  // Create project and enrich with geodata
   const handleSubmit = useCallback(
-    async (buildingData: BuildingData | null) => {
+    async (_geodataPreview: Geodata | null) => {
       if (!projectData.project_name || !projectData.address) return
 
       setLoading(true)
 
       try {
-        const tenderData: TenderData = {
-          tender_number: projectData.tender_number,
-          submission_deadline: projectData.submission_deadline,
-          project_start: projectData.project_start,
-          project_end: projectData.project_end,
-          estimated_area_m2: projectData.estimated_area_m2,
-          source: source === 'url' ? 'simap' : source,
-          confidence: confidence,
-          raw_text: rawText,
-        }
-
-        // Geodaten fuer 3D-Modell konvertieren und mitsenden
-        const buildingDataInput = convertToBackendFormat(buildingData)
-
-        await geruestbauApi.createProject({
+        // 1. Create project with basic data
+        const project = await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
           client_name: projectData.client_name,
           client_contact: projectData.client_contact,
-          description: projectData.description,
           deadline: projectData.submission_deadline,
-          tender_data: tenderData,
-          building_data: buildingDataInput,  // Geodaten werden jetzt gespeichert!
         })
+
+        // 2. Enrich with geodata (saves to cache and updates EGID)
+        await geruestbauApi.enrichProject(project.id)
 
         // Navigate to projects list
         navigate('/projects')
@@ -190,7 +127,7 @@ export default function NewProjectPage() {
         setLoading(false)
       }
     },
-    [projectData, source, confidence, rawText, navigate]
+    [projectData, navigate]
   )
 
   return (

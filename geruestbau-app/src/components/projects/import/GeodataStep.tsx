@@ -9,14 +9,14 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react'
-import type { ExtractedProjectData, BuildingData } from '../../../types/project'
+import type { ExtractedProjectData, Geodata } from '../../../types/project'
 
 interface GeodataStepProps {
   data: ExtractedProjectData
   source: 'pdf' | 'photo' | 'url' | 'manual'
-  loadGeodata: (address: string) => Promise<BuildingData | null>
+  loadGeodata: (address: string) => Promise<Geodata | null>
   onBack: () => void
-  onSubmit: (buildingData: BuildingData | null) => void
+  onSubmit: (geodata: Geodata | null) => void
   loading: boolean
 }
 
@@ -35,7 +35,7 @@ export default function GeodataStep({
   loading,
 }: GeodataStepProps) {
   void _source  // Suppress unused variable warning
-  const [buildingData, setBuildingData] = useState<BuildingData | null>(null)
+  const [geodata, setGeodata] = useState<Geodata | null>(null)
   const [loadingStates, setLoadingStates] = useState<LoadingState>({
     geocoding: 'pending',
     gwr: 'pending',
@@ -49,7 +49,7 @@ export default function GeodataStep({
 
     setIsLoading(true)
     setError(null)
-    setBuildingData(null)
+    setGeodata(null)
 
     // Simulate progressive loading
     setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending' })
@@ -66,7 +66,7 @@ export default function GeodataStep({
       const result = await loadGeodata(data.address)
 
       setLoadingStates((s) => ({ ...s, building3d: 'success' }))
-      setBuildingData(result)
+      setGeodata(result)
 
       if (!result) {
         setError('Keine Gebäudedaten gefunden')
@@ -132,7 +132,7 @@ export default function GeodataStep({
       </div>
 
       {/* Building Data Card */}
-      {buildingData && (
+      {geodata && (
         <div className="card border-green-200 bg-green-50">
           <h3 className="font-medium text-green-800 mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5" />
@@ -140,62 +140,52 @@ export default function GeodataStep({
           </h3>
 
           <div className="grid grid-cols-2 gap-4 text-sm">
-            {buildingData.gwr?.egid && (
+            {geodata.egid && (
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-green-600" />
                 <div>
                   <span className="text-green-700">EGID:</span>{' '}
-                  <strong>{buildingData.gwr.egid}</strong>
+                  <strong>{geodata.egid}</strong>
                 </div>
               </div>
             )}
 
-            {buildingData.gwr?.floors ? (
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Geschosse:</span>{' '}
-                  <strong>{buildingData.gwr.floors}</strong>
-                </div>
-              </div>
-            ) : null}
-
-            {buildingData.heights?.traufhoehe_m && (
+            {geodata.traufhoehe_m && (
               <div className="flex items-center gap-2">
                 <Ruler className="w-4 h-4 text-green-600" />
                 <div>
                   <span className="text-green-700">Traufhöhe:</span>{' '}
-                  <strong>{buildingData.heights.traufhoehe_m.toFixed(1)} m</strong>
+                  <strong>{geodata.traufhoehe_m.toFixed(1)} m</strong>
                 </div>
               </div>
             )}
 
-            {buildingData.heights?.firsthoehe_m && (
+            {geodata.firsthoehe_m && (
               <div className="flex items-center gap-2">
                 <Ruler className="w-4 h-4 text-green-600" />
                 <div>
                   <span className="text-green-700">Firsthöhe:</span>{' '}
-                  <strong>{buildingData.heights.firsthoehe_m.toFixed(1)} m</strong>
+                  <strong>{geodata.firsthoehe_m.toFixed(1)} m</strong>
                 </div>
               </div>
             )}
 
-            {buildingData.gwr?.category && (
-              <div className="col-span-2 flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-green-600" />
+            {geodata.area_m2 && (
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-green-600" />
                 <div>
-                  <span className="text-green-700">Kategorie:</span>{' '}
-                  <strong>{buildingData.gwr.category}</strong>
+                  <span className="text-green-700">Fläche:</span>{' '}
+                  <strong>{geodata.area_m2.toFixed(0)} m²</strong>
                 </div>
               </div>
             )}
 
-            {buildingData.gwr?.year_built && (
-              <div className="col-span-2 flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-green-600" />
+            {geodata.perimeter_m && (
+              <div className="flex items-center gap-2">
+                <Ruler className="w-4 h-4 text-green-600" />
                 <div>
-                  <span className="text-green-700">Baujahr:</span>{' '}
-                  <strong>{buildingData.gwr.year_built}</strong>
+                  <span className="text-green-700">Umfang:</span>{' '}
+                  <strong>{geodata.perimeter_m.toFixed(1)} m</strong>
                 </div>
               </div>
             )}
@@ -268,7 +258,7 @@ export default function GeodataStep({
         </button>
         <button
           type="button"
-          onClick={() => onSubmit(buildingData)}
+          onClick={() => onSubmit(geodata)}
           disabled={loading || isLoading}
           className="btn-primary flex-1 flex items-center justify-center gap-2"
         >
