@@ -73,7 +73,7 @@ interface ScaffoldConfigState {
     buildingName: string,
     buildingAddress: string,
     facades: SelectedFacade[],
-    buildingPolygon?: [number, number][],
+    buildingPolygon?: [number, number][],  // ORIGINAL from swissBUILDINGS3D
     roof?: RoofData
   ) => void;
   reset: () => void;
@@ -631,7 +631,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
             perimeter_m: 0,
             estimated_weight_kg: 0,
           },
-          // Store building polygon for 3D visualization
+          // Store building polygon (ORIGINAL from swissBUILDINGS3D)
           buildingPolygon,
           // Store roof data for 3D visualization
           roof,

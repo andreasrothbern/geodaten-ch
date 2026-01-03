@@ -16,6 +16,9 @@ export default function ThreeDPanel() {
   const settings = useSettings();
   const [activeView, setActiveView] = useState<View3D>('isometric');
 
+  // Building polygon is now always the ORIGINAL from swissBUILDINGS3D
+  const polygonPointCount = configuration?.buildingPolygon?.length || 0;
+
   const views: { id: View3D; label: string }[] = [
     { id: 'isometric', label: 'Isometrisch' },
     { id: 'north', label: 'Nord' },
@@ -81,6 +84,13 @@ export default function ThreeDPanel() {
             >
               <Home className="w-5 h-5 text-gray-600" />
             </button>
+
+            {/* Polygon info badge */}
+            {polygonPointCount > 0 && (
+              <span className="px-3 py-2 bg-white rounded-lg shadow text-sm text-gray-500">
+                {polygonPointCount} Punkte
+              </span>
+            )}
           </div>
 
           {/* View Selector */}

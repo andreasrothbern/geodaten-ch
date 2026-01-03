@@ -77,7 +77,8 @@ export interface ScaffoldConfiguration {
   settings: ScaffoldSettings;
   elements: ScaffoldElement[];
   totals: ScaffoldTotals;
-  // Building polygon for 3D visualization (LV95 coordinates)
+  // Building polygon (ORIGINAL from swissBUILDINGS3D, LV95 coordinates)
+  // Note: Simplified polygon is now calculated on-the-fly by the Backend API
   buildingPolygon?: [number, number][];
   // Roof data for 3D visualization
   roof?: RoofData;

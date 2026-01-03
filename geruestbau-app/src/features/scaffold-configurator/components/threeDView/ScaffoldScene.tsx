@@ -768,7 +768,7 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
         componentsRef.current = null;
       }
     };
-  }, []);
+  }, []);  // Initial scene setup
 
   // Update camera when view changes
   useEffect(() => {
@@ -790,20 +790,27 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
     const fieldWidth = config.settings.field_width_m;
     const levelHeight = config.settings.level_height_m;
 
-    // Check if we have actual polygon coordinates
-    const hasPolygon = config.buildingPolygon && config.buildingPolygon.length >= 3;
+    // Building polygon is now always the ORIGINAL from swissBUILDINGS3D
+    const polygon3D = config.buildingPolygon;
+    const hasPolygon = polygon3D && polygon3D.length >= 3;
     const hasCoordinates = enabledFacades.some(f => f.start_point && f.end_point);
+
+    // DEBUG: Log polygon info
+    console.log('=== 3D POLYGON DEBUG ===', {
+      polygonPoints: polygon3D?.length || 0,
+    });
 
     if (hasPolygon && hasCoordinates) {
       // NEW: Use actual polygon and facade coordinates
-      const { normalized } = normalizePolygon(config.buildingPolygon!);
+      // Use original polygon for building 3D mesh (more detail)
+      const { normalized } = normalizePolygon(polygon3D!);
 
       // Calculate bounding box center (may differ from centroid)
       // This must match the building's centering logic
-      const minX = Math.min(...config.buildingPolygon!.map(p => p[0]));
-      const maxX = Math.max(...config.buildingPolygon!.map(p => p[0]));
-      const minY = Math.min(...config.buildingPolygon!.map(p => p[1]));
-      const maxY = Math.max(...config.buildingPolygon!.map(p => p[1]));
+      const minX = Math.min(...polygon3D!.map(p => p[0]));
+      const maxX = Math.max(...polygon3D!.map(p => p[0]));
+      const minY = Math.min(...polygon3D!.map(p => p[1]));
+      const maxY = Math.max(...polygon3D!.map(p => p[1]));
       const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
       // Calculate building height: use actual traufhoehe if available, otherwise estimate

@@ -361,10 +361,9 @@ export interface SmartBuildingData {
   gwr_area_m2?: number
   gwr_dwellings?: number
 
-  // Geometrie
+  // Geometrie (polygon is always ORIGINAL from swissBUILDINGS3D)
   polygon?: [number, number][]
   polygon_source?: DataSource
-  polygon_simplified?: boolean
   sides?: SmartBuildingSide[]
   perimeter_m?: number
   footprint_area_m2?: number

@@ -18,7 +18,7 @@ interface ScaffoldConfiguratorProps {
   projectId: string;
   buildingName: string;
   buildingAddress: string;
-  buildingPolygon?: [number, number][];
+  buildingPolygon?: [number, number][];  // ORIGINAL from swissBUILDINGS3D (LV95)
   selectedFacades: SelectedFacade[];
   roof?: RoofData;
   onBack?: () => void;

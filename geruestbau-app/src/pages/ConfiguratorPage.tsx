@@ -15,25 +15,9 @@ import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
 import { geruestbauApi } from '../api/geruestbau';
-import type { Project, BuildingData as StoredBuildingData } from '../types/project';
-import type { SelectedFacade } from '../features/scaffold-configurator/types/scaffold.types';
-
-// API Base URL - use environment variable or default
-const API_BASE = import.meta.env.VITE_API_URL || 'https://acceptable-trust-production.up.railway.app';
-
-interface RoofData {
-  roof_type: string;
-  roof_angle_deg: number;
-  roof_orientation: string;
-  first_azimuth_deg: number;
-  roof_area_m2: number;
-  roof_overhang_m: number;
-  traufhoehe_m: number;     // Traufhöhe für 3D-Visualisierung
-  trauf_to_first_m: number;
-  scaffolding_height_m: number;
-  data_source: string;
-  confidence: number;
-}
+import { API_BASE } from '../api/client';
+import type { ProjectWithGeodata, Geodata } from '../types/project';
+import type { SelectedFacade, RoofData } from '../features/scaffold-configurator/types/scaffold.types';
 
 interface ConfiguratorBuildingData {
   project_id: string;
@@ -41,7 +25,7 @@ interface ConfiguratorBuildingData {
     egid: string;
     address: string;
     name: string;
-    polygon: [number, number][];
+    polygon: [number, number][];  // ORIGINAL from swissBUILDINGS3D (LV95)
     trauf_height_m: number;
     first_height_m: number;
     center_e: number;
@@ -162,64 +146,34 @@ function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildin
   }
 }
 
-// Helper: Extract polygon from stored data (handles both flat array and GeoJSON formats)
-function extractPolygon(storedData: StoredBuildingData): [number, number][] | null {
-  const rawPolygon = storedData.polygon;
-  if (!rawPolygon) return null;
-
-  // Check if it's a flat array [[e, n], ...]
-  if (Array.isArray(rawPolygon) && rawPolygon.length > 0) {
-    const first = rawPolygon[0];
-    if (Array.isArray(first) && typeof first[0] === 'number') {
-      return rawPolygon as [number, number][];
-    }
-  }
-
-  // Check if it's GeoJSON format { type: "Polygon", coordinates: [[[e,n],...]] }
-  const geoJson = rawPolygon as { type?: string; coordinates?: number[][][] };
-  if (geoJson.coordinates && geoJson.coordinates[0]) {
-    return geoJson.coordinates[0] as [number, number][];
-  }
-
-  return null;
+// Helper: Extract polygon from geodata (flat array format)
+function extractPolygon(geodata: Geodata): [number, number][] | null {
+  const rawPolygon = geodata.polygon;
+  if (!rawPolygon || rawPolygon.length < 3) return null;
+  return rawPolygon;
 }
 
-// Helper: Get height values from stored data (handles both direct and nested formats)
-function extractHeights(storedData: StoredBuildingData): { trauf: number; first: number } {
-  // Direct format from SmartBuilding API
-  const directTrauf = (storedData as Record<string, unknown>).traufhoehe_m as number | undefined;
-  const directFirst = (storedData as Record<string, unknown>).firsthoehe_m as number | undefined;
-
-  if (directTrauf !== undefined) {
-    return { trauf: directTrauf, first: directFirst ?? directTrauf + 2 };
-  }
-
-  // Nested format (heights object)
-  const heights = storedData.heights;
-  if (heights) {
-    return {
-      trauf: heights.traufhoehe_m ?? 10,
-      first: heights.firsthoehe_m ?? (heights.traufhoehe_m ?? 10) + 2,
-    };
-  }
-
-  return { trauf: 10, first: 12 };
+// Helper: Get height values from geodata
+function extractHeights(geodata: Geodata): { trauf: number; first: number } {
+  const trauf = geodata.traufhoehe_m ?? geodata.gebaeudehoehe_m ?? 10;
+  const first = geodata.firsthoehe_m ?? trauf + 2;
+  return { trauf, first };
 }
 
-// Helper: Convert stored building_data to configurator format
-function convertStoredDataToConfiguratorFormat(
-  project: Project,
-  storedData: StoredBuildingData
+// Helper: Convert geodata to configurator format
+function convertGeodataToConfiguratorFormat(
+  project: ProjectWithGeodata,
+  geodata: Geodata
 ): ConfiguratorBuildingData | null {
-  // Extract polygon (handles both formats)
-  const polygon = extractPolygon(storedData);
+  // Extract polygon
+  const polygon = extractPolygon(geodata);
   if (!polygon || polygon.length < 3) {
-    console.warn('No valid polygon in stored building_data');
+    console.warn('No valid polygon in geodata');
     return null;
   }
 
   const center = calculateCenter(polygon);
-  const heights = extractHeights(storedData);
+  const heights = extractHeights(geodata);
   const traufHeight = heights.trauf;
   const firstHeight = heights.first;
 
@@ -227,7 +181,7 @@ function convertStoredDataToConfiguratorFormat(
   const preSelectedFacades = getSelectedFacadesFromSession(traufHeight);
 
   let facades: ConfiguratorBuildingData['selected_facades'];
-  let perimeter = 0;
+  let perimeter = geodata.perimeter_m ?? 0;
 
   if (preSelectedFacades && preSelectedFacades.length > 0) {
     // Use pre-selected facades from FacadeSelectionPage
@@ -239,6 +193,7 @@ function convertStoredDataToConfiguratorFormat(
   } else {
     // Calculate ALL facades from polygon (fallback)
     facades = [];
+    let calculatedPerimeter = 0;
     for (let i = 0; i < polygon.length - 1; i++) {
       const start = polygon[i];
       const end = polygon[i + 1];
@@ -247,7 +202,7 @@ function convertStoredDataToConfiguratorFormat(
       // Skip very short segments (< 1m)
       if (length < 1) continue;
 
-      perimeter += length;
+      calculatedPerimeter += length;
 
       facades.push({
         id: `facade-${i + 1}`,
@@ -259,43 +214,36 @@ function convertStoredDataToConfiguratorFormat(
         end_point: end,
       });
     }
+    if (!perimeter) perimeter = calculatedPerimeter;
   }
 
-  // Get EGID from various sources
-  const egid = (storedData as Record<string, unknown>).egid as string | undefined
-    ?? storedData.gwr?.egid
-    ?? project.egid
-    ?? 'unknown';
-
-  // Extract roof data if available
-  const storedRoof = (storedData as Record<string, unknown>).roof as RoofData | undefined;
-  const roofType = storedRoof?.roof_type
-    ?? (storedData as Record<string, unknown>).roof_type as string | undefined
-    ?? null;
+  // Get EGID from geodata or project
+  const egid = geodata.egid ?? project.egid ?? 'unknown';
 
   return {
     project_id: project.id,
     building: {
       egid,
-      address: project.address,
+      address: geodata.address ?? project.address,
       name: project.name,
       polygon: polygon,
+      // polygon_original wird separat von der API geholt (nicht im Projekt gespeichert)
       trauf_height_m: traufHeight,
       first_height_m: firstHeight,
-      center_e: center[0],
-      center_n: center[1],
+      center_e: geodata.center_e ?? geodata.coord_e ?? center[0],
+      center_n: geodata.center_n ?? geodata.coord_n ?? center[1],
     },
     selected_facades: facades,
-    roof: storedRoof,
+    roof: undefined,  // Roof data is fetched fresh from API
     metadata: {
-      source: preSelectedFacades ? 'facade_selection' : 'stored_project',
+      source: preSelectedFacades ? 'facade_selection' : 'geodata_cache',
       polygon_points: polygon.length,
       facade_count: facades.length,
       perimeter_m: Math.round(perimeter * 100) / 100,
-      area_m2: Math.round(calculateArea(polygon) * 100) / 100,
-      roof_type: roofType,
+      area_m2: Math.round(geodata.area_m2 ?? calculateArea(polygon) * 100) / 100,
+      roof_type: null,
       roof_surfaces_count: 0,
-      height_source: storedData.heights?.source || 'stored',
+      height_source: 'geodata_cache',
       confidence: 1.0,
     },
   };
@@ -313,7 +261,7 @@ export default function ConfiguratorPage() {
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [buildingData, setBuildingData] = useState<ConfiguratorBuildingData | null>(null);
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<ProjectWithGeodata | null>(null);
 
   // Load project data if projectId is provided
   useEffect(() => {
@@ -322,7 +270,7 @@ export default function ConfiguratorPage() {
     }
   }, [projectId]);
 
-  // Load project and use stored building_data
+  // Load project and use geodata from cache + fresh data for polygon_original
   const loadProjectData = async (id: string) => {
     setLoadingState('loading');
     setError(null);
@@ -331,23 +279,42 @@ export default function ConfiguratorPage() {
       const loadedProject = await geruestbauApi.getProject(id);
       setProject(loadedProject);
 
-      // Check if project has stored building_data
-      if (loadedProject.building_data) {
-        const configData = convertStoredDataToConfiguratorFormat(
+      // Check if project has geodata from cache
+      if (loadedProject.geodata?.polygon) {
+        const configData = convertGeodataToConfiguratorFormat(
           loadedProject,
-          loadedProject.building_data
+          loadedProject.geodata
         );
 
         if (configData) {
-          console.log('Using stored building_data from project');
+          console.log('Using geodata from cache - polygon is ORIGINAL from swissBUILDINGS3D');
+
+          // Calculate roof from cached heights if not present
+          if (!configData.roof && loadedProject.geodata) {
+            const trauf = loadedProject.geodata.traufhoehe_m ?? 10;
+            const first = loadedProject.geodata.firsthoehe_m ?? trauf + 3;
+            const roofHeight = first - trauf;
+            const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
+
+            configData.roof = {
+              roof_type: roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil',
+              roof_angle_deg: roofAngle,
+              roof_orientation: 'N-S',
+              trauf_to_first_m: roofHeight,
+              scaffolding_height_m: first + 1,
+              confidence: 0.7,
+              traufhoehe_m: trauf,
+            };
+          }
+
           setBuildingData(configData);
           setLoadingState('success');
           return;
         }
       }
 
-      // Fallback: Use address to fetch from API
-      console.log('No stored building_data, fetching from API');
+      // Fallback: Use address to fetch from API (project not enriched yet)
+      console.log('No geodata in cache, fetching from API');
       setAddress(loadedProject.address);
       await fetchBuildingData(loadedProject.address, loadedProject);
 
@@ -361,7 +328,7 @@ export default function ConfiguratorPage() {
   // Fetch building data from API
   const fetchBuildingData = useCallback(async (
     selectedAddress: string,
-    existingProject?: Project | null
+    existingProject?: ProjectWithGeodata | null
   ) => {
     setLoadingState('loading');
     setError(null);
