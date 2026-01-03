@@ -1,5 +1,21 @@
 import { api, API_BASE } from './client'
-import type { Project, ProjectCreate, OcrExtractionResult } from '../types/project'
+import type { Project, ProjectWithGeodata, ProjectCreate, ProjectUpdate, OcrExtractionResult } from '../types/project'
+
+// Neighbors API Types
+export interface NeighborBuilding {
+  egid: string
+  distance_m: number
+  direction: string | null
+  polygon?: [number, number][]
+}
+
+export interface NeighborsResponse {
+  target_egid: string
+  target_polygon: [number, number][]
+  neighbors: NeighborBuilding[]
+  blocked_sides: string[]
+  query_time_ms: number
+}
 
 export const geruestbauApi = {
   // Projekte
@@ -7,12 +23,12 @@ export const geruestbauApi = {
     api.get<Project[]>('/api/v1/geruestbau/projects'),
 
   getProject: (id: string) =>
-    api.get<Project>(`/api/v1/geruestbau/projects/${id}`),
+    api.get<ProjectWithGeodata>(`/api/v1/geruestbau/projects/${id}`),
 
   createProject: (data: ProjectCreate) =>
     api.post<Project>('/api/v1/geruestbau/projects', data),
 
-  updateProject: (id: string, data: Partial<Project>) =>
+  updateProject: (id: string, data: ProjectUpdate) =>
     api.put<Project>(`/api/v1/geruestbau/projects/${id}`, data),
 
   deleteProject: (id: string) =>
@@ -20,7 +36,7 @@ export const geruestbauApi = {
 
   // Geodaten
   enrichProject: (id: string) =>
-    api.post<Project>(`/api/v1/geruestbau/projects/${id}/enrich`, {}),
+    api.post<ProjectWithGeodata>(`/api/v1/geruestbau/projects/${id}/enrich`, {}),
 
   // Fotos
   uploadPhoto: async (projectId: string, file: File) => {
@@ -65,6 +81,17 @@ export const geruestbauApi = {
     }
 
     return response.json()
+  },
+
+  // Nachbargebäude (für 3D-View und blockierte Fassaden)
+  getNeighbors: async (egid: string, radiusM: number = 10, includePolygons: boolean = true) => {
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/building/${egid}/neighbors?radius_m=${radiusM}&include_polygons=${includePolygons}`
+    )
+    if (!response.ok) {
+      throw new Error(`Neighbors API error: ${response.status}`)
+    }
+    return response.json() as Promise<NeighborsResponse>
   },
 
   // URL-Import (simap.ch)

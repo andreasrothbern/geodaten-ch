@@ -14,7 +14,7 @@ import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
 import type { SelectedFacade, RoofData } from '../features/scaffold-configurator/types/scaffold.types';
@@ -263,12 +263,49 @@ export default function ConfiguratorPage() {
   const [buildingData, setBuildingData] = useState<ConfiguratorBuildingData | null>(null);
   const [project, setProject] = useState<ProjectWithGeodata | null>(null);
 
+  // Neighbors State (Phase 2)
+  const [neighborsRadius, setNeighborsRadius] = useState<number>(0); // 0 = off, 5 = near, 10 = context
+  const [neighbors, setNeighbors] = useState<NeighborBuilding[]>([]);
+  const [blockedSides, setBlockedSides] = useState<string[]>([]);
+  const [neighborsLoading, setNeighborsLoading] = useState(false);
+
   // Load project data if projectId is provided
   useEffect(() => {
     if (projectId) {
       loadProjectData(projectId);
     }
   }, [projectId]);
+
+  // Load neighbors when building data is available and radius > 0
+  useEffect(() => {
+    const loadNeighbors = async () => {
+      if (!buildingData?.building.egid || neighborsRadius === 0) {
+        setNeighbors([]);
+        setBlockedSides([]);
+        return;
+      }
+
+      setNeighborsLoading(true);
+      try {
+        const response = await geruestbauApi.getNeighbors(
+          buildingData.building.egid,
+          neighborsRadius,
+          true // include polygons for 3D view
+        );
+        setNeighbors(response.neighbors);
+        setBlockedSides(response.blocked_sides);
+        console.log(`Loaded ${response.neighbors.length} neighbors (radius: ${neighborsRadius}m), blocked: ${response.blocked_sides.join(', ')}`);
+      } catch (err) {
+        console.warn('Failed to load neighbors:', err);
+        setNeighbors([]);
+        setBlockedSides([]);
+      } finally {
+        setNeighborsLoading(false);
+      }
+    };
+
+    loadNeighbors();
+  }, [buildingData?.building.egid, neighborsRadius]);
 
   // Load project and use geodata from cache + fresh data for polygon_original
   const loadProjectData = async (id: string) => {
@@ -562,29 +599,77 @@ export default function ConfiguratorPage() {
 
   // Render Scaffold Configurator with loaded data
   return (
-    <ScaffoldConfigurator
-      projectId={buildingData.project_id}
-      buildingName={buildingData.building.name}
-      buildingAddress={buildingData.building.address}
-      buildingPolygon={buildingData.building.polygon}
-      selectedFacades={convertToSelectedFacades(buildingData)}
-      roof={convertRoofData(buildingData)}
-      onBack={() => {
-        setBuildingData(null);
-        setLoadingState('idle');
-        // If we came from a project, go back to project details
-        if (project) {
-          navigate(`/projects/${project.id}`);
-        }
-      }}
-      onComplete={() => {
-        // Navigate back to project or projects list
-        if (project) {
-          navigate(`/projects/${project.id}`);
-        } else {
-          navigate('/projects');
-        }
-      }}
-    />
+    <div className="min-h-screen bg-gray-100">
+      {/* Neighbors Radius Slider */}
+      <div className="bg-white border-b shadow-sm px-4 py-3">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700">
+              Nachbargebäude:
+            </label>
+            <div className="flex items-center gap-3">
+              {[
+                { value: 0, label: 'Aus' },
+                { value: 5, label: '5m' },
+                { value: 10, label: '10m' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setNeighborsRadius(option.value)}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    neighborsRadius === option.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+              {neighborsLoading && (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              )}
+            </div>
+          </div>
+          {/* Show blocked sides warning */}
+          {blockedSides.length > 0 && (
+            <div className="mt-2 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>
+                Blockierte Fassaden: <strong>{blockedSides.join(', ')}</strong>
+                {' '}({neighbors.length} Nachbar{neighbors.length !== 1 ? 'n' : ''})
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Scaffold Configurator */}
+      <ScaffoldConfigurator
+        projectId={buildingData.project_id}
+        buildingName={buildingData.building.name}
+        buildingAddress={buildingData.building.address}
+        buildingPolygon={buildingData.building.polygon}
+        selectedFacades={convertToSelectedFacades(buildingData)}
+        roof={convertRoofData(buildingData)}
+        neighbors={neighbors}
+        blockedSides={blockedSides}
+        onBack={() => {
+          setBuildingData(null);
+          setLoadingState('idle');
+          // If we came from a project, go back to project details
+          if (project) {
+            navigate(`/projects/${project.id}`);
+          }
+        }}
+        onComplete={() => {
+          // Navigate back to project or projects list
+          if (project) {
+            navigate(`/projects/${project.id}`);
+          } else {
+            navigate('/projects');
+          }
+        }}
+      />
+    </div>
   );
 }

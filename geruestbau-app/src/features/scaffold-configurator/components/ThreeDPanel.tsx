@@ -8,9 +8,15 @@ import { RotateCw, ZoomIn, Home } from 'lucide-react';
 import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldConfig';
 import { formatNumber } from '../utils/calculations';
 import type { View3D } from '../types/scaffold.types';
+import type { NeighborBuilding } from '../../../api/geruestbau';
 import { ScaffoldScene } from './threeDView';
 
-export default function ThreeDPanel() {
+interface ThreeDPanelProps {
+  neighbors?: NeighborBuilding[];
+  blockedSides?: string[];
+}
+
+export default function ThreeDPanel({ neighbors = [], blockedSides = [] }: ThreeDPanelProps) {
   const { setCurrentTab, configuration } = useScaffoldConfig();
   const totals = useTotals();
   const settings = useSettings();
@@ -60,6 +66,8 @@ export default function ThreeDPanel() {
               configuration={configuration}
               activeView={activeView}
               onViewChange={setActiveView}
+              neighbors={neighbors}
+              blockedSides={blockedSides}
             />
           </Suspense>
 

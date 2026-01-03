@@ -9,12 +9,15 @@ import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D } from '../../types/scaffold.types';
+import type { NeighborBuilding } from '../../../../api/geruestbau';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
 interface ScaffoldSceneProps {
   configuration: ScaffoldConfiguration;
   activeView: View3D;
   onViewChange?: (view: View3D) => void;
+  neighbors?: NeighborBuilding[];
+  blockedSides?: string[];
 }
 
 // Camera position presets for different views
@@ -688,7 +691,16 @@ function createScaffoldCorner(
 }
 
 // Main component
-export default function ScaffoldScene({ configuration, activeView }: ScaffoldSceneProps) {
+export default function ScaffoldScene({
+  configuration,
+  activeView,
+  neighbors = [],
+  blockedSides = [],
+}: ScaffoldSceneProps) {
+  // Log neighbors for debugging (will be used for rendering in Phase 2.3)
+  if (neighbors.length > 0) {
+    console.log(`ScaffoldScene: ${neighbors.length} neighbors, blocked sides: ${blockedSides.join(', ')}`);
+  }
   const containerRef = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
   const worldRef = useRef<OBC.SimpleWorld<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer> | null>(null);
@@ -749,7 +761,7 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
         world.scene.three.add(createGrid());
 
         // Add building and scaffolds
-        addSceneContent(world.scene.three, configuration);
+        addSceneContent(world.scene.three, configuration, neighbors);
 
         setIsLoading(false);
       } catch (err) {
@@ -783,7 +795,7 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
   }, [activeView]);
 
   // Add scene content
-  function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration) {
+  function addSceneContent(scene: THREE.Scene, config: ScaffoldConfiguration, neighborBuildings: NeighborBuilding[] = []) {
     const allFacades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
     const enabledFacades = allFacades.filter(f => f.enabled);
     const corners = config.elements.filter((el): el is ScaffoldCorner => el.type === 'corner');
@@ -863,6 +875,51 @@ export default function ScaffoldScene({ configuration, activeView }: ScaffoldSce
           scene.add(cornerGroup);
         }
       });
+
+      // Add neighbor buildings (Phase 2.3)
+      if (neighborBuildings.length > 0) {
+        const mainCenter = bboxCenter;
+        neighborBuildings.forEach((neighbor, index) => {
+          if (!neighbor.polygon || neighbor.polygon.length < 3) return;
+
+          // Calculate neighbor polygon center
+          const neighborMinX = Math.min(...neighbor.polygon.map(p => p[0]));
+          const neighborMaxX = Math.max(...neighbor.polygon.map(p => p[0]));
+          const neighborMinY = Math.min(...neighbor.polygon.map(p => p[1]));
+          const neighborMaxY = Math.max(...neighbor.polygon.map(p => p[1]));
+          const neighborCenter: [number, number] = [(neighborMinX + neighborMaxX) / 2, (neighborMinY + neighborMaxY) / 2];
+
+          // Offset from main building center
+          const offsetX = neighborCenter[0] - mainCenter[0];
+          const offsetZ = -(neighborCenter[1] - mainCenter[1]); // Y in LV95 -> -Z in THREE.js
+
+          // Normalize neighbor polygon relative to its own center
+          const normalizedNeighbor = neighbor.polygon.map(p =>
+            [p[0] - neighborCenter[0], p[1] - neighborCenter[1]] as [number, number]
+          );
+
+          // Create semi-transparent building for neighbor
+          const neighborHeight = 8; // Default height for neighbors (no height data)
+          const neighborMesh = createBuildingFromPolygon(normalizedNeighbor, neighborHeight);
+
+          // Make it semi-transparent gray
+          neighborMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material = new THREE.MeshLambertMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.4,
+              });
+            }
+          });
+
+          // Position relative to main building
+          neighborMesh.position.set(offsetX, 0, offsetZ);
+          scene.add(neighborMesh);
+
+          console.log(`Added neighbor ${index + 1}/${neighborBuildings.length} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
+        });
+      }
 
     } else {
       // FALLBACK: Use old box-based approach (for backwards compatibility)
