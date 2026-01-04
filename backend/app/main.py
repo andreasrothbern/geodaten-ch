@@ -3540,6 +3540,7 @@ async def get_smart_building_data(
     """
     try:
         from app.services.smart_building import get_smart_building_service
+        from app.services.polygon_simplifier import simplify_building_polygon
 
         service = get_smart_building_service()
         bundle = await service.collect_all_data(
@@ -3549,6 +3550,12 @@ async def get_smart_building_data(
             include_zones_analysis=include_zones_analysis,
             include_terrain=include_terrain,
         )
+
+        # Polygon on-the-fly vereinfachen (falls vorhanden)
+        polygon_simplified = None
+        if bundle.polygon and len(bundle.polygon) >= 3:
+            result = simplify_building_polygon(bundle.polygon)
+            polygon_simplified = result.polygon
 
         # Flache Struktur für Frontend SmartBuildingData Interface
         return {
@@ -3573,7 +3580,7 @@ async def get_smart_building_data(
 
             # Geometrie
             "polygon": bundle.polygon,
-            "polygon_simplified": bundle.polygon_simplified,
+            "polygon_simplified": polygon_simplified,
             "sides": bundle.sides,
             "perimeter_m": bundle.perimeter_m,
             "footprint_area_m2": bundle.footprint_area_m2,

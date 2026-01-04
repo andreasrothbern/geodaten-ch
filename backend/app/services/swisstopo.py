@@ -140,10 +140,17 @@ class SwisstopoService:
         for item in data.get("results", []):
             attrs = item.get("attrs", {})
             
-            # Koordinaten extrahieren
+            # Koordinaten extrahieren (swisstopo SearchServer gibt LV03 ohne Präfix!)
+            raw_e = attrs.get("y", attrs.get("x", 0))  # swisstopo: y=E, x=N
+            raw_n = attrs.get("x", attrs.get("y", 0))
+
+            # LV03 → LV95 Konvertierung (wenn Werte < 1000000)
+            lv95_e = raw_e + 2000000 if raw_e < 1000000 else raw_e
+            lv95_n = raw_n + 1000000 if raw_n < 1000000 else raw_n
+
             coords = Coordinates(
-                lv95_e=attrs.get("y", attrs.get("x", 0)),  # swisstopo: y=E, x=N
-                lv95_n=attrs.get("x", attrs.get("y", 0)),
+                lv95_e=lv95_e,
+                lv95_n=lv95_n,
                 wgs84_lon=attrs.get("lon"),
                 wgs84_lat=attrs.get("lat"),
             )
@@ -236,10 +243,11 @@ class SwisstopoService:
         return self._parse_building(results[0], include_geometry)
     
     async def identify_buildings(self, x: float, y: float, tolerance: int = 10) -> List[BuildingInfo]:
-        """Gebäude an Koordinate identifizieren"""
+        """Gebäude an Koordinate identifizieren (LV95 Koordinaten)"""
         params = {
             "geometryType": "esriGeometryPoint",
             "geometry": f"{x},{y}",
+            "sr": "2056",  # LV95 Koordinatensystem
             "mapExtent": "0,0,100,100",
             "imageDisplay": "100,100,100",
             "tolerance": str(tolerance),

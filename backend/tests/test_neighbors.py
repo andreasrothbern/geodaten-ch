@@ -21,6 +21,7 @@ from app.services.geodata_service import (
     _polygon_distance,
     _point_to_segment_distance,
     _calculate_direction,
+    _calculate_facade_direction,
 )
 
 
@@ -375,3 +376,132 @@ class TestGeodataServiceNeighbors:
         result = service_with_test_data.get_neighbors("1006", radius_m=10.0)
         assert result.query_time_ms > 0
         assert result.query_time_ms < 1000  # Sollte unter 1 Sekunde sein
+
+
+class TestCalculateFacadeDirection:
+    """
+    Tests für Fassaden-basierte Richtungsberechnung.
+
+    Diese Funktion wird bei angrenzenden Gebäuden (<1m) verwendet,
+    um die Richtung basierend auf der blockierten Fassade zu bestimmen.
+
+    Vorteile gegenüber Schwerpunkt-basierter Berechnung:
+    - Korrekte Richtung bei Reihenhäusern (wo Schwerpunkte fast identisch sind)
+    - Berücksichtigt die tatsächliche Gebäudegeometrie
+    """
+
+    def test_neighbor_to_east(self):
+        """Nachbar östlich → Richtung E."""
+        # Zielgebäude: 10x10m Quadrat
+        target = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+        # Nachbar östlich (angrenzend)
+        neighbor = [(10, 0), (20, 0), (20, 10), (10, 10), (10, 0)]
+
+        direction = _calculate_facade_direction(target, neighbor)
+        assert direction == "E", f"Erwartet E, erhalten {direction}"
+
+    def test_neighbor_to_west(self):
+        """Nachbar westlich → Richtung W."""
+        target = [(10, 0), (20, 0), (20, 10), (10, 10), (10, 0)]
+        neighbor = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+
+        direction = _calculate_facade_direction(target, neighbor)
+        assert direction == "W", f"Erwartet W, erhalten {direction}"
+
+    def test_neighbor_to_north(self):
+        """Nachbar nördlich → Richtung N."""
+        target = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+        neighbor = [(0, 10), (10, 10), (10, 20), (0, 20), (0, 10)]
+
+        direction = _calculate_facade_direction(target, neighbor)
+        assert direction == "N", f"Erwartet N, erhalten {direction}"
+
+    def test_neighbor_to_south(self):
+        """Nachbar südlich → Richtung S."""
+        target = [(0, 10), (10, 10), (10, 20), (0, 20), (0, 10)]
+        neighbor = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+
+        direction = _calculate_facade_direction(target, neighbor)
+        assert direction == "S", f"Erwartet S, erhalten {direction}"
+
+    def test_reihenhaus_overlapping_polygons(self):
+        """
+        Reihenhäuser mit überlappenden Polygonen.
+
+        Bei Reihenhäusern teilen sich benachbarte Gebäude oft eine Wand,
+        was zu überlappenden Polygonen führt. Die Schwerpunkte sind dann
+        sehr nahe beieinander (<2m), was den Spezialfall triggert.
+        """
+        # Reihenhaus 1: x=0-8
+        house1 = [(0, 0), (8, 0), (8, 12), (0, 12), (0, 0)]
+        # Reihenhaus 2: x=8-16 (teilt sich die Wand bei x=8)
+        house2 = [(8, 0), (16, 0), (16, 12), (8, 12), (8, 0)]
+
+        # Von Haus 1 aus gesehen ist Haus 2 im Osten
+        direction = _calculate_facade_direction(house1, house2)
+        assert direction == "E", f"Erwartet E, erhalten {direction}"
+
+        # Von Haus 2 aus gesehen ist Haus 1 im Westen
+        direction = _calculate_facade_direction(house2, house1)
+        assert direction == "W", f"Erwartet W, erhalten {direction}"
+
+    def test_reihenhaus_north_south_orientation(self):
+        """Reihenhäuser in Nord-Süd-Richtung."""
+        # Reihenhaus unten
+        house_s = [(0, 0), (10, 0), (10, 8), (0, 8), (0, 0)]
+        # Reihenhaus oben (teilt Wand bei y=8)
+        house_n = [(0, 8), (10, 8), (10, 16), (0, 16), (0, 8)]
+
+        direction_from_s = _calculate_facade_direction(house_s, house_n)
+        assert direction_from_s == "N", f"Erwartet N, erhalten {direction_from_s}"
+
+        direction_from_n = _calculate_facade_direction(house_n, house_s)
+        assert direction_from_n == "S", f"Erwartet S, erhalten {direction_from_n}"
+
+    def test_close_centroids_uses_simplified_direction(self):
+        """
+        Bei sehr nahen Schwerpunkten (<2m) wird vereinfachte 4-Richtungen verwendet.
+
+        Dies ist wichtig für überlappende Polygone wo die Kanten-Analyse
+        unzuverlässig sein könnte.
+        """
+        # Zwei überlappende Polygone (Schwerpunkte ~1m auseinander)
+        poly1 = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+        poly2 = [(1, 0), (11, 0), (11, 10), (1, 10), (1, 0)]
+
+        # Schwerpunkt von poly1: (5, 5)
+        # Schwerpunkt von poly2: (6, 5)
+        # Differenz: dx=1, dy=0 → E dominiert
+
+        direction = _calculate_facade_direction(poly1, poly2)
+        assert direction == "E", f"Erwartet E bei überlappenden Polygonen, erhalten {direction}"
+
+    def test_l_shaped_building_neighbor(self):
+        """L-förmiges Gebäude mit Nachbar."""
+        # L-förmiges Gebäude
+        l_shape = [
+            (0, 0), (20, 0), (20, 10), (10, 10), (10, 20), (0, 20), (0, 0)
+        ]
+        # Nachbar östlich des Hauptarms
+        neighbor = [(20, 0), (30, 0), (30, 10), (20, 10), (20, 0)]
+
+        direction = _calculate_facade_direction(l_shape, neighbor)
+        assert direction == "E", f"Erwartet E, erhalten {direction}"
+
+    def test_empty_polygon_fallback(self):
+        """Leere Polygone geben Fallback 'N' zurück."""
+        direction = _calculate_facade_direction([], [(0, 0), (10, 10)])
+        assert direction == "N"
+
+        direction = _calculate_facade_direction([(0, 0), (10, 10)], [])
+        assert direction == "N"
+
+    def test_diagonal_neighbor_northeast(self):
+        """Diagonal gelegener Nachbar (Nordost)."""
+        target = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+        # Nachbar diagonal rechts oben (mit Abstand)
+        neighbor = [(15, 15), (25, 15), (25, 25), (15, 25), (15, 15)]
+
+        direction = _calculate_facade_direction(target, neighbor)
+        # Bei diagonalen Nachbarn mit Abstand sollte NE herauskommen
+        assert direction in ["N", "NE", "E"], f"Erwartet N/NE/E, erhalten {direction}"

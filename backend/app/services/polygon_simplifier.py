@@ -27,6 +27,16 @@ from dataclasses import dataclass
 DEFAULT_SIMPLIFY_EPSILON = 0.3  # Meter
 DEFAULT_COLLINEAR_ANGLE_TOLERANCE = 8.0  # Grad
 
+# Epsilon → Winkeltoleranz Mapping
+# Höherer Epsilon = aggressivere Vereinfachung = höhere Winkeltoleranz
+EPSILON_TO_ANGLE_TOLERANCE = {
+    0.3: 5.0,   # Fein: nur fast-parallele Segmente
+    0.5: 8.0,   # Standard
+    1.0: 12.0,  # Moderat aggressiv
+    2.0: 20.0,  # Aggressiv
+    3.0: 30.0,  # Sehr aggressiv
+}
+
 
 @dataclass
 class SimplificationResult:
@@ -41,10 +51,44 @@ class SimplificationResult:
     area_m2: float
 
 
+def _get_angle_tolerance_for_epsilon(epsilon: float) -> float:
+    """
+    Berechnet die Winkeltoleranz basierend auf dem Epsilon-Wert.
+
+    Höherer Epsilon = aggressivere Vereinfachung = höhere Winkeltoleranz.
+    Interpoliert zwischen den definierten Werten.
+    """
+    # Exakte Treffer
+    if epsilon in EPSILON_TO_ANGLE_TOLERANCE:
+        return EPSILON_TO_ANGLE_TOLERANCE[epsilon]
+
+    # Sortierte Epsilon-Werte
+    epsilons = sorted(EPSILON_TO_ANGLE_TOLERANCE.keys())
+
+    # Unter Minimum
+    if epsilon < epsilons[0]:
+        return EPSILON_TO_ANGLE_TOLERANCE[epsilons[0]]
+
+    # Über Maximum
+    if epsilon > epsilons[-1]:
+        return EPSILON_TO_ANGLE_TOLERANCE[epsilons[-1]]
+
+    # Interpolieren zwischen zwei Werten
+    for i in range(len(epsilons) - 1):
+        if epsilons[i] <= epsilon <= epsilons[i + 1]:
+            e1, e2 = epsilons[i], epsilons[i + 1]
+            a1, a2 = EPSILON_TO_ANGLE_TOLERANCE[e1], EPSILON_TO_ANGLE_TOLERANCE[e2]
+            # Lineare Interpolation
+            t = (epsilon - e1) / (e2 - e1)
+            return a1 + t * (a2 - a1)
+
+    return DEFAULT_COLLINEAR_ANGLE_TOLERANCE
+
+
 def simplify_building_polygon(
     polygon: List[List[float]],
     epsilon: Optional[float] = None,
-    angle_tolerance: float = DEFAULT_COLLINEAR_ANGLE_TOLERANCE,
+    angle_tolerance: Optional[float] = None,
     use_dynamic_epsilon: bool = True
 ) -> SimplificationResult:
     """
@@ -52,10 +96,15 @@ def simplify_building_polygon(
 
     Kombiniert Douglas-Peucker mit kollinearer Segment-Verschmelzung.
 
+    NEU: Epsilon steuert jetzt auch die Winkeltoleranz!
+    - epsilon=0.3 → 5° Winkeltoleranz (fein)
+    - epsilon=2.0 → 20° Winkeltoleranz (aggressiv)
+
     Args:
         polygon: Original-Polygon [[e, n], ...]
         epsilon: Douglas-Peucker Toleranz in Metern (None = dynamisch)
         angle_tolerance: Winkeltoleranz für kollineare Segmente (Grad)
+                        None = automatisch basierend auf epsilon
         use_dynamic_epsilon: Wenn True und epsilon=None, wird epsilon
                             basierend auf Gebäudegrösse berechnet
 
@@ -66,7 +115,7 @@ def simplify_building_polygon(
         return SimplificationResult(
             polygon=polygon or [],
             epsilon_used=0,
-            angle_tolerance_used=angle_tolerance,
+            angle_tolerance_used=angle_tolerance or DEFAULT_COLLINEAR_ANGLE_TOLERANCE,
             original_point_count=len(polygon) if polygon else 0,
             simplified_point_count=len(polygon) if polygon else 0,
             sides=[],
@@ -88,10 +137,14 @@ def simplify_building_polygon(
     elif epsilon is None:
         epsilon = DEFAULT_SIMPLIFY_EPSILON
 
+    # Winkeltoleranz bestimmen (NEU: basierend auf epsilon wenn nicht explizit gesetzt)
+    if angle_tolerance is None:
+        angle_tolerance = _get_angle_tolerance_for_epsilon(epsilon)
+
     # 1. Douglas-Peucker Vereinfachung
     simplified = _simplify_polygon_douglas_peucker(polygon_tuples, epsilon)
 
-    # 2. Kollineare Segmente verschmelzen
+    # 2. Kollineare Segmente verschmelzen (mit epsilon-abhängiger Winkeltoleranz)
     simplified = _merge_collinear_segments(simplified, angle_tolerance)
 
     # Zurück zu Listen-Format

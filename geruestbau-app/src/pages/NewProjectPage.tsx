@@ -78,17 +78,19 @@ export default function NewProjectPage() {
         if (!response.ok) return null
         const data = await response.json()
 
-        // Map to Geodata format (flat structure)
+        // Map to Geodata format (flat structure from SmartBuildingService)
         return {
           egid: data.egid || '',
           address: data.address_matched || address,
           traufhoehe_m: data.traufhoehe_m,
           firsthoehe_m: data.firsthoehe_m,
-          gebaeudehoehe_m: data.firsthoehe_m,
-          area_m2: data.area_m2,
+          gebaeudehoehe_m: data.gebaeudehoehe_m || data.firsthoehe_m,
+          area_m2: data.footprint_area_m2 || data.gwr_area_m2,
           perimeter_m: data.perimeter_m,
-          coord_e: data.coordinates?.e,
-          coord_n: data.coordinates?.n,
+          coord_e: data.lv95_e,
+          coord_n: data.lv95_n,
+          polygon: data.polygon,
+          polygon_simplified: data.polygon_simplified,
         }
       } catch (error) {
         console.error('Fehler beim Laden der Geodaten:', error)

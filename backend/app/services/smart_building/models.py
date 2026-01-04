@@ -129,7 +129,8 @@ class BuildingDataBundle:
     """
 
     # === IDENTIFIKATION ===
-    egid: Optional[str] = None
+    egid: Optional[str] = None  # Primary EGID (swissBUILDINGS3D preferred)
+    gwr_egid: Optional[str] = None  # GWR EGID (may differ for row houses)
     address_input: Optional[str] = None
     address_matched: Optional[str] = None
 

@@ -296,6 +296,10 @@ class GeodataService:
 
         Für Gerüstbau: Erkennt angrenzende Gebäude die Fassaden blockieren.
 
+        WICHTIG: Sucht zuerst in building_geodata.db, dann im egid_tile_index
+        (tiles.db), da der Tile-Index ALLE Gebäude aus heruntergeladenen Tiles
+        enthält, während building_geodata.db nur explizit abgefragte Gebäude hat.
+
         Args:
             egid: EGID des Zielgebäudes
             radius_m: Suchradius in Metern (0=nur angrenzend, 5=nah, 10=Kontext)
@@ -315,13 +319,23 @@ class GeodataService:
         if not target.coord_e or not target.coord_n:
             return None
 
-        # Nachbarn im Umkreis suchen
+        # Koordinaten zu LV95 konvertieren (falls nötig)
+        target_e_lv95 = target.coord_e
+        target_n_lv95 = target.coord_n
+        if target_e_lv95 < 2000000:
+            target_e_lv95 += 2000000
+        if target_n_lv95 < 1000000:
+            target_n_lv95 += 1000000
+
+        neighbors = []
+        found_egids = set()
+
+        # 1. Zuerst in building_geodata.db suchen (hat Polygone)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Rechteck-Suche (schnell mit Index)
-        search_radius = radius_m + 50  # Etwas grösser für Polygon-Distanz
+        search_radius = radius_m + 50
         cursor.execute('''
             SELECT egid, polygon, coord_e, coord_n, center_e, center_n,
                    traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
@@ -335,36 +349,34 @@ class GeodataService:
             target.coord_n - search_radius, target.coord_n + search_radius
         ))
 
-        rows = cursor.fetchall()
-        conn.close()
-
-        neighbors = []
-
-        for row in rows:
+        for row in cursor.fetchall():
             neighbor_polygon = None
             if row['polygon']:
                 neighbor_polygon = [tuple(p) for p in json.loads(row['polygon'])]
 
-            # Distanz berechnen (Polygon-zu-Polygon wenn vorhanden)
             if target.polygon and neighbor_polygon:
                 distance = _polygon_distance(target.polygon, neighbor_polygon)
             else:
-                # Fallback: Zentrum-zu-Zentrum
                 dx = (row['coord_e'] or row['center_e'] or 0) - target.coord_e
                 dy = (row['coord_n'] or row['center_n'] or 0) - target.coord_n
                 distance = math.sqrt(dx*dx + dy*dy)
 
-            # Filter nach tatsächlichem Radius
             if distance > radius_m:
                 continue
 
-            # Richtung berechnen
             neighbor_center_e = row['center_e'] or row['coord_e']
             neighbor_center_n = row['center_n'] or row['coord_n']
-            direction = _calculate_direction(
-                target.coord_e, target.coord_n,
-                neighbor_center_e, neighbor_center_n
-            )
+
+            # Fassaden-basierte Richtungsberechnung wenn Polygone verfügbar
+            if target.polygon and neighbor_polygon and distance < 1.0:
+                # Bei angrenzenden Gebäuden (< 1m): Fassaden-Analyse
+                direction = _calculate_facade_direction(target.polygon, neighbor_polygon)
+            else:
+                # Fallback: Schwerpunkt-basiert
+                direction = _calculate_direction(
+                    target.coord_e, target.coord_n,
+                    neighbor_center_e, neighbor_center_n
+                )
 
             neighbors.append(NeighborBuilding(
                 egid=row['egid'],
@@ -377,6 +389,134 @@ class GeodataService:
                 firsthoehe_m=row['firsthoehe_m'],
                 gebaeudehoehe_m=row['gebaeudehoehe_m']
             ))
+            found_egids.add(row['egid'])
+
+        conn.close()
+
+        # 2. Dann im egid_tile_index suchen (hat alle Gebäude aus Tiles)
+        # Dies findet Nachbarn die noch nicht in building_geodata.db sind
+        tiles_db_path = Path(self.db_path).parent / "tiles.db"
+        if tiles_db_path.exists():
+            conn_tiles = sqlite3.connect(tiles_db_path)
+            conn_tiles.row_factory = sqlite3.Row
+            cursor_tiles = conn_tiles.cursor()
+
+            cursor_tiles.execute('''
+                SELECT egid, lv95_e, lv95_n
+                FROM egid_tile_index
+                WHERE egid != ?
+                  AND lv95_e BETWEEN ? AND ?
+                  AND lv95_n BETWEEN ? AND ?
+            ''', (
+                int(egid) if egid.isdigit() else egid,
+                target_e_lv95 - search_radius, target_e_lv95 + search_radius,
+                target_n_lv95 - search_radius, target_n_lv95 + search_radius
+            ))
+
+            # WICHTIG: Ergebnisse SOFORT speichern, bevor neuer Query läuft!
+            neighbor_rows = cursor_tiles.fetchall()
+
+            # Get tile_id for potential on-demand polygon loading
+            cursor_tiles.execute(
+                'SELECT tile_id FROM egid_tile_index WHERE egid = ?',
+                (int(egid) if egid.isdigit() else egid,)
+            )
+            tile_row = cursor_tiles.fetchone()
+            tile_id = tile_row['tile_id'] if tile_row else None
+
+            for row in neighbor_rows:
+                neighbor_egid = str(row['egid'])
+
+                # Skip wenn schon gefunden
+                if neighbor_egid in found_egids:
+                    continue
+
+                # Distanz berechnen (Zentrum-zu-Zentrum, LV95)
+                dx = row['lv95_e'] - target_e_lv95
+                dy = row['lv95_n'] - target_n_lv95
+                center_distance = math.sqrt(dx*dx + dy*dy)
+
+                if center_distance > radius_m:
+                    continue
+
+                # Versuchen Polygon aus building_geodata.db zu laden
+                neighbor_polygon = None
+                neighbor_heights = {}
+                cached = self.get_by_egid(neighbor_egid)
+                if cached:
+                    neighbor_polygon = cached.polygon if include_polygons else None
+                    neighbor_heights = {
+                        'traufhoehe_m': cached.traufhoehe_m,
+                        'firsthoehe_m': cached.firsthoehe_m,
+                        'gebaeudehoehe_m': cached.gebaeudehoehe_m,
+                    }
+
+                # Calculate actual distance
+                distance = center_distance
+
+                # For close neighbors (< 20m center distance), try to get polygon
+                # to calculate accurate polygon-to-polygon distance
+                if center_distance < 20 and target.polygon:
+                    if neighbor_polygon:
+                        # Have polygon - calculate exact distance
+                        distance = _polygon_distance(target.polygon, neighbor_polygon)
+                    elif tile_id:
+                        # No polygon cached - try to load from GDB on-demand
+                        try:
+                            from app.services.tile_cache import get_tile_cache
+                            tile_cache = get_tile_cache()
+                            gdb_path = tile_cache.get_tile_path(tile_id)
+                            if gdb_path and gdb_path.exists():
+                                # Load polygon from GDB
+                                loaded_polygon = _load_polygon_from_gdb(
+                                    gdb_path, int(neighbor_egid)
+                                )
+                                if loaded_polygon:
+                                    neighbor_polygon = loaded_polygon
+                                    distance = _polygon_distance(
+                                        target.polygon, neighbor_polygon
+                                    )
+                                    # Cache for next time
+                                    self.save(BuildingGeodata(
+                                        egid=neighbor_egid,
+                                        polygon=loaded_polygon,
+                                        coord_e=row['lv95_e'] - 2000000 if row['lv95_e'] > 2000000 else row['lv95_e'],
+                                        coord_n=row['lv95_n'] - 1000000 if row['lv95_n'] > 1000000 else row['lv95_n'],
+                                        center_e=row['lv95_e'],
+                                        center_n=row['lv95_n'],
+                                    ))
+                        except Exception as e:
+                            # On-demand loading failed, use center distance
+                            import logging
+                            logging.getLogger(__name__).debug(
+                                f"On-demand polygon load failed for {neighbor_egid}: {e}"
+                            )
+
+                # Fassaden-basierte Richtungsberechnung wenn Polygone verfügbar
+                if target.polygon and neighbor_polygon and distance < 1.0:
+                    # Bei angrenzenden Gebäuden (< 1m): Fassaden-Analyse
+                    direction = _calculate_facade_direction(target.polygon, neighbor_polygon)
+                else:
+                    # Fallback: Schwerpunkt-basiert (mit LV95 Koordinaten)
+                    direction = _calculate_direction(
+                        target_e_lv95, target_n_lv95,
+                        row['lv95_e'], row['lv95_n']
+                    )
+
+                neighbors.append(NeighborBuilding(
+                    egid=neighbor_egid,
+                    polygon=neighbor_polygon if include_polygons else None,
+                    distance_m=round(distance, 2),
+                    direction=direction,
+                    center_e=row['lv95_e'],
+                    center_n=row['lv95_n'],
+                    traufhoehe_m=neighbor_heights.get('traufhoehe_m'),
+                    firsthoehe_m=neighbor_heights.get('firsthoehe_m'),
+                    gebaeudehoehe_m=neighbor_heights.get('gebaeudehoehe_m')
+                ))
+                found_egids.add(neighbor_egid)
+
+            conn_tiles.close()
 
         # Nach Distanz sortieren
         neighbors.sort(key=lambda n: n.distance_m)
@@ -391,7 +531,7 @@ class GeodataService:
             neighbors=neighbors,
             radius_m=radius_m,
             query_time_ms=round(query_time, 2),
-            source="building_geodata.db"
+            source="building_geodata.db+tiles.db"
         )
 
     def _row_to_geodata(self, row: sqlite3.Row) -> BuildingGeodata:
@@ -444,6 +584,83 @@ def _polygon_distance(poly1: List[Tuple[float, float]], poly2: List[Tuple[float,
             min_dist = min(min_dist, dist)
 
     return min_dist
+
+
+def _load_polygon_from_gdb(gdb_path: Path, egid: int) -> Optional[List[Tuple[float, float]]]:
+    """
+    Lädt ein einzelnes Polygon aus einem GDB für einen bestimmten EGID.
+
+    Args:
+        gdb_path: Pfad zum GDB-Verzeichnis
+        egid: EGID des Gebäudes
+
+    Returns:
+        Polygon als Liste von (x, y) Koordinaten oder None
+    """
+    try:
+        import geopandas as gpd
+        import fiona
+    except ImportError:
+        return None
+
+    try:
+        layers = fiona.listlayers(gdb_path)
+
+        # Building-Layer finden
+        target_layer = None
+        for layer in layers:
+            if 'building' in layer.lower() and 'solid' in layer.lower():
+                target_layer = layer
+                break
+        if not target_layer:
+            for layer in layers:
+                if 'building' in layer.lower():
+                    target_layer = layer
+                    break
+        if not target_layer and layers:
+            target_layer = layers[0]
+
+        if not target_layer:
+            return None
+
+        # GDB laden mit Filter für EGID
+        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
+
+        # EGID filtern
+        matching = gdf[gdf['EGID'] == egid]
+        if matching.empty:
+            return None
+
+        row = matching.iloc[0]
+        geom = row.geometry
+
+        if geom is None:
+            return None
+
+        # Polygon extrahieren (2D Footprint)
+        polygon = None
+        if hasattr(geom, 'geoms'):
+            # MultiPolygon - take convex hull
+            all_coords_2d = []
+            for g in geom.geoms:
+                if hasattr(g, 'exterior'):
+                    coords = [(c[0], c[1]) for c in g.exterior.coords]
+                    all_coords_2d.extend(coords)
+            if all_coords_2d:
+                from shapely.geometry import MultiPoint
+                hull = MultiPoint(all_coords_2d).convex_hull
+                if hasattr(hull, 'exterior'):
+                    polygon = [(round(c[0], 2), round(c[1], 2))
+                              for c in hull.exterior.coords]
+        elif hasattr(geom, 'exterior'):
+            # Single Polygon
+            polygon = [(round(c[0], 2), round(c[1], 2))
+                      for c in geom.exterior.coords]
+
+        return polygon
+
+    except Exception:
+        return None
 
 
 def _point_to_segment_distance(
@@ -505,6 +722,11 @@ def _calculate_direction(
     # Konvertieren zu Kompass (0 = Nord)
     compass = (90 - angle) % 360
 
+    return _compass_to_direction(compass)
+
+
+def _compass_to_direction(compass: float) -> str:
+    """Konvertiert Kompass-Winkel (0=Nord) zu Himmelsrichtung."""
     # In 8 Richtungen einteilen
     if compass >= 337.5 or compass < 22.5:
         return "N"
@@ -522,6 +744,121 @@ def _calculate_direction(
         return "W"
     else:
         return "NW"
+
+
+def _calculate_facade_direction(
+    target_polygon: List[Tuple[float, float]],
+    neighbor_polygon: List[Tuple[float, float]]
+) -> str:
+    """
+    Berechnet Himmelsrichtung basierend auf der blockierten Fassade.
+
+    Findet die Kante des Ziel-Polygons, die am nächsten zum Nachbar-Schwerpunkt liegt,
+    und berechnet deren Normalrichtung (nach aussen zeigend).
+
+    Strategie: Bei überlappenden Polygonen (Reihenhäuser) haben viele Kanten
+    Distanz 0. Deshalb verwenden wir die Kante, deren Mittelpunkt am nächsten
+    zum Nachbar-Schwerpunkt liegt.
+
+    Args:
+        target_polygon: Polygon des Zielgebäudes
+        neighbor_polygon: Polygon des Nachbargebäudes
+
+    Returns:
+        Himmelsrichtung der blockierten Fassade (N, NE, E, SE, S, SW, W, NW)
+    """
+    if not target_polygon or not neighbor_polygon:
+        return "N"  # Fallback
+
+    # Schwerpunkte berechnen
+    target_center_e = sum(p[0] for p in target_polygon) / len(target_polygon)
+    target_center_n = sum(p[1] for p in target_polygon) / len(target_polygon)
+
+    neighbor_center_e = sum(p[0] for p in neighbor_polygon) / len(neighbor_polygon)
+    neighbor_center_n = sum(p[1] for p in neighbor_polygon) / len(neighbor_polygon)
+
+    # Distanz zwischen Schwerpunkten
+    center_dist = math.sqrt(
+        (neighbor_center_e - target_center_e)**2 +
+        (neighbor_center_n - target_center_n)**2
+    )
+
+    # Bei sehr nahen/überlappenden Polygonen (<2m): Vereinfache auf 4 Hauptrichtungen
+    # basierend auf der dominanten Achse (N/S oder E/W)
+    if center_dist < 2.0:
+        dx = neighbor_center_e - target_center_e
+        dy = neighbor_center_n - target_center_n
+
+        # Welche Achse dominiert?
+        if abs(dy) >= abs(dx):
+            # N-S dominiert
+            return "N" if dy > 0 else "S"
+        else:
+            # E-W dominiert
+            return "E" if dx > 0 else "W"
+
+    # Finde die Kante, deren Mittelpunkt am nächsten zum Nachbar-Schwerpunkt liegt
+    min_dist_to_neighbor = float('inf')
+    best_edge_idx = 0
+
+    for i in range(len(target_polygon) - 1):
+        p1 = target_polygon[i]
+        p2 = target_polygon[i + 1]
+
+        # Kantenmittelpunkt
+        mid_e = (p1[0] + p2[0]) / 2
+        mid_n = (p1[1] + p2[1]) / 2
+
+        # Distanz zum Nachbar-Schwerpunkt
+        dist = math.sqrt((mid_e - neighbor_center_e)**2 + (mid_n - neighbor_center_n)**2)
+
+        if dist < min_dist_to_neighbor:
+            min_dist_to_neighbor = dist
+            best_edge_idx = i
+
+    # Die nächste Kante gefunden - berechne deren Normalrichtung
+    p1 = target_polygon[best_edge_idx]
+    p2 = target_polygon[best_edge_idx + 1]
+
+    # Kantenvektor
+    edge_dx = p2[0] - p1[0]
+    edge_dy = p2[1] - p1[1]
+
+    # Normalvektor (senkrecht zur Kante)
+    # Es gibt zwei Möglichkeiten: (edge_dy, -edge_dx) oder (-edge_dy, edge_dx)
+    # Wähle die, die zum Nachbarn zeigt (vom eigenen Schwerpunkt weg)
+
+    # Mittelpunkt der Kante
+    mid_e = (p1[0] + p2[0]) / 2
+    mid_n = (p1[1] + p2[1]) / 2
+
+    # Zwei mögliche Normalen
+    normal1 = (edge_dy, -edge_dx)
+    normal2 = (-edge_dy, edge_dx)
+
+    # Richtungsvektor vom Kantenmittelpunkt zum Nachbar-Schwerpunkt
+    to_neighbor_e = neighbor_center_e - mid_e
+    to_neighbor_n = neighbor_center_n - mid_n
+
+    # Dot-Product bestimmt welche Normale zum Nachbarn zeigt
+    # Positive Dot-Product = Normale zeigt in gleiche Richtung wie "zum Nachbarn"
+    dot1 = normal1[0] * to_neighbor_e + normal1[1] * to_neighbor_n
+
+    if dot1 > 0:
+        outward_normal = normal1
+    else:
+        outward_normal = normal2
+
+    # Normalrichtung als Kompass-Winkel
+    # atan2(dy, dx) gibt Winkel wo 0=Ost, 90=Nord
+    angle = math.degrees(math.atan2(outward_normal[1], outward_normal[0]))
+    if angle < 0:
+        angle += 360
+
+    # Konvertieren zu Kompass (0 = Nord)
+    compass = (90 - angle) % 360
+
+    return _compass_to_direction(compass)
 
 
 # Singleton instance

@@ -541,6 +541,16 @@ class SmartBuildingService:
                     bundle.height_source = DataSource.SWISSBUILDINGS3D
                     bundle.height_quality = DataQuality.HIGH
 
+                # === EGID (swissBUILDINGS3D als Primary Key) ===
+                # BUG-013 FIX: GWR gruppiert Reihenhäuser unter einer EGID,
+                # swissBUILDINGS3D hat separate EGIDs pro Segment
+                swissbuildings_egid = result.get("egid")
+                if swissbuildings_egid:
+                    if bundle.egid and str(bundle.egid) != str(swissbuildings_egid):
+                        bundle.gwr_egid = bundle.egid  # GWR EGID behalten
+                        logger.info(f"EGID Update: GWR {bundle.egid} → swissBUILDINGS3D {swissbuildings_egid}")
+                    bundle.egid = str(swissbuildings_egid)
+
                 bundle.add_source(DataSource.SWISSBUILDINGS3D)
                 original_pts = bundle.polygon_point_count or 0
                 simplified_pts = result.get("polygon_simplified_point_count", 0)

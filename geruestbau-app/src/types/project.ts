@@ -13,7 +13,8 @@ export type ProjectStatus =
 export interface Geodata {
   egid: string
   address?: string
-  polygon?: [number, number][]  // [[e, n], ...]
+  polygon?: [number, number][]  // [[e, n], ...] - Original aus swissBUILDINGS3D
+  polygon_simplified?: [number, number][]  // On-the-fly vereinfacht für Gerüstplanung
   traufhoehe_m?: number
   firsthoehe_m?: number
   gebaeudehoehe_m?: number

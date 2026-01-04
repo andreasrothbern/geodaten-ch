@@ -18,6 +18,7 @@ import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type A
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
 import type { SelectedFacade, RoofData } from '../features/scaffold-configurator/types/scaffold.types';
+import { simplifyPolygon, sidesToFacades } from '../features/scaffold-configurator/utils/polygonSimplifier';
 
 interface ConfiguratorBuildingData {
   project_id: string;
@@ -51,6 +52,10 @@ interface ConfiguratorBuildingData {
     roof_surfaces_count: number;
     height_source: string;
     confidence: number;
+    // Polygon-Vereinfachung (optional)
+    simplified_points?: number;
+    epsilon_used?: number;
+    angle_tolerance_deg?: number;
   };
 }
 
@@ -279,7 +284,6 @@ export default function ConfiguratorPage() {
 
   // Polygon Simplification State
   const [simplifyEpsilon, setSimplifyEpsilon] = useState<number | null>(null); // null = dynamic
-  const [simplifyLoading, setSimplifyLoading] = useState(false);
 
   // Multi-Building State (Phase 3)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
@@ -382,12 +386,16 @@ export default function ConfiguratorPage() {
   };
 
   // Fetch building data from API
+  // isRefresh: If true, don't change loadingState (for simplification changes)
   const fetchBuildingData = useCallback(async (
     selectedAddress: string,
     existingProject?: ProjectWithGeodata | null,
-    epsilon?: number | null
+    epsilon?: number | null,
+    isRefresh: boolean = false
   ) => {
-    setLoadingState('loading');
+    if (!isRefresh) {
+      setLoadingState('loading');
+    }
     setError(null);
 
     try {
@@ -435,7 +443,10 @@ export default function ConfiguratorPage() {
     } catch (err) {
       console.error('Error fetching building data:', err);
       setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
-      setLoadingState('error');
+      // Don't change loadingState on refresh errors - keep showing current data
+      if (!isRefresh) {
+        setLoadingState('error');
+      }
     }
   }, [projectId]);
 
@@ -481,6 +492,42 @@ export default function ConfiguratorPage() {
       fetchBuildingData(address, project);
     }
   }, [address, fetchBuildingData, project]);
+
+  // Handle simplify epsilon change - LOCAL simplification (no API call!)
+  // IMPORTANT: This useCallback MUST be before any conditional returns!
+  const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
+    setSimplifyEpsilon(newEpsilon);
+
+    // Lokale Vereinfachung - kein API-Call!
+    if (buildingData?.building.polygon) {
+      const result = simplifyPolygon(buildingData.building.polygon, {
+        epsilon: newEpsilon,
+      });
+
+      // Fassaden aus vereinfachtem Polygon berechnen
+      const newFacades = sidesToFacades(
+        result.sides,
+        buildingData.building.trauf_height_m || 10
+      );
+
+      // BuildingData mit neuen Fassaden aktualisieren
+      setBuildingData({
+        ...buildingData,
+        selected_facades: newFacades,
+        metadata: {
+          ...buildingData.metadata,
+          polygon_points: result.originalPoints,
+          facade_count: newFacades.length,
+          // Zusätzliche Info über Vereinfachung
+          simplified_points: result.simplifiedPoints,
+          epsilon_used: result.epsilon,
+          angle_tolerance_deg: result.angleToleranceDeg,
+        },
+      });
+
+      console.log(`Polygon vereinfacht: ${result.originalPoints} -> ${result.simplifiedPoints} Punkte, ${newFacades.length} Fassaden (epsilon=${result.epsilon})`);
+    }
+  }, [buildingData]);
 
   // Convert API response to SelectedFacade format (including coordinates for 3D)
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
@@ -763,19 +810,6 @@ export default function ConfiguratorPage() {
     };
   };
 
-  // Handle simplify epsilon change - refetch with new value
-  const handleSimplifyChange = useCallback(async (newEpsilon: number | null) => {
-    setSimplifyEpsilon(newEpsilon);
-    if (buildingData?.building.address) {
-      setSimplifyLoading(true);
-      try {
-        await fetchBuildingData(buildingData.building.address, project, newEpsilon);
-      } finally {
-        setSimplifyLoading(false);
-      }
-    }
-  }, [buildingData?.building.address, project, fetchBuildingData]);
-
   // Render Scaffold Configurator with loaded data
   return (
     <div className="min-h-screen bg-gray-100">
@@ -807,14 +841,16 @@ export default function ConfiguratorPage() {
                   {option.label}
                 </button>
               ))}
-              {simplifyLoading && (
-                <Loader2 className="w-4 h-4 animate-spin text-green-600" />
-              )}
             </div>
           </div>
           {buildingData?.metadata && (
             <div className="text-xs text-gray-500 text-right">
-              Polygon: {buildingData.metadata.polygon_points} Punkte → {buildingData.selected_facades.length} Fassaden
+              {/* Zeige Original -> Vereinfacht -> Fassaden */}
+              {buildingData.metadata.simplified_points ? (
+                <>Polygon: {buildingData.metadata.polygon_points} → {buildingData.metadata.simplified_points} Punkte → {buildingData.selected_facades.length} Fassaden</>
+              ) : (
+                <>Polygon: {buildingData.metadata.polygon_points} Punkte → {buildingData.selected_facades.length} Fassaden</>
+              )}
             </div>
           )}
 

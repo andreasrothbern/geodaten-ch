@@ -623,6 +623,54 @@ GET /api/v1/geruestbau/building/{egid}/neighbors
 - Punkt-zu-Segment Distanz für alle Polygonpunkte
 - `distance_m < 0.5` = direkt angrenzend → blockierte Seite
 
+**Richtungsberechnung (Fassaden-basiert):**
+
+Bei angrenzenden Gebäuden (< 1m Distanz) wird die Richtung basierend auf der
+blockierten Fassade berechnet, nicht nur auf Schwerpunkt-Differenz.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              RICHTUNGSBERECHNUNG BEI NACHBARN                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Situation: Reihenhäuser mit überlappenden Polygonen                │
+│                                                                     │
+│  Problem mit Schwerpunkt-Methode:                                   │
+│  ┌───────────────────────────────────────────────┐                  │
+│  │     ┌────────┐ ┌────────┐                     │                  │
+│  │     │ Haus A │ │ Haus B │                     │                  │
+│  │     │   •    │ │   •    │  ← Schwerpunkte     │                  │
+│  │     │  (5,6) │ │ (5.4,6)│    nur 0.4m apart!  │                  │
+│  │     └────────┘ └────────┘                     │                  │
+│  │                                               │                  │
+│  │  → Schwerpunkt-Differenz ergibt E/S statt E   │                  │
+│  └───────────────────────────────────────────────┘                  │
+│                                                                     │
+│  Lösung: Fassaden-basierte Berechnung                               │
+│  ┌───────────────────────────────────────────────┐                  │
+│  │  1. Finde die Kante am nächsten zum Nachbarn  │                  │
+│  │  2. Berechne Normalvektor der Kante           │                  │
+│  │  3. Wähle Richtung via Dot-Product            │                  │
+│  │                                               │                  │
+│  │     ┌────────┐→┌────────┐                     │                  │
+│  │     │ Haus A │→│ Haus B │                     │                  │
+│  │     │        │→│        │  → Normal zeigt E   │                  │
+│  │     └────────┘→└────────┘                     │                  │
+│  └───────────────────────────────────────────────┘                  │
+│                                                                     │
+│  Spezialfall: Schwerpunkte < 2m auseinander                         │
+│  → Vereinfachte 4-Richtungen (N/S/E/W) basierend auf                │
+│    dominanter Achse (dx vs dy)                                      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Funktionen:**
+- `_calculate_facade_direction()` - Fassaden-basierte Richtung
+- `_calculate_direction()` - Schwerpunkt-basiert (Fallback)
+
+**Tests:** `tests/test_neighbors.py::TestCalculateFacadeDirection` (10 Tests)
+
 **Anwendungsfall Reihenhaus:**
 ```
 Knospenweg 4 (Mitte der Reihe)
@@ -632,30 +680,41 @@ Knospenweg 4 (Mitte der Reihe)
 └─ Süd: Frei → Gerüst möglich
 ```
 
-### Adress-Parser (Neu)
+### Adress-Parser & Multi-Building Mode (Implementiert 03.01.2026)
 
-**Problem:** "Knospenweg 2-10" soll alle 5 Gebäude laden.
+**Problem:** Ganze Häuserzeilen (z.B. "Knospenweg 2-10") sollen auf einmal erfasst werden können.
 
-**Lösung:** Parser für Adressbereiche mit Geocoding-Integration.
+**Lösung:** Parser für Adressbereiche mit Geocoding-Integration und Multi-Building UI.
 
 **Dateien:**
-- `address_parser.py` - Parser-Logik
+```
+Backend:
+├── app/services/address_parser.py     # Parser-Logik
+├── app/routers/geruestbau.py          # API-Endpunkte
+└── app/api/geruestbau.py              # API-Client Typen
+
+Frontend:
+├── src/api/geruestbau.ts              # API-Client (resolveAddressRange, getBuildingPolygon)
+└── src/pages/ConfiguratorPage.tsx     # Multi-Building UI & Selection
+```
 
 **Unterstützte Formate:**
 
-| Format | Beispiel | Ergebnis |
-|--------|----------|----------|
-| Range (gerade) | `2-10` | [2, 4, 6, 8, 10] |
-| Range (ungerade) | `1-9` | [1, 3, 5, 7, 9] |
-| Slash-Notation | `27/29` | [27, 29] |
-| Gemischt | `1-4` | [1, 2, 3, 4] |
+| Format | Beispiel | Ergebnis | Beschreibung |
+|--------|----------|----------|--------------|
+| Range (gerade) | `2-10` | [2, 4, 6, 8, 10] | Automatische Schrittweite 2 |
+| Range (ungerade) | `1-9` | [1, 3, 5, 7, 9] | Automatische Schrittweite 2 |
+| Range (gemischt) | `1-4` | [1, 2, 3, 4] | Schrittweite 1 |
+| Slash-Notation | `27/29` | [27, 29] | Explizite Liste |
+| Komma-Liste | `1, 3, 5` | [1, 3, 5] | Explizite Liste |
 
-**API:**
+**Backend API:**
+
 ```python
 # Nur Parsing (ohne Geocoding)
 GET /api/v1/geruestbau/address/parse?address=Knospenweg 2-10, Bern
 
-# Mit Geocoding → EGIDs
+# Mit Geocoding → EGIDs + Koordinaten
 GET /api/v1/geruestbau/address/resolve?address=Knospenweg 2-10, Bern
 ```
 
@@ -665,16 +724,90 @@ GET /api/v1/geruestbau/address/resolve?address=Knospenweg 2-10, Bern
   "parsed": {
     "street": "Knospenweg",
     "city": "Bern",
+    "zip": "3006",
     "numbers": ["2", "4", "6", "8", "10"],
     "range_type": "range"
   },
   "buildings": [
-    {"address": "Knospenweg 2, Bern", "egid": "123456", ...},
-    {"address": "Knospenweg 4, Bern", "egid": "123457", ...}
+    {
+      "address": "Knospenweg 2, 3006 Bern",
+      "egid": "1234567",
+      "coordinates": {"e": 2601234, "n": 1200567}
+    },
+    {
+      "address": "Knospenweg 4, 3006 Bern",
+      "egid": "1234568",
+      "coordinates": {"e": 2601240, "n": 1200570}
+    }
   ],
   "building_count": 5,
+  "error_count": 0,
   "errors": []
 }
+```
+
+**Frontend Integration (ConfiguratorPage.tsx):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MULTI-BUILDING FLOW                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. User gibt Adresse ein: "Knospenweg 2-10, Bern"             │
+│     ↓                                                           │
+│  2. isAddressRange() erkennt Range-Pattern                     │
+│     ↓                                                           │
+│  3. geruestbauApi.resolveAddressRange() → Backend              │
+│     ↓                                                           │
+│  4. UI zeigt Gebäude-Auswahl (Checkboxen):                     │
+│     ┌─────────────────────────────────────┐                    │
+│     │ ☑ Knospenweg 2, Bern  (EGID: 123)  │                    │
+│     │ ☑ Knospenweg 4, Bern  (EGID: 124)  │                    │
+│     │ ☐ Knospenweg 6, Bern  (EGID: 125)  │                    │
+│     │ ☑ Knospenweg 8, Bern  (EGID: 126)  │                    │
+│     │ ☑ Knospenweg 10, Bern (EGID: 127)  │                    │
+│     └─────────────────────────────────────┘                    │
+│     [Alle auswählen]  [4 Gebäude laden]                        │
+│     ↓                                                           │
+│  5. Bei Auswahl > 1 Gebäude:                                   │
+│     a) Erstes Gebäude → Hauptgebäude (fetchBuildingData)       │
+│     b) Weitere → additionalBuildings (getBuildingPolygon)      │
+│     ↓                                                           │
+│  6. ScaffoldConfigurator erhält:                               │
+│     - buildingPolygon (Hauptgebäude)                           │
+│     - additionalBuildings[] (weitere Polygone für 3D)          │
+│     ↓                                                           │
+│  7. 3D-View zeigt alle Gebäude nebeneinander                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**State-Management (ConfiguratorPage):**
+
+```typescript
+// Multi-Building State
+const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
+const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
+const [isMultiMode, setIsMultiMode] = useState(false);
+const [additionalBuildings, setAdditionalBuildings] = useState<MultiBuildingData[]>([]);
+```
+
+**Anwendungsfall Reihenhäuser:**
+```
+User: "Knospenweg 2-10, Bern"
+→ 5 Reihenhäuser werden erkannt
+→ User wählt 3 aus (z.B. 4, 6, 8)
+→ Knospenweg 4 wird als Hauptgebäude geladen
+→ Knospenweg 6 + 8 werden als Zusatz-Polygone geladen
+→ 3D-View zeigt alle 3 Gebäude
+→ Gerüst kann für alle 3 konfiguriert werden
+```
+
+**Kombination mit Neighbors-API:**
+```
+Bei Reihenhäusern werden automatisch blockierte Seiten erkannt:
+- Knospenweg 4: Blockiert Ost (→ Nr. 6), Blockiert West (→ Nr. 2)
+- Nur Nord + Süd sind gerüstbar
 ```
 
 ### Parzellen-API (Neu 03.01.2026)
@@ -883,14 +1016,107 @@ RICHTIG (wie implementiert):
 1. Unit Tests (pytest tests/test_tile_cache.py)
    → Tile-ID Berechnung, Cache-Operationen
 
-2. Service Tests (pytest tests/test_swissbuildings3d.py)
+2. Address Parser Tests (pytest tests/test_address_parser.py)
+   → Range-Parsing, API-Endpunkte, Resolve-Service
+
+3. Service Tests (pytest tests/test_swissbuildings3d.py)
    → fetch_building_polygon_for_coordinates()
 
-3. Integration Tests (pytest tests/test_smart_building.py)
+4. Integration Tests (pytest tests/test_smart_building.py)
    → SmartBuildingService.collect_all_data()
 
-4. E2E Tests (python scripts/test_simap_import_flow.py)
+5. E2E Tests (python scripts/test_simap_import_flow.py)
    → Voller Flow: Import → Geocoding → Geodaten
+```
+
+### Address-Range Parser Tests (Neu 03.01.2026)
+
+Implementiert in `tests/test_address_parser.py` - **35 Tests, alle bestanden**.
+
+#### Testklassen-Übersicht
+
+| Klasse | Tests | Beschreibung |
+|--------|-------|--------------|
+| `TestParseNumberRange` | 7 | Hausnummern-Parsing (Range, Slash, Single) |
+| `TestDetermineStep` | 3 | Schrittweite-Bestimmung (gerade/ungerade) |
+| `TestParseAddressRange` | 6 | Vollständige Adress-Parsing |
+| `TestEdgeCases` | 6 | Edge Cases (umgekehrt, gleich, gross) |
+| `TestAddressPatterns` | 5 | Schweizer Adress-Muster |
+| `TestRealWorldAddresses` | 3 | Echte Adressen (Knospenweg, Bollwerk) |
+| `TestAPIIntegration` | 3 | API-Endpunkte mit TestClient |
+| `TestResolveService` | 2 | Async Service mit Mocking |
+
+#### Test-Details
+
+**TestParseNumberRange:**
+```python
+test_simple_range_even      # "2-10" → [2, 4, 6, 8, 10]
+test_simple_range_odd       # "1-9" → [1, 3, 5, 7, 9]
+test_mixed_range            # "1-4" → [1, 2, 3, 4]
+test_slash_notation         # "27/29" → [27, 29]
+test_single_number          # "15" → [15]
+test_number_with_suffix     # "15a" → [15a]
+test_range_with_spaces      # "2 - 10" → [2, 4, 6, 8, 10]
+```
+
+**TestAddressPatterns (Schweizer Strassenmuster):**
+```python
+test_strasse_ending         # Bahnhofstrasse → korrekt geparst
+test_gasse_ending           # Kramgasse → korrekt geparst
+test_weg_ending             # Knospenweg → korrekt geparst
+test_platz_ending           # Bundesplatz → SINGLE erkannt
+test_address_with_canton    # "St. Gallen" → korrekt als Stadt
+```
+
+**TestRealWorldAddresses:**
+```python
+test_knospenweg_reihenhaus  # Knospenweg 2-10, 3027 Bern
+  → street="Knospenweg", plz="3027", numbers=[2,4,6,8,10]
+
+test_bollwerk_double        # Bollwerk 27/29, 3011 Bern
+  → range_type=EXPLICIT, numbers=[27, 29]
+
+test_zurich_bahnhof         # Bahnhofstrasse 46-50, 8001 Zürich
+  → city="Zürich", plz="8001", numbers=[46,48,50]
+```
+
+**TestAPIIntegration (mit FastAPI TestClient):**
+```python
+test_parse_endpoint         # GET /api/v1/geruestbau/address/parse
+test_parse_single_address   # Einzelne Adresse → range_type="single"
+test_parse_slash_notation   # Slash → range_type="explicit"
+```
+
+**TestResolveService (Async mit Mocking):**
+```python
+test_resolve_returns_structure   # Korrekte Response-Struktur
+test_resolve_handles_not_found   # Fehlerbehandlung
+```
+
+#### Ausführen der Tests
+
+```bash
+# Alle Address-Parser Tests
+pytest tests/test_address_parser.py -v
+
+# Nur API-Integration Tests
+pytest tests/test_address_parser.py::TestAPIIntegration -v
+
+# Nur Async Tests
+pytest tests/test_address_parser.py::TestResolveService -v
+```
+
+#### Abhängigkeiten
+
+```python
+# pytest.ini oder pyproject.toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+# Benötigte Packages
+pytest
+pytest-asyncio
+fastapi[test]  # für TestClient
 ```
 
 ---
@@ -905,8 +1131,11 @@ RICHTIG (wie implementiert):
 | 13 | Parzellen-API | geodaten-ch | ✅ Done |
 | 14 | Neubau-Support | geruestbau-app | ⏳ |
 | 15 | Test-Script fixen (EGID-Lookup) | geodaten-ch | ✅ Done |
-| **16** | **Integrationstests erstellen** | geodaten-ch | 🔴 NEU |
-| **17** | **Test-Fixtures dokumentieren** | geodaten-ch | 🔴 NEU |
+| 16 | Integrationstests erstellen | geodaten-ch | 🔴 Offen |
+| 17 | Test-Fixtures dokumentieren | geodaten-ch | 🔴 Offen |
+| **18** | **Address-Range Parser + Multi-Building UI** | beide | ✅ Done |
+| **19** | **Neighbors-API + Blockierte Fassaden** | beide | ✅ Done |
+| **20** | **Polygon-Vereinfachungs-Slider** | beide | ✅ Done |
 
 ---
 
@@ -1268,3 +1497,406 @@ Später: Phase 5 (Erweitert)
 - ✅ Vollständig implementiert
 - ⚠️ Teilweise/Workaround
 - ❌ Nicht integriert
+
+---
+
+## 18. Bugfixes (Changelog)
+
+### BUG-006: polygon_simplified AttributeError (03.01.2026)
+
+**Problem:**
+```
+AttributeError: 'BuildingDataBundle' object has no attribute 'polygon_simplified'
+```
+
+Die API `/api/v1/smart-building/data` gab einen 500-Fehler zurück, weil in `main.py` das nicht existierende Attribut `bundle.polygon_simplified` referenziert wurde.
+
+**Ursache:**
+Laut der neuen Architektur (Abschnitt 7) wird `polygon_simplified` nicht mehr im `BuildingDataBundle` persistiert, sondern on-the-fly berechnet. Der Code in `main.py` war nicht synchronisiert.
+
+**Fix (Backend):**
+```python
+# main.py:3541-3558 (vorher)
+"polygon_simplified": bundle.polygon_simplified,  # ← AttributeError!
+
+# main.py:3541-3558 (nachher)
+from app.services.polygon_simplifier import simplify_building_polygon
+
+# Polygon on-the-fly vereinfachen (falls vorhanden)
+polygon_simplified = None
+if bundle.polygon and len(bundle.polygon) >= 3:
+    result = simplify_building_polygon(bundle.polygon)
+    polygon_simplified = result.polygon
+
+# In Response:
+"polygon_simplified": polygon_simplified,  # ✅ On-the-fly berechnet
+```
+
+**Fix (Frontend):**
+```typescript
+// NewProjectPage.tsx:81-93 - Falsches Mapping korrigiert
+// Vorher:
+coord_e: data.coordinates?.e,  // ← undefined!
+coord_n: data.coordinates?.n,  // ← undefined!
+area_m2: data.area_m2,         // ← undefined!
+
+// Nachher:
+coord_e: data.lv95_e,
+coord_n: data.lv95_n,
+area_m2: data.footprint_area_m2 || data.gwr_area_m2,
+polygon: data.polygon,
+polygon_simplified: data.polygon_simplified,
+```
+
+**Betroffene Dateien:**
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/main.py:3541-3558` | On-the-fly Vereinfachung |
+| `geruestbau-app/src/pages/NewProjectPage.tsx:81-93` | API-Response Mapping |
+| `geruestbau-app/src/types/project.ts:16` | `polygon_simplified` zu Interface |
+
+**Tests:**
+- `backend/tests/test_smart_building_api.py::test_polygon_simplified_in_response`
+- `backend/tests/test_smart_building_api.py::test_polygon_simplified_reduces_points`
+
+**Status:** ✅ Gefixt (03.01.2026)
+
+---
+
+### BUG-007: ProjectCreate.building_data AttributeError (03.01.2026)
+
+**Problem:**
+```
+AttributeError: 'ProjectCreate' object has no attribute 'building_data'
+```
+
+POST `/api/v1/geruestbau/projects` schlug fehl beim Erstellen eines neuen Projekts.
+
+**Ursache:**
+Der `ProjectCreate` Pydantic-Modell hat kein `building_data` Feld, aber `project_service.py` griff direkt darauf zu.
+
+**Fix:**
+```python
+# project_service.py:72-79 (vorher)
+if data.building_data:  # ← AttributeError!
+    ...
+
+# project_service.py:72-82 (nachher)
+egid = getattr(data, 'egid', None)  # EGID kann direkt im ProjectCreate sein
+building_data = getattr(data, 'building_data', None)  # Optional
+if building_data:
+    ...
+```
+
+**Betroffene Dateien:**
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/services/geruestbau/project_service.py:72-82` | `getattr()` für optionale Felder |
+
+**Status:** ✅ Gefixt (03.01.2026)
+
+### BUG-008: ProjectCreate.description + DB-Schema Mismatch (03.01.2026)
+
+**Problem:**
+```
+AttributeError: 'ProjectCreate' object has no attribute 'description'
+sqlite3.OperationalError: table projects has no column named description
+```
+
+POST `/api/v1/geruestbau/projects` schlug fehl weil:
+1. `ProjectCreate` Model hatte kein `description` Feld
+2. Bestehende DB hatte keine `description`, `building_data`, `scaffold_config` Spalten
+
+**Ursache:**
+Das `description` Feld kommt aus SIMAP-Datenextraktion (PDF/Link Import) und war nicht im Model.
+Die DB wurde vor dem Feature erstellt und hatte die neuen Spalten nicht.
+
+**Fix:**
+```python
+# models/geruestbau.py - ProjectCreate erweitert
+class ProjectCreate(BaseModel):
+    name: str
+    address: str
+    egid: Optional[str] = None
+    client_name: Optional[str] = None
+    client_contact: Optional[str] = None
+    deadline: Optional[str] = None
+    description: Optional[str] = None  # NEU: SIMAP-Import
+
+# project_service.py - DB-Migration hinzugefügt
+def _init_db(self):
+    ...
+    # DB-Migrationen: Fehlende Spalten hinzufügen
+    cursor.execute("PRAGMA table_info(projects)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    migrations = {
+        'description': 'TEXT',      # SIMAP-Import Feature
+        'building_data': 'TEXT',    # Geodaten-Anreicherung
+        'scaffold_config': 'TEXT',  # Gerüst-Konfiguration
+    }
+
+    for col_name, col_type in migrations.items():
+        if col_name not in columns:
+            cursor.execute(f"ALTER TABLE projects ADD COLUMN {col_name} {col_type}")
+```
+
+**Betroffene Dateien:**
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/models/geruestbau.py:160-171` | `description` zu `ProjectCreate` hinzugefügt |
+| `backend/app/models/geruestbau.py:174-182` | `description` zu `ProjectUpdate` hinzugefügt |
+| `backend/app/services/geruestbau/project_service.py:64-79` | DB-Migration für fehlende Spalten |
+| `backend/app/services/geruestbau/project_service.py:104-108` | `getattr()` für alle optionalen Felder |
+
+**Status:** ✅ Gefixt (03.01.2026)
+
+### BUG-009: GeocodingResult.lv95_e AttributeError in enrich_with_geodata (03.01.2026)
+
+**Problem:**
+```
+[Gerüstbau] Fehler bei Geodaten-Anreicherung: 'GeocodingResult' object has no attribute 'lv95_e'
+```
+
+POST `/api/v1/geruestbau/projects/{id}/enrich` schlug fehl. Die Geodaten wurden nicht korrekt im Cache gespeichert, sodass ConfiguratorPage die Daten erneut fetchen musste.
+
+**Ursache:**
+Der Code in `enrich_with_geodata` griff direkt auf `geocode_result.lv95_e` zu, aber die korrekte Struktur ist `geocode_result.coordinates.lv95_e`. Dies ist ein wiederkehrendes Problem mit inkonsistenten Koordinaten-Attributen in verschiedenen Services.
+
+**Root Cause Analysis:**
+```python
+# FALSCH (alt):
+geocode_result = await self.swisstopo.geocode(project.address)
+egid = geocode_result.egid  # ← GeocodingResult hat kein egid!
+coord_e = geocode_result.lv95_e  # ← AttributeError!
+
+# RICHTIG:
+geocode_result.coordinates.lv95_e  # Verschachtelt in Coordinates-Objekt
+```
+
+**Fix:**
+Komplettes Refactoring von `enrich_with_geodata` um den SmartBuildingService zu verwenden:
+```python
+# project_service.py:238-344 (nachher)
+async def enrich_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
+    """Projekt mit Geodaten anreichern via SmartBuildingService."""
+    project = await self.get_project(project_id)
+    if not project:
+        return None
+
+    try:
+        from app.services.smart_building import get_smart_building_service
+        smart_service = get_smart_building_service()
+        bundle = await smart_service.collect_all_data(
+            address=project.address,
+            force_refresh=False,
+            include_research=False,
+            include_zones_analysis=False,
+            include_terrain=True,
+        )
+
+        if bundle:
+            egid = bundle.egid
+            # Koordinaten direkt vom Bundle (konsistent!)
+            building_data["geocode"] = {
+                "coordinates": {
+                    "e": bundle.lv95_e,
+                    "n": bundle.lv95_n,
+                },
+            }
+            # ... weitere Daten aus Bundle ...
+
+            # Geodaten im zentralen Cache speichern
+            geodata = BuildingGeodata(
+                egid=str(egid),
+                polygon=bundle.polygon,
+                # ... etc ...
+            )
+            self.geodata_service.save(geodata)
+    except Exception as e:
+        print(f"[Gerüstbau] Fehler bei Geodaten-Anreicherung: {e}")
+
+    # Mit Geodaten zurückgeben
+    return await self.get_project_with_geodata(project_id)
+```
+
+**Vorteile des Refactorings:**
+1. **Konsistente Daten:** SmartBuildingService hat einheitliche Koordinaten-Attribute
+2. **Cache-Integration:** Geodaten werden automatisch im Cache gespeichert
+3. **Weniger Fehlerquellen:** Keine manuellen API-Aufrufe mehr
+4. **Return-Typ:** Gibt jetzt `ProjectWithGeodata` zurück (inkl. gecachter Geodaten)
+
+**Betroffene Dateien:**
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/services/geruestbau/project_service.py:238-344` | Komplettes Refactoring auf SmartBuildingService |
+
+**TODO - Koordinaten-Attribut-Chaos:**
+
+| Service/Model | Koordinaten-Zugriff | Bemerkung |
+|---------------|---------------------|-----------|
+| `GeocodingResult` | `.coordinates.lv95_e` | Verschachtelt in Coordinates-Objekt |
+| `BuildingDataBundle` | `.lv95_e`, `.lv95_n` | Flach auf Top-Level |
+| `BuildingGeodata` | `.coord_e`, `.coord_n` | Anderer Name! |
+| `Coordinates` | `.lv95_e`, `.lv95_n`, `.wgs84_lon`, `.wgs84_lat` | Alle 4 Koordinatensysteme |
+
+**Empfehlung:** Vereinheitlichung auf `lv95_e`/`lv95_n` für alle LV95-Koordinaten.
+
+**Status:** ✅ Gefixt (03.01.2026)
+
+
+---
+
+## BUG-011: LV03 statt LV95 Koordinaten (GEFIXT 04.01.2026)
+
+### Problem
+
+Die swisstopo SearchServer API gibt Koordinaten im LV03-Format ohne Präfix zurück:
+```json
+{
+  "x": 199805,  // LV03 N-Koordinate (ohne 1xxx Präfix)
+  "y": 596299   // LV03 E-Koordinate (ohne 2xxx Präfix)
+}
+```
+
+Der Code speicherte diese direkt als LV95-Koordinaten, was zu fehlgeschlagenen Identify-Lookups führte.
+
+### Lösung
+
+In `backend/app/services/swisstopo.py` Zeile 143-156:
+
+```python
+# LV03 → LV95 Konvertierung (wenn Werte < 1000000)
+lv95_e = raw_e + 2000000 if raw_e < 1000000 else raw_e
+lv95_n = raw_n + 1000000 if raw_n < 1000000 else raw_n
+```
+
+Zusätzlich: `sr=2056` Parameter für Identify API.
+
+**Status:** ✅ Gefixt
+
+---
+
+## BUG-013: GWR vs swissBUILDINGS3D EGID-Unterschiede (GEFIXT)
+
+### Problem
+
+Bei Reihenhäusern haben GWR und swissBUILDINGS3D **unterschiedliche EGIDs**:
+
+| Adresse | GWR EGID | swissBUILDINGS3D EGID |
+|---------|----------|----------------------|
+| Knospenweg 2 | 1243790 | 1243788 |
+| Knospenweg 4 | 1243790 | 1243790 |
+| Knospenweg 6 | 1243790 | 1243792 |
+
+- **GWR:** Reihenhaus = 1 Gebäude (Nr. 2-6 = EGID 1243790)
+- **swissBUILDINGS3D:** Jedes Segment = separates Gebäude
+
+### Auswirkung
+
+Bei Multi-Adress-Suche "Knospenweg 4-6":
+1. GWR-Geocoding gibt für beide Adressen EGID 1243790 zurück
+2. Frontend gruppiert nach EGID → zeigt nur 1 Gebäude
+3. Aber in `buildings` DB existieren separate Polygone pro Adresse!
+
+### Lösung (04.01.2026)
+
+**Koordinaten-basierter Lookup in tiles.db statt GWR identify_buildings:**
+
+```python
+# address_parser.py - _lookup_egid_by_coordinates()
+def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0):
+    cursor.execute('''
+        SELECT egid,
+               (lv95_e - ?) * (lv95_e - ?) + (lv95_n - ?) * (lv95_n - ?) as dist_sq
+        FROM egid_tile_index
+        WHERE lv95_e BETWEEN ? AND ? AND lv95_n BETWEEN ? AND ?
+        ORDER BY dist_sq LIMIT 1
+    ''', (e, e, n, n, e - tolerance_m, e + tolerance_m, n - tolerance_m, n + tolerance_m))
+```
+
+**Datenfluss:**
+```
+Adresse → Geocoding (swisstopo) → LV95 Koordinaten → tiles.db Lookup → swissBUILDINGS3D EGID
+```
+
+**Test-Ergebnisse:**
+```
+Knospenweg 2:  EGID=1243788, Source=swissBUILDINGS3D ✅
+Knospenweg 4:  EGID=1243790, Source=swissBUILDINGS3D ✅
+Knospenweg 6:  EGID=1243792, Source=swissBUILDINGS3D ✅
+Knospenweg 8:  EGID=1243794, Source=swissBUILDINGS3D ✅
+Knospenweg 10: EGID=1243797, Source=swissBUILDINGS3D ✅
+```
+
+**Geänderte Dateien:**
+- `backend/app/services/address_parser.py` - `_lookup_egid_by_coordinates()` Funktion
+- `backend/app/services/smart_building/service.py` - EGID-Assignment aus swissBUILDINGS3D
+- `backend/app/services/smart_building/models.py` - `gwr_egid` Feld für Referenz
+
+**Status:** ✅ Gefixt (04.01.2026)
+
+---
+
+## Architektur-Entscheidung: Koordinaten-basierte Lookups (04.01.2026)
+
+### Entscheidung
+
+**Kein Adress-Cache in tiles.db** - Alle Gebäude-Lookups erfolgen über Koordinaten.
+
+### Begründung
+
+1. **swissBUILDINGS3D enthält keine Adressen** - nur EGID + Koordinaten + Höhen
+2. **Koordinaten-Lookup ist ausreichend** für unsere Kern-Anwendungen:
+   - Gebäude-Identifikation: Adresse → Geocoding → Koordinaten → tiles.db
+   - Nachbar-Suche: Koordinaten ±10m → tiles.db Query
+3. **Keine 100 API-Calls pro Tile nötig** für Adress-Anreicherung
+
+### Datenfluss ohne Adress-Cache
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LOOKUP OHNE ADRESS-CACHE                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Adress-Suche:                                                  │
+│  "Knospenweg 4, Bern"                                           │
+│       │                                                         │
+│       ▼                                                         │
+│  swisstopo Geocoding → (E=2596299, N=1199805)                  │
+│       │                                                         │
+│       ▼                                                         │
+│  tiles.db: SELECT egid WHERE E±10m AND N±10m                   │
+│       │                                                         │
+│       ▼                                                         │
+│  EGID=1243790 (swissBUILDINGS3D)                               │
+│       │                                                         │
+│       ▼                                                         │
+│  Polygon + Höhen aus tiles.db                                   │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Nachbar-Suche:                                                 │
+│  "Gebäude im Umkreis von 10m?"                                  │
+│       │                                                         │
+│       ▼                                                         │
+│  tiles.db: SELECT egid WHERE E±10m AND N±10m AND egid != ?     │
+│       │                                                         │
+│       ▼                                                         │
+│  Liste der Nachbar-EGIDs (ohne Adressen)                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Mögliche Erweiterung (optional)
+
+Ein Adress-Cache wäre **rein informativ** für:
+- Darstellung von Ausschnitten/Ranges in der 3D-Ansicht
+- Adress-Labels auf Nachbargebäuden
+
+**Implementation** (falls gewünscht):
+1. Beim Tile-Import: GWR API für jede EGID abfragen
+2. Adresse in tiles.db speichern (neue Spalte `address`)
+3. ~100 API-Calls pro Tile (ca. 1-2 Minuten)
+
+**Priorität:** Niedrig - Fokus liegt auf exakten Lookups und Gebäude-Identifikation

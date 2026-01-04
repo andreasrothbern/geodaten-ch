@@ -61,6 +61,23 @@ class ProjectService:
             )
         ''')
 
+        # DB-Migrationen: Fehlende Spalten hinzufügen
+        # (für bestehende DBs die vor verschiedenen Features erstellt wurden)
+        cursor.execute("PRAGMA table_info(projects)")
+        columns = [col[1] for col in cursor.fetchall()]
+
+        # Alle erwarteten Spalten die evtl. fehlen könnten
+        migrations = {
+            'description': 'TEXT',      # SIMAP-Import Feature
+            'building_data': 'TEXT',    # Geodaten-Anreicherung
+            'scaffold_config': 'TEXT',  # Gerüst-Konfiguration
+        }
+
+        for col_name, col_type in migrations.items():
+            if col_name not in columns:
+                cursor.execute(f"ALTER TABLE projects ADD COLUMN {col_name} {col_type}")
+                print(f"[Gerüstbau] DB-Migration: {col_name} Spalte hinzugefügt")
+
         conn.commit()
         conn.close()
 
@@ -69,16 +86,26 @@ class ProjectService:
         project_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
 
-        # Building data als JSON serialisieren
+        # Building data als JSON serialisieren (optional)
         building_data_json = None
-        egid = None
-        if data.building_data:
-            building_data_dict = data.building_data.model_dump() if hasattr(data.building_data, 'model_dump') else data.building_data
+        egid = getattr(data, 'egid', None)  # EGID kann direkt im ProjectCreate sein
+
+        # Falls building_data vorhanden (für erweiterte Projekt-Erstellung)
+        building_data = getattr(data, 'building_data', None)
+        if building_data:
+            building_data_dict = building_data.model_dump() if hasattr(building_data, 'model_dump') else building_data
             building_data_json = json.dumps(building_data_dict)
-            egid = data.building_data.egid
+            if hasattr(building_data, 'egid') and building_data.egid:
+                egid = building_data.egid
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+
+        # Optionale Felder mit getattr absichern (nicht alle sind im ProjectCreate Model)
+        client_name = getattr(data, 'client_name', None)
+        client_contact = getattr(data, 'client_contact', None)
+        deadline = getattr(data, 'deadline', None)
+        description = getattr(data, 'description', None)  # Nicht im Model, aber in DB
 
         cursor.execute('''
             INSERT INTO projects (id, name, address, status, egid, client_name,
@@ -90,10 +117,10 @@ class ProjectService:
             data.address,
             ProjectStatus.DRAFT.value,
             egid,
-            data.client_name,
-            data.client_contact,
-            data.deadline,
-            data.description,
+            client_name,
+            client_contact,
+            deadline,
+            description,
             building_data_json,
             now, now
         ))
@@ -208,90 +235,91 @@ class ProjectService:
 
         return deleted
 
-    async def enrich_with_geodata(self, project_id: str) -> Optional[Project]:
-        """Projekt mit Geodaten anreichern via geodaten-ch Services."""
+    async def enrich_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
+        """Projekt mit Geodaten anreichern via SmartBuildingService.
+
+        Nutzt den zentralen SmartBuildingService (10-Schritte Pipeline) statt
+        manueller API-Aufrufe. Das stellt sicher, dass alle Daten konsistent
+        gesammelt und gecacht werden.
+        """
         project = await self.get_project(project_id)
         if not project:
             return None
 
         building_data = {}
+        egid = None
 
         try:
-            # 1. Adresse geocodieren
-            geocode_result = await self.swisstopo.geocode(project.address)
-            if geocode_result:
-                e = geocode_result.lv95_e
-                n = geocode_result.lv95_n
+            # SmartBuildingService für konsistente Datensammlung nutzen
+            from app.services.smart_building import get_smart_building_service
 
+            smart_service = get_smart_building_service()
+            bundle = await smart_service.collect_all_data(
+                address=project.address,
+                force_refresh=False,  # Cache nutzen wenn vorhanden
+                include_research=False,  # Keine Claude-Recherche für Enrichment
+                include_zones_analysis=False,
+                include_terrain=True,
+            )
+
+            if bundle:
+                egid = bundle.egid
+
+                # Geodaten strukturieren
                 building_data["geocode"] = {
                     "coordinates": {
-                        "e": e,
-                        "n": n,
+                        "e": bundle.lv95_e,
+                        "n": bundle.lv95_n,
                     },
-                    "lat": geocode_result.lat,
-                    "lon": geocode_result.lon,
                 }
 
-                # 2. GWR-Daten abrufen
-                egid = geocode_result.egid
-                if egid:
-                    gwr_data = await self.swisstopo.get_building_by_egid(egid)
-                    if gwr_data:
-                        building_data["gwr"] = {
-                            "egid": egid,
-                            "address": project.address,
-                            "floors": gwr_data.get("gastw"),
-                            "category": gwr_data.get("gkat"),
-                            "year_built": gwr_data.get("gbauj"),
-                        }
+                if bundle.gwr_floors or bundle.gwr_category:
+                    building_data["gwr"] = {
+                        "egid": egid,
+                        "address": bundle.address_matched or project.address,
+                        "floors": bundle.gwr_floors,
+                        "category": bundle.gwr_category,
+                    }
 
-                # 3. Gebäudedaten vom Composite Service holen (Polygon + Höhen)
-                if e and n:
-                    buildings3d_service = get_swissbuildings3d_service()
-                    building_3d = await buildings3d_service.get_building_by_coordinates(
-                        e, n,
-                        include_roof_analysis=False  # Für Projekt-Enrichment nicht nötig
+                if bundle.polygon:
+                    building_data["polygon"] = bundle.polygon
+
+                building_data["heights"] = {
+                    "traufhoehe_m": bundle.traufhoehe_m,
+                    "firsthoehe_m": bundle.firsthoehe_m,
+                    "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+                    "source": bundle.height_source or "swissBUILDINGS3D",
+                }
+
+                building_data["geometry"] = {
+                    "perimeter_m": bundle.perimeter_m,
+                    "area_m2": bundle.footprint_area_m2,
+                    "sides_count": len(bundle.sides) if bundle.sides else 0,
+                }
+
+                # Geodaten im zentralen Cache speichern (für getProject)
+                if egid and bundle.lv95_e and bundle.lv95_n:
+                    geodata = BuildingGeodata(
+                        egid=str(egid),
+                        address=bundle.address_matched or project.address,
+                        polygon=bundle.polygon,
+                        traufhoehe_m=bundle.traufhoehe_m,
+                        firsthoehe_m=bundle.firsthoehe_m,
+                        gebaeudehoehe_m=bundle.gebaeudehoehe_m,
+                        area_m2=bundle.footprint_area_m2,
+                        perimeter_m=bundle.perimeter_m,
+                        center_e=bundle.lv95_e,
+                        center_n=bundle.lv95_n,
+                        coord_e=bundle.lv95_e,
+                        coord_n=bundle.lv95_n,
                     )
-                    if building_3d:
-                        # Polygon
-                        if building_3d.polygon:
-                            building_data["polygon"] = building_3d.polygon
-
-                        # Höhendaten
-                        building_data["heights"] = {
-                            "traufhoehe_m": building_3d.trauf_height_m,
-                            "firsthoehe_m": building_3d.first_height_m,
-                            "gebaeudehoehe_m": building_3d.building_height_m,
-                            "source": building_3d.height_source or "swissBUILDINGS3D",
-                        }
-
-                        # Zusätzliche Metadaten
-                        building_data["geometry"] = {
-                            "perimeter_m": building_3d.perimeter_m,
-                            "area_m2": building_3d.area_m2,
-                            "sides_count": len(building_3d.sides) if building_3d.sides else 0,
-                        }
-                        # Geodaten im zentralen Cache speichern
-                        if egid:
-                            geodata = BuildingGeodata(
-                                egid=str(egid),
-                                address=project.address,
-                                polygon=building_3d.polygon,
-                                traufhoehe_m=building_3d.trauf_height_m,
-                                firsthoehe_m=building_3d.first_height_m,
-                                gebaeudehoehe_m=building_3d.building_height_m,
-                                area_m2=building_3d.area_m2,
-                                perimeter_m=building_3d.perimeter_m,
-                                center_e=e,
-                                center_n=n,
-                                coord_e=e,
-                                coord_n=n,
-                            )
-                            self.geodata_service.save(geodata)
-                            print(f"[Gerüstbau] Geodaten für EGID {egid} im Cache gespeichert")
+                    self.geodata_service.save(geodata)
+                    print(f"[Gerüstbau] Geodaten für EGID {egid} im Cache gespeichert")
 
         except Exception as e:
             print(f"[Gerüstbau] Fehler bei Geodaten-Anreicherung: {e}")
+            import traceback
+            traceback.print_exc()
 
         building_data["enriched_at"] = datetime.utcnow().isoformat()
 
@@ -303,7 +331,7 @@ class ProjectService:
             SET egid = ?, building_data = ?, status = ?, updated_at = ?
             WHERE id = ?
         ''', (
-            building_data.get("gwr", {}).get("egid"),
+            egid,
             json.dumps(building_data),
             ProjectStatus.ENRICHED.value,
             datetime.utcnow().isoformat(),
@@ -312,7 +340,8 @@ class ProjectService:
         conn.commit()
         conn.close()
 
-        return await self.get_project(project_id)
+        # Mit Geodaten zurückgeben (für sofortige Nutzung im Frontend)
+        return await self.get_project_with_geodata(project_id)
 
     async def upload_photo(self, project_id: str, file) -> dict:
         """Foto hochladen (Placeholder)."""

@@ -15,11 +15,66 @@ Unterstützte Formate:
 
 import re
 import logging
+import sqlite3
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -> Optional[int]:
+    """
+    Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in tiles.db.
+    
+    BUG-013 FIX: GWR identify_buildings kann bei nahen Gebäuden dieselbe EGID
+    zurückgeben. swissBUILDINGS3D hat separate EGIDs pro Gebäudesegment.
+    
+    Args:
+        e: LV95 Ost-Koordinate
+        n: LV95 Nord-Koordinate
+        tolerance_m: Suchradius in Metern (default: 10m)
+    
+    Returns:
+        EGID als int oder None wenn nicht gefunden
+    """
+    tiles_db = Path(__file__).parent.parent / 'data' / 'tiles.db'
+    
+    if not tiles_db.exists():
+        logger.warning(f'tiles.db nicht gefunden: {tiles_db}')
+        return None
+    
+    try:
+        conn = sqlite3.connect(tiles_db)
+        cursor = conn.cursor()
+        
+        # Suche nächstes Gebäude innerhalb Toleranz
+        cursor.execute('''
+            SELECT egid,
+                   (lv95_e - ?) * (lv95_e - ?) + (lv95_n - ?) * (lv95_n - ?) as dist_sq
+            FROM egid_tile_index
+            WHERE lv95_e BETWEEN ? AND ?
+              AND lv95_n BETWEEN ? AND ?
+            ORDER BY dist_sq
+            LIMIT 1
+        ''', (e, e, n, n, e - tolerance_m, e + tolerance_m, n - tolerance_m, n + tolerance_m))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            egid = row[0]
+            dist = row[1] ** 0.5  # sqrt
+            logger.debug(f'tiles.db Lookup: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)')
+            return egid
+        
+        return None
+        
+    except Exception as ex:
+        logger.error(f'tiles.db Lookup-Fehler: {ex}')
+        return None
+
+
 
 
 class AddressRangeType(str, Enum):
@@ -251,28 +306,46 @@ class AddressParserService:
                     })
                     continue
 
-                # 2. Identify building at coordinates to get EGID
+                # 2. Get EGID - prefer swissBUILDINGS3D (tiles.db) over GWR
                 e = geo_result.coordinates.lv95_e
                 n = geo_result.coordinates.lv95_n
-                building_list = await swisstopo.identify_buildings(e, n)
-
-                if building_list and building_list[0].egid:
-                    building = building_list[0]
+                
+                # BUG-013 FIX: Use swissBUILDINGS3D EGID from tiles.db
+                # GWR identify_buildings can return same EGID for nearby buildings
+                swissbuildings_egid = _lookup_egid_by_coordinates(e, n, tolerance_m=10.0)
+                logger.info(f"[DEBUG] Lookup for ({e:.1f}, {n:.1f}): swissbuildings_egid={swissbuildings_egid}")
+                
+                if swissbuildings_egid:
                     buildings.append({
                         "address": full_address,
                         "matched_address": geo_result.matched_address,
-                        "egid": str(building.egid),
+                        "egid": str(swissbuildings_egid),
+                        "egid_source": "swissBUILDINGS3D",
                         "coordinates": {
                             "lv95_e": e,
                             "lv95_n": n,
                         },
-                        # Note: Height data comes from swissBUILDINGS3D, not GWR
                     })
                 else:
-                    errors.append({
-                        "address": full_address,
-                        "error": "Kein EGID an Koordinate gefunden"
-                    })
+                    # Fallback to GWR identify_buildings
+                    building_list = await swisstopo.identify_buildings(e, n)
+                    if building_list and building_list[0].egid:
+                        building = building_list[0]
+                        buildings.append({
+                            "address": full_address,
+                            "matched_address": geo_result.matched_address,
+                            "egid": str(building.egid),
+                            "egid_source": "GWR",
+                            "coordinates": {
+                                "lv95_e": e,
+                                "lv95_n": n,
+                            },
+                        })
+                    else:
+                        errors.append({
+                            "address": full_address,
+                            "error": "Kein EGID gefunden (weder swissBUILDINGS3D noch GWR)"
+                        })
 
             except Exception as e:
                 logger.error(f"Geocoding-Fehler für {full_address}: {e}")

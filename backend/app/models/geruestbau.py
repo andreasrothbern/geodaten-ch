@@ -158,13 +158,17 @@ class PhotoUpdate(BaseModel):
 # =============================================================================
 
 class ProjectCreate(BaseModel):
-    """Daten fuer Projekt-Erstellung."""
+    """Daten fuer Projekt-Erstellung.
+
+    Felder koennen aus SIMAP-Import befuellt werden (PDF/Link Extraktion).
+    """
     name: str
     address: str
     egid: Optional[str] = None
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
     deadline: Optional[str] = None
+    description: Optional[str] = None  # Projektbeschreibung (z.B. aus SIMAP)
 
 
 class ProjectUpdate(BaseModel):
@@ -174,6 +178,7 @@ class ProjectUpdate(BaseModel):
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
     deadline: Optional[str] = None
+    description: Optional[str] = None  # Projektbeschreibung
     config: Optional[ScaffoldConfig] = None
 
 

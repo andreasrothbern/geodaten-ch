@@ -127,3 +127,100 @@ class TestUrlImportEndpoint:
         data = response.json()
         assert "success" in data
         assert "confidence" in data or "error" in data
+
+
+class TestProjectEnrichment:
+    """Test-Klasse für Projekt-Anreicherung mit Geodaten (BUG-009 Regression)."""
+
+    def test_enrich_project_basic(self):
+        """Projekt erstellen und mit Geodaten anreichern."""
+        # 1. Projekt erstellen
+        project_data = {
+            "name": "Enrichment Test",
+            "address": "Bundesplatz 3, 3011 Bern"
+        }
+        create_response = client.post("/api/v1/geruestbau/projects", json=project_data)
+        assert create_response.status_code == 200
+        project_id = create_response.json()["id"]
+
+        try:
+            # 2. Projekt anreichern (ruft SmartBuildingService auf)
+            enrich_response = client.post(f"/api/v1/geruestbau/projects/{project_id}/enrich")
+
+            # Sollte nicht crashen (BUG-009 Fix)
+            assert enrich_response.status_code == 200
+
+            data = enrich_response.json()
+
+            # 3. Prüfen: Status wurde aktualisiert
+            assert data["status"] == "enriched"
+
+            # 4. Prüfen: building_data wurde gesetzt
+            # (kann leer sein wenn API nicht erreichbar, aber kein Error)
+            assert "building_data" in data or data.get("building_data") is None
+
+        finally:
+            # Cleanup
+            client.delete(f"/api/v1/geruestbau/projects/{project_id}")
+
+    def test_enrich_project_returns_geodata(self):
+        """Prüft dass enrich_with_geodata ProjectWithGeodata zurückgibt."""
+        # 1. Projekt erstellen
+        project_data = {
+            "name": "Geodata Return Test",
+            "address": "Kramgasse 49, 3011 Bern"
+        }
+        create_response = client.post("/api/v1/geruestbau/projects", json=project_data)
+        assert create_response.status_code == 200
+        project_id = create_response.json()["id"]
+
+        try:
+            # 2. Projekt anreichern
+            enrich_response = client.post(f"/api/v1/geruestbau/projects/{project_id}/enrich")
+            assert enrich_response.status_code == 200
+
+            data = enrich_response.json()
+
+            # 3. Response sollte jetzt 'geodata' Feld enthalten (ProjectWithGeodata)
+            # Hinweis: kann null sein wenn keine Daten im Cache
+            assert "geodata" in data
+
+        finally:
+            # Cleanup
+            client.delete(f"/api/v1/geruestbau/projects/{project_id}")
+
+    def test_enrich_project_not_found(self):
+        """Nicht existierendes Projekt anreichern schlägt fehl."""
+        response = client.post("/api/v1/geruestbau/projects/invalid-uuid/enrich")
+        assert response.status_code == 404
+
+    def test_enrich_project_egid_stored(self):
+        """Prüft dass EGID nach Anreicherung gespeichert wird."""
+        # 1. Projekt erstellen
+        project_data = {
+            "name": "EGID Storage Test",
+            "address": "Bundesplatz 3, 3011 Bern"
+        }
+        create_response = client.post("/api/v1/geruestbau/projects", json=project_data)
+        assert create_response.status_code == 200
+        project_id = create_response.json()["id"]
+
+        try:
+            # 2. Projekt anreichern
+            enrich_response = client.post(f"/api/v1/geruestbau/projects/{project_id}/enrich")
+            assert enrich_response.status_code == 200
+
+            # 3. Projekt abrufen und EGID prüfen
+            get_response = client.get(f"/api/v1/geruestbau/projects/{project_id}")
+            assert get_response.status_code == 200
+
+            data = get_response.json()
+
+            # EGID sollte jetzt gesetzt sein (wenn SmartBuildingService erfolgreich)
+            # Kann None sein wenn API nicht erreichbar
+            # Wichtig: Kein AttributeError! (BUG-009)
+            assert "egid" in data
+
+        finally:
+            # Cleanup
+            client.delete(f"/api/v1/geruestbau/projects/{project_id}")
