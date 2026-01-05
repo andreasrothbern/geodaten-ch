@@ -99,7 +99,11 @@ async def collect_building_research(
                 bundle.tower_config = known["tower_config"]
                 logger.debug(f"Turm-Konfiguration: {bundle.tower_config.get('form', 'unbekannt')}")
 
-            logger.info(f"Bekanntes Gebäude erkannt: {bundle.building_name}")
+            bundle.research_source = "known_buildings"
+            logger.info(
+                f"[RESEARCH] Bekanntes Gebäude erkannt: {bundle.building_name} "
+                f"(Quelle: known_buildings.py, kostenlos, <1ms)"
+            )
             return  # Fertig, keine Claude-Recherche nötig
 
     except Exception as e:
@@ -115,6 +119,11 @@ async def collect_building_research(
             "construction_year": bundle.construction_year,
             "floors": bundle.gwr_floors,
         }
+
+        logger.info(
+            f"[RESEARCH] Claude API wird aufgerufen für: {bundle.address_matched} "
+            f"(EGID: {bundle.egid}, force_refresh={force_refresh})"
+        )
 
         research = await research_service.get_building_research(
             adresse=bundle.address_matched,
@@ -133,12 +142,23 @@ async def collect_building_research(
 
             if research.source == "claude_research":
                 bundle.add_source(DataSource.CLAUDE_RESEARCH)
+                bundle.research_source = "claude_api"
+                logger.info(
+                    f"[RESEARCH] Claude API Response: {bundle.building_name} "
+                    f"(Typ: {bundle.building_type}, Stil: {bundle.architectural_style}, "
+                    f"Konfidenz: {bundle.research_confidence:.0%})"
+                )
             elif research.source == "cache":
                 bundle.add_source(DataSource.CACHE)
+                bundle.research_source = "cache"
+                logger.info(
+                    f"[RESEARCH] Aus Research-Cache geladen: {bundle.building_name}"
+                )
 
             # Vorgeschlagene Zonen für spätere Analyse
             if research.suggested_zones:
                 bundle._research_zones = research.suggested_zones
+                logger.debug(f"[RESEARCH] {len(research.suggested_zones)} Zonen-Vorschläge erhalten")
 
     except Exception as e:
         logger.error(f"Research error: {e}")
@@ -226,6 +246,7 @@ def create_church_zones(bundle: BuildingDataBundle) -> bool:
         traufhoehe_m=trauf,
         firsthoehe_m=trauf + 3,  # Kleines Dach
         gebaeudehoehe_m=trauf + 3,
+        position="flankierend",  # NEU: Position für 3D-Modell
         beruesten=True,
         sonderkonstruktion=False,
         confidence=0.6,
@@ -241,6 +262,7 @@ def create_church_zones(bundle: BuildingDataBundle) -> bool:
         traufhoehe_m=kirchenschiff_hoehe,
         firsthoehe_m=kirchenschiff_hoehe + 5,
         gebaeudehoehe_m=kirchenschiff_hoehe + 5,
+        position="zentral",  # NEU: Position für 3D-Modell
         beruesten=True,
         sonderkonstruktion=False,
         confidence=0.5,
@@ -256,6 +278,7 @@ def create_church_zones(bundle: BuildingDataBundle) -> bool:
         traufhoehe_m=kirchenschiff_hoehe,
         firsthoehe_m=first,
         gebaeudehoehe_m=first,
+        position="vorne",  # NEU: Position für 3D-Modell (meist Westturm)
         beruesten=True,
         sonderkonstruktion=True,
         confidence=0.7,

@@ -367,7 +367,28 @@ Aufgaben:
 4. Ermittle den Baustil falls erkennbar (Neugotik, Barock, Klassizismus, Modern, etc.)
 5. Beschreibe Türme/Kuppeln falls vorhanden (Anzahl, Position, ungefähre Höhe)
 6. Liste besondere architektonische Merkmale
-7. Schlage Höhenzonen vor falls das Gebäude komplex erscheint
+7. Schlage Höhenzonen vor falls das Gebäude komplex erscheint - MIT POSITION!
+
+## RÄUMLICHE ZONE-POSITION (PFLICHTFELD)
+
+Jede Zone in `suggested_zones` MUSS ein `position`-Feld enthalten, das die räumliche Anordnung relativ zum Hauptbaukörper beschreibt.
+
+### Erlaubte Werte für position:
+
+| position | Bedeutung | Beispiele |
+|----------|-----------|-----------|
+| `zentral` | Hauptbaukörper, Zentrum des Gebäudes | Kirchenschiff, Hauptgebäude, zentrale Kuppel |
+| `links` | Links vom Zentrum (Betrachtersicht Hauptfassade) | Linker Turm, linker Flügel, linker Anbau |
+| `rechts` | Rechts vom Zentrum (Betrachtersicht Hauptfassade) | Rechter Turm, rechter Flügel, rechter Anbau |
+| `flankierend` | Symmetrisch beidseitig (PAAR!) | Doppeltürme, Seitenschiffe, Seitenflügel |
+| `umlaufend` | Umgibt das Zentrum ringförmig | Arkaden, Kreuzgang, umlaufende Galerie |
+| `hinten` | Hinter dem Hauptbaukörper | Chor, Apsis, Hintergebäude |
+| `vorne` | Vor dem Hauptbaukörper | Vorhalle, Portikus, Narthex |
+
+### Regeln:
+1. Mindestens eine Zone = `zentral` (der Hauptbaukörper)
+2. `flankierend` NUR bei symmetrischen Paaren (2 Türme, 2 Flügel)
+3. Betrachtersicht = Hauptfassade (Eingangsseite, bei Kirchen meist West)
 
 Antworte NUR im folgenden JSON-Format:
 {{
@@ -379,8 +400,9 @@ Antworte NUR im folgenden JSON-Format:
   "special_features": ["Feature1", "Feature2"],
   "facade_style": "Beschreibung oder null",
   "suggested_zones": [
-    {{"name": "Hauptgebäude", "type": "hauptgebaeude", "height_m": 20, "scaffolding": true}},
-    {{"name": "Turm", "type": "turm", "height_m": 60, "scaffolding": false}}
+    {{"name": "Kirchenschiff", "type": "hauptgebaeude", "height_m": 22, "scaffolding": true, "position": "zentral"}},
+    {{"name": "Doppeltürme", "type": "turm", "height_m": 60, "scaffolding": false, "position": "flankierend"}},
+    {{"name": "Chor", "type": "anbau", "height_m": 18, "scaffolding": true, "position": "hinten"}}
   ],
   "confidence": 0.0-1.0
 }}
@@ -412,6 +434,10 @@ Falls du das Gebäude nicht identifizieren kannst, setze confidence auf 0.3 und 
 
             data = json.loads(content.strip())
 
+            # Zonen mit Fallback für fehlende position-Felder
+            suggested_zones = data.get('suggested_zones', [])
+            suggested_zones = self._ensure_zone_positions(suggested_zones)
+
             research = BuildingResearch(
                 egid=egid,
                 adresse=adresse,
@@ -422,7 +448,7 @@ Falls du das Gebäude nicht identifizieren kannst, setze confidence auf 0.3 und 
                 tower_config=data.get('tower_config'),
                 special_features=data.get('special_features', []),
                 facade_style=data.get('facade_style'),
-                suggested_zones=data.get('suggested_zones', []),
+                suggested_zones=suggested_zones,
                 source="claude_research",
                 confidence=data.get('confidence', 0.7),
                 researched_at=datetime.now().isoformat()
@@ -433,6 +459,49 @@ Falls du das Gebäude nicht identifizieren kannst, setze confidence auf 0.3 und 
         except (json.JSONDecodeError, IndexError, KeyError) as e:
             logger.error(f"Failed to parse Claude response: {e}")
             return self._fallback_research(adresse, egid, gwr_data)
+
+    def _ensure_zone_positions(self, zones: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Stellt sicher, dass alle Zonen eine Position haben.
+        Wendet Heuristiken an falls position fehlt.
+        """
+        for zone in zones:
+            if 'position' not in zone or zone['position'] is None:
+                zone['position'] = self._infer_position(zone)
+        return zones
+
+    def _infer_position(self, zone: Dict[str, Any]) -> str:
+        """Leitet Position aus Zoneneigenschaften ab."""
+        zone_type = zone.get('type', '')
+        zone_name = zone.get('name', '').lower()
+
+        # Typ-basierte Heuristik
+        if zone_type == 'hauptgebaeude':
+            return 'zentral'
+        if zone_type == 'kuppel':
+            return 'zentral'
+
+        # Name-basierte Heuristik
+        if 'chor' in zone_name or 'apsis' in zone_name:
+            return 'hinten'
+        if 'vorhalle' in zone_name or 'portikus' in zone_name or 'narthex' in zone_name:
+            return 'vorne'
+        if 'seitenschiff' in zone_name or 'seitenflügel' in zone_name or 'seitenkapelle' in zone_name:
+            return 'flankierend'
+        if 'arkade' in zone_name or 'kreuzgang' in zone_name or 'laubengang' in zone_name:
+            return 'umlaufend'
+        if 'turm' in zone_name or zone_type == 'turm':
+            # Einzelturm vs. Doppelturm prüfen
+            if 'links' in zone_name or 'nord' in zone_name or 'west' in zone_name:
+                return 'links'
+            if 'rechts' in zone_name or 'süd' in zone_name or 'ost' in zone_name:
+                return 'rechts'
+            if 'doppel' in zone_name:
+                return 'flankierend'
+            return 'zentral'  # Einzelturm oft zentral
+
+        # Fallback für unbekannte Typen
+        return 'zentral'
 
     def _fallback_research(
         self,

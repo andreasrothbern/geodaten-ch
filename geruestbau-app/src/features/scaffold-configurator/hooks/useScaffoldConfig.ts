@@ -78,6 +78,11 @@ interface ScaffoldConfigState {
   ) => void;
   reset: () => void;
 
+  // Actions - Polygon Simplification
+  simplifyPolygonEpsilon: number | null;  // null = auto, number = fixed epsilon
+  setSimplifyEpsilon: (epsilon: number | null) => void;
+  applySimplification: (newFacades: SelectedFacade[]) => void;
+
   // Computed getters
   getCurrentElement: () => ScaffoldElement | null;
   getVisibleElements: () => { prev: ScaffoldElement; current: ScaffoldElement; next: ScaffoldElement } | null;
@@ -242,6 +247,7 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       isLoading: false,
       error: null,
       isDirty: false,
+      simplifyPolygonEpsilon: null,  // null = auto
 
       // Navigation actions
       setCurrentTab: (tab) => {
@@ -661,7 +667,35 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         isLoading: false,
         error: null,
         isDirty: false,
+        simplifyPolygonEpsilon: null,
       }),
+
+      // Polygon Simplification Actions
+      setSimplifyEpsilon: (epsilon) => set({ simplifyPolygonEpsilon: epsilon }),
+
+      applySimplification: (newFacades) => {
+        const { configuration } = get();
+        if (!configuration) return;
+
+        const settings = configuration.settings;
+        const elements = createElementsFromFacades(newFacades, settings);
+        const now = new Date().toISOString();
+
+        set({
+          configuration: {
+            ...configuration,
+            elements,
+            totals: {
+              ...configuration.totals,
+              facade_count: newFacades.length,
+              corner_count: newFacades.length,
+            },
+            updated_at: now,
+          },
+          currentElementIndex: 0,
+          isDirty: true,
+        });
+      },
 
       // Computed getters
       getCurrentElement: () => {

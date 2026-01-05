@@ -43,6 +43,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "arkade",
                 "traufhoehe_m": 6.0,
                 "firsthoehe_m": 6.0,
+                "position": "umlaufend",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -51,6 +52,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 25.0,
                 "firsthoehe_m": 30.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -59,6 +61,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "kuppel",
                 "traufhoehe_m": 30.0,
                 "firsthoehe_m": 64.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -76,77 +79,71 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
         },
     },
 
-    # Kirche St. Peter und Paul (Rathausgasse 2)
+    # Kirche St. Peter und Paul (Christkatholische Kathedrale)
     "191821074": {
         "egid": "191821074",
         "building_name": "Kirche St. Peter und Paul",
-        "building_type": "Christkatholische Kathedralkirche",
+        "building_type": "Christkatholische Kathedrale",
         "architectural_style": "Neugotik",
         "construction_year": 1864,
         "complexity": "complex",
-        "roof_type": "satteldach_mit_turm",  # Kirchendach mit Spitzhelm-Turm
-        # NEU: Gebäudeform
-        "building_shape": "Kreuzform (Basilika)",
-        "building_shape_description": "Klassische Basilika-Form: Langhaus (Kirchenschiff) mit niedrigeren Seitenschiffen, Querhaus (Transept), Chor im Osten, Turm an der Westfassade.",
-        # ANSICHT-KONFIGURATION: Von Westen mit Turm zentriert
-        "preferred_view": {
-            "direction": "west",
-            "description": "Westfassade mit zentriertem Turm",
-            "reason": "Der neugotische Westturm (54.6m) ist das Hauptmerkmal der Kirche und sollte im Mittelpunkt der Ansicht stehen.",
-        },
+        "roof_type": "satteldach_mit_turm",
+        "building_shape": "Basilika mit Westturm",
+        "building_shape_description": "Dreischiffige Basilika mit zentralem Westturm. Das Mittelschiff ist hoeher als die Seitenschiffe.",
         "zones": [
             {
                 "name": "Westturm",
                 "zone_type": "turm",
-                "traufhoehe_m": 25.0,  # Turm startet ueber Kirchenschiff
-                "firsthoehe_m": 54.6,
+                "traufhoehe_m": 22.0,
+                "firsthoehe_m": 60.0,
+                "position": "vorne",  # Westturm an der Hauptfassade
                 "beruesten": True,
                 "sonderkonstruktion": True,
-                "position": "zentral",  # Turm ist zentriert in der Westansicht
             },
             {
                 "name": "Kirchenschiff",
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 18.0,
-                "firsthoehe_m": 25.0,
+                "firsthoehe_m": 22.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
-                "position": "links_rechts_vom_turm",  # Flanken den Turm
             },
             {
                 "name": "Seitenschiffe",
                 "zone_type": "anbau",
-                "traufhoehe_m": 9.0,
+                "traufhoehe_m": 10.0,
                 "firsthoehe_m": 12.0,
+                "position": "flankierend",  # Symmetrisch beidseitig
                 "beruesten": True,
                 "sonderkonstruktion": False,
-                "position": "aussen",  # Aeussere Flanken
             },
             {
                 "name": "Chor",
                 "zone_type": "anbau",
-                "traufhoehe_m": 12.0,
-                "firsthoehe_m": 18.0,
+                "traufhoehe_m": 18.0,
+                "firsthoehe_m": 20.0,
+                "position": "hinten",  # Chorbereich hinter dem Hauptschiff
                 "beruesten": True,
                 "sonderkonstruktion": False,
-                "position": "verdeckt",  # Hinter dem Hauptschiff, in Westansicht nicht sichtbar
             },
         ],
         "tower_config": {
             "count": 1,
-            "position": "zentral (Westfassade)",
-            "form": "Spitzhelm (neugotisch)",
-            "height_m": 54.6,
+            "position": "west",
+            "form": "Spitzhelm (Neugotik)",
+            "height_m": 60.0,
         },
-        "special_features": ["Gotische Fenster", "Spitzhelm", "Sandstein-Fassade", "Rosettenfenster", "Portal"],
-        # SVG-Hinweise für korrekte Darstellung
+        "special_features": ["Westfassade mit Rosette", "Dreischiffige Basilika", "Neugotische Ornamente"],
         "svg_hints": {
-            "grundriss": "KREUZFORM zeichnen! Westturm OBEN (quadratisch), Kirchenschiff MITTE (laenglich), Seitenschiffe LINKS+RECHTS (schmaler), Chor UNTEN. Norden nach oben. GERUESTZONE: Kreuzfoermige Offset-Kontur mit 1m Abstand - folgt der Gebaeudeform, KEIN Rechteck!",
-            "ansicht": "WESTANSICHT - ANORDNUNG IM SVG (von links nach rechts): [1] Seitenschiff links (12m hoch) | [2] TURM IN DER MITTE (54.6m mit Spitzhelm) | [3] Seitenschiff rechts (12m hoch). Das Kirchenschiff (25m) ist HINTER dem Turm und teilweise verdeckt. Der Turm muss EXAKT in der horizontalen Mitte des SVG stehen (x=350 bei viewBox 700)!",
-            "querschnitt": "QUERSCHNITT A-A (NORD-SUED, durch Turm-Bereich): Schnittlinie durch den TURM legen! Zeigt alle Gebaeudeteile im Profil - Seitenschiffe links+rechts (12m), TURM in der Mitte (54.6m komplett mit Spitzhelm!). Der Turm ist das dominante Element. Geruest links und rechts der Aussenfassade.",
-            "laengsschnitt": "LAENGSSCHNITT B-B (WEST-OST, durch Hauptachse): KRITISCH - alle Hoehenzonen! Von links nach rechts: [1] Turm 54.6m (mit Glockengeschoss, Schallarkaden, Spitzhelm), [2] Kirchenschiff 25m (mit Gewoelbe), [3] Chor 18m (mit Apsis). Turm-Einruestung vollstaendig zeigen = 27 Lagen = SONDERKONSTRUKTION! Geschossdecken im Turm einzeichnen.",
-            # Fallback fuer alte Implementierungen
-            "schnitt": "LAENGSSCHNITT B-B (West-Ost): Turm LINKS (54.6m), Kirchenschiff MITTE (25m), Chor RECHTS (18m). Alle Hoehenzonen in einer Ansicht!"
+            "grundriss": "Basilika-Form: Breites Mittelschiff, schmalere Seitenschiffe. Westturm vorgelagert.",
+            "ansicht": "Westfassade mit dominantem Turm und Rosette. Seitenschiffe niedriger als Hauptschiff.",
+            "schnitt": "Zeige Hoehenstaffelung: Seitenschiffe (10m) < Kirchenschiff (18m) < Turm (60m)."
+        },
+        "preferred_view": {
+            "direction": "west",
+            "description": "Westfassade mit Turm und Hauptportal",
+            "reason": "Repräsentativste Ansicht der Kirche"
         },
     },
 
@@ -165,6 +162,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 22.0,
                 "firsthoehe_m": 28.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -173,6 +171,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "anbau",
                 "traufhoehe_m": 12.0,
                 "firsthoehe_m": 15.0,
+                "position": "flankierend",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -181,6 +180,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 28.0,
                 "firsthoehe_m": 100.3,  # Höchster Kirchturm der Schweiz
+                "position": "vorne",  # Westturm an der Hauptfassade
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -210,6 +210,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 22.0,  # Korrigiert von 12.0 (API: 22.3m)
                 "firsthoehe_m": 26.0,  # Korrigiert von 16.0 (API: 26.2m)
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -232,6 +233,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "arkade",
                 "traufhoehe_m": 8.0,
                 "firsthoehe_m": 10.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -240,6 +242,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 10.0,
                 "firsthoehe_m": 54.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -280,6 +283,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 15.0,
                 "firsthoehe_m": 18.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -288,6 +292,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 12.0,
                 "firsthoehe_m": 15.0,
+                "position": "rechts",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -296,6 +301,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "anbau",
                 "traufhoehe_m": 8.0,
                 "firsthoehe_m": 10.0,
+                "position": "hinten",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -318,6 +324,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "arkade",
                 "traufhoehe_m": 5.0,
                 "firsthoehe_m": 5.0,
+                "position": "umlaufend",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -326,6 +333,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 18.0,
                 "firsthoehe_m": 25.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -334,6 +342,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 25.0,
                 "firsthoehe_m": 32.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -356,6 +365,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "arkade",
                 "traufhoehe_m": 8.0,
                 "firsthoehe_m": 12.0,
+                "position": "vorne",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -364,6 +374,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 18.0,
                 "firsthoehe_m": 22.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -372,6 +383,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 30.0,
                 "firsthoehe_m": 40.0,
+                "position": "links",
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -394,6 +406,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "anbau",
                 "traufhoehe_m": 10.0,
                 "firsthoehe_m": 12.0,
+                "position": "vorne",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -402,6 +415,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 18.0,
                 "firsthoehe_m": 22.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -410,6 +424,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 22.0,
                 "firsthoehe_m": 32.0,
+                "position": "hinten",
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -438,6 +453,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 25.0,
                 "firsthoehe_m": 35.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -446,6 +462,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "anbau",
                 "traufhoehe_m": 18.0,
                 "firsthoehe_m": 25.0,
+                "position": "flankierend",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -454,6 +471,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "turm",
                 "traufhoehe_m": 35.0,
                 "firsthoehe_m": 50.0,
+                "position": "flankierend",  # 4 Ecktürme
                 "beruesten": True,
                 "sonderkonstruktion": True,
             },
@@ -482,6 +500,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "hauptgebaeude",
                 "traufhoehe_m": 18.0,
                 "firsthoehe_m": 25.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },
@@ -490,6 +509,7 @@ KNOWN_BUILDINGS: Dict[str, Dict[str, Any]] = {
                 "zone_type": "anbau",
                 "traufhoehe_m": 25.0,
                 "firsthoehe_m": 30.0,
+                "position": "zentral",
                 "beruesten": True,
                 "sonderkonstruktion": False,
             },

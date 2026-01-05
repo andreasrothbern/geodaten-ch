@@ -7,7 +7,7 @@ import { useState, Suspense } from 'react';
 import { RotateCw, ZoomIn, Home } from 'lucide-react';
 import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldConfig';
 import { formatNumber } from '../utils/calculations';
-import type { View3D } from '../types/scaffold.types';
+import type { View3D, BuildingZone } from '../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
 import { ScaffoldScene } from './threeDView';
 
@@ -15,9 +15,11 @@ interface ThreeDPanelProps {
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
   additionalBuildings?: MultiBuildingData[];
+  zones?: BuildingZone[];
+  complexity?: 'simple' | 'moderate' | 'complex';
 }
 
-export default function ThreeDPanel({ neighbors = [], blockedSides = [], additionalBuildings = [] }: ThreeDPanelProps) {
+export default function ThreeDPanel({ neighbors = [], blockedSides = [], additionalBuildings = [], zones = [], complexity = 'simple' }: ThreeDPanelProps) {
   const { setCurrentTab, configuration } = useScaffoldConfig();
   const totals = useTotals();
   const settings = useSettings();
@@ -70,6 +72,8 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], additio
               neighbors={neighbors}
               blockedSides={blockedSides}
               additionalBuildings={additionalBuildings}
+              zones={zones}
+              complexity={complexity}
             />
           </Suspense>
 

@@ -147,6 +147,60 @@ class SmartBuildingService:
             logger.warning(f"Cache parse error: {e}")
             return None
 
+    def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
+        """
+        Holt Bundle aus Cache anhand der EGID.
+
+        Dies ist die empfohlene Methode für project_service und andere Services,
+        um Gebäudedaten abzurufen. Der Cache wird vom SmartBuildingService verwaltet.
+
+        Args:
+            egid: Eidgenössische Gebäudeidentifikation
+
+        Returns:
+            BuildingDataBundle oder None wenn nicht gefunden/expired
+
+        Verwendung:
+            service = get_smart_building_service()
+            bundle = service.get_bundle_by_egid("2242547")
+            if bundle:
+                print(f"Gebäude: {bundle.building_name}")
+        """
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT bundle_json, expires_at
+            FROM smart_building_cache
+            WHERE egid = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (str(egid),))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            logger.debug(f"No cached bundle for EGID {egid}")
+            return None
+
+        # Expiration prüfen
+        expires_at = datetime.fromisoformat(row['expires_at'])
+        if datetime.now() > expires_at:
+            logger.info(f"Cache expired for EGID {egid}")
+            return None
+
+        try:
+            data = json.loads(row['bundle_json'])
+            bundle = self._dict_to_bundle(data)
+            bundle.add_source(DataSource.CACHE)
+            logger.debug(f"Loaded bundle for EGID {egid} from cache")
+            return bundle
+        except Exception as e:
+            logger.warning(f"Cache parse error for EGID {egid}: {e}")
+            return None
+
     def _save_bundle_cache(self, cache_key: str, bundle: BuildingDataBundle):
         """Speichert Bundle im Cache"""
         conn = sqlite3.connect(str(DB_PATH))
@@ -202,8 +256,12 @@ class SmartBuildingService:
             "height_source": bundle.height_source.value if bundle.height_source else None,
             "terrain": {
                 "reference_height_m": bundle.terrain.reference_height_m,
+                "min_height_m": bundle.terrain.min_height_m,
+                "max_height_m": bundle.terrain.max_height_m,
                 "slope_m": bundle.terrain.slope_m,
+                "slope_class": bundle.terrain.slope_class,
                 "is_sloped": bundle.terrain.is_sloped,
+                "requires_level_compensation": bundle.terrain.requires_level_compensation,
                 "facade_heights": bundle.terrain.facade_heights,
             } if bundle.terrain else None,
             "roof_type": bundle.roof_type,
@@ -223,6 +281,7 @@ class SmartBuildingService:
                     "traufhoehe_m": z.traufhoehe_m,
                     "firsthoehe_m": z.firsthoehe_m,
                     "gebaeudehoehe_m": z.gebaeudehoehe_m,
+                    "position": z.position,  # Position für 3D-Darstellung
                     "beruesten": z.beruesten,
                     "sonderkonstruktion": z.sonderkonstruktion,
                     "confidence": z.confidence,
@@ -237,6 +296,9 @@ class SmartBuildingService:
             "data_sources": [s.value for s in bundle.data_sources],
             "warnings": bundle.warnings,
             "collection_timestamp": bundle.collection_timestamp.isoformat() if bundle.collection_timestamp else None,
+            # NEU 05.01.2026: Datenherkunft für UI-Feedback
+            "research_source": bundle.research_source,
+            "research_confidence": bundle.research_confidence,
         }
 
     def _dict_to_bundle(self, data: Dict[str, Any]) -> BuildingDataBundle:
@@ -275,6 +337,9 @@ class SmartBuildingService:
             sonnendach_available=data.get("sonnendach_available", False),
             complexity=data.get("complexity", "simple"),
             warnings=data.get("warnings", []),
+            # NEU 05.01.2026: Datenherkunft für UI-Feedback
+            research_source=data.get("research_source", "cache"),
+            research_confidence=data.get("research_confidence", 0.0),
         )
 
         # Terrain
@@ -282,8 +347,12 @@ class SmartBuildingService:
             t = data["terrain"]
             bundle.terrain = TerrainProfile(
                 reference_height_m=t.get("reference_height_m", 0),
+                min_height_m=t.get("min_height_m"),
+                max_height_m=t.get("max_height_m"),
                 slope_m=t.get("slope_m"),
+                slope_class=t.get("slope_class", "eben"),
                 is_sloped=t.get("is_sloped", False),
+                requires_level_compensation=t.get("requires_level_compensation", False),
                 facade_heights=t.get("facade_heights", {}),
             )
 
@@ -293,6 +362,7 @@ class SmartBuildingService:
                 id=z.get("id", "zone_1"),
                 name=z.get("name", "Hauptgebäude"),
                 zone_type=z.get("zone_type", "hauptgebaeude"),
+                position=z.get("position"),  # Position für 3D-Darstellung
                 traufhoehe_m=z.get("traufhoehe_m"),
                 firsthoehe_m=z.get("firsthoehe_m"),
                 gebaeudehoehe_m=z.get("gebaeudehoehe_m"),
@@ -360,7 +430,12 @@ class SmartBuildingService:
         if not force_refresh:
             cached = self._get_cached_bundle(cache_key)
             if cached:
-                logger.info(f"Using cached bundle for {address}")
+                logger.info(
+                    f"[SMART_BUILDING] Cache-Hit für: {address}\n"
+                    f"  ├─ Gebäudename: {cached.building_name or 'unbekannt'}\n"
+                    f"  ├─ Original Research-Quelle: {cached.research_source}\n"
+                    f"  └─ Zonen: {len(cached.zones)}"
+                )
                 return cached
 
         # 2. Request-Deduplizierung: Lock pro Adresse
@@ -441,7 +516,17 @@ class SmartBuildingService:
             # 6. Cache speichern
             self._save_bundle_cache(cache_key, bundle)
 
-            logger.info(f"Collected data from {len(bundle.data_sources)} sources for {address}")
+            # Zusammenfassung loggen
+            sources_str = ", ".join(s.value for s in bundle.data_sources)
+            logger.info(
+                f"[SMART_BUILDING] Daten gesammelt für: {address}\n"
+                f"  ├─ EGID: {bundle.egid}\n"
+                f"  ├─ Research-Quelle: {bundle.research_source}\n"
+                f"  ├─ Gebäudename: {bundle.building_name or 'unbekannt'}\n"
+                f"  ├─ Zonen: {len(bundle.zones)} ({bundle.complexity})\n"
+                f"  ├─ Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m\n"
+                f"  └─ Datenquellen: {sources_str}"
+            )
             return bundle
 
     async def _collect_geocoding(self, bundle: BuildingDataBundle):
@@ -623,9 +708,28 @@ class SmartBuildingService:
             logger.warning(f"Fallback height lookup failed: {e}")
 
     async def _collect_terrain_data(self, bundle: BuildingDataBundle):
-        """Schritt 4: Terrain-Daten (Hanglage)"""
+        """Schritt 4: Terrain-Daten (Hanglage) - ENRICHMENT
+
+        Sammelt Terrain-Daten und speichert sie in building_environment
+        für persistentes Caching pro EGID.
+
+        Hanglage-Klassifikation:
+        - eben: < 0.5m
+        - leicht: 0.5 - 1.5m (Stellspindeln reichen)
+        - mittel: 1.5 - 3.0m (Ausgleichsrahmen nötig)
+        - stark: > 3.0m (Spezielle Fundamentierung)
+        """
         if not bundle.lv95_e or not bundle.lv95_n:
             return
+
+        # Check cache first (building_environment)
+        if bundle.egid:
+            cached_terrain = self._load_terrain_from_environment(str(bundle.egid))
+            if cached_terrain:
+                bundle.terrain = cached_terrain
+                bundle.add_source(DataSource.CACHE)
+                logger.info(f"Terrain loaded from cache for EGID {bundle.egid}")
+                return
 
         try:
             from app.services.terrain import get_terrain_service
@@ -638,11 +742,13 @@ class SmartBuildingService:
                 bundle.terrain = TerrainProfile(reference_height_m=ref_height)
                 bundle.add_source(DataSource.SWISSALTI3D)
 
-                # TODO: Profil um das Gebäude für Hanglage-Erkennung
-                # Wenn Polygon verfügbar, 4 Eckpunkte abfragen
-                if bundle.polygon and len(bundle.polygon) >= 4:
+                # Hanglage über alle Polygon-Punkte berechnen (nicht nur 4)
+                if bundle.polygon and len(bundle.polygon) >= 3:
                     heights = []
-                    for point in bundle.polygon[:4]:  # Erste 4 Ecken
+                    # Sample max 8 Punkte für Performance
+                    step = max(1, len(bundle.polygon) // 8)
+                    for i in range(0, len(bundle.polygon), step):
+                        point = bundle.polygon[i]
                         h = await terrain_service.get_height(point[0], point[1])
                         if h:
                             heights.append(h)
@@ -650,17 +756,88 @@ class SmartBuildingService:
                     if heights:
                         bundle.terrain.min_height_m = min(heights)
                         bundle.terrain.max_height_m = max(heights)
-                        bundle.terrain.slope_m = max(heights) - min(heights)
-                        bundle.terrain.is_sloped = bundle.terrain.slope_m > 1.0
+                        slope_m = max(heights) - min(heights)
+                        bundle.terrain.slope_m = slope_m
+                        bundle.terrain.is_sloped = slope_m > 1.0
+
+                        # Hanglage-Klassifikation
+                        if slope_m < 0.5:
+                            bundle.terrain.slope_class = "eben"
+                        elif slope_m < 1.5:
+                            bundle.terrain.slope_class = "leicht"
+                            bundle.terrain.requires_level_compensation = True
+                        elif slope_m < 3.0:
+                            bundle.terrain.slope_class = "mittel"
+                            bundle.terrain.requires_level_compensation = True
+                        else:
+                            bundle.terrain.slope_class = "stark"
+                            bundle.terrain.requires_level_compensation = True
+
+                        bundle.terrain.max_compensation_m = slope_m
 
                         if bundle.terrain.is_sloped:
                             bundle.add_warning(
-                                f"Hanglage erkannt: {bundle.terrain.slope_m:.1f}m Höhendifferenz"
+                                f"Hanglage erkannt: {slope_m:.1f}m ({bundle.terrain.slope_class})"
                             )
+
+                # Terrain in building_environment speichern (persistenter Cache pro EGID)
+                if bundle.egid:
+                    self._save_terrain_to_environment(bundle)
 
         except Exception as e:
             logger.error(f"Terrain error: {e}")
             bundle.add_warning(f"Terrain-Daten nicht verfügbar: {str(e)}")
+
+    def _load_terrain_from_environment(self, egid: str) -> Optional[TerrainProfile]:
+        """Lädt Terrain-Daten aus building_environment Cache."""
+        try:
+            from app.services.intelligent_db import IntelligentDBService
+            db_service = IntelligentDBService()
+
+            env = db_service.get_building_environment(egid)
+            if env and env.terrain_data:
+                t = env.terrain_data
+                # Check if we have valid terrain data
+                if t.get("height_m") is not None:
+                    terrain = TerrainProfile(
+                        reference_height_m=t.get("height_m", 0),
+                        min_height_m=t.get("min_terrain_m"),
+                        max_height_m=t.get("max_terrain_m"),
+                        slope_m=t.get("slope_m"),
+                        slope_class=t.get("slope_class", "eben"),
+                        is_sloped=t.get("slope_m", 0) > 1.0 if t.get("slope_m") else False,
+                        requires_level_compensation=t.get("requires_level_compensation", False),
+                    )
+                    return terrain
+            return None
+        except Exception as e:
+            logger.warning(f"Could not load terrain from cache: {e}")
+            return None
+
+    def _save_terrain_to_environment(self, bundle: BuildingDataBundle):
+        """Speichert Terrain-Daten in building_environment für persistentes Caching."""
+        try:
+            from app.services.intelligent_db import IntelligentDBService
+            db_service = IntelligentDBService()
+
+            terrain_data = {
+                "height_m": bundle.terrain.reference_height_m if bundle.terrain else None,
+                "min_terrain_m": bundle.terrain.min_height_m if bundle.terrain else None,
+                "max_terrain_m": bundle.terrain.max_height_m if bundle.terrain else None,
+                "slope_m": bundle.terrain.slope_m if bundle.terrain else None,
+                "slope_class": bundle.terrain.slope_class if bundle.terrain else "eben",
+                "requires_level_compensation": bundle.terrain.requires_level_compensation if bundle.terrain else False,
+            }
+
+            db_service.set_building_environment(
+                egid=str(bundle.egid),
+                surrounding_buildings=[],  # Werden dynamisch abgerufen
+                blocked_facades=[],
+                terrain_data=terrain_data
+            )
+            logger.info(f"Terrain saved for EGID {bundle.egid}: {bundle.terrain.slope_class}")
+        except Exception as e:
+            logger.warning(f"Could not save terrain to environment: {e}")
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):
         """Schritt 6: Dach-Analyse (berechnet)"""
@@ -979,6 +1156,7 @@ class SmartBuildingService:
                     traufhoehe_m=bz.traufhoehe_m,
                     firsthoehe_m=bz.firsthoehe_m,
                     gebaeudehoehe_m=bz.gebaeudehoehe_m,
+                    position=bz.position,  # NEU: Position für 3D-Darstellung
                     beruesten=bz.beruesten if bz.beruesten is not None else True,
                     sonderkonstruktion=bz.sonderkonstruktion if bz.sonderkonstruktion is not None else False,
                     confidence=bz.confidence if bz.confidence else 1.0,
@@ -1036,6 +1214,7 @@ class SmartBuildingService:
                     id=zi.id,
                     name=zi.name,
                     type=zone_type,
+                    position=zi.position,  # NEU: Position für 3D-Darstellung
                     traufhoehe_m=zi.traufhoehe_m,
                     firsthoehe_m=zi.firsthoehe_m,
                     gebaeudehoehe_m=zi.gebaeudehoehe_m,

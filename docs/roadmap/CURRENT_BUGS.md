@@ -521,5 +521,159 @@ git push -u origin feature/ml-learning-system
 
 ---
 
+---
+
+## Architektur-Bugs (04.01.2026)
+
+### BUG-013: Cache-Konsolidierung (building_geodata.db → smart_building_cache) ✅
+
+**Status:** Gefixt (04.01.2026)
+**Prioritaet:** P1
+
+**Problem:**
+- Zwei separate Caches existierten:
+  1. `building_geodata.db` (alter Cache)
+  2. `smart_building_cache` in `building_contexts.db` (neuer Cache)
+- Daten wurden nur in `smart_building_cache` gespeichert
+- `building_geodata.db` wurde nie befuellt (wurde in tile_prefetch excludiert)
+- Projekt-Laden schlug fehl weil building_geodata.db leer war
+
+**Loesung (Option C):**
+- Alle Services verwenden jetzt nur noch `smart_building_cache`
+- `geodata_service.py` entfernt
+- `neighbors_service.py` verwendet SmartBuildingService
+- `tile_prefetch.py` registriert nur noch EGIDs in `tiles.db`
+
+**Dokumentation:** Abschnitt 19-24 in POLYGON_DATENFLUSS.md
+
+---
+
+### BUG-014: ProjectService direkt auf Cache statt SmartBuildingService ✅
+
+**Status:** Gefixt (04.01.2026)
+**Prioritaet:** P1
+
+**Problem:**
+```python
+# ALT (FALSCH):
+def _get_bundle_from_smart_cache(self, egid: str):
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor.execute("SELECT bundle_json FROM smart_building_cache WHERE egid = ?")
+```
+
+**Ursache:**
+- ProjectService griff direkt auf SQLite-Cache zu
+- Verletzt Service-Hierarchie
+
+**Loesung:**
+```python
+# NEU (KORREKT):
+def _get_bundle_from_smart_service(self, egid: str):
+    smart_service = get_smart_building_service()
+    bundle = smart_service.get_bundle_by_egid(egid)
+```
+
+**Dateien:**
+- `backend/app/services/geruestbau/project_service.py`
+
+---
+
+### BUG-015: NeighborsService direkt auf Cache statt SmartBuildingService ✅
+
+**Status:** Gefixt (04.01.2026)
+**Prioritaet:** P1
+
+**Problem:**
+- NeighborsService griff direkt auf `smart_building_cache` zu
+- Keine Verwendung von SmartBuildingService.get_bundle_by_egid()
+
+**Loesung:**
+```python
+# NEU:
+def _get_smart_service(self):
+    if self._smart_service is None:
+        from .smart_building import get_smart_building_service
+        self._smart_service = get_smart_building_service()
+    return self._smart_service
+
+def _get_building_from_cache(self, egid: str):
+    bundle = self._get_smart_service().get_bundle_by_egid(egid)
+```
+
+**Dateien:**
+- `backend/app/services/neighbors_service.py`
+
+---
+
+### BUG-016: SmartBuildingService fehlende get_bundle_by_egid() Methode ✅
+
+**Status:** Gefixt (04.01.2026)
+**Prioritaet:** P1
+
+**Problem:**
+- SmartBuildingService hatte keine Methode zum EGID-basierten Cache-Lookup
+- Andere Services mussten direkt auf DB zugreifen
+
+**Loesung:**
+```python
+def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
+    """
+    Holt Bundle aus Cache anhand der EGID.
+    Dies ist die empfohlene Methode fuer project_service und andere Services.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT bundle_json, expires_at
+        FROM smart_building_cache
+        WHERE egid = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (str(egid),))
+    row = cursor.fetchone()
+    conn.close()
+    # ... expiration check und Bundle-Parsing
+```
+
+**Dateien:**
+- `backend/app/services/smart_building/service.py`
+
+---
+
+### BUG-017: Veraltete Tests referenzieren building_geodata.db
+
+**Status:** Offen
+**Prioritaet:** P2
+
+**Problem:**
+- `tests/test_knospenweg_data_integrity.py` testet gegen `building_geodata.db`
+- Diese Datenbank existiert nicht mehr nach Cache-Konsolidierung
+- Tests werden automatisch uebersprungen, sollten aber migriert werden
+
+**Betroffene Tests:**
+```
+- TestKnoswenpwegDataIntegrity::test_all_buildings_exist
+- TestKnoswenpwegDataIntegrity::test_buildings_have_valid_heights
+- TestKnoswenpwegDataIntegrity::test_buildings_have_valid_polygons
+- TestKnoswenpwegDataIntegrity::test_buildings_in_correct_location
+```
+
+**Loesung:**
+- Tests auf `smart_building_cache` umschreiben
+- Oder: Tests als veraltet markieren und neue E2E Tests verwenden
+- Neue Tests: `test_smart_building_cache_e2e.py`
+
+---
+
+## Erledigt (Architektur-Bugs)
+
+- ~~**BUG-013** - Cache-Konsolidierung~~ ✅
+- ~~**BUG-014** - ProjectService direkt auf Cache~~ ✅
+- ~~**BUG-015** - NeighborsService direkt auf Cache~~ ✅
+- ~~**BUG-016** - SmartBuildingService get_bundle_by_egid() fehlte~~ ✅
+
+---
+
 *Dokument erstellt: 30.12.2025*
-*Letzte Aktualisierung: 03.01.2026 - Features FEATURE-002/003/004 hinzugefuegt*
+*Letzte Aktualisierung: 04.01.2026 - Architektur-Bugs BUG-013 bis BUG-017 hinzugefuegt*

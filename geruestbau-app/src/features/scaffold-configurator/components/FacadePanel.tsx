@@ -4,12 +4,13 @@
  * Uses the same UI but integrated into the tab system
  */
 
-import { useMemo } from 'react';
-import { Check, ArrowRight, Compass, AlertTriangle } from 'lucide-react';
+import { useMemo, useCallback } from 'react';
+import { Check, ArrowRight, Compass, AlertTriangle, SlidersHorizontal } from 'lucide-react';
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
-import type { ScaffoldFacade } from '../types/scaffold.types';
+import type { ScaffoldFacade, SelectedFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
 import type { NeighborBuilding } from '../../../api/geruestbau';
+import { simplifyPolygon, sidesToFacades } from '../utils/polygonSimplifier';
 
 interface FacadePanelProps {
   neighbors?: NeighborBuilding[];
@@ -23,6 +24,9 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     configuration,
     setCurrentTab,
     toggleFacadeEnabled,
+    simplifyPolygonEpsilon,
+    setSimplifyEpsilon,
+    applySimplification,
   } = useScaffoldConfig();
 
   const elements = useElements();
@@ -73,6 +77,30 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
   const isFacadeBlocked = (direction: string): boolean => {
     return blockedSides.includes(direction);
   };
+
+  // Get default height from existing facades
+  const defaultHeight = useMemo(() => {
+    if (facades.length > 0) {
+      return facades[0].target_height_m;
+    }
+    return 10;
+  }, [facades]);
+
+  // Handle polygon simplification
+  const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
+    if (!polygon || polygon.length < 3) return;
+
+    setSimplifyEpsilon(newEpsilon);
+
+    // Simplify polygon and calculate new facades
+    const result = simplifyPolygon(polygon, { epsilon: newEpsilon });
+    const newFacades: SelectedFacade[] = sidesToFacades(result.sides, defaultHeight);
+
+    // Apply to store
+    applySimplification(newFacades);
+
+    console.log(`Vereinfachung: ${polygon.length} → ${result.simplifiedPoints} Punkte, ${newFacades.length} Fassaden (epsilon=${result.epsilon})`);
+  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification]);
 
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {
@@ -235,6 +263,41 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
         {polygonSvg || (
           <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
             Kein Polygon verfügbar
+          </div>
+        )}
+
+        {/* Polygon Simplification Slider */}
+        {polygon && polygon.length > 4 && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                <SlidersHorizontal className="w-3 h-3" />
+                Vereinfachung
+              </span>
+              <span className="text-xs text-gray-400">
+                {facades.length} Fassaden
+              </span>
+            </div>
+            <div className="flex gap-1">
+              {[
+                { label: 'Original', value: null },
+                { label: 'Leicht', value: 0.3 },
+                { label: 'Mittel', value: 0.8 },
+                { label: 'Stark', value: 1.5 },
+              ].map((option) => (
+                <button
+                  key={option.label}
+                  onClick={() => handleSimplifyChange(option.value)}
+                  className={`flex-1 py-1.5 px-2 text-xs rounded transition-colors ${
+                    simplifyPolygonEpsilon === option.value
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

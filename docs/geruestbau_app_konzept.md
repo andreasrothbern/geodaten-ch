@@ -1,6 +1,16 @@
 ﻿# Gerüstbau-App: Konzept für Projektverwaltung und Datenerfassung
 
-## Version 1.0 | Dezember 2025
+> **⚠️ DEPRECATED (04.01.2026)**
+>
+> Dieses Dokument ist veraltet. Die hier beschriebene Datenbank-Struktur mit separaten
+> Tabellen (PROJECT, BUILDING_DATA, ZONE) wurde NICHT implementiert.
+>
+> **Aktuelle Architektur:**
+> - `geruestbau.db` verwendet JSON-Spalten (`building_data`, `buildings`)
+> - Siehe `POLYGON_DATENFLUSS.md` für aktuelle Architektur
+> - Grunddaten vs. Enrichment-Trennung siehe `project_service.py`
+
+## Version 1.0 | Dezember 2025 (DEPRECATED)
 
 ---
 

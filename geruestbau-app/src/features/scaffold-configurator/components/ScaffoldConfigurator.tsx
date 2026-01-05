@@ -6,7 +6,7 @@
 import { useEffect } from 'react';
 import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
-import type { MainTab, SelectedFacade, RoofData } from '../types/scaffold.types';
+import type { MainTab, SelectedFacade, RoofData, BuildingZone } from '../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
 
 // Panels
@@ -25,6 +25,10 @@ interface ScaffoldConfiguratorProps {
   neighbors?: NeighborBuilding[];  // Neighboring buildings for 3D view
   blockedSides?: string[];  // Facade directions blocked by neighbors
   additionalBuildings?: MultiBuildingData[];  // Additional selected buildings for 3D view
+  // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
+  zones?: BuildingZone[];
+  complexity?: 'simple' | 'moderate' | 'complex';
+  researchSource?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown';
   onBack?: () => void;
   onComplete?: () => void; // Will be used when completing configuration
 }
@@ -39,10 +43,14 @@ export default function ScaffoldConfigurator({
   neighbors = [],
   blockedSides = [],
   additionalBuildings = [],
+  zones = [],
+  complexity = 'simple',
+  researchSource,
   onBack,
   onComplete: _onComplete, // Will be used when completing configuration
 }: ScaffoldConfiguratorProps) {
   void _onComplete; // Reserved for future use
+  void researchSource; // Reserved for future use (display in 3D info panel)
   const {
     currentTab,
     setCurrentTab,
@@ -124,7 +132,7 @@ export default function ScaffoldConfigurator({
         {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockedSides={blockedSides} />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
-        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} />}
+        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} zones={zones} complexity={complexity} />}
       </main>
     </div>
   );

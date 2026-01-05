@@ -1,6 +1,10 @@
 /**
  * MiniFloorPlan - SVG visualization of building with selected facades
  * Shows the actual building polygon with facade highlighting
+ *
+ * IMPORTANT: When facades have coordinates (start_point/end_point), we reconstruct
+ * the display polygon from them. This ensures the polygon outline matches the
+ * simplified facade lines (which may have fewer points than the original polygon).
  */
 
 import type { ScaffoldFacade } from '../../types/scaffold.types';
@@ -9,24 +13,56 @@ import { getFacadeColor } from '../../types/scaffold.types';
 interface MiniFloorPlanProps {
   facades: ScaffoldFacade[];       // Enabled/selected facades
   allFacades: ScaffoldFacade[];    // All facades for rendering
-  polygon?: [number, number][];    // Building polygon coordinates
+  polygon?: [number, number][];    // Building polygon coordinates (ORIGINAL)
   size?: number;
+}
+
+/**
+ * Reconstructs a polygon from facade start/end points.
+ * This creates a simplified polygon that matches the facade lines.
+ */
+function reconstructPolygonFromFacades(facades: ScaffoldFacade[]): [number, number][] | null {
+  const facadesWithCoords = facades.filter(f => f.start_point && f.end_point);
+  if (facadesWithCoords.length < 3) return null;
+
+  // Collect unique points from facade endpoints
+  const points: [number, number][] = [];
+  for (const facade of facadesWithCoords) {
+    if (facade.start_point) {
+      points.push(facade.start_point);
+    }
+  }
+
+  // Close the polygon
+  if (points.length >= 3) {
+    points.push(points[0]);
+  }
+
+  return points.length >= 3 ? points : null;
 }
 
 export default function MiniFloorPlan({
   facades,
   allFacades,
-  polygon,
+  polygon: originalPolygon,
   size = 96,
 }: MiniFloorPlanProps) {
   // Get enabled facade IDs for quick lookup
   const enabledIds = new Set(facades.map(f => f.id));
 
+  // Determine which polygon to use for display:
+  // - If facades have coordinates, reconstruct simplified polygon from them
+  // - Otherwise use the original polygon
+  const hasCoordinates = allFacades.some(f => f.start_point && f.end_point);
+  const displayPolygon = hasCoordinates
+    ? reconstructPolygonFromFacades(allFacades)
+    : originalPolygon;
+
   // If we have a polygon with coordinates, render the real shape
-  if (polygon && polygon.length >= 3 && allFacades.some(f => f.start_point && f.end_point)) {
+  if (displayPolygon && displayPolygon.length >= 3 && hasCoordinates) {
     // Calculate bounds
-    const xs = polygon.map(p => p[0]);
-    const ys = polygon.map(p => p[1]);
+    const xs = displayPolygon.map(p => p[0]);
+    const ys = displayPolygon.map(p => p[1]);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
@@ -38,8 +74,8 @@ export default function MiniFloorPlan({
 
     const viewBox = `${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`;
 
-    // Create polygon path
-    const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+    // Create polygon path from SIMPLIFIED polygon (matches facades)
+    const pathData = displayPolygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
 
     // Facade line thickness based on selection
     const strokeWidthEnabled = width * 0.04;

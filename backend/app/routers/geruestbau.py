@@ -13,9 +13,9 @@ from ..services.geruestbau.project_service import ProjectService
 from ..services.swissbuildings3d_service import get_swissbuildings3d_service
 from ..services.swisstopo import SwisstopoService
 from ..services.roof import get_roof_service
-from ..services.geodata_service import get_geodata_service
 from ..services.address_parser import get_address_parser
 from ..services.parzellen_service import get_parzellen_service
+from ..services.neighbors_service import get_neighbors_service
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
 
@@ -54,8 +54,8 @@ async def create_project(project: ProjectCreate):
 
 @router.get("/projects/{project_id}", response_model=ProjectWithGeodata)
 async def get_project(project_id: str):
-    """Projekt-Details mit Geodaten abrufen."""
-    project = await project_service.get_project_with_geodata(project_id)
+    """Projekt-Details mit Geodaten aus smart_building_cache abrufen."""
+    project = await project_service.get_project_with_data(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
     return project
@@ -319,7 +319,48 @@ async def get_facade_data_for_configurator(
         polygon=[(p[0], p[1]) for p in building.polygon],
     )
 
-    # 5. Response im ProjectInput-Format zusammenstellen
+    # 5. Zonen-Daten aus SmartBuildingService holen (für komplexe Gebäude)
+    from app.services.smart_building.service import get_smart_building_service
+    smart_service = get_smart_building_service()
+
+    zones_data = []
+    building_name = None
+    complexity = "simple"
+    research_source = "auto"
+
+    try:
+        # SmartBuildingService liefert zones, building_name, complexity, research_source
+        bundle = await smart_service.collect_all_data(
+            address=address,
+            force_refresh=False,
+            include_research=True,
+            include_zones_analysis=False,  # Nur bekannte Gebäude, keine neue Claude-Analyse
+        )
+
+        if bundle.zones:
+            zones_data = [
+                {
+                    "id": z.id,
+                    "name": z.name,
+                    "zone_type": z.zone_type,
+                    "position": z.position,
+                    "traufhoehe_m": z.traufhoehe_m,
+                    "firsthoehe_m": z.firsthoehe_m,
+                    "beruesten": z.beruesten,
+                    "sonderkonstruktion": z.sonderkonstruktion,
+                }
+                for z in bundle.zones
+            ]
+
+        building_name = bundle.building_name
+        complexity = bundle.complexity
+        research_source = bundle.research_source
+
+    except Exception as zone_error:
+        logger.warning(f"Konnte Zonen nicht laden: {zone_error}")
+        # Fallback: Keine Zonen-Daten
+
+    # 6. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
 
     response = {
@@ -327,7 +368,7 @@ async def get_facade_data_for_configurator(
         "building": {
             "egid": building.egid or "",
             "address": geocode_result.matched_address or address,
-            "name": geocode_result.matched_address.split(",")[0] if geocode_result.matched_address else address,
+            "name": building_name or (geocode_result.matched_address.split(",")[0] if geocode_result.matched_address else address),
             "polygon": [(p[0], p[1]) for p in building.polygon],
             "trauf_height_m": trauf_height,
             "first_height_m": first_height,
@@ -336,6 +377,11 @@ async def get_facade_data_for_configurator(
         },
         "selected_facades": selected_facades,
         "roof": roof_data.to_dict(),
+        # Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
+        "zones": zones_data,
+        "building_name": building_name,
+        "complexity": complexity,
+        "research_source": research_source,
         "metadata": {
             "source": "swissBUILDINGS3D_composite",
             "polygon_points": len(building.polygon),
@@ -346,6 +392,8 @@ async def get_facade_data_for_configurator(
             "roof_surfaces_count": len(building.roof_surfaces) if building.roof_surfaces else 0,
             "height_source": building.height_source,
             "confidence": building.confidence,
+            "zones_count": len(zones_data),
+            "research_source": research_source,
         }
     }
 
@@ -415,8 +463,8 @@ async def get_building_neighbors(
     }
     ```
     """
-    geodata_service = get_geodata_service()
-    result = geodata_service.get_neighbors(
+    neighbors_service = get_neighbors_service()
+    result = neighbors_service.get_neighbors(
         egid=egid,
         radius_m=radius_m,
         include_polygons=include_polygons
@@ -425,8 +473,8 @@ async def get_building_neighbors(
     if not result:
         raise HTTPException(
             status_code=404,
-            detail=f"Gebäude mit EGID {egid} nicht in Geodata-DB gefunden. "
-                   "Bitte zuerst über /configurator/facades laden."
+            detail=f"Gebäude mit EGID {egid} nicht im smart_building_cache gefunden. "
+                   "Bitte zuerst über SmartBuildingService laden."
         )
 
     # Blockierte Seiten aus Nachbarn ableiten

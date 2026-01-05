@@ -70,6 +70,18 @@ export interface RoofData {
   traufhoehe_m?: number;
 }
 
+// Zone data for complex buildings (from known_buildings or Claude API)
+export interface BuildingZone {
+  id: string;
+  name: string;
+  zone_type: 'hauptgebaeude' | 'anbau' | 'turm' | 'kuppel' | 'arkade' | 'vordach' | 'treppenhaus' | 'garage';
+  position?: 'vorne' | 'zentral' | 'hinten' | 'flankierend';
+  traufhoehe_m?: number;
+  firsthoehe_m?: number;
+  beruesten: boolean;
+  sonderkonstruktion: boolean;
+}
+
 export interface ScaffoldConfiguration {
   project_id: string;
   created_at: string;
@@ -82,6 +94,11 @@ export interface ScaffoldConfiguration {
   buildingPolygon?: [number, number][];
   // Roof data for 3D visualization
   roof?: RoofData;
+  // Zones for complex buildings (Bundeshaus, Münster, etc.)
+  zones?: BuildingZone[];
+  // Building metadata
+  building_name?: string;
+  complexity?: 'simple' | 'moderate' | 'complex';
 }
 
 export interface ScaffoldTotals {

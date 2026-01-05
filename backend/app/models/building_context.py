@@ -48,6 +48,10 @@ class BuildingZone(BaseModel):
     id: str = Field(..., description="Zone-ID, z.B. 'zone_1', 'zone_arkade'")
     name: str = Field(..., description="Anzeigename, z.B. 'Hauptgebäude', 'Westturm'")
     type: ZoneType = Field(default=ZoneType.HAUPTGEBAEUDE, description="Typ der Zone")
+    position: Optional[str] = Field(
+        default=None,
+        description="Position für 3D-Darstellung: zentral, links, rechts, aussen, hinten, nord, sued, ost, west"
+    )
 
     # Geometrie-Referenz
     polygon_point_indices: Optional[list[int]] = Field(

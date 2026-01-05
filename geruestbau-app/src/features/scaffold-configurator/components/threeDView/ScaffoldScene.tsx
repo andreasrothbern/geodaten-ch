@@ -8,7 +8,7 @@
 import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
-import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D } from '../../types/scaffold.types';
+import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D, BuildingZone } from '../../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../../api/geruestbau';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
@@ -19,6 +19,8 @@ interface ScaffoldSceneProps {
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
   additionalBuildings?: MultiBuildingData[];
+  zones?: BuildingZone[];
+  complexity?: 'simple' | 'moderate' | 'complex';
 }
 
 // Camera position presets for different views
@@ -103,6 +105,157 @@ function createBuildingFromPolygon(polygon: [number, number][], height: number):
   mesh.receiveShadow = true;
 
   return mesh;
+}
+
+// Zone colors based on zone type
+const ZONE_COLORS: Record<string, number> = {
+  hauptgebaeude: 0x8b5cf6,  // Purple (same as main building)
+  anbau: 0x6366f1,          // Indigo
+  turm: 0xf59e0b,           // Amber
+  kuppel: 0x10b981,         // Emerald
+  arkade: 0x06b6d4,         // Cyan
+  vordach: 0x84cc16,        // Lime
+  treppenhaus: 0xf97316,    // Orange
+  garage: 0x6b7280,         // Gray
+};
+
+// Helper to create zone geometry based on zone type and position
+function createZoneGeometry(
+  zone: BuildingZone,
+  _polygon: [number, number][],  // Reserved for future polygon-based zone placement
+  mainBuildingHeight: number,
+  polygonBbox: { minX: number; maxX: number; minY: number; maxY: number }
+): THREE.Group {
+  void _polygon; // Reserved for future use
+  const group = new THREE.Group();
+  group.name = `zone-${zone.id}`;
+
+  const zoneHeight = zone.firsthoehe_m || zone.traufhoehe_m || mainBuildingHeight;
+  const color = ZONE_COLORS[zone.zone_type] || 0x8b5cf6;
+
+  // Calculate building dimensions from bbox
+  const buildingWidth = polygonBbox.maxX - polygonBbox.minX;
+  const buildingDepth = polygonBbox.maxY - polygonBbox.minY;
+
+  // Position offset based on zone position
+  let offsetX = 0;
+  let offsetZ = 0;
+  const positionOffset = Math.max(buildingWidth, buildingDepth) * 0.15; // 15% of building size
+
+  switch (zone.position) {
+    case 'vorne':
+      offsetZ = positionOffset; // South in THREE.js (front)
+      break;
+    case 'hinten':
+      offsetZ = -positionOffset; // North in THREE.js (back)
+      break;
+    case 'flankierend':
+      offsetX = positionOffset; // Side
+      break;
+    case 'zentral':
+    default:
+      // No offset - centered
+      break;
+  }
+
+  // Create geometry based on zone type
+  let mesh: THREE.Mesh;
+
+  if (zone.zone_type === 'turm') {
+    // Tower: Cylinder or tall box
+    const towerRadius = Math.min(buildingWidth, buildingDepth) * 0.1;
+    const geometry = new THREE.CylinderGeometry(towerRadius, towerRadius, zoneHeight, 16);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.8,
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(offsetX, zoneHeight / 2, offsetZ);
+
+  } else if (zone.zone_type === 'kuppel') {
+    // Dome: Sphere (half)
+    const domeRadius = Math.min(buildingWidth, buildingDepth) * 0.2;
+    const geometry = new THREE.SphereGeometry(domeRadius, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.8,
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    // Position dome on top of main building
+    mesh.position.set(offsetX, mainBuildingHeight, offsetZ);
+
+  } else if (zone.zone_type === 'arkade') {
+    // Arcade: Low flat box with columns
+    const arcadeHeight = Math.min(zoneHeight, 6);
+    const arcadeWidth = buildingWidth * 0.8;
+    const arcadeDepth = buildingDepth * 0.3;
+    const geometry = new THREE.BoxGeometry(arcadeWidth, arcadeHeight, arcadeDepth);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.6,
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(offsetX, arcadeHeight / 2, offsetZ + buildingDepth * 0.35);
+
+  } else if (zone.zone_type === 'anbau' || zone.zone_type === 'garage') {
+    // Extension/Garage: Box offset to the side
+    const extWidth = buildingWidth * 0.4;
+    const extDepth = buildingDepth * 0.5;
+    const extHeight = zoneHeight;
+    const geometry = new THREE.BoxGeometry(extWidth, extHeight, extDepth);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.7,
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    // Position to the side of the main building
+    const sideOffset = (buildingWidth + extWidth) / 2 + 1;
+    mesh.position.set(zone.position === 'flankierend' ? sideOffset : offsetX, extHeight / 2, offsetZ);
+
+  } else {
+    // Default: Box at zone height (for hauptgebaeude or unknown types)
+    // Skip if this is the main building (already rendered)
+    if (zone.zone_type === 'hauptgebaeude') {
+      return group; // Return empty group - main building already rendered
+    }
+    const geometry = new THREE.BoxGeometry(buildingWidth * 0.3, zoneHeight, buildingDepth * 0.3);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.7,
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(offsetX, zoneHeight / 2, offsetZ);
+  }
+
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.name = zone.name;
+
+  // Add label sprite for zone name
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d')!;
+  canvas.width = 256;
+  canvas.height = 64;
+  context.fillStyle = '#333';
+  context.font = 'bold 24px Arial';
+  context.textAlign = 'center';
+  context.fillText(zone.name, 128, 40);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(8, 2, 1);
+  sprite.position.set(mesh.position.x, mesh.position.y + zoneHeight / 2 + 2, mesh.position.z);
+
+  group.add(mesh);
+  group.add(sprite);
+
+  return group;
 }
 
 // Helper to create building geometry (fallback for no polygon)
@@ -698,6 +851,8 @@ export default function ScaffoldScene({
   neighbors = [],
   blockedSides = [],
   additionalBuildings = [],
+  zones = [],
+  complexity = 'simple',
 }: ScaffoldSceneProps) {
   // Log neighbors for debugging (will be used for rendering in Phase 2.3)
   if (neighbors.length > 0) {
@@ -706,13 +861,21 @@ export default function ScaffoldScene({
   if (additionalBuildings.length > 0) {
     console.log(`ScaffoldScene: ${additionalBuildings.length} additional buildings for multi-building view`);
   }
+  // Log zones for complex buildings
+  if (zones.length > 0) {
+    console.log(`ScaffoldScene: ${zones.length} zones, complexity: ${complexity}`);
+    zones.forEach(z => console.log(`  - ${z.name}: type=${z.zone_type}, position=${z.position || 'default'}, trauf=${z.traufhoehe_m}m`));
+  }
   const containerRef = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
   const worldRef = useRef<OBC.SimpleWorld<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize scene
+  // Track content objects for cleanup
+  const contentGroupRef = useRef<THREE.Group | null>(null);
+
+  // Initialize scene (only once)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -765,8 +928,11 @@ export default function ScaffoldScene({
         world.scene.three.add(createGround());
         world.scene.three.add(createGrid());
 
-        // Add building and scaffolds
-        addSceneContent(world.scene.three, configuration, neighbors, additionalBuildings);
+        // Create content group for building/scaffolds (will be updated separately)
+        const contentGroup = new THREE.Group();
+        contentGroup.name = 'scene-content';
+        contentGroupRef.current = contentGroup;
+        world.scene.three.add(contentGroup);
 
         setIsLoading(false);
       } catch (err) {
@@ -785,7 +951,39 @@ export default function ScaffoldScene({
         componentsRef.current = null;
       }
     };
-  }, []);  // Initial scene setup
+  }, []);  // Initial scene setup - only once
+
+  // Update scene content when configuration, neighbors, or additionalBuildings change
+  useEffect(() => {
+    const contentGroup = contentGroupRef.current;
+    if (!contentGroup || !worldRef.current?.scene?.three) return;
+
+    // Clear previous content
+    while (contentGroup.children.length > 0) {
+      const child = contentGroup.children[0];
+      contentGroup.remove(child);
+      // Dispose geometry and materials
+      if (child instanceof THREE.Mesh) {
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        } else {
+          child.material?.dispose();
+        }
+      }
+    }
+
+    // Add new content
+    addSceneContent(contentGroup, configuration, neighbors, additionalBuildings, zones, complexity);
+
+    console.log('Scene content updated:', {
+      neighbors: neighbors.length,
+      additionalBuildings: additionalBuildings.length,
+      facades: configuration.elements.filter(e => e.type === 'facade' && e.enabled).length,
+      zones: zones.length,
+      complexity,
+    });
+  }, [configuration, neighbors, additionalBuildings, zones, complexity]);
 
   // Update camera when view changes
   useEffect(() => {
@@ -799,12 +997,14 @@ export default function ScaffoldScene({
     );
   }, [activeView]);
 
-  // Add scene content
+  // Add scene content (works with Scene or Group)
   function addSceneContent(
-    scene: THREE.Scene,
+    parent: THREE.Object3D,
     config: ScaffoldConfiguration,
     neighborBuildings: NeighborBuilding[] = [],
-    multiBuildingData: MultiBuildingData[] = []
+    multiBuildingData: MultiBuildingData[] = [],
+    buildingZones: BuildingZone[] = [],
+    buildingComplexity: 'simple' | 'moderate' | 'complex' = 'simple'
   ) {
     const allFacades = config.elements.filter((el): el is ScaffoldFacade => el.type === 'facade');
     const enabledFacades = allFacades.filter(f => f.enabled);
@@ -841,7 +1041,7 @@ export default function ScaffoldScene({
       const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - (config.roof?.trauf_to_first_m || 0));
 
       // Add building from actual polygon
-      scene.add(createBuildingFromPolygon(normalized, buildingHeight));
+      parent.add(createBuildingFromPolygon(normalized, buildingHeight));
 
       // Add roof (always show for visualization)
       // Use roof data from configuration if available
@@ -870,19 +1070,43 @@ export default function ScaffoldScene({
         }
       });
 
-      scene.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+      parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+
+      // Add zones for complex buildings (Türme, Kuppeln, Anbauten, etc.)
+      if (buildingZones.length > 0 && buildingComplexity !== 'simple') {
+        console.log('=== ADDING ZONES ===', { count: buildingZones.length, complexity: buildingComplexity });
+        // Calculate bounding box for normalized polygon (used for zone positioning)
+        const normalizedBbox = {
+          minX: Math.min(...normalized.map(p => p[0])),
+          maxX: Math.max(...normalized.map(p => p[0])),
+          minY: Math.min(...normalized.map(p => p[1])),
+          maxY: Math.max(...normalized.map(p => p[1])),
+        };
+
+        buildingZones.forEach((zone) => {
+          // Skip hauptgebaeude as it's already rendered as the main building
+          if (zone.zone_type === 'hauptgebaeude') {
+            console.log(`  - Skipping ${zone.name} (hauptgebaeude already rendered)`);
+            return;
+          }
+
+          console.log(`  - Adding zone: ${zone.name}, type=${zone.zone_type}, position=${zone.position || 'default'}`);
+          const zoneGroup = createZoneGeometry(zone, normalized, buildingHeight, normalizedBbox);
+          parent.add(zoneGroup);
+        });
+      }
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
       // Use bboxCenter instead of centroid for consistent alignment
       enabledFacades.forEach((facade) => {
-        scene.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter));
+        parent.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter));
       });
 
       // Add corners (only if enabled)
       corners.forEach((corner) => {
         const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, bboxCenter);
         if (cornerGroup) {
-          scene.add(cornerGroup);
+          parent.add(cornerGroup);
         }
       });
 
@@ -925,7 +1149,7 @@ export default function ScaffoldScene({
 
           // Position relative to main building
           neighborMesh.position.set(offsetX, 0, offsetZ);
-          scene.add(neighborMesh);
+          parent.add(neighborMesh);
 
           console.log(`Added neighbor ${index + 1}/${neighborBuildings.length} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
         });
@@ -951,8 +1175,8 @@ export default function ScaffoldScene({
           );
 
           // Create building mesh with full opacity (blue-purple tint for additional buildings)
-          const buildingHeight = building.traufhoehe_m || 10;
-          const buildingMesh = createBuildingFromPolygon(normalizedBuilding, buildingHeight);
+          const addBuildingHeight = building.traufhoehe_m || 10;
+          const buildingMesh = createBuildingFromPolygon(normalizedBuilding, addBuildingHeight);
 
           // Apply distinct color for additional buildings
           buildingMesh.traverse((child) => {
@@ -967,13 +1191,13 @@ export default function ScaffoldScene({
 
           // Position relative to main building
           buildingMesh.position.set(offsetX, 0, offsetZ);
-          scene.add(buildingMesh);
+          parent.add(buildingMesh);
 
           // Add simple roof for additional buildings
-          const roofHeight = (building.firsthoehe_m || buildingHeight + 3) - buildingHeight;
-          const additionalRoof = createRoofFromPolygon(normalizedBuilding, buildingHeight, roofHeight, 'satteldach', 'O-W');
+          const addRoofHeight = (building.firsthoehe_m || addBuildingHeight + 3) - addBuildingHeight;
+          const additionalRoof = createRoofFromPolygon(normalizedBuilding, addBuildingHeight, addRoofHeight, 'satteldach', 'O-W');
           additionalRoof.position.set(offsetX, 0, offsetZ);
-          scene.add(additionalRoof);
+          parent.add(additionalRoof);
 
           console.log(`Added additional building ${index + 1}/${multiBuildingData.length}: ${building.address} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
         });
@@ -988,18 +1212,18 @@ export default function ScaffoldScene({
         .filter(f => ['E', 'W'].includes(f.direction))
         .reduce((sum, f) => Math.max(sum, f.length_m), 8);
 
-      const buildingWidth = Math.max(10, nsLength);
-      const buildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
+      const fallbackBuildingWidth = Math.max(10, nsLength);
+      const fallbackBuildingDepth = Math.max(8, ewLength > 0 ? ewLength : nsLength * 0.6);
       const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
       // Traufhöhe = Gebäudehöhe bis Dachansatz
-      const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - 3);
+      const fallbackBuildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - 3);
 
       // Add simple box building
-      scene.add(createBuilding(buildingWidth, buildingDepth, buildingHeight));
+      parent.add(createBuilding(fallbackBuildingWidth, fallbackBuildingDepth, fallbackBuildingHeight));
 
       // Add roof if needed
       if (config.settings.work_type === 'roof' || config.settings.work_type === 'full') {
-        scene.add(createRoof(buildingWidth + 1, buildingDepth + 1, 3, buildingHeight));
+        parent.add(createRoof(fallbackBuildingWidth + 1, fallbackBuildingDepth + 1, 3, fallbackBuildingHeight));
       }
 
       // Track which directions we've seen to position facades correctly
@@ -1018,23 +1242,23 @@ export default function ScaffoldScene({
           case 'N':
           case 'NE':
           case 'NW':
-            return { offset: new THREE.Vector3(-facade.length_m / 2, 0, buildingDepth / 2 + gap + stackOffset), dir: 'x' };
+            return { offset: new THREE.Vector3(-facade.length_m / 2, 0, fallbackBuildingDepth / 2 + gap + stackOffset), dir: 'x' };
           case 'S':
           case 'SE':
           case 'SW':
-            return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -buildingDepth / 2 - gap - 0.73 - stackOffset), dir: 'x' };
+            return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -fallbackBuildingDepth / 2 - gap - 0.73 - stackOffset), dir: 'x' };
           case 'E':
-            return { offset: new THREE.Vector3(buildingWidth / 2 + gap + stackOffset, 0, -facade.length_m / 2), dir: 'z' };
+            return { offset: new THREE.Vector3(fallbackBuildingWidth / 2 + gap + stackOffset, 0, -facade.length_m / 2), dir: 'z' };
           case 'W':
-            return { offset: new THREE.Vector3(-buildingWidth / 2 - gap - 0.73 - stackOffset, 0, -facade.length_m / 2), dir: 'z' };
+            return { offset: new THREE.Vector3(-fallbackBuildingWidth / 2 - gap - 0.73 - stackOffset, 0, -facade.length_m / 2), dir: 'z' };
           default:
             const fallbackIndex = Object.keys(directionCount).filter(k => k === dir).length;
             const side = fallbackIndex % 4;
             switch (side) {
-              case 0: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, buildingDepth / 2 + gap), dir: 'x' };
-              case 1: return { offset: new THREE.Vector3(buildingWidth / 2 + gap, 0, -facade.length_m / 2), dir: 'z' };
-              case 2: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -buildingDepth / 2 - gap - 0.73), dir: 'x' };
-              case 3: return { offset: new THREE.Vector3(-buildingWidth / 2 - gap - 0.73, 0, -facade.length_m / 2), dir: 'z' };
+              case 0: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, fallbackBuildingDepth / 2 + gap), dir: 'x' };
+              case 1: return { offset: new THREE.Vector3(fallbackBuildingWidth / 2 + gap, 0, -facade.length_m / 2), dir: 'z' };
+              case 2: return { offset: new THREE.Vector3(-facade.length_m / 2, 0, -fallbackBuildingDepth / 2 - gap - 0.73), dir: 'x' };
+              case 3: return { offset: new THREE.Vector3(-fallbackBuildingWidth / 2 - gap - 0.73, 0, -facade.length_m / 2), dir: 'z' };
               default: return { offset: new THREE.Vector3(0, 0, 0), dir: 'x' };
             }
         }
@@ -1043,7 +1267,7 @@ export default function ScaffoldScene({
       // Add scaffolds (fallback)
       enabledFacades.forEach((facade) => {
         const { offset, dir } = getOffset(facade);
-        scene.add(createScaffoldFacade(facade, fieldWidth, levelHeight, offset, dir));
+        parent.add(createScaffoldFacade(facade, fieldWidth, levelHeight, offset, dir));
       });
     }
   }

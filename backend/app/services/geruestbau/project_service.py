@@ -13,7 +13,7 @@ from ...models.geruestbau import (
 )
 from ..swisstopo import SwisstopoService
 from ..swissbuildings3d_service import get_swissbuildings3d_service
-from ..geodata_service import get_geodata_service, BuildingGeodata
+from ..smart_building import get_smart_building_service
 
 
 class ProjectService:
@@ -21,8 +21,8 @@ class ProjectService:
 
     def __init__(self):
         self.db_path = Path(__file__).parent.parent.parent / "data" / "geruestbau.db"
+        self.contexts_db_path = Path(__file__).parent.parent.parent / "data" / "building_contexts.db"
         self.swisstopo = SwisstopoService()
-        self.geodata_service = get_geodata_service()
         self._init_db()
 
     def _init_db(self):
@@ -71,6 +71,7 @@ class ProjectService:
             'description': 'TEXT',      # SIMAP-Import Feature
             'building_data': 'TEXT',    # Geodaten-Anreicherung
             'scaffold_config': 'TEXT',  # Gerüst-Konfiguration
+            'buildings': 'TEXT',        # Multi-Building Support (JSON array)
         }
 
         for col_name, col_type in migrations.items():
@@ -145,17 +146,104 @@ class ProjectService:
 
         return self._row_to_project(row)
 
-    async def get_project_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
-        """Projekt mit Geodaten aus Cache abrufen."""
+    def _get_bundle_from_smart_service(self, egid: str) -> Optional[dict]:
+        """
+        Lädt BuildingDataBundle über den SmartBuildingService.
+
+        Der SmartBuildingService verwaltet den Cache (building_contexts.db).
+        Diese Methode ist ein Wrapper für die Integration mit dem project_service.
+
+        Args:
+            egid: Eidgenössische Gebäudeidentifikation
+
+        Returns:
+            Dict mit Bundle-Daten oder None
+        """
+        try:
+            smart_service = get_smart_building_service()
+            bundle = smart_service.get_bundle_by_egid(egid)
+
+            if bundle is None:
+                return None
+
+            # Bundle zu Dict konvertieren (für Kompatibilität)
+            return {
+                'egid': bundle.egid,
+                'address_matched': bundle.address_matched,
+                'polygon': bundle.polygon,
+                'sides': bundle.sides,
+                'traufhoehe_m': bundle.traufhoehe_m,
+                'firsthoehe_m': bundle.firsthoehe_m,
+                'gebaeudehoehe_m': bundle.gebaeudehoehe_m,
+                'footprint_area_m2': bundle.footprint_area_m2,
+                'perimeter_m': bundle.perimeter_m,
+                'lv95_e': bundle.lv95_e,
+                'lv95_n': bundle.lv95_n,
+                'terrain': {
+                    'reference_height_m': bundle.terrain.reference_height_m,
+                    'slope_m': bundle.terrain.slope_m,
+                    'slope_class': bundle.terrain.slope_class,
+                } if bundle.terrain else None,
+                'zones': [
+                    {
+                        'id': z.id,
+                        'name': z.name,
+                        'zone_type': z.zone_type,
+                        'traufhoehe_m': z.traufhoehe_m,
+                        'firsthoehe_m': z.firsthoehe_m,
+                    }
+                    for z in bundle.zones
+                ] if bundle.zones else None,
+                'roof_type': bundle.roof_type,
+                'roof_angle_deg': bundle.roof_angle_deg,
+                'roof_orientation': bundle.roof_orientation,
+                'complexity': bundle.complexity,
+                'building_type': bundle.building_type,
+            }
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Error loading bundle for EGID {egid}: {e}")
+            return None
+
+    async def get_project_with_data(self, project_id: str) -> Optional[ProjectWithGeodata]:
+        """
+        Projekt mit Geodaten aus smart_building_cache abrufen.
+
+        Verwendet den zentralen smart_building_cache (building_contexts.db),
+        der alle Gebäudedaten enthält (Polygon, Höhen, Terrain, Zonen, etc.).
+        """
         project = await self.get_project(project_id)
         if not project:
             return None
 
         geodata = None
         if project.egid:
-            cached = self.geodata_service.get_by_egid(project.egid)
-            if cached:
-                geodata = cached.to_dict()
+            bundle = self._get_bundle_from_smart_service(project.egid)
+            if bundle:
+                # Bundle zu Geodata-Format konvertieren (kompatibel mit Frontend)
+                geodata = {
+                    'egid': bundle.get('egid'),
+                    'address': bundle.get('address_matched'),
+                    'polygon': bundle.get('polygon'),
+                    'traufhoehe_m': bundle.get('traufhoehe_m'),
+                    'firsthoehe_m': bundle.get('firsthoehe_m'),
+                    'gebaeudehoehe_m': bundle.get('gebaeudehoehe_m'),
+                    'area_m2': bundle.get('footprint_area_m2'),
+                    'perimeter_m': bundle.get('perimeter_m'),
+                    'center_e': bundle.get('lv95_e'),
+                    'center_n': bundle.get('lv95_n'),
+                    'coord_e': bundle.get('lv95_e'),
+                    'coord_n': bundle.get('lv95_n'),
+                    # Zusätzliche Felder aus dem Bundle
+                    'sides': bundle.get('sides'),
+                    'terrain': bundle.get('terrain'),
+                    'zones': bundle.get('zones'),
+                    'roof_type': bundle.get('roof_type'),
+                    'roof_angle_deg': bundle.get('roof_angle_deg'),
+                    'roof_orientation': bundle.get('roof_orientation'),
+                    'complexity': bundle.get('complexity'),
+                    'building_type': bundle.get('building_type'),
+                }
 
         return ProjectWithGeodata(
             **project.model_dump(),
@@ -236,103 +324,119 @@ class ProjectService:
         return deleted
 
     async def enrich_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
-        """Projekt mit Geodaten anreichern via SmartBuildingService.
+        """Projekt mit ZUSÄTZLICHEN Daten anreichern.
 
-        Nutzt den zentralen SmartBuildingService (10-Schritte Pipeline) statt
-        manueller API-Aufrufe. Das stellt sicher, dass alle Daten konsistent
-        gesammelt und gecacht werden.
+        Enrichment-Daten werden in building_contexts.db → building_environment
+        gespeichert (pro EGID, nicht pro Projekt).
+
+        Enrichment holt:
+        - Terrain (Geländehöhe am Referenzpunkt)
+        - Hanglage (Steigung über Gebäude-Polygon)
+        - Zukünftig: Foto-Analyse, Zonen
+
+        NICHT im Enrichment (dynamisch abgerufen):
+        - Nachbar-Gebäude (API mit variablem Radius)
         """
         project = await self.get_project(project_id)
         if not project:
             return None
 
-        building_data = {}
-        egid = None
+        egid = project.egid
+        polygon = None
+        terrain_data = None
 
         try:
-            # SmartBuildingService für konsistente Datensammlung nutzen
-            from app.services.smart_building import get_smart_building_service
+            # Koordinaten und Polygon aus Projekt-Buildings oder Geodata holen
+            coord_e, coord_n = None, None
 
-            smart_service = get_smart_building_service()
-            bundle = await smart_service.collect_all_data(
-                address=project.address,
-                force_refresh=False,  # Cache nutzen wenn vorhanden
-                include_research=False,  # Keine Claude-Recherche für Enrichment
-                include_zones_analysis=False,
-                include_terrain=True,
-            )
+            if project.buildings and len(project.buildings) > 0:
+                # Multi-Adresse: Koordinaten aus erstem Gebäude
+                first_building = project.buildings[0]
+                if first_building.get('coordinates'):
+                    coord_e = first_building['coordinates'].get('lv95_e')
+                    coord_n = first_building['coordinates'].get('lv95_n')
+                if not egid:
+                    egid = first_building.get('egid')
+                # Polygon aus building
+                if first_building.get('polygon'):
+                    polygon = first_building['polygon']
 
-            if bundle:
-                egid = bundle.egid
+            # Fallback: Geodata über SmartBuildingService laden
+            if not coord_e or not coord_n:
+                if egid:
+                    bundle = self._get_bundle_from_smart_service(egid)
+                    if bundle:
+                        coord_e = bundle.get('lv95_e')
+                        coord_n = bundle.get('lv95_n')
+                        # Koordinaten normalisieren (LV95)
+                        if coord_e and coord_e < 2000000:
+                            coord_e += 2000000
+                        if coord_n and coord_n < 1000000:
+                            coord_n += 1000000
+                        if bundle.get('polygon') and not polygon:
+                            polygon = bundle.get('polygon')
 
-                # Geodaten strukturieren
-                building_data["geocode"] = {
-                    "coordinates": {
-                        "e": bundle.lv95_e,
-                        "n": bundle.lv95_n,
-                    },
+            # ENRICHMENT: Terrain + Hanglage
+            if coord_e and coord_n:
+                from app.services.terrain import get_terrain_service
+
+                terrain_service = get_terrain_service()
+                terrain_height = await terrain_service.get_height(coord_e, coord_n)
+
+                terrain_data = {
+                    "height_m": terrain_height,
+                    "coordinates": {"e": coord_e, "n": coord_n},
+                    "enriched_at": datetime.utcnow().isoformat(),
                 }
 
-                if bundle.gwr_floors or bundle.gwr_category:
-                    building_data["gwr"] = {
-                        "egid": egid,
-                        "address": bundle.address_matched or project.address,
-                        "floors": bundle.gwr_floors,
-                        "category": bundle.gwr_category,
-                    }
-
-                if bundle.polygon:
-                    building_data["polygon"] = bundle.polygon
-
-                building_data["heights"] = {
-                    "traufhoehe_m": bundle.traufhoehe_m,
-                    "firsthoehe_m": bundle.firsthoehe_m,
-                    "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
-                    "source": bundle.height_source or "swissBUILDINGS3D",
-                }
-
-                building_data["geometry"] = {
-                    "perimeter_m": bundle.perimeter_m,
-                    "area_m2": bundle.footprint_area_m2,
-                    "sides_count": len(bundle.sides) if bundle.sides else 0,
-                }
-
-                # Geodaten im zentralen Cache speichern (für getProject)
-                if egid and bundle.lv95_e and bundle.lv95_n:
-                    geodata = BuildingGeodata(
-                        egid=str(egid),
-                        address=bundle.address_matched or project.address,
-                        polygon=bundle.polygon,
-                        traufhoehe_m=bundle.traufhoehe_m,
-                        firsthoehe_m=bundle.firsthoehe_m,
-                        gebaeudehoehe_m=bundle.gebaeudehoehe_m,
-                        area_m2=bundle.footprint_area_m2,
-                        perimeter_m=bundle.perimeter_m,
-                        center_e=bundle.lv95_e,
-                        center_n=bundle.lv95_n,
-                        coord_e=bundle.lv95_e,
-                        coord_n=bundle.lv95_n,
+                # Hanglage berechnen wenn Polygon vorhanden
+                if polygon and len(polygon) >= 3:
+                    terrain_info = await terrain_service.get_terrain_info(
+                        coord_e, coord_n, polygon
                     )
-                    self.geodata_service.save(geodata)
-                    print(f"[Gerüstbau] Geodaten für EGID {egid} im Cache gespeichert")
+                    if terrain_info:
+                        terrain_data["min_terrain_m"] = terrain_info.min_terrain_m
+                        terrain_data["max_terrain_m"] = terrain_info.max_terrain_m
+                        terrain_data["slope_m"] = terrain_info.terrain_slope_m
+
+                        # Hanglage-Klassifikation
+                        if terrain_info.terrain_slope_m:
+                            slope = terrain_info.terrain_slope_m
+                            if slope < 0.5:
+                                terrain_data["slope_class"] = "eben"
+                            elif slope < 1.5:
+                                terrain_data["slope_class"] = "leicht"
+                            elif slope < 3.0:
+                                terrain_data["slope_class"] = "mittel"
+                            else:
+                                terrain_data["slope_class"] = "stark"
+
+                print(f"[Gerüstbau] Terrain für EGID {egid}: {terrain_height}m ü.M., Hanglage: {terrain_data.get('slope_m', 0):.1f}m")
 
         except Exception as e:
-            print(f"[Gerüstbau] Fehler bei Geodaten-Anreicherung: {e}")
+            print(f"[Gerüstbau] Fehler bei Enrichment: {e}")
             import traceback
             traceback.print_exc()
 
-        building_data["enriched_at"] = datetime.utcnow().isoformat()
+        # Terrain in building_environment speichern (pro EGID, nicht pro Projekt)
+        if terrain_data and egid:
+            from app.services.intelligent_db import IntelligentDBService
+            db_service = IntelligentDBService()
+            db_service.set_building_environment(
+                egid=egid,
+                surrounding_buildings=[],  # Wird dynamisch abgerufen
+                blocked_facades=[],
+                terrain_data=terrain_data
+            )
 
-        # Projekt aktualisieren
+        # Projekt-Status aktualisieren (KEIN building_data mehr!)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE projects
-            SET egid = ?, building_data = ?, status = ?, updated_at = ?
+            SET status = ?, updated_at = ?
             WHERE id = ?
         ''', (
-            egid,
-            json.dumps(building_data),
             ProjectStatus.ENRICHED.value,
             datetime.utcnow().isoformat(),
             project_id
@@ -340,8 +444,8 @@ class ProjectService:
         conn.commit()
         conn.close()
 
-        # Mit Geodaten zurückgeben (für sofortige Nutzung im Frontend)
-        return await self.get_project_with_geodata(project_id)
+        # Mit Geodaten zurückgeben
+        return await self.get_project_with_data(project_id)
 
     async def upload_photo(self, project_id: str, file) -> dict:
         """Foto hochladen (Placeholder)."""
@@ -410,7 +514,11 @@ class ProjectService:
         }
 
     def _row_to_project(self, row) -> Project:
-        """SQLite Row zu Project Model konvertieren."""
+        """SQLite Row zu Project Model konvertieren.
+
+        HINWEIS: building_data wird nicht mehr im Project gespeichert.
+        Enrichment-Daten (Terrain, Hanglage) sind in building_contexts.db → building_environment.
+        """
         return Project(
             id=row['id'],
             name=row['name'],
@@ -421,7 +529,6 @@ class ProjectService:
             client_contact=row['client_contact'],
             deadline=datetime.fromisoformat(row['deadline']) if row['deadline'] else None,
             description=row['description'],
-            building_data=json.loads(row['building_data']) if row['building_data'] else None,
             created_at=datetime.fromisoformat(row['created_at']),
             updated_at=datetime.fromisoformat(row['updated_at'])
         )

@@ -27,7 +27,9 @@ export interface AddressRangeParsed {
 
 export interface AddressRangeBuilding {
   address: string
+  matched_address?: string  // Full address from geocoding
   egid: string
+  egid_source?: string
   polygon?: [number, number][]
   traufhoehe_m?: number
   firsthoehe_m?: number

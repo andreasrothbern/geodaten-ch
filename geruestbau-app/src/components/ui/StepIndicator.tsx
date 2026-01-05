@@ -8,24 +8,29 @@ interface Step {
 interface StepIndicatorProps {
   steps: Step[]
   currentStep: number
+  isComplete?: boolean  // Letzter Step erfolgreich abgeschlossen
 }
 
-export default function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
+export default function StepIndicator({ steps, currentStep, isComplete }: StepIndicatorProps) {
   return (
     <div className="flex items-center justify-center gap-2 mb-6">
-      {steps.map((step, index) => (
+      {steps.map((step, index) => {
+        const isLastStep = index === steps.length - 1
+        const isStepComplete = step.id < currentStep || (isLastStep && isComplete)
+
+        return (
         <div key={step.id} className="flex items-center">
           {/* Step Circle */}
           <div
             className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors ${
-              step.id < currentStep
-                ? 'bg-primary-600 text-white'
+              isStepComplete
+                ? 'bg-green-600 text-white'
                 : step.id === currentStep
                 ? 'bg-primary-600 text-white ring-2 ring-primary-300'
                 : 'bg-gray-200 text-gray-500'
             }`}
           >
-            {step.id < currentStep ? (
+            {isStepComplete ? (
               <Check className="w-4 h-4" />
             ) : (
               step.id
@@ -47,12 +52,13 @@ export default function StepIndicator({ steps, currentStep }: StepIndicatorProps
           {index < steps.length - 1 && (
             <div
               className={`w-8 sm:w-16 h-0.5 mx-2 sm:mx-4 ${
-                step.id < currentStep ? 'bg-primary-600' : 'bg-gray-200'
+                isStepComplete ? 'bg-green-600' : 'bg-gray-200'
               }`}
             />
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

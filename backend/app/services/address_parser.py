@@ -271,6 +271,71 @@ class AddressParserService:
             self._swisstopo = SwisstopoService()
         return self._swisstopo
 
+    def _normalize_street(self, street: str) -> str:
+        """Normalisiert Strassennamen für Vergleich."""
+        street = street.lower().strip()
+        # Gängige Abkürzungen vereinheitlichen
+        street = re.sub(r'\bstr\.?\b', 'strasse', street)
+        street = re.sub(r'\bstr$', 'strasse', street)
+        # Umlaute normalisieren
+        street = street.replace('ä', 'ae').replace('ö', 'oe').replace('ü', 'ue')
+        street = street.replace('ss', 'ss')  # ß → ss bereits in Daten
+        return street
+
+    def _normalize_city(self, city: str) -> str:
+        """Normalisiert Ortsnamen für Vergleich."""
+        city = city.lower().strip()
+        # PLZ entfernen falls vorhanden
+        city = re.sub(r'^\d{4}\s+', '', city)
+        return city
+
+    def _validate_geocode_match(self, parsed: ParsedAddressRange, matched_address: str) -> bool:
+        """
+        Validiert ob die gematche Adresse zur angeforderten passt.
+
+        Args:
+            parsed: Die geparste Original-Adresse
+            matched_address: Die von swisstopo zurückgegebene Adresse
+
+        Returns:
+            True wenn Match gültig (gleiche Strasse und Stadt)
+        """
+        if not matched_address:
+            return False
+
+        # Matched address parsen (Format: "Strassenname Nr PLZ Ort")
+        # Beispiel: "Knospenweg 9 3027 Bern"
+        match = re.match(r'^(.+?)\s+\d+[a-zA-Z]?\s+\d{4}\s+(.+)$', matched_address)
+        if not match:
+            # Alternatives Format ohne PLZ
+            match = re.match(r'^(.+?)\s+\d+[a-zA-Z]?\s+(.+)$', matched_address)
+
+        if not match:
+            logger.warning(f"Konnte matched_address nicht parsen: {matched_address}")
+            return False
+
+        matched_street = match.group(1)
+        matched_city = match.group(2)
+
+        # Normalisieren und vergleichen
+        requested_street = self._normalize_street(parsed.street)
+        matched_street_norm = self._normalize_street(matched_street)
+
+        requested_city = self._normalize_city(parsed.city)
+        matched_city_norm = self._normalize_city(matched_city)
+
+        # Strasse muss übereinstimmen
+        if requested_street != matched_street_norm:
+            logger.debug(f"Strasse stimmt nicht: '{requested_street}' != '{matched_street_norm}'")
+            return False
+
+        # Stadt muss übereinstimmen (oder Teil davon sein, z.B. "Bern" in "Bern-Bümpliz")
+        if requested_city not in matched_city_norm and matched_city_norm not in requested_city:
+            logger.debug(f"Stadt stimmt nicht: '{requested_city}' != '{matched_city_norm}'")
+            return False
+
+        return True
+
     def parse(self, address: str) -> ParsedAddressRange:
         """Parst eine Adresse (ohne Geocoding)."""
         return parse_address_range(address)
@@ -303,6 +368,17 @@ class AddressParserService:
                     errors.append({
                         "address": full_address,
                         "error": "Adresse nicht gefunden"
+                    })
+                    continue
+
+                # 2. Validate matched address - must match requested street and city
+                if not self._validate_geocode_match(parsed, geo_result.matched_address):
+                    logger.warning(
+                        f"Geocoding-Match ungültig: '{full_address}' → '{geo_result.matched_address}'"
+                    )
+                    errors.append({
+                        "address": full_address,
+                        "error": f"Adresse existiert nicht (Match: {geo_result.matched_address})"
                     })
                     continue
 

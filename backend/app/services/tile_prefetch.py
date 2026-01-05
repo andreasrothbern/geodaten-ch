@@ -2,16 +2,18 @@
 Tile Prefetch Service
 =====================
 
-Background-Job der alle Gebäude in einem Tile vorab lädt.
+Background-Job der alle EGIDs in einem Tile im Index registriert.
 
 Ablauf:
 1. User fragt Gebäude A an
 2. Gebäude A wird sofort zurückgegeben
-3. Im Hintergrund: Dieser Job parsed ALLE Gebäude im Tile
-4. Speichert sie in building_geodata.db
-5. Nächste Anfrage im selben Tile: ~1ms statt ~50ms
+3. Im Hintergrund: Dieser Job registriert ALLE EGIDs im Tile-Index (tiles.db)
+4. Nächste EGID-Lookups im selben Tile: O(1) statt Tile-Scan
 
 Verwendet asyncio.create_task() für fire-and-forget Background-Ausführung.
+
+HINWEIS (04.01.2026): Speicherung in building_geodata.db wurde entfernt.
+Nur noch EGID-Index-Registrierung in tiles.db.
 """
 
 import asyncio
@@ -22,7 +24,6 @@ from datetime import datetime
 from typing import Optional, Set
 from threading import Lock
 
-from app.services.geodata_service import get_geodata_service, BuildingGeodata
 from app.services.tile_cache import get_tile_cache
 
 logger = logging.getLogger(__name__)
@@ -38,17 +39,18 @@ async def prefetch_tile_buildings(
     exclude_egid: Optional[str] = None
 ) -> int:
     """
-    Lädt alle Gebäude aus einem Tile in die Geodata-DB.
+    Registriert alle EGIDs aus einem Tile im Index (tiles.db).
 
     Läuft im Hintergrund, blockiert nicht die ursprüngliche Anfrage.
+    HINWEIS: Speichert NICHT mehr in building_geodata.db (entfernt 04.01.2026).
 
     Args:
         tile_id: Tile-Referenz (z.B. "1088-22")
         gdb_path: Pfad zum GDB-Verzeichnis
-        exclude_egid: EGID die nicht geladen werden soll (wurde schon geladen)
+        exclude_egid: EGID die nicht registriert werden soll (wurde schon registriert)
 
     Returns:
-        Anzahl geladener Gebäude
+        Anzahl registrierter EGIDs
     """
     # Check ob bereits ein Prefetch für dieses Tile läuft
     with _prefetch_lock:
@@ -58,7 +60,7 @@ async def prefetch_tile_buildings(
         _prefetch_in_progress.add(tile_id)
 
     try:
-        logger.info(f"🔄 Prefetch gestartet für Tile {tile_id}")
+        logger.info(f"🔄 EGID-Registrierung gestartet für Tile {tile_id}")
         start_time = datetime.now()
 
         # GDB parsen
@@ -68,11 +70,9 @@ async def prefetch_tile_buildings(
             logger.warning(f"Keine Gebäude in Tile {tile_id} gefunden")
             return 0
 
-        # Geodata-Service für Speicherung
-        geodata_service = get_geodata_service()
         tile_cache = get_tile_cache()
 
-        saved_count = 0
+        registered_count = 0
         skipped_count = 0
 
         for building in buildings:
@@ -85,50 +85,27 @@ async def prefetch_tile_buildings(
                 skipped_count += 1
                 continue
 
-            # Prüfen ob schon in DB
-            existing = geodata_service.get_by_egid(str(egid))
-            if existing and existing.polygon:
-                skipped_count += 1
-                continue
-
-            # In DB speichern
+            # EGID im Tile-Index registrieren (für O(1) Lookups)
             try:
-                geodata = BuildingGeodata(
-                    egid=str(egid),
-                    polygon=building.get("polygon"),
-                    traufhoehe_m=building.get("traufhoehe_m"),
-                    firsthoehe_m=building.get("firsthoehe_m"),
-                    gebaeudehoehe_m=building.get("gebaeudehoehe_m"),
-                    area_m2=building.get("area_m2"),
-                    perimeter_m=building.get("perimeter_m"),
-                    center_e=building.get("center_e"),
-                    center_n=building.get("center_n"),
-                    coord_e=building.get("coord_e"),
-                    coord_n=building.get("coord_n"),
-                    fetched_at=datetime.utcnow().isoformat()
-                )
-                geodata_service.save(geodata)
-                saved_count += 1
-
-                # EGID im Tile-Index registrieren
                 tile_cache.register_egid(
                     egid=egid,
                     tile_id=tile_id,
                     e=building.get("coord_e"),
                     n=building.get("coord_n")
                 )
+                registered_count += 1
 
             except Exception as e:
-                logger.warning(f"Fehler beim Speichern EGID {egid}: {e}")
+                logger.warning(f"Fehler beim Registrieren EGID {egid}: {e}")
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(
-            f"✅ Prefetch abgeschlossen: {tile_id} | "
-            f"{saved_count} gespeichert, {skipped_count} übersprungen | "
+            f"✅ EGID-Registrierung abgeschlossen: {tile_id} | "
+            f"{registered_count} registriert, {skipped_count} übersprungen | "
             f"{elapsed:.1f}s"
         )
 
-        return saved_count
+        return registered_count
 
     except Exception as e:
         logger.error(f"Prefetch-Fehler für {tile_id}: {e}")

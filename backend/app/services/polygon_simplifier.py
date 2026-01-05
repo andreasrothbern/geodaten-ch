@@ -249,8 +249,14 @@ def _calculate_sides(polygon: List[List[float]]) -> List[Dict[str, Any]]:
         if azimuth < 0:
             azimuth += 360
 
-        # Himmelsrichtung
-        direction = _azimuth_to_direction(azimuth)
+        # Normalenrichtung berechnen (90° zur Kante, nach aussen zeigend)
+        # Bei CCW-Polygonen (mathematisch positiv) zeigt die Normale nach RECHTS
+        # swissBUILDINGS3D Polygone sind typischerweise CCW
+        # Normale = Azimut + 90° (nach rechts der Bewegungsrichtung)
+        normal_azimuth = (azimuth + 90) % 360
+
+        # Himmelsrichtung basierend auf Normalenrichtung (wohin die Fassade zeigt)
+        direction = _azimuth_to_direction(normal_azimuth)
 
         sides.append({
             "index": i,
@@ -260,8 +266,9 @@ def _calculate_sides(polygon: List[List[float]]) -> List[Dict[str, Any]]:
             "end_point": p2,    # Legacy-Format
             "length_m": round(length, 2),
             "azimuth_deg": round(azimuth, 1),
-            "angle_deg": round(azimuth, 1),  # Alias für Frontend
-            "direction": direction
+            "angle_deg": round(azimuth, 1),  # Kantenrichtung (Legacy)
+            "normal_azimuth_deg": round(normal_azimuth, 1),
+            "direction": direction  # Normalenrichtung (wohin Fassade zeigt)
         })
 
     return sides

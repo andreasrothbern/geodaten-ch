@@ -7,13 +7,14 @@ import { ImportStep, ReviewStep, GeodataStep } from '../components/projects/impo
 import type {
   ExtractedProjectData,
   Geodata,
+  BuildingEntry,
   OcrExtractionResult,
 } from '../types/project'
 
 const STEPS = [
   { id: 1, label: 'Import' },
-  { id: 2, label: 'Pruefen' },
-  { id: 3, label: 'Geodaten' },
+  { id: 2, label: 'Prüfen' },
+  { id: 3, label: 'Grunddaten' },
 ]
 
 type ImportSource = 'pdf' | 'photo' | 'url' | 'manual'
@@ -22,6 +23,7 @@ export default function NewProjectPage() {
   const navigate = useNavigate()
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [enrichmentComplete, setEnrichmentComplete] = useState(false)
 
   // Extracted/entered data
   const [projectData, setProjectData] = useState<ExtractedProjectData>({})
@@ -79,6 +81,9 @@ export default function NewProjectPage() {
         const data = await response.json()
 
         // Map to Geodata format (flat structure from SmartBuildingService)
+        // Terrain-Daten aus bundle.terrain extrahieren
+        const terrain = data.terrain || {}
+
         return {
           egid: data.egid || '',
           address: data.address_matched || address,
@@ -91,6 +96,16 @@ export default function NewProjectPage() {
           coord_n: data.lv95_n,
           polygon: data.polygon,
           polygon_simplified: data.polygon_simplified,
+          // Enrichment-Daten
+          terrain_height_m: terrain.reference_height_m,
+          slope_m: terrain.slope_m,
+          slope_class: terrain.slope_class,
+          // Zonen (bei komplexen Gebäuden)
+          zones: data.zones,
+          // Datenherkunft für UI-Feedback
+          research_source: data.research_source,
+          building_name: data.building_name,
+          complexity: data.complexity,
         }
       } catch (error) {
         console.error('Fehler beim Laden der Geodaten:', error)
@@ -102,23 +117,29 @@ export default function NewProjectPage() {
 
   // Create project and enrich with geodata
   const handleSubmit = useCallback(
-    async (_geodataPreview: Geodata | null) => {
+    async (geodataPreview: Geodata | null, buildings?: BuildingEntry[]) => {
       if (!projectData.project_name || !projectData.address) return
 
       setLoading(true)
 
       try {
-        // 1. Create project with basic data
+        // 1. Create project with basic data (including buildings for multi-address)
+        // Bei Single-Address: EGID aus geodataPreview übergeben (bereits geladen!)
         const project = await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
+          egid: geodataPreview?.egid, // EGID bereits aus SmartBuildingService geladen
+          buildings: buildings, // Multi-Building Support (already has EGID, heights, coords)
           client_name: projectData.client_name,
           client_contact: projectData.client_contact,
           deadline: projectData.submission_deadline,
         })
 
-        // 2. Enrich with geodata (saves to cache and updates EGID)
-        await geruestbauApi.enrichProject(project.id)
+        // 2. Enrich NUR wenn keine Geodaten vorhanden (sollte selten sein)
+        // Die Daten wurden bereits in GeodataStep geladen und gecacht
+        if (!geodataPreview?.egid && (!buildings || buildings.length === 0)) {
+          await geruestbauApi.enrichProject(project.id)
+        }
 
         // Navigate to projects list
         navigate('/projects')
@@ -156,7 +177,7 @@ export default function NewProjectPage() {
       </div>
 
       {/* Step Indicator */}
-      <StepIndicator steps={STEPS} currentStep={currentStep} />
+      <StepIndicator steps={STEPS} currentStep={currentStep} isComplete={enrichmentComplete} />
 
       {/* Step Content */}
       {currentStep === 1 && (
@@ -184,9 +205,13 @@ export default function NewProjectPage() {
           data={projectData}
           source={source}
           loadGeodata={loadGeodata}
-          onBack={() => setCurrentStep(2)}
+          onBack={() => {
+            setEnrichmentComplete(false)
+            setCurrentStep(2)
+          }}
           onSubmit={handleSubmit}
           loading={loading}
+          onLoadComplete={setEnrichmentComplete}
         />
       )}
     </div>

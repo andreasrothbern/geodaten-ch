@@ -100,6 +100,7 @@ class TerrainProfile:
     # Klassifikation
     is_sloped: bool = False  # > 1m Differenz
     slope_direction: Optional[str] = None  # Haupt-Gefällerichtung
+    slope_class: str = "eben"  # eben/leicht/mittel/stark
 
     # Gerüst-Auswirkungen
     requires_level_compensation: bool = False
@@ -241,6 +242,13 @@ class BuildingDataBundle:
     research_confidence: float = 0.0
     analysis_confidence: float = 0.0
 
+    # Datenherkunft für UI-Feedback (NEU 05.01.2026)
+    # "known_buildings" = bekanntes Gebäude (sofort, kostenlos)
+    # "claude_api" = Claude Research API (1-3 Sekunden, kostenpflichtig)
+    # "cache" = aus Cache geladen
+    # "auto" = automatisch berechnet
+    research_source: str = "unknown"
+
     # Fehler/Warnungen
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
@@ -329,6 +337,7 @@ class BuildingDataBundle:
                     "traufhoehe_m": z.traufhoehe_m,
                     "firsthoehe_m": z.firsthoehe_m,
                     "gebaeudehoehe_m": z.gebaeudehoehe_m,
+                    "position": z.position,  # Räumliche Anordnung für 3D-Modell
                     "beruesten": z.beruesten,
                     "sonderkonstruktion": z.sonderkonstruktion,
                 }

@@ -157,6 +157,16 @@ class PhotoUpdate(BaseModel):
 # Project Models
 # =============================================================================
 
+class BuildingEntry(BaseModel):
+    """Ein Gebaeude innerhalb eines Multi-Building Projekts."""
+    egid: str
+    address: str
+    traufhoehe_m: Optional[float] = None
+    firsthoehe_m: Optional[float] = None
+    coordinates: Optional[Dict[str, float]] = None  # lv95_e, lv95_n
+    egid_source: str = "swissBUILDINGS3D"
+
+
 class ProjectCreate(BaseModel):
     """Daten fuer Projekt-Erstellung.
 
@@ -165,6 +175,7 @@ class ProjectCreate(BaseModel):
     name: str
     address: str
     egid: Optional[str] = None
+    buildings: List[BuildingEntry] = Field(default_factory=list)  # Multi-Building Support
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
     deadline: Optional[str] = None
@@ -183,16 +194,23 @@ class ProjectUpdate(BaseModel):
 
 
 class Project(BaseModel):
-    """Vollstaendiges Projekt-Model."""
+    """Vollstaendiges Projekt-Model.
+
+    WICHTIG: Enrichment-Daten (Terrain, Hanglage, Zonen) werden NICHT hier
+    gespeichert, sondern in building_contexts.db → building_environment (pro EGID).
+    Das Projekt speichert nur Referenzen (EGID) und Einstellungen (scaffold_config).
+    """
     id: str
     name: str
     address: str
     egid: Optional[str] = None
+    buildings: List[BuildingEntry] = Field(default_factory=list)  # Multi-Building Support
     status: ProjectStatus = ProjectStatus.DRAFT
     config: Optional[ScaffoldConfig] = None
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
     deadline: Optional[datetime] = None
+    description: Optional[str] = None  # Projektbeschreibung
     created_at: datetime
     updated_at: datetime
 

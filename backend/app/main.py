@@ -3623,6 +3623,7 @@ async def get_smart_building_data(
                     "traufhoehe_m": z.traufhoehe_m,
                     "firsthoehe_m": z.firsthoehe_m,
                     "gebaeudehoehe_m": z.gebaeudehoehe_m,
+                    "position": z.position,  # Position für 3D-Darstellung
                     "fassaden_ids": z.fassaden_ids,
                     "beruesten": z.beruesten,
                     "sonderkonstruktion": z.sonderkonstruktion,

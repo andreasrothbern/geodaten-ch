@@ -863,6 +863,243 @@ GET /api/v1/geruestbau/parzelle/for-address?address=Bundesplatz 3, Bern
 
 ---
 
+## 12. Frontend-Szenarien: Multi-Adresse vs. Nachbargebäude (04.01.2026)
+
+### Übersicht: Zwei unterschiedliche Use Cases
+
+Es gibt zwei fundamental unterschiedliche Szenarien für die Darstellung mehrerer Gebäude:
+
+| Aspekt | Szenario 1: Multi-Adresse | Szenario 2: Nachbargebäude |
+|--------|---------------------------|---------------------------|
+| **Eingabe** | "Knospenweg 2-10, Bern" | "Knospenweg 3, Bern" |
+| **Konzept** | Mehrere Adressen = 1 Projekt | 1 Adresse + Umgebung |
+| **EGIDs** | Array von 5 Hauptgebäuden | 1 Hauptgebäude |
+| **Datenstruktur** | `project.egids[]` | `neighbors[]` |
+| **3D-Darstellung** | Alle als Hauptgebäude (purple) | Haupt + Nachbarn (grau) |
+| **Fassaden** | Alle Fassaden aller Gebäude | Blockierte Fassaden markiert |
+| **API** | `/address/resolve` | `/building/{egid}/neighbors` |
+
+### Szenario 1: Multi-Adresse als Gebäudekomplex
+
+**Use Case:** Gerüst für eine ganze Häuserzeile (Reihenhäuser, Mehrfamilienhäuser mit gemeinsamer Adresse)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              SZENARIO 1: MULTI-ADRESSE WORKFLOW                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  User: "Knospenweg 2-10, Bern"                                          │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Frontend: isAddressRange() erkennt "2-10" Pattern                      │
+│       │                                                                  │
+│       ▼                                                                  │
+│  API: GET /api/v1/geruestbau/address/resolve?address=Knospenweg 2-10    │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Response:                                                               │
+│  {                                                                       │
+│    "parsed": {                                                           │
+│      "street": "Knospenweg",                                            │
+│      "city": "Bern",                                                    │
+│      "numbers": ["2", "4", "6", "8", "10"]                              │
+│    },                                                                    │
+│    "buildings": [                                                        │
+│      {"address": "Knospenweg 2", "egid": "1243791", ...},               │
+│      {"address": "Knospenweg 4", "egid": "1243792", ...},               │
+│      {"address": "Knospenweg 6", "egid": "1243793", ...},               │
+│      {"address": "Knospenweg 8", "egid": "1243794", ...},               │
+│      {"address": "Knospenweg 10", "egid": "1243797", ...}               │
+│    ],                                                                    │
+│    "building_count": 5                                                   │
+│  }                                                                       │
+│       │                                                                  │
+│       ▼                                                                  │
+│  UI: Gebäude-Auswahl (Checkboxen)                                       │
+│  ┌──────────────────────────────────────┐                               │
+│  │ ☑ Knospenweg 2  (EGID: 1243791)     │                               │
+│  │ ☑ Knospenweg 4  (EGID: 1243792)     │                               │
+│  │ ☑ Knospenweg 6  (EGID: 1243793)     │                               │
+│  │ ☑ Knospenweg 8  (EGID: 1243794)     │                               │
+│  │ ☑ Knospenweg 10 (EGID: 1243797)     │                               │
+│  └──────────────────────────────────────┘                               │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Projekt erstellen:                                                      │
+│  - egids: ["1243791", "1243792", "1243793", "1243794", "1243797"]        │
+│  - Erstes Gebäude = Haupt-Polygon                                        │
+│  - Weitere = additionalBuildings[] (für 3D-View)                         │
+│       │                                                                  │
+│       ▼                                                                  │
+│  3D-View: Alle 5 Gebäude nebeneinander (purple, indigo)                 │
+│  Fassaden: ALLE Fassaden aller Gebäude konfigurierbar                   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Dateien:**
+- `ConfiguratorPage.tsx`: `addressRangeData`, `selectedBuildings`, `additionalBuildings`
+- `geruestbau.ts`: `resolveAddressRange()`, `getBuildingPolygon()`
+- `ScaffoldScene.tsx`: `addSceneContent()` → `multiBuildingData`
+
+**Wichtig:** `additionalBuildings` sind hier die WEITEREN AUSGEWÄHLTEN Hauptgebäude, nicht Nachbarn!
+
+### Szenario 2: Nachbargebäude für blockierte Fassaden
+
+**Use Case:** Erkennen welche Fassaden wegen angrenzender Gebäude nicht eingerüstet werden können
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              SZENARIO 2: NACHBARGEBÄUDE WORKFLOW                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  User: "Knospenweg 3, Bern"                                             │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Frontend: Normaler Adress-Lookup (kein Range-Pattern)                  │
+│       │                                                                  │
+│       ▼                                                                  │
+│  API: GET /api/v1/geruestbau/configurator/facades?address=...           │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Building Data geladen: EGID 1243795, Polygon, Fassaden                 │
+│       │                                                                  │
+│       ▼                                                                  │
+│  UI: Nachbargebäude-Radius auswählen                                    │
+│  ┌──────────────────────────────────────┐                               │
+│  │ Nachbargebäude: [Aus] [5m] [10m]    │                               │
+│  └──────────────────────────────────────┘                               │
+│       │ (User wählt 5m)                                                  │
+│       ▼                                                                  │
+│  API: GET /api/v1/geruestbau/building/1243795/neighbors?radius_m=5      │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Response:                                                               │
+│  {                                                                       │
+│    "target_egid": "1243795",                                            │
+│    "neighbors": [                                                        │
+│      {"egid": "1243794", "distance_m": 0.0, "direction": "W"},          │
+│      {"egid": "1243796", "distance_m": 0.0, "direction": "E"}           │
+│    ],                                                                    │
+│    "blocked_sides": ["W", "E"]                                          │
+│  }                                                                       │
+│       │                                                                  │
+│       ▼                                                                  │
+│  UI: Blockierte Fassaden anzeigen                                       │
+│  ┌──────────────────────────────────────┐                               │
+│  │ ⚠ Blockierte Fassaden: W, E         │                               │
+│  │   (2 Nachbarn)                       │                               │
+│  └──────────────────────────────────────┘                               │
+│       │                                                                  │
+│       ▼                                                                  │
+│  FacadePanel: W und E Fassaden sind grau, nicht auswählbar              │
+│  3D-View: Nachbargebäude als graue semi-transparente Meshes             │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Dateien:**
+- `ConfiguratorPage.tsx`: `neighborsRadius`, `neighbors`, `blockedSides`
+- `geruestbau.ts`: `getNeighbors()`
+- `FacadePanel.tsx`: `isFacadeBlocked()`, blockierte Fassaden-UI
+- `ScaffoldScene.tsx`: `neighborBuildings` (graue Meshes)
+
+### Datenstruktur-Unterschied (KRITISCH!)
+
+```typescript
+// SZENARIO 1: additionalBuildings (Multi-Adresse)
+// → Sind HAUPTGEBÄUDE (alle ausgewählt, alle konfigurierbar)
+interface MultiBuildingData {
+  egid: string
+  address: string
+  polygon: [number, number][]
+  center: [number, number]
+  traufhoehe_m: number
+  firsthoehe_m: number
+}
+
+// SZENARIO 2: neighbors (Nachbargebäude)
+// → Sind KONTEXT-GEBÄUDE (nicht konfigurierbar, nur für Visualisierung)
+interface NeighborBuilding {
+  egid: string
+  distance_m: number
+  direction: string | null  // N, NE, E, SE, S, SW, W, NW
+  polygon?: [number, number][]
+}
+```
+
+### 3D-Rendering-Unterschied
+
+| Gebäudetyp | Farbe | Opacity | Zweck |
+|------------|-------|---------|-------|
+| Hauptgebäude | `#8b5cf6` (purple) | 0.7 | Aktuelles Projekt |
+| additionalBuildings | `#6366f1` (indigo) | 0.7 | Weitere ausgewählte Gebäude |
+| neighbors | `#888888` (grau) | 0.4 | Kontext, nicht bearbeitbar |
+
+### Frontend-Code: Schlüsselstellen
+
+```typescript
+// ConfiguratorPage.tsx
+
+// Szenario 1: Multi-Adresse erkennen
+if (isAddressRange(address)) {
+  const rangeData = await geruestbauApi.resolveAddressRange(address);
+  setAddressRangeData(rangeData);
+  // → UI zeigt Building-Selection
+}
+
+// Szenario 1: Mehrere Gebäude laden
+if (selectedBuildings.length > 1) {
+  await fetchBuildingData(selectedBuildings[0].address);  // Haupt
+  const additional = await Promise.all(
+    selectedBuildings.slice(1).map(b => geruestbauApi.getBuildingPolygon(b.address))
+  );
+  setAdditionalBuildings(additional);
+}
+
+// Szenario 2: Nachbarn laden (automatisch wenn Radius > 0)
+useEffect(() => {
+  if (buildingData?.building.egid && neighborsRadius > 0) {
+    const response = await geruestbauApi.getNeighbors(egid, neighborsRadius, true);
+    setNeighbors(response.neighbors);
+    setBlockedSides(response.blocked_sides);
+  }
+}, [buildingData, neighborsRadius]);
+```
+
+### Projekt-Speicherung
+
+**Szenario 1 (Multi-Adresse):**
+```json
+{
+  "id": "c0486e2c-...",
+  "name": "Kno2-10",
+  "address": "Knospenweg 2-10, Bern",
+  "egids": ["1243791", "1243792", "1243793", "1243794", "1243797"],
+  "config": {
+    "facades": [...],  // Fassaden ALLER Gebäude
+    "additionalPolygons": [...]  // Polygone der weiteren Gebäude
+  }
+}
+```
+
+**Szenario 2 (Nachbargebäude):**
+```json
+{
+  "id": "d1234e5f-...",
+  "name": "Kno3",
+  "address": "Knospenweg 3, Bern",
+  "egid": "1243795",
+  "config": {
+    "facades": [...],
+    "blocked_sides": ["W", "E"],  // Von Nachbarn blockiert
+    "neighbor_radius_m": 5
+  }
+}
+```
+
+---
+
 ## 11. Teststrategie (03.01.2026)
 
 ### Architektur-basierte Testszenarien
@@ -1900,3 +2137,1082 @@ Ein Adress-Cache wäre **rein informativ** für:
 3. ~100 API-Calls pro Tile (ca. 1-2 Minuten)
 
 **Priorität:** Niedrig - Fokus liegt auf exakten Lookups und Gebäude-Identifikation
+
+---
+
+## 19. SmartBuildingService: Cache-Architektur (Aktualisiert 04.01.2026)
+
+### Kernkonzept: Service-Hierarchie
+
+**WICHTIG:** Services greifen NICHT direkt auf den Cache zu, sondern nutzen den SmartBuildingService als zentrale Schnittstelle.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              SERVICE-HIERARCHIE (KORREKT)                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────┐    ┌─────────────────┐                    │
+│  │ ProjectService  │    │ NeighborsService│                    │
+│  │ (Gerüstbau)     │    │ (Nachbar-Suche) │                    │
+│  └────────┬────────┘    └────────┬────────┘                    │
+│           │                      │                              │
+│           │   NICHT DIREKT       │                              │
+│           │   auf Cache!         │                              │
+│           │                      │                              │
+│           ▼                      ▼                              │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │               SmartBuildingService                       │   │
+│  │                                                          │   │
+│  │  get_bundle_by_egid(egid) ← Empfohlene Methode          │   │
+│  │  collect_all_data(address) ← Vollständige Sammlung      │   │
+│  │                                                          │   │
+│  └──────────────────────┬──────────────────────────────────┘   │
+│                         │                                       │
+│                         ▼                                       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │            smart_building_cache (SQLite)                 │   │
+│  │            Tabelle in building_contexts.db               │   │
+│  │                                                          │   │
+│  │  ┌─────────────────────────────────────────────────┐    │   │
+│  │  │ egid (PK)                                        │    │   │
+│  │  │ bundle_json (BuildingDataBundle als JSON)        │    │   │
+│  │  │ created_at                                       │    │   │
+│  │  │ expires_at (24h TTL)                             │    │   │
+│  │  └─────────────────────────────────────────────────┘    │   │
+│  │                                                          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Wichtige Service-Methoden
+
+#### SmartBuildingService (backend/app/services/smart_building/service.py)
+
+```python
+# EMPFOHLEN: Bundle aus Cache laden
+bundle = smart_service.get_bundle_by_egid(egid)
+# → Lädt aus smart_building_cache wenn vorhanden und nicht expired
+# → Gibt BuildingDataBundle zurück oder None
+
+# VOLLSTÄNDIGE DATENSAMMLUNG: Alle Daten sammeln
+bundle = await smart_service.collect_all_data(address)
+# → Führt 10-Phasen Pipeline aus
+# → Speichert Bundle automatisch in smart_building_cache
+# → 24h TTL
+```
+
+#### ProjectService (backend/app/services/geruestbau/project_service.py)
+
+```python
+# KORREKT: Über SmartBuildingService
+def _get_bundle_from_smart_service(self, egid: str) -> Optional[dict]:
+    """Lädt BuildingDataBundle über den SmartBuildingService."""
+    smart_service = get_smart_building_service()
+    bundle = smart_service.get_bundle_by_egid(egid)
+    if bundle is None:
+        return None
+    return {
+        'egid': bundle.egid,
+        'polygon': bundle.polygon,
+        'traufhoehe_m': bundle.traufhoehe_m,
+        # ... weitere Felder
+    }
+
+# FALSCH (nicht mehr verwenden):
+# conn = sqlite3.connect(str(DB_PATH))
+# cursor.execute("SELECT bundle_json FROM smart_building_cache...")
+```
+
+#### NeighborsService (backend/app/services/neighbors_service.py)
+
+```python
+# KORREKT: Über SmartBuildingService (lazy-loaded)
+def _get_smart_service(self):
+    if self._smart_service is None:
+        from .smart_building import get_smart_building_service
+        self._smart_service = get_smart_building_service()
+    return self._smart_service
+
+def _get_building_from_cache(self, egid: str) -> Optional[Dict]:
+    bundle = self._get_smart_service().get_bundle_by_egid(egid)
+    # ... konvertiert zu Dict
+```
+
+### Wann wird der Cache befüllt?
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CACHE-BEFÜLLUNG                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SZENARIO 1: Adress-Suche (Frontend)                           │
+│  ──────────────────────────────────                            │
+│  GET /api/v1/smart-building/data?address=Bundesplatz 3, Bern   │
+│       │                                                         │
+│       ▼                                                         │
+│  SmartBuildingService.collect_all_data()                       │
+│       │                                                         │
+│       ├─ Phase 1: Geocoding → Koordinaten                      │
+│       ├─ Phase 2: GWR-Daten                                    │
+│       ├─ Phase 3+5: swissBUILDINGS3D (Polygon + Höhen)         │
+│       │       │                                                 │
+│       │       └─► Tile-Download wenn nicht im Cache            │
+│       │       └─► Background Prefetch aller Gebäude im Tile    │
+│       │                                                         │
+│       ├─ Phase 4: Terrain (swissALTI3D)                        │
+│       ├─ Phase 6: Dach-Analyse                                 │
+│       ├─ Phase 7: Claude-Recherche (building_name)             │
+│       ├─ Phase 8: Zonen-Analyse (bei komplexen Gebäuden)       │
+│       ├─ Phase 9: SUVA-Zugänge                                 │
+│       └─ Phase 10: Qualitätsbewertung                          │
+│       │                                                         │
+│       ▼                                                         │
+│  _save_bundle_to_cache(bundle) → smart_building_cache          │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SZENARIO 2: Tile-Prefetch (Background)                        │
+│  ──────────────────────────────────────                        │
+│  Nach dem ersten Gebäude in einem Tile:                        │
+│       │                                                         │
+│       ▼                                                         │
+│  tile_prefetch.py (Background-Job)                             │
+│       │                                                         │
+│       ├─ Alle Gebäude im Tile parsen                           │
+│       └─ Speichern in tiles.db (egid_tile_index)               │
+│                                                                 │
+│  ⚠️ NICHT in smart_building_cache!                             │
+│  → Nur EGID + Koordinaten + Tile-Referenz                      │
+│  → Bundle wird erst bei Einzelabfrage erstellt                  │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SZENARIO 3: Projekt-Laden (Gerüstbau-App)                     │
+│  ────────────────────────────────────────                      │
+│  Projekt enthält EGID-Referenz                                  │
+│       │                                                         │
+│       ▼                                                         │
+│  ProjectService._get_bundle_from_smart_service(egid)           │
+│       │                                                         │
+│       ▼                                                         │
+│  SmartBuildingService.get_bundle_by_egid(egid)                 │
+│       │                                                         │
+│       ├─ Cache-Hit → Bundle aus smart_building_cache           │
+│       │                                                         │
+│       └─ Cache-Miss → None (Projekt muss neu enriched werden)  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Cache-TTL und Invalidierung
+
+| Cache | TTL | Speicherort | Invalidierung |
+|-------|-----|-------------|---------------|
+| smart_building_cache | 24h | building_contexts.db | Automatisch bei Ablauf |
+| tiles.db (egid_tile_index) | Unbegrenzt | tiles.db | Manuell bei GDB-Update |
+| tile-Dateien (*.gdb) | Unbegrenzt | /app/data/tiles/ | Manuell |
+
+### BuildingDataBundle (Datenmodell)
+
+Das zentrale Datenmodell für alle gesammelten Gebäudedaten:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  BuildingDataBundle                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  IDENTIFIKATION                                                 │
+│  ├─ egid: str                    # Primary EGID                 │
+│  ├─ gwr_egid: str                # GWR EGID (kann abweichen)   │
+│  ├─ address_input: str           # Eingabe                      │
+│  ├─ address_matched: str         # Normalisiert                 │
+│  ├─ lv95_e, lv95_n: float        # Koordinaten                 │
+│  ├─ building_name: str           # Aus Claude-Recherche        │
+│  ├─ building_type: str           # Wohnhaus, Kirche, etc.      │
+│  └─ architectural_style: str     # Neugotik, Modern, etc.      │
+│                                                                 │
+│  GWR-DATEN                                                      │
+│  ├─ gwr_category: str            # Gebäudekategorie            │
+│  ├─ gwr_category_code: int       # GKAT-Code                   │
+│  ├─ gwr_floors: int              # Geschosse                   │
+│  ├─ gwr_area_m2: float           # Fläche                      │
+│  └─ gwr_dwellings: int           # Wohnungen                   │
+│                                                                 │
+│  GEOMETRIE                                                      │
+│  ├─ polygon: List[[e, n], ...]   # ORIGINAL aus swissBUILDINGS3D│
+│  ├─ sides: List[dict]            # Berechnete Fassaden         │
+│  ├─ perimeter_m: float           # Umfang                      │
+│  └─ footprint_area_m2: float     # Grundfläche                 │
+│                                                                 │
+│  HÖHENDATEN                                                     │
+│  ├─ traufhoehe_m: float          # Traufhöhe                   │
+│  ├─ firsthoehe_m: float          # Firsthöhe                   │
+│  ├─ gebaeudehoehe_m: float       # Gebäudehöhe                 │
+│  ├─ height_source: DataSource    # SWISSBUILDINGS3D            │
+│  └─ height_quality: DataQuality  # HIGH/MEDIUM/LOW             │
+│                                                                 │
+│  TERRAIN                                                        │
+│  └─ terrain: TerrainProfile                                     │
+│      ├─ reference_height_m       # Geländehöhe                 │
+│      ├─ slope_m                  # Höhendifferenz              │
+│      ├─ slope_class              # eben/leicht/mittel/stark    │
+│      └─ requires_level_compensation                             │
+│                                                                 │
+│  DACH                                                           │
+│  ├─ roof_type: str               # flachdach, satteldach, etc. │
+│  ├─ roof_angle_deg: float        # Neigung                     │
+│  ├─ roof_overhang_m: float       # Dachüberstand (0.4m default)│
+│  └─ sonnendach_available: bool   # BFE-Daten verfügbar?        │
+│                                                                 │
+│  ZONEN                                                          │
+│  ├─ zones: List[ZoneInfo]        # Höhenzonen                  │
+│  │   └─ ZoneInfo: {id, name, type, traufhoehe_m, firsthoehe_m, │
+│  │                 position, beruesten, sonderkonstruktion}     │
+│  │       └─ position: str        # vorne/zentral/hinten/       │
+│  │                               # flankierend (für 3D-Modell) │
+│  ├─ complexity: str              # simple/moderate/complex     │
+│  └─ has_towers, has_annexes, has_courtyards: bool              │
+│                                                                 │
+│  ZUGÄNGE (SUVA)                                                 │
+│  ├─ access_points: List[AccessPoint]                           │
+│  └─ suva_compliant: bool         # Max 50m Abstand             │
+│                                                                 │
+│  META                                                           │
+│  ├─ data_sources: List[DataSource]                             │
+│  ├─ overall_quality: DataQuality                               │
+│  ├─ warnings: List[str]                                        │
+│  └─ errors: List[str]                                          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 20. Frontend-API-Verbindungen
+
+### API-Übersicht (geruestbau.ts)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              FRONTEND API CLIENT (geruestbau.ts)                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  PROJEKTE                                                       │
+│  ├─ listProjects()          GET /api/v1/geruestbau/projects    │
+│  ├─ getProject(id)          GET /api/v1/geruestbau/projects/:id│
+│  ├─ createProject(data)     POST /api/v1/geruestbau/projects   │
+│  ├─ updateProject(id,data)  PUT /api/v1/geruestbau/projects/:id│
+│  └─ deleteProject(id)       DELETE ...                         │
+│                                                                 │
+│  GEBÄUDEDATEN                                                   │
+│  ├─ enrichProject(id)       POST .../projects/:id/enrich       │
+│  └─ getBuildingPolygon(addr) GET /api/v1/smart-building/data   │
+│                                                                 │
+│  NACHBARGEBÄUDE                                                 │
+│  └─ getNeighbors(egid, radius, includePolygons)                │
+│      GET /api/v1/geruestbau/building/:egid/neighbors           │
+│      → NeighborsResponse { neighbors[], blocked_sides[] }      │
+│                                                                 │
+│  MULTI-ADRESSEN                                                 │
+│  └─ resolveAddressRange(address)                               │
+│      GET /api/v1/geruestbau/address/resolve                    │
+│      → AddressRangeResponse { buildings[], building_count }    │
+│                                                                 │
+│  IMPORT (OCR/URL)                                               │
+│  ├─ extractFromDocument(file)  POST .../extract (FormData)     │
+│  └─ extractFromUrl(url)        POST .../import/url             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Frontend-Komponenten und API-Nutzung
+
+| Komponente | API-Aufrufe | Daten |
+|------------|-------------|-------|
+| `ConfiguratorPage.tsx` | `smart-building/data`, `getNeighbors`, `resolveAddressRange` | Gebäudedaten, Nachbarn, Multi-Adressen |
+| `ScaffoldConfigurator` | - (Props) | `buildingPolygon`, `sides`, `traufhoehe_m` |
+| `ScaffoldScene.tsx` | - (Props) | `polygon`, `neighbors`, `additionalBuildings` |
+| `FacadePanel.tsx` | - (Props) | `sides`, `blocked_sides` |
+| `ProjectForm.tsx` | `createProject`, `updateProject` | Projekt-Stammdaten |
+
+---
+
+## 21. Projekt-Datenspeicherung
+
+### Datenbank-Struktur (geruestbau.db)
+
+```sql
+-- Projekte (Stammdaten)
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    address TEXT,
+    egid TEXT,                    -- Referenz auf smart_building_cache
+    client_name TEXT,
+    deadline TEXT,
+    status TEXT DEFAULT 'draft',
+    created_at TEXT,
+    updated_at TEXT
+);
+
+-- Projekt-Konfiguration (Gerüst)
+CREATE TABLE project_configs (
+    project_id TEXT PRIMARY KEY,
+    config_json TEXT,             -- ScaffoldConfig als JSON
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+-- config_json enthält:
+-- {
+--   "facades": [...],            -- Ausgewählte Fassaden
+--   "scaffold_type": "...",      -- Layher Blitz 70
+--   "field_length_ratio": 0.5,   -- 2.57m vs. 3.07m
+--   "simplify_epsilon": 0.5,     -- Polygon-Vereinfachung
+--   "blocked_sides": ["E", "W"], -- Von Nachbarn blockiert
+--   "neighbor_radius_m": 5       -- Gewählter Radius
+-- }
+```
+
+### Daten-Trennung
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATEN-TRENNUNG                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  geruestbau.db (Pro Projekt)                                    │
+│  ══════════════════════════                                     │
+│  ├─ Projekt-Stammdaten (Name, Kunde, Deadline)                 │
+│  ├─ EGID-Referenz (→ smart_building_cache)                     │
+│  ├─ Gerüst-Konfiguration (Fassaden, Feldlängen)                │
+│  └─ Projekt-spezifische Overrides (epsilon, blocked_sides)      │
+│                                                                 │
+│  building_contexts.db (Pro EGID, geteilt)                       │
+│  ════════════════════════════════════════                       │
+│  ├─ smart_building_cache → BuildingDataBundle                  │
+│  ├─ building_contexts → Zonen, Validierungen                   │
+│  └─ building_environment → Terrain, Umgebung                   │
+│                                                                 │
+│  tiles.db (Global, geteilt)                                     │
+│  ═════════════════════════                                      │
+│  ├─ tiles → Heruntergeladene GDB-Referenzen                    │
+│  └─ egid_tile_index → EGID → Tile-ID Mapping                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 22. Dynamische Methoden (Nicht persistiert)
+
+### Polygon-Vereinfachung (Douglas-Peucker)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                POLYGON-VEREINFACHUNG (ON-THE-FLY)                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  GESPEICHERT:                                                   │
+│  ├─ polygon (ORIGINAL aus swissBUILDINGS3D)                    │
+│  └─ simplify_epsilon (Projekt-Setting)                         │
+│                                                                 │
+│  ON-THE-FLY BERECHNET:                                          │
+│  └─ polygon_simplified = douglas_peucker(polygon, epsilon)     │
+│                                                                 │
+│  WARUM?                                                         │
+│  ├─ Original bleibt erhalten für 3D-Darstellung                │
+│  ├─ Benutzer kann epsilon anpassen (Slider)                    │
+│  └─ Keine doppelte Speicherung nötig                           │
+│                                                                 │
+│  PARAMETER:                                                     │
+│  ├─ simplify_epsilon: 0.3m (minimal) bis 2.0m (stark)          │
+│  └─ angle_tolerance: 8° (kollineare Punkte entfernen)          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Nachbar-Berechnung
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                NACHBAR-BERECHNUNG (DYNAMISCH)                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  NICHT PERSISTIERT - wird bei jeder Anfrage neu berechnet       │
+│                                                                 │
+│  WARUM DYNAMISCH?                                               │
+│  ├─ Benutzer wählt Radius (0m, 5m, 10m) je nach Bedarf         │
+│  ├─ Nachbarn können sich ändern (Neubau, Abriss)               │
+│  └─ Performant genug (~5ms)                                    │
+│                                                                 │
+│  ABLAUF:                                                        │
+│  1. NeighborsService.get_neighbors(egid, radius_m)             │
+│  2. Zielgebäude aus SmartBuildingService laden                 │
+│  3. Kandidaten aus smart_building_cache (Box-Query)            │
+│  4. Kandidaten aus tiles.db (egid_tile_index)                  │
+│  5. Polygon-zu-Polygon Distanz berechnen                       │
+│  6. Richtung berechnen (N, NE, E, SE, S, SW, W, NW)            │
+│  7. blocked_sides ermitteln (distance < 0.5m)                  │
+│                                                                 │
+│  RESPONSE:                                                      │
+│  {                                                              │
+│    "target_egid": "123456",                                    │
+│    "neighbors": [                                               │
+│      {"egid": "123457", "distance_m": 0.0, "direction": "E"}   │
+│    ],                                                           │
+│    "blocked_sides": ["E", "W"]                                 │
+│  }                                                              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Blockierte Fassaden
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              BLOCKIERTE FASSADEN (ABGELEITET)                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  BERECHNUNG:                                                    │
+│  ├─ Nachbar mit distance_m < 0.5m = direkt angrenzend          │
+│  └─ Dessen direction = blockierte Seite                        │
+│                                                                 │
+│  BEISPIEL: Reihenhaus Knospenweg 4                             │
+│  ├─ Nachbar Ost (Knospenweg 6): distance=0.0m → E blockiert    │
+│  ├─ Nachbar West (Knospenweg 2): distance=0.0m → W blockiert   │
+│  └─ blocked_sides = ["E", "W"]                                 │
+│                                                                 │
+│  FRONTEND-NUTZUNG:                                              │
+│  ├─ FacadePanel: Blockierte Fassaden ausgegraut                │
+│  ├─ ScaffoldScene: Nachbarn als graue semi-transparente Meshes │
+│  └─ Warnung: "2 Fassaden nicht einrüstbar"                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 23. Frontend-UI-Zusammenhänge
+
+### Workflow: Adresse → Gerüst-Konfiguration → 3D
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FRONTEND WORKFLOW                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. ADRESS-EINGABE (GeodataStep / ConfiguratorPage)            │
+│     ├─ Erkennung: isAddressRange("Knospenweg 2-10")?           │
+│     │   ├─ Ja → resolveAddressRange() → Multi-Building UI      │
+│     │   └─ Nein → smart-building/data → Einzelgebäude          │
+│     │                                                           │
+│     └─ Ergebnis: Gebäudedaten geladen                          │
+│                                                                 │
+│  2. NACHBAR-ERKENNUNG (Automatisch)                            │
+│     ├─ Radius-Slider: [0m] [5m] [10m]                          │
+│     ├─ getNeighbors(egid, radius) bei Radius > 0               │
+│     └─ blocked_sides → Fassaden-Panel informieren              │
+│                                                                 │
+│  3. FASSADEN-AUSWAHL (FacadePanel)                             │
+│     ├─ Alle Fassaden als Checkboxen                            │
+│     ├─ Blockierte Fassaden: ausgegraut, Tooltip "Blockiert"    │
+│     └─ Auswahl → scaffoldConfig.facades[]                      │
+│                                                                 │
+│  4. GERÜST-KONFIGURATION (ScaffoldConfigurator)                │
+│     ├─ Feldlängen-Slider (2.57m vs. 3.07m)                     │
+│     ├─ Epsilon-Slider (Polygon-Vereinfachung)                  │
+│     └─ Zugangs-Positionen (SUVA-konform)                       │
+│                                                                 │
+│  5. 3D-VISUALISIERUNG (ScaffoldScene)                          │
+│     ├─ Hauptgebäude: polygon (Original) → Purple Mesh          │
+│     ├─ Nachbarn: neighbors[].polygon → Graue Meshes            │
+│     ├─ Dach: roof_type, roof_angle_deg → Dachform             │
+│     ├─ Gerüst: Ständer, Riegel, Beläge                         │
+│     └─ Kamera: Orthogonal oder Perspektive                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Komponenten-Datenfluss
+
+```
+┌──────────────────┐
+│ ConfiguratorPage │
+│                  │
+│ ┌──────────────┐ │     API                Backend
+│ │ addressInput │─┼────────────────► smart-building/data
+│ └──────────────┘ │                         │
+│        │         │                         │
+│        ▼         │                         ▼
+│ ┌──────────────┐ │              ┌─────────────────────┐
+│ │ buildingData │◄┼──────────────│ BuildingDataBundle  │
+│ └──────────────┘ │              └─────────────────────┘
+│        │         │
+│        │         │
+│        ▼         │     API
+│ ┌──────────────┐ │────────────────► building/{egid}/neighbors
+│ │ neighbors    │◄┼─────────────────────────┤
+│ │ blockedSides │ │              ┌─────────────────────┐
+│ └──────────────┘ │              │ NeighborsResponse   │
+│        │         │              └─────────────────────┘
+│        ▼         │
+│ ┌────────────────┼────────────────────────────────────────┐
+│ │           ScaffoldConfigurator                          │
+│ │  ┌────────────────┐  ┌────────────────┐                 │
+│ │  │  FacadePanel   │  │ ScaffoldScene  │                 │
+│ │  │                │  │                │                 │
+│ │  │ - sides[]      │  │ - polygon      │                 │
+│ │  │ - blockedSides │  │ - neighbors    │                 │
+│ │  │ - selection    │  │ - roofType     │                 │
+│ │  └────────────────┘  │ - scaffolds    │                 │
+│ │                      └────────────────┘                 │
+│ └─────────────────────────────────────────────────────────┘
+└──────────────────┘
+```
+
+---
+
+## 24. Zusammenfassung: Was wo gespeichert wird
+
+| Daten | Speicherort | TTL | Zugriff via |
+|-------|-------------|-----|-------------|
+| **Gebäude-Bundle** | smart_building_cache | 24h | SmartBuildingService.get_bundle_by_egid() |
+| **Polygon (Original)** | Im Bundle | 24h | bundle.polygon |
+| **Höhen** | Im Bundle | 24h | bundle.traufhoehe_m, etc. |
+| **Zonen** | building_contexts | 24h | Im Bundle als zones[] |
+| **Terrain** | building_environment | 24h | bundle.terrain |
+| **EGID-Index** | tiles.db | ∞ | Koordinaten-Lookup |
+| **Tile-Dateien** | /app/data/tiles/*.gdb | ∞ | TileCacheService |
+| **Projekt-Daten** | geruestbau.db | ∞ | ProjectService |
+| **Gerüst-Config** | geruestbau.db | ∞ | ProjectService |
+| **Nachbarn** | NICHT gespeichert | - | NeighborsService (dynamisch) |
+| **Blockierte Seiten** | NICHT gespeichert | - | Aus Nachbarn abgeleitet |
+| **Vereinfachtes Polygon** | NICHT gespeichert | - | On-the-fly berechnet |
+
+---
+
+## 25. Claude-API Datenfluss (NEU 05.01.2026)
+
+### Übersicht: Woher kommen die Gebäudedaten?
+
+Bei der Gebäude-Analyse gibt es **drei Datenquellen** mit unterschiedlicher Priorität:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              DATENQUELLEN-PRIORITÄT                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. BEKANNTE GEBÄUDE (known_buildings.py)                       │
+│     ═══════════════════════════════════                         │
+│     ✅ Sofort verfügbar (<1ms)                                  │
+│     ✅ Kostenlos                                                │
+│     ✅ 100% Konfidenz                                           │
+│     📍 Speicherort: Backend-Code (hardcoded)                    │
+│                                                                 │
+│     Beispiele: Bundeshaus, Berner Münster, Zytglogge,           │
+│                St. Peter und Paul, Einsteinhaus                 │
+│                                                                 │
+│  2. CLAUDE RESEARCH API (Sonnet)                                │
+│     ═══════════════════════════                                 │
+│     ⏱️ ~1-3 Sekunden                                           │
+│     💰 ~$0.03-0.05 pro Anfrage                                 │
+│     📍 Speicherort: claude_research_cache (30 Tage TTL)        │
+│                                                                 │
+│     Wird aufgerufen wenn Gebäude NICHT bekannt ist             │
+│                                                                 │
+│  3. AUTOMATISCHE BERECHNUNG (Fallback)                          │
+│     ═════════════════════════════════                           │
+│     ✅ Sofort                                                   │
+│     ✅ Kostenlos                                                │
+│     📍 Kein persistenter Cache                                  │
+│                                                                 │
+│     Bei extremer Höhendifferenz: Hauptgebäude + Turm            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Ablauf im SmartBuildingService
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           RESEARCH-DATENFLUSS (collect_building_research)        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Prüfe: Ist das Gebäude bekannt?                             │
+│     ├─ known_buildings.get_known_building(egid, address)        │
+│     │                                                           │
+│     └─► JA (z.B. Bundeshaus)                                   │
+│         ├─ bundle.research_source = "known_buildings"           │
+│         ├─ bundle.building_name = "Bundeshaus"                  │
+│         ├─ bundle._known_zones = [{...}, {...}]                 │
+│         ├─ Log: "[RESEARCH] Bekanntes Gebäude erkannt"          │
+│         └─ RETURN (keine Claude-API nötig!)                     │
+│                                                                 │
+│  2. Falls NICHT bekannt: Claude API aufrufen                    │
+│     ├─ research_service.get_building_research(...)              │
+│     │   ├─ Cache-Hit? → bundle.research_source = "cache"        │
+│     │   └─ Cache-Miss? → Claude Sonnet API                      │
+│     │       └─ bundle.research_source = "claude_api"            │
+│     │                                                           │
+│     └─ Log: "[RESEARCH] Claude API Response: ..."               │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Bundle-Attribut: research_source
+
+Das `BuildingDataBundle` enthält jetzt ein `research_source` Feld:
+
+| Wert | Bedeutung | UI-Hinweis |
+|------|-----------|------------|
+| `known_buildings` | Bekanntes Gebäude (sofort, kostenlos) | "Bekanntes Gebäude" |
+| `claude_api` | Frisch von Claude API | "Claude-Analyse" |
+| `cache` | Aus Research-Cache | "Gecacht" |
+| `auto` | Automatisch berechnet | "Automatisch" |
+| `unknown` | Keine Recherche durchgeführt | - |
+
+### Log-Ausgaben für Debugging
+
+```
+# Bekanntes Gebäude (sofort)
+[RESEARCH] Bekanntes Gebäude erkannt: Bundeshaus (Quelle: known_buildings.py, kostenlos, <1ms)
+
+# Claude API Aufruf
+[RESEARCH] Claude API wird aufgerufen für: Kramgasse 49, 3011 Bern (EGID: 1234567, force_refresh=False)
+[RESEARCH] Claude API Response: Altstadthaus (Typ: Wohnhaus, Stil: Gotik, Konfidenz: 85%)
+
+# Cache-Hit
+[RESEARCH] Aus Research-Cache geladen: Kramgasse 49
+
+# Zusammenfassung am Ende
+[SMART_BUILDING] Daten gesammelt für: Bundesplatz 3, 3011 Bern
+  ├─ EGID: 2242547
+  ├─ Research-Quelle: known_buildings
+  ├─ Gebäudename: Bundeshaus
+  ├─ Zonen: 3 (complex)
+  ├─ Höhen: Trauf=14.5m, First=62.6m
+  └─ Datenquellen: swisstopo_geocoding, swisstopo_gwr, swissbuildings3d, manual
+```
+
+---
+
+## 26. Cache-Löschung und Debugging
+
+### Alle Cache-Speicherorte
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CACHE-ÜBERSICHT                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  DATEI: building_contexts.db                                    │
+│  ════════════════════════════                                   │
+│  Pfad: backend/app/data/building_contexts.db                    │
+│                                                                 │
+│  Tabellen:                                                      │
+│  ├─ smart_building_cache    → BuildingDataBundle (24h TTL)     │
+│  ├─ building_contexts       → Zonen, Validierungen              │
+│  └─ building_environment    → Terrain, Umgebung                 │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  DATEI: tiles.db                                                │
+│  ═══════════════                                                │
+│  Pfad: backend/app/data/tiles.db                                │
+│                                                                 │
+│  Tabellen:                                                      │
+│  ├─ tiles                   → Tile-Metadaten (∞ TTL)           │
+│  └─ egid_tile_index         → EGID → Tile-ID Mapping           │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  DATEI: claude_svg_cache.db                                     │
+│  ═══════════════════════════                                    │
+│  Pfad: backend/app/data/claude_svg_cache.db                     │
+│                                                                 │
+│  Tabellen:                                                      │
+│  └─ svg_cache               → Generierte SVGs                  │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  ORDNER: tiles/                                                 │
+│  ═══════════════                                                │
+│  Pfad: backend/app/data/tiles/*.gdb                             │
+│  Inhalt: swissBUILDINGS3D Tile-Dateien                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Cache löschen (Debugging)
+
+#### 1. Einzelnes Gebäude neu laden (force_refresh)
+
+```python
+# API-Aufruf mit force_refresh=true
+GET /api/v1/smart-building/data?address=Bundesplatz 3, Bern&force_refresh=true
+
+# Python (direkt)
+service = get_smart_building_service()
+bundle = await service.collect_all_data("Bundesplatz 3, Bern", force_refresh=True)
+```
+
+#### 2. SQLite Cache manuell löschen
+
+```bash
+# Windows (PowerShell)
+cd C:\Users\vonro\projects\lawil\geodaten-ch\backend
+
+# Alle Bundle-Caches löschen
+sqlite3 app/data/building_contexts.db "DELETE FROM smart_building_cache;"
+
+# Nur abgelaufene Caches löschen
+sqlite3 app/data/building_contexts.db "DELETE FROM smart_building_cache WHERE expires_at < datetime('now');"
+
+# Bestimmtes Gebäude löschen (nach EGID)
+sqlite3 app/data/building_contexts.db "DELETE FROM smart_building_cache WHERE egid = '2242547';"
+
+# Bestimmtes Gebäude löschen (nach Adresse)
+sqlite3 app/data/building_contexts.db "DELETE FROM smart_building_cache WHERE address LIKE '%Bundesplatz%';"
+
+# Cache-Inhalt anzeigen
+sqlite3 app/data/building_contexts.db "SELECT cache_key, address, egid, created_at, expires_at FROM smart_building_cache;"
+```
+
+#### 3. Research-Cache löschen (Claude API)
+
+```bash
+# Research-Cache ist in der prompts-Tabelle
+sqlite3 app/data/building_contexts.db "DELETE FROM claude_research_cache;"
+
+# Oder via API
+POST /api/v1/prompt/research/clear-expired
+```
+
+#### 4. SVG-Cache löschen
+
+```bash
+# Alle SVGs löschen
+sqlite3 app/data/claude_svg_cache.db "DELETE FROM svg_cache;"
+
+# SVGs für bestimmtes Gebäude löschen
+sqlite3 app/data/claude_svg_cache.db "DELETE FROM svg_cache WHERE egid = '2242547';"
+
+# Oder via API
+DELETE /api/v1/building/{egid}/svg?svg_type=all
+```
+
+#### 5. Tile-Cache löschen (Vorsicht!)
+
+```bash
+# Tile-Index löschen (Tiles werden bei Bedarf neu geladen)
+sqlite3 app/data/tiles.db "DELETE FROM tiles;"
+sqlite3 app/data/tiles.db "DELETE FROM egid_tile_index;"
+
+# Tile-Dateien löschen (LANGE Ladezeiten!)
+rm -rf app/data/tiles/*.gdb
+```
+
+### Debugging-Befehle
+
+#### Cache-Statistiken anzeigen
+
+```bash
+# Bundle-Cache
+sqlite3 app/data/building_contexts.db "
+  SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN expires_at > datetime('now') THEN 1 ELSE 0 END) as valid,
+    SUM(CASE WHEN expires_at <= datetime('now') THEN 1 ELSE 0 END) as expired
+  FROM smart_building_cache;
+"
+
+# Tile-Cache
+sqlite3 app/data/tiles.db "
+  SELECT
+    COUNT(*) as total_tiles,
+    (SELECT COUNT(*) FROM egid_tile_index) as total_egids
+  FROM tiles;
+"
+```
+
+#### Gebäude-Daten anzeigen
+
+```bash
+# Bundle-JSON für bestimmtes Gebäude
+sqlite3 app/data/building_contexts.db "
+  SELECT bundle_json
+  FROM smart_building_cache
+  WHERE egid = '2242547';
+" | python -m json.tool
+
+# Zonen anzeigen
+sqlite3 app/data/building_contexts.db "
+  SELECT json_extract(bundle_json, '$.zones')
+  FROM smart_building_cache
+  WHERE egid = '2242547';
+" | python -m json.tool
+```
+
+### API-Endpunkte für Cache-Verwaltung
+
+| Endpunkt | Methode | Beschreibung |
+|----------|---------|--------------|
+| `/api/v1/smart-building/cache/stats` | GET | Cache-Statistiken |
+| `/api/v1/smart-building/cache` | DELETE | Cache löschen (mit Optionen) |
+| `/api/v1/prompt/research/stats` | GET | Research-Cache Statistiken |
+| `/api/v1/prompt/research/clear-expired` | POST | Abgelaufene Research löschen |
+| `/api/v1/building/{egid}/svg` | DELETE | SVG-Cache für Gebäude löschen |
+
+### Kompletter Cache-Reset (Development)
+
+```bash
+# ACHTUNG: Löscht ALLE gecachten Daten!
+cd C:\Users\vonro\projects\lawil\geodaten-ch\backend
+
+# Bundle-Cache
+sqlite3 app/data/building_contexts.db "DELETE FROM smart_building_cache;"
+
+# Building Contexts (Zonen)
+sqlite3 app/data/building_contexts.db "DELETE FROM building_contexts;"
+
+# Building Environment (Terrain)
+sqlite3 app/data/building_contexts.db "DELETE FROM building_environment;"
+
+# SVG-Cache
+sqlite3 app/data/claude_svg_cache.db "DELETE FROM svg_cache;"
+
+# Research-Cache
+sqlite3 app/data/building_contexts.db "DELETE FROM claude_research_cache;" 2>/dev/null || true
+
+echo "Alle Caches gelöscht. Nächste Anfrage lädt alles neu."
+```
+
+---
+
+## 27. UI-Feedback für Datenquellen (Geplant)
+
+### Frontend-Integration
+
+Das `research_source` Feld kann im Frontend verwendet werden um dem User
+anzuzeigen, woher die Daten stammen:
+
+```typescript
+// Beispiel: ConfiguratorPage.tsx
+const getDataSourceBadge = (researchSource: string) => {
+  switch (researchSource) {
+    case "known_buildings":
+      return { label: "Bekannt", color: "green", icon: "⚡" };
+    case "claude_api":
+      return { label: "Claude", color: "blue", icon: "🤖" };
+    case "cache":
+      return { label: "Cache", color: "gray", icon: "📦" };
+    default:
+      return { label: "Auto", color: "yellow", icon: "⚙️" };
+  }
+};
+
+// Badge anzeigen
+<Badge color={badge.color}>
+  {badge.icon} {badge.label}
+</Badge>
+```
+
+### Ladezeit-Indikator
+
+| Datenquelle | Erwartete Ladezeit | Kosten |
+|-------------|-------------------|--------|
+| Bundle-Cache | <100ms | Kostenlos |
+| known_buildings | <500ms (ohne API) | Kostenlos |
+| Cache + API | 1-2s | Kostenlos |
+| Claude API (fresh) | 3-5s | ~$0.05 |
+
+### Mögliche UI-Anzeigen
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  VARIANTE A: Badge neben Gebäudename                            │
+│  ═══════════════════════════════════                            │
+│                                                                 │
+│  Bundeshaus [⚡ Bekannt]                                         │
+│  Traufhöhe: 14.5m, Firsthöhe: 62.6m                            │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  VARIANTE B: Info-Tooltip                                       │
+│  ════════════════════════                                       │
+│                                                                 │
+│  Bundeshaus (i)  ←─ Hover zeigt:                               │
+│                      "Daten aus known_buildings.py              │
+│                       Letzte Aktualisierung: 05.01.2026         │
+│                       Konfidenz: 100%"                          │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  VARIANTE C: Loading-State                                      │
+│  ═════════════════════════                                      │
+│                                                                 │
+│  [Lade-Spinner] "Claude analysiert Gebäude..."                  │
+│  → Nur bei claude_api Source und erster Anfrage                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 28. Zonen-Position für 3D-Modelle (NEU 05.01.2026)
+
+### Übersicht
+
+Das `position`-Feld in `ZoneInfo` ermöglicht die korrekte Platzierung von Gebäudeteilen
+im 3D-Modell:
+
+| Position | Bedeutung | Beispiel |
+|----------|-----------|----------|
+| `vorne` | Frontseite/Hauptfassade | Westturm (Münster), Arkaden |
+| `zentral` | Hauptbaukörper/Mitte | Kirchenschiff, Hauptgebäude |
+| `hinten` | Rückseite | Chor, Anbau hinten |
+| `flankierend` | Seitlich, beidseitig | Seitenkapellen, Seitenflügel |
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    POSITION-FELD DATENFLUSS                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  known_buildings.py                                             │
+│  ═════════════════                                              │
+│  zones: [                                                       │
+│    { name: "Turm", zone_type: "turm", position: "vorne" },     │
+│    { name: "Kirchenschiff", ..., position: "zentral" },        │
+│    { name: "Seitenkapellen", ..., position: "flankierend" },   │
+│  ]                                                              │
+│       │                                                         │
+│       ▼                                                         │
+│  research_integration.py                                        │
+│  ══════════════════════                                         │
+│  create_zones_from_known_building(bundle)                       │
+│  → ZoneInfo(position=zone["position"])                          │
+│       │                                                         │
+│       ▼                                                         │
+│  BuildingDataBundle.zones                                       │
+│  ════════════════════════                                       │
+│  [ZoneInfo(name="Turm", position="vorne"), ...]                │
+│       │                                                         │
+│       ▼                                                         │
+│  API Response (main.py:3626)                                    │
+│  ═══════════════════════════                                    │
+│  { zones: [{ name: "Turm", position: "vorne", ... }] }         │
+│       │                                                         │
+│       ▼                                                         │
+│  Frontend: 3D-Modell Platzierung                                │
+│  ═══════════════════════════════                                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Beispiel: Berner Münster
+
+```json
+{
+  "building_name": "Berner Muenster",
+  "research_source": "known_buildings",
+  "zones": [
+    {
+      "name": "Kirchenschiff",
+      "zone_type": "hauptgebaeude",
+      "position": "zentral",
+      "traufhoehe_m": 22.0,
+      "firsthoehe_m": 28.0
+    },
+    {
+      "name": "Seitenkapellen",
+      "zone_type": "anbau",
+      "position": "flankierend",
+      "traufhoehe_m": 12.0,
+      "firsthoehe_m": 15.0
+    },
+    {
+      "name": "Turm",
+      "zone_type": "turm",
+      "position": "vorne",
+      "traufhoehe_m": 28.0,
+      "firsthoehe_m": 100.3,
+      "sonderkonstruktion": true
+    }
+  ]
+}
+```
+
+### Beispiel: St. Peter und Paul
+
+```json
+{
+  "building_name": "St. Peter und Paul",
+  "research_source": "known_buildings",
+  "zones": [
+    {
+      "name": "Westturm",
+      "zone_type": "turm",
+      "position": "vorne",
+      "firsthoehe_m": 60.0
+    },
+    {
+      "name": "Kirchenschiff",
+      "zone_type": "hauptgebaeude",
+      "position": "zentral",
+      "traufhoehe_m": 15.0,
+      "firsthoehe_m": 22.0
+    },
+    {
+      "name": "Seitenschiffe",
+      "zone_type": "anbau",
+      "position": "flankierend",
+      "traufhoehe_m": 10.0,
+      "firsthoehe_m": 12.0
+    },
+    {
+      "name": "Chor",
+      "zone_type": "anbau",
+      "position": "hinten",
+      "traufhoehe_m": 12.0,
+      "firsthoehe_m": 18.0
+    }
+  ]
+}
+```
+
+### Verwendung im Frontend (3D-Visualisierung)
+
+```typescript
+// Beispiel: Zone im 3D-Raum platzieren
+const placeZone = (zone: ZoneInfo, buildingCenter: Vector3) => {
+  const offset = getPositionOffset(zone.position);
+  return {
+    position: buildingCenter.add(offset),
+    height: zone.firsthoehe_m,
+    type: zone.zone_type
+  };
+};
+
+const getPositionOffset = (position: string): Vector3 => {
+  switch (position) {
+    case "vorne":
+      return new Vector3(0, 0, -10);  // Richtung Hauptfassade
+    case "hinten":
+      return new Vector3(0, 0, 10);   // Rückseite
+    case "flankierend":
+      return new Vector3(0, 0, 0);    // Seitlich (beidseitig)
+    case "zentral":
+    default:
+      return new Vector3(0, 0, 0);    // Mitte
+  }
+};
+```
+
+### Bekannte Gebäude mit Position-Feldern
+
+| Gebäude | EGID | Zonen mit Position |
+|---------|------|-------------------|
+| Berner Münster | 1230337 | Turm(vorne), Kirchenschiff(zentral), Seitenkapellen(flankierend) |
+| St. Peter und Paul | 191821074 | Westturm(vorne), Kirchenschiff(zentral), Seitenschiffe(flankierend), Chor(hinten) |
+| Bundeshaus | 2242547 | Arkaden(vorne), Hauptgebäude(zentral), Kuppel(zentral-oben) |

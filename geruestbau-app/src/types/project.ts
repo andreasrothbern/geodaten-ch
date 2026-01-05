@@ -9,7 +9,7 @@ export type ProjectStatus =
   | 'commissioned'
   | 'completed'
 
-// Geodaten aus Cache (building_geodata.db)
+// Geodaten aus SmartBuildingService (gecacht in building_contexts.db)
 export interface Geodata {
   egid: string
   address?: string
@@ -25,6 +25,43 @@ export interface Geodata {
   coord_e?: number
   coord_n?: number
   fetched_at?: string
+  // Enrichment-Daten (aus building_environment)
+  terrain_height_m?: number
+  slope_m?: number
+  slope_class?: 'eben' | 'leicht' | 'mittel' | 'stark'
+  // Zonen (aus building_contexts - komplexe Gebäude)
+  zones?: ZoneInfo[]
+  // Datenherkunft (für UI-Feedback)
+  research_source?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown'
+  building_name?: string
+  complexity?: 'simple' | 'moderate' | 'complex'
+}
+
+// Zone eines Gebäudes (aus building_contexts.db)
+export interface ZoneInfo {
+  id: string
+  name: string
+  zone_type: 'hauptgebaeude' | 'anbau' | 'turm' | 'kuppel' | 'arkade' | 'vordach' | 'treppenhaus' | 'garage'
+  position?: 'vorne' | 'zentral' | 'hinten' | 'flankierend'  // Position für 3D-Darstellung
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  gebaeudehoehe_m?: number
+  beruesten: boolean
+  sonderkonstruktion: boolean
+  confidence: number
+}
+
+// Einzelnes Gebäude in Multi-Building Projekt
+export interface BuildingEntry {
+  egid: string
+  address: string
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  coordinates?: {
+    lv95_e: number
+    lv95_n: number
+  }
+  egid_source?: string
 }
 
 // Projekt-Overrides (manuelle Anpassungen)
@@ -108,6 +145,7 @@ export interface Project {
   name: string
   address: string
   egid?: string
+  buildings?: BuildingEntry[]  // Multi-Building Support
   status: ProjectStatus
   config?: ScaffoldConfig
   client_name?: string
@@ -127,6 +165,7 @@ export interface ProjectCreate {
   name: string
   address: string
   egid?: string
+  buildings?: BuildingEntry[]  // Multi-Building Support
   client_name?: string
   client_contact?: string
   deadline?: string

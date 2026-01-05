@@ -572,6 +572,12 @@ Für jede Zone bestimme:
    - Kategorie-spezifische Anpassungen
    - Proportionale Schätzung bei Anbauten
 3. **Typ** der Zone
+4. **Position** der Zone für 3D-Darstellung:
+   - "zentral" - Dominantes Element in der Mitte (z.B. Kirchturm an Westfassade)
+   - "links" / "rechts" - Seitenflügel (relativ zur Hauptansicht)
+   - "aussen" - Äussere/niedrigere Elemente (z.B. Seitenschiffe)
+   - "hinten" - Hinter anderen Elementen (z.B. Chor bei Kirchen)
+   - "nord", "sued", "ost", "west" - Himmelsrichtung wenn eindeutig
 
 ### Höhen-Schätzung Richtlinien
 | Situation | Schätzung |
@@ -599,6 +605,7 @@ Antworte NUR mit validem JSON (kein Markdown, keine Erklärung):
       "id": "zone_1",
       "name": "Hauptgebäude",
       "type": "hauptgebaeude|anbau|turm|kuppel|arkade|vordach|treppenhaus|garage|unknown",
+      "position": "zentral|links|rechts|aussen|hinten|nord|sued|ost|west",
       "polygon_point_indices": [0, 1, 2, 3],
       "traufhoehe_m": 12.5,
       "firsthoehe_m": 15.0,
@@ -714,6 +721,7 @@ Ergebnis:
                     id=z.get('id', 'zone_1'),
                     name=z.get('name', 'Hauptgebäude'),
                     type=ZoneType(z.get('type', 'hauptgebaeude')),
+                    position=z.get('position'),  # Position für 3D-Darstellung
                     polygon_point_indices=z.get('polygon_point_indices'),
                     sub_polygon=z.get('sub_polygon'),
                     traufhoehe_m=z.get('traufhoehe_m'),

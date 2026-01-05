@@ -17,7 +17,7 @@ import ScaffoldConfigurator from '../features/scaffold-configurator/components/S
 import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
-import type { SelectedFacade, RoofData } from '../features/scaffold-configurator/types/scaffold.types';
+import type { SelectedFacade, RoofData, BuildingZone } from '../features/scaffold-configurator/types/scaffold.types';
 import { simplifyPolygon, sidesToFacades } from '../features/scaffold-configurator/utils/polygonSimplifier';
 
 interface ConfiguratorBuildingData {
@@ -42,6 +42,11 @@ interface ConfiguratorBuildingData {
     end_point: [number, number];
   }>;
   roof?: RoofData;
+  // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
+  zones?: BuildingZone[];
+  building_name?: string;
+  complexity?: 'simple' | 'moderate' | 'complex';
+  research_source?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown';
   metadata: {
     source: string;
     polygon_points: number;
@@ -56,6 +61,9 @@ interface ConfiguratorBuildingData {
     simplified_points?: number;
     epsilon_used?: number;
     angle_tolerance_deg?: number;
+    // Zonen (NEU)
+    zones_count?: number;
+    research_source?: string;
   };
 }
 
@@ -70,15 +78,23 @@ function isAddressRange(address: string): boolean {
 }
 
 // Helper: Calculate facade direction from start/end points
+// Returns the direction the facade FACES (normal direction), not the edge direction
 function calculateDirection(start: [number, number], end: [number, number]): string {
   const dx = end[0] - start[0];
   const dy = end[1] - start[1];
-  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-  // Normalize angle to 0-360
-  const normalized = (angle + 360) % 360;
+  // Edge angle (0=East, 90=North in math convention)
+  const edgeAngle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-  // Map to cardinal directions (perpendicular to facade = viewing direction)
+  // Facade normal is perpendicular to edge (90° rotation)
+  // For counter-clockwise polygons, the outward normal is to the right (+90°)
+  const normalAngle = edgeAngle + 90;
+
+  // Normalize to 0-360
+  const normalized = ((normalAngle % 360) + 360) % 360;
+
+  // Map to cardinal directions (facade viewing direction)
+  // Note: This uses math convention (0=East, 90=North, counterclockwise)
   if (normalized >= 315 || normalized < 45) return 'E';    // East-facing
   if (normalized >= 45 && normalized < 135) return 'N';    // North-facing
   if (normalized >= 135 && normalized < 225) return 'W';   // West-facing
@@ -898,7 +914,7 @@ export default function ConfiguratorPage() {
       {/* Scaffold Configurator */}
       <ScaffoldConfigurator
         projectId={buildingData.project_id}
-        buildingName={buildingData.building.name}
+        buildingName={buildingData.building_name || buildingData.building.name}
         buildingAddress={buildingData.building.address}
         buildingPolygon={buildingData.building.polygon}
         selectedFacades={convertToSelectedFacades(buildingData)}
@@ -906,6 +922,10 @@ export default function ConfiguratorPage() {
         neighbors={neighbors}
         blockedSides={blockedSides}
         additionalBuildings={additionalBuildings}
+        // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
+        zones={buildingData.zones}
+        complexity={buildingData.complexity}
+        researchSource={buildingData.research_source}
         onBack={() => {
           setBuildingData(null);
           setLoadingState('idle');

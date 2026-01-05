@@ -255,14 +255,20 @@ class UrlImporter:
 
     async def _try_simap_api(self, project_id: str) -> Optional[UrlImportResult]:
         """
-        Versucht Daten über die simap.ch API v1 zu laden.
+        Versucht Daten über die simap.ch API v2 zu laden.
+
+        WICHTIG (05.01.2026): Der korrekte Endpunkt ist:
+        /api/publications/v2/project/{projectId}/project-header
+        NICHT: /api/publications/v1/projects/{projectId}
         """
         client = await self._get_client()
-        api_url = f"https://www.simap.ch/api/publications/v1/projects/{project_id}"
+
+        # Schritt 1: Projekt-Header abrufen (enthält Basis-Infos + publication ID)
+        header_url = f"https://www.simap.ch/api/publications/v2/project/{project_id}/project-header"
 
         try:
             response = await client.get(
-                api_url,
+                header_url,
                 headers={
                     "Accept": "application/json",
                     "User-Agent": "GeruestbauApp/1.0 (https://geodaten-ch.railway.app)"
@@ -270,61 +276,115 @@ class UrlImporter:
             )
 
             if response.status_code != 200:
-                logger.debug(f"simap.ch API v1 returned {response.status_code}")
+                logger.debug(f"simap.ch API v2 project-header returned {response.status_code}")
                 return None
 
-            data = response.json()
-
+            header_data = response.json()
             result = UrlImportResult(source_id=project_id)
 
-            # Titel
-            result.project_name = data.get('title', 'Unbekanntes Projekt')
+            # Projekt-Nummer
+            result.tender_number = header_data.get('projectNumber')
 
-            # Beschreibung
-            result.description = data.get('description') or data.get('shortDescription')
+            # Titel aus latestPublication (mehrsprachig)
+            latest_pub = header_data.get('latestPublication', {})
+            title_obj = latest_pub.get('title', {})
+            # Nimm erste verfügbare Sprache: de > fr > it > en
+            result.project_name = (
+                title_obj.get('de') or
+                title_obj.get('fr') or
+                title_obj.get('it') or
+                title_obj.get('en') or
+                'Unbekanntes Projekt'
+            )
 
-            # Auftraggeber
-            procuring = data.get('procuringEntity', {})
-            result.client_name = procuring.get('name')
-            result.client_contact = procuring.get('contactPoint', {}).get('name')
+            # Frist aus dates
+            dates = latest_pub.get('dates', {})
+            result.submission_deadline = dates.get('offerDeadline')
 
-            # Termine
-            result.submission_deadline = data.get('submissionDeadline')
-            # project_start/end nicht direkt in API v1
+            # Verfahrensart
+            result.procedure = header_data.get('processType')
 
-            # Ausführungsort/Adresse
-            locations = data.get('executionLocations', [])
-            if locations:
-                loc = locations[0]
-                parts = []
-                if loc.get('street'):
-                    parts.append(loc['street'])
-                if loc.get('zipCode') and loc.get('city'):
-                    parts.append(f"{loc['zipCode']} {loc['city']}")
-                result.address = ", ".join(parts) if parts else None
-                result.location_city = loc.get('city')
-                result.location_plz = loc.get('zipCode')
-                result.location_canton = loc.get('canton')
+            # Schritt 2: Publikations-Details für Adresse und Auftraggeber
+            pub_id = latest_pub.get('id')
+            if pub_id:
+                details = await self._get_simap_publication_details(project_id, pub_id)
+                if details:
+                    project_info = details.get('project-info', {})
 
-            # Verfahren
-            result.procedure = data.get('procedureType')
-            result.tender_number = data.get('projectNumber')
+                    # Auftraggeber aus procOfficeAddress
+                    proc_addr = project_info.get('procOfficeAddress', {})
+                    name_obj = proc_addr.get('name', {})
+                    result.client_name = (
+                        name_obj.get('de') or
+                        name_obj.get('fr') or
+                        name_obj.get('it') or
+                        name_obj.get('en')
+                    )
+                    result.client_contact = proc_addr.get('email')
 
-            # CPV-Codes
-            cpv_list = data.get('cpvCodes', [])
-            result.cpv_codes = [c.get('code', '') for c in cpv_list if c.get('code')]
+                    # Adresse aus procOfficeAddress
+                    street_obj = proc_addr.get('street', {})
+                    city_obj = proc_addr.get('city', {})
+                    street = street_obj.get('de') or street_obj.get('fr') or street_obj.get('it') or ''
+                    city = city_obj.get('de') or city_obj.get('fr') or city_obj.get('it') or ''
+                    plz = proc_addr.get('postalCode', '')
 
-            # Zuschlag
-            award = data.get('award', {})
-            if award:
-                result.is_awarded = True
-                result.awarded_to = award.get('awardedTo', {}).get('name')
+                    if street or city:
+                        parts = []
+                        if street:
+                            parts.append(street)
+                        if plz and city:
+                            parts.append(f"{plz} {city}")
+                        elif city:
+                            parts.append(city)
+                        result.address = ", ".join(parts)
 
-            result.extraction_notes.append("Loaded via simap.ch API v1")
+                    result.location_city = city
+                    result.location_plz = plz
+                    result.location_canton = proc_addr.get('cantonId')
+
+                    # Ausführungsort (falls vorhanden)
+                    exec_locations = project_info.get('executionLocations', [])
+                    if exec_locations:
+                        loc = exec_locations[0]
+                        loc_street = loc.get('street', {})
+                        loc_city = loc.get('city', {})
+                        exec_street = loc_street.get('de') or loc_street.get('fr') or ''
+                        exec_city = loc_city.get('de') or loc_city.get('fr') or ''
+                        exec_plz = loc.get('postalCode', '')
+
+                        if exec_street or exec_city:
+                            parts = []
+                            if exec_street:
+                                parts.append(exec_street)
+                            if exec_plz and exec_city:
+                                parts.append(f"{exec_plz} {exec_city}")
+                            elif exec_city:
+                                parts.append(exec_city)
+                            # Bevorzuge Ausführungsort vor Auftraggeber-Adresse
+                            result.address = ", ".join(parts)
+                            result.location_city = exec_city
+                            result.location_plz = exec_plz
+                            result.location_canton = loc.get('cantonId')
+
+                    # Beschreibung
+                    desc_obj = project_info.get('description', {})
+                    result.description = (
+                        desc_obj.get('de') or
+                        desc_obj.get('fr') or
+                        desc_obj.get('it') or
+                        desc_obj.get('en')
+                    )
+
+                    # CPV-Codes
+                    cpv_list = project_info.get('cpvCodes', [])
+                    result.cpv_codes = [c.get('code', '') for c in cpv_list if c.get('code')]
+
+            result.extraction_notes.append("Loaded via simap.ch API v2 (project-header + publication-details)")
 
             # Confidence berechnen
             confidence = 0.0
-            if result.project_name:
+            if result.project_name and result.project_name != 'Unbekanntes Projekt':
                 confidence += 0.3
             if result.address:
                 confidence += 0.3
@@ -336,13 +396,35 @@ class UrlImporter:
                 confidence += 0.1
 
             result.confidence = min(confidence, 1.0)
-            result.success = result.project_name is not None
+            result.success = result.project_name is not None and result.project_name != 'Unbekanntes Projekt'
 
             return result
 
         except Exception as e:
-            logger.debug(f"simap.ch API v1 failed: {e}")
+            logger.debug(f"simap.ch API v2 failed: {e}")
             return None
+
+    async def _get_simap_publication_details(self, project_id: str, publication_id: str) -> Optional[dict]:
+        """
+        Ruft die Publikations-Details ab (enthält Auftraggeber, Adresse, etc.)
+        """
+        client = await self._get_client()
+        url = f"https://www.simap.ch/api/publications/v1/project/{project_id}/publication-details/{publication_id}"
+
+        try:
+            response = await client.get(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "GeruestbauApp/1.0"
+                }
+            )
+            if response.status_code == 200:
+                return response.json()
+        except Exception as e:
+            logger.debug(f"simap.ch publication-details failed: {e}")
+
+        return None
 
     async def _scrape_simap(self, url: str, project_id: str) -> UrlImportResult:
         """
