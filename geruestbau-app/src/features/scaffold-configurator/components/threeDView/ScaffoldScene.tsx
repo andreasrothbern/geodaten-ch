@@ -1015,15 +1015,14 @@ export default function ScaffoldScene({
     // Building polygon is now always the ORIGINAL from swissBUILDINGS3D
     const polygon3D = config.buildingPolygon;
     const hasPolygon = polygon3D && polygon3D.length >= 3;
-    const hasCoordinates = enabledFacades.some(f => f.start_point && f.end_point);
 
     // DEBUG: Log polygon info
     console.log('=== 3D POLYGON DEBUG ===', {
       polygonPoints: polygon3D?.length || 0,
     });
 
-    if (hasPolygon && hasCoordinates) {
-      // NEW: Use actual polygon and facade coordinates
+    if (hasPolygon) {
+      // Use actual polygon for building visualization (always if available)
       // Use original polygon for building 3D mesh (more detail)
       const { normalized } = normalizePolygon(polygon3D!);
 
@@ -1035,42 +1034,47 @@ export default function ScaffoldScene({
       const maxY = Math.max(...polygon3D!.map(p => p[1]));
       const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
-      // Calculate building height: use actual traufhoehe if available, otherwise estimate
-      const maxFacadeHeight = enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10);
+      // Calculate building height: use actual traufhoehe if available, otherwise estimate from facades or default
+      const maxFacadeHeight = enabledFacades.length > 0
+        ? enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10)
+        : 10;
       // Traufhöhe = Gebäudehöhe bis Dachansatz (wo das Dach startet)
+      // Priority: config.roof.traufhoehe_m > facade height estimate > default 8m
       const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - (config.roof?.trauf_to_first_m || 0));
 
       // Add building from actual polygon
       parent.add(createBuildingFromPolygon(normalized, buildingHeight));
 
-      // Add roof (always show for visualization)
-      // Use roof data from configuration if available
-      // Default to 'satteldach' (most common roof type in Switzerland)
-      const roofType = config.roof?.roof_type || 'satteldach';
-      const roofHeight = config.roof?.trauf_to_first_m || 3;
-      // IMPORTANT: For Satteldach we MUST have orientation for correct ridge placement
-      // Default to 'O-W' (ridge runs N-S, roof slopes East-West) - most common orientation
-      const roofOrientation = config.roof?.roof_orientation || 'O-W';
-      const roofOverhang = config.roof?.roof_overhang_m || 0.4;  // Standard 40cm
+      // Check if building has towers or domes - skip standard roof for complex buildings
+      // Complex buildings with separate height zones (churches, public buildings) should NOT get a single roof
+      const hasSpecialZones = buildingZones.some(z =>
+        z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
+      );
+      const shouldRenderRoof = !hasSpecialZones || buildingComplexity === 'simple';
 
-      // DEBUG: Log ALL roof parameters to find the bug!
-      console.log('=== ROOF DEBUG ===', {
-        roofType,
-        roofOrientation,
-        roofHeight,
-        roofOverhang,
-        buildingHeight,
-        'config.roof': config.roof,
-        'normalized polygon': normalized,
-        'polygon bbox': {
-          minX: Math.min(...normalized.map(p => p[0])),
-          maxX: Math.max(...normalized.map(p => p[0])),
-          minY: Math.min(...normalized.map(p => p[1])),
-          maxY: Math.max(...normalized.map(p => p[1])),
-        }
-      });
+      if (shouldRenderRoof) {
+        // Add roof for simple/moderate buildings
+        const roofType = config.roof?.roof_type || 'satteldach';
+        const roofHeight = config.roof?.trauf_to_first_m || 3;
+        const roofOrientation = config.roof?.roof_orientation || 'O-W';
+        const roofOverhang = config.roof?.roof_overhang_m || 0.4;
 
-      parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+        console.log('=== ROOF DEBUG ===', {
+          roofType,
+          roofOrientation,
+          roofHeight,
+          roofOverhang,
+          buildingHeight,
+        });
+
+        parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+      } else {
+        console.log('=== SKIPPING ROOF (complex building with special zones) ===', {
+          hasSpecialZones,
+          buildingComplexity,
+          zoneTypes: buildingZones.map(z => z.zone_type),
+        });
+      }
 
       // Add zones for complex buildings (Türme, Kuppeln, Anbauten, etc.)
       if (buildingZones.length > 0 && buildingComplexity !== 'simple') {

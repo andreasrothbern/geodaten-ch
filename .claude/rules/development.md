@@ -11,12 +11,6 @@ C:/Users/vonro/projects/lawil/geodaten-ch/
 
 ## Start-Befehle
 
-**WICHTIG:** Vor dem Starten IMMER zuerst alle alten Prozesse stoppen:
-```bash
-taskkill /F /IM node.exe
-```
-Das Frontend MUSS auf Port 3001 laufen (nicht 3002, 3003, etc.)!
-
 ### Backend starten
 ```bash
 cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
@@ -24,19 +18,47 @@ cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
 ```
 
 ### geruestbau-app starten (primäres Frontend)
+
+**WICHTIG:** Vor dem Starten IMMER Build ausführen um Änderungen zu validieren!
+
 ```bash
 cd C:/Users/vonro/projects/lawil/geodaten-ch/geruestbau-app
+
+# 1. Build prüfen (TypeScript-Fehler erkennen)
+npm run build
+
+# 2. Dev-Server starten (im Background für Claude)
 npm run dev -- --port 3001
 ```
 
+Das Frontend MUSS auf Port 3001 laufen (nicht 3002, 3003, etc.)!
+
 ## Stop-Befehle (Windows)
 
+**ACHTUNG für Claude:** NIEMALS `taskkill /F /IM node.exe` verwenden!
+Das würde auch den Claude Code Prozess selbst beenden.
+
+### Sicheres Stoppen (für Claude)
+
 ```bash
-# Alle Node-Prozesse
+# 1. Port-basiert stoppen (SICHER - nur spezifischen Prozess)
+netstat -ano | findstr :3001
+taskkill /F /PID <PID>
+
+# 2. Alternativ: Vite-Prozess finden und stoppen
+wmic process where "commandline like '%vite%'" get processid,commandline
+taskkill /F /PID <PID>
+```
+
+### Manuelles Stoppen (für User)
+
+```bash
+# Alle Node-Prozesse (NICHT für Claude!)
 taskkill /F /IM node.exe
 
-# Alle Python-Prozesse
-taskkill /F /PID <PID>  # PID von netstat -ano | findstr :8000
+# Python-Prozess auf Port 8000
+netstat -ano | findstr :8000
+taskkill /F /PID <PID>
 ```
 
 ## Dependencies

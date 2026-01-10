@@ -1,6 +1,6 @@
 # Datenfluss-Architektur
 
-## Übersicht
+## Übersicht (Stand 08.01.2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -8,11 +8,16 @@
 │                  (SmartBuildingService)                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  building_geodata.db (Grunddaten, pro EGID)                    │
-│  ══════════════════════════════════════════                     │
-│  ├─ EGID, Koordinaten                                          │
+│  building_3d.db (Grunddaten, via tile_prefetch)                │
+│  ═════════════════════════════════════════════                  │
+│  ├─ EGID, Koordinaten (center_e, center_n)                     │
 │  ├─ Polygon (Original aus swissBUILDINGS3D)                    │
-│  └─ Höhen (Trauf-, First-, Gebäudehöhe)                        │
+│  ├─ Höhen (Trauf-, First-, Gebäudehöhe)                        │
+│  └─ tile_id (Referenz zum Tile)                                │
+│                                                                 │
+│  tiles.db (Tile-Cache Metadaten)                               │
+│  ═══════════════════════════════                                │
+│  └─ tile_id → local_path, bbox, downloaded_at                  │
 │                                                                 │
 │  building_contexts.db (Enrichment, pro EGID)                   │
 │  ═══════════════════════════════════════════                    │
@@ -44,7 +49,7 @@
 
 ## 1. Grunddaten (aus swissBUILDINGS3D Tiles)
 
-Direkt aus Tiles gemappt, in `building_geodata.db` gespeichert.
+Direkt aus Tiles gemappt, in `building_3d.db` gespeichert (via tile_prefetch).
 
 | Daten | Tile-Attribut | Berechnung |
 |-------|---------------|------------|
@@ -53,31 +58,38 @@ Direkt aus Tiles gemappt, in `building_geodata.db` gespeichert.
 | traufhoehe_m | DACH_MIN, GELAENDEPUNKT | DACH_MIN - GELAENDEPUNKT |
 | firsthoehe_m | DACH_MAX, GELAENDEPUNKT | DACH_MAX - GELAENDEPUNKT |
 | gebaeudehoehe_m | GESAMTHOEHE | direkt |
+| center_e, center_n | Polygon-Zentrum | berechnet |
+| tile_id | Tile-Referenz | aus Koordinaten |
 
 **NICHT aus Tiles:** Zonen, Terrain, Hanglage → diese sind Enrichment
 
 ### Speicherung der Grunddaten
-
-Die Gebäudedaten werden an **zwei Stellen** gespeichert:
 
 ```
 1. swissbuildings3d_fetcher.py
    │
    ├─ fetch_building_polygon_for_coordinates()
    │   │
-   │   ├─ Tile-Cache prüfen
+   │   ├─ Tile-Cache prüfen (tiles.db)
    │   │
-   │   ├─ Gebäude parsen
+   │   ├─ Falls nicht gecacht: Tile downloaden + cachen
    │   │
-   │   └─ _save_building_to_geodata_cache(result, e, n)  ← SOFORT speichern!
-   │       └─ geodata_service.save(geodata) → building_geodata.db
+   │   ├─ Gebäude aus Tile parsen
+   │   │
+   │   └─ schedule_prefetch(tile_id, gdb_path)  ← Background-Job
+   │       └─ tile_prefetch.py speichert ALLE Gebäude in building_3d.db
    │
-   └─ schedule_prefetch(exclude_egid=...)  ← Background-Job für REST
-       └─ tile_prefetch.py speichert alle ANDEREN Gebäude im Tile
+   └─ Rückgabe: Polygon + Höhen + Seiten
 ```
 
-**Wichtig:** Das abgefragte Gebäude wird **sofort** in `building_geodata.db` gespeichert,
-BEVOR der Background-Prefetch startet (der dieses Gebäude excludiert).
+**Prefetch-Ablauf (tile_prefetch.py):**
+```
+1. GDB parsen (fiona direct)
+2. Für jedes Gebäude:
+   - EGID, Polygon, Höhen extrahieren
+   - Zentrum berechnen
+   - In building_3d.db speichern
+```
 
 ## 2. Enrichment-Daten
 
@@ -109,19 +121,19 @@ Frontend: GeodataStep.tsx
        │
        └─ POST /api/v1/geruestbau/projects
            └─ Speichert NUR: egid, address, client_name, etc.
-           └─ NICHT: Polygon, Höhen (die sind in building_geodata.db)
+           └─ NICHT: Polygon, Höhen (die sind in building_3d.db)
 ```
 
 **Reihenfolge:**
-1. Grunddaten laden → in `building_geodata.db` speichern
+1. Grunddaten laden → via tile_prefetch in `building_3d.db`
 2. Enrichment ausführen → in `building_contexts.db` speichern
 3. Projekt erstellen → nur Referenzen in `geruestbau.db`
 
 **Beim Projekt-Laden (ConfiguratorPage):**
 ```
 1. Projekt laden → egid aus geruestbau.db
-2. geodata_service.get_by_egid(egid) → Polygon, Höhen aus building_geodata.db
-3. building_context laden → Zonen, Terrain aus building_contexts.db
+2. building_3d.db → Polygon, Höhen per EGID oder Koordinaten
+3. building_contexts.db → Zonen, Terrain
 ```
 
 | Daten | Tabelle | Quelle |
@@ -277,6 +289,8 @@ GET /api/v1/geruestbau/building/{egid}/neighbors
     &include_polygons=true
 ```
 
+**Datenquelle:** building_3d.db (Koordinaten-basierte Suche)
+
 **Warum dynamisch?** Der Benutzer wählt den Radius je nach Bedarf:
 - `0m`: Nur direkt angrenzende Gebäude (blockierte Fassaden)
 - `5m`: Nah, relevant für Gerüstführung
@@ -305,3 +319,12 @@ GET /api/v1/geruestbau/projects/{id}/scaffold
 ```
 GET /api/v1/geruestbau/building/{egid}/neighbors?radius_m=10
 ```
+
+## Datenbank-Übersicht
+
+| Datenbank | Inhalt | Gefüllt von |
+|-----------|--------|-------------|
+| `tiles.db` | Tile-Metadaten | tile_cache.py |
+| `building_3d.db` | Gebäude (Polygon, Höhen) | tile_prefetch.py |
+| `building_contexts.db` | Enrichment (Zonen, Terrain) | SmartBuildingService |
+| `geruestbau.db` | Projekte | Gerüstbau-App |

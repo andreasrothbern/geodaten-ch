@@ -641,9 +641,9 @@ def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
 
 ---
 
-### BUG-017: Veraltete Tests referenzieren building_geodata.db
+### BUG-017: Veraltete Tests referenzieren building_geodata.db ✅
 
-**Status:** Offen
+**Status:** Gefixt (08.01.2026)
 **Prioritaet:** P2
 
 **Problem:**
@@ -651,18 +651,10 @@ def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
 - Diese Datenbank existiert nicht mehr nach Cache-Konsolidierung
 - Tests werden automatisch uebersprungen, sollten aber migriert werden
 
-**Betroffene Tests:**
-```
-- TestKnoswenpwegDataIntegrity::test_all_buildings_exist
-- TestKnoswenpwegDataIntegrity::test_buildings_have_valid_heights
-- TestKnoswenpwegDataIntegrity::test_buildings_have_valid_polygons
-- TestKnoswenpwegDataIntegrity::test_buildings_in_correct_location
-```
-
-**Loesung:**
-- Tests auf `smart_building_cache` umschreiben
-- Oder: Tests als veraltet markieren und neue E2E Tests verwenden
-- Neue Tests: `test_smart_building_cache_e2e.py`
+**Loesung (08.01.2026):**
+- `test_knospenweg_data_integrity.py`: Deprecation-Hinweis aktualisiert, Tests skippen automatisch
+- `test_integration.py`: `register_egid()` Aufruf entfernt, Test auf `get_tile_for_egid()` umgestellt
+- `test_tile_cache.py`: Test für `building_3d.db` Nutzung hinzugefügt
 
 ---
 
@@ -672,8 +664,9 @@ def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
 - ~~**BUG-014** - ProjectService direkt auf Cache~~ ✅
 - ~~**BUG-015** - NeighborsService direkt auf Cache~~ ✅
 - ~~**BUG-016** - SmartBuildingService get_bundle_by_egid() fehlte~~ ✅
+- ~~**BUG-017** - Veraltete Tests referenzieren building_geodata.db~~ ✅
 
 ---
 
 *Dokument erstellt: 30.12.2025*
-*Letzte Aktualisierung: 04.01.2026 - Architektur-Bugs BUG-013 bis BUG-017 hinzugefuegt*
+*Letzte Aktualisierung: 08.01.2026 - BUG-017 gefixt, Dokumentation bereinigt*

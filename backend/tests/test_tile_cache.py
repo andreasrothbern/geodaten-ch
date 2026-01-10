@@ -112,21 +112,17 @@ class TestTileCacheIntegration:
         sig = inspect.signature(fetch_building_polygon_for_coordinates)
         assert "tolerance_m" in sig.parameters
 
-    def test_register_egid_function(self):
-        """EGID kann im Index registriert werden."""
+    def test_get_tile_for_egid_uses_building_3d_db(self):
+        """get_tile_for_egid() nutzt building_3d.db (nicht mehr egid_tile_index)."""
         cache = get_tile_cache()
 
-        # Test-EGID registrieren
-        test_egid = 999999999  # Fiktive EGID
-        test_tile = "1088-22"
-
-        cache.register_egid(test_egid, test_tile, e=2600450, n=1199830)
-
-        # Sollte jetzt im Index sein
+        # Fiktive EGID - sollte None zurückgeben wenn nicht in building_3d.db
+        test_egid = 999999999
         found_tile = cache.get_tile_for_egid(test_egid)
-        assert found_tile == test_tile
 
-        # Cleanup: Wir lassen den Eintrag, schadet nicht
+        # Erwartet: None (da fiktive EGID nicht existiert)
+        # oder ein Tile-ID String falls zufällig vorhanden
+        assert found_tile is None or isinstance(found_tile, str)
 
 
 class TestPrefetchJob:

@@ -2,9 +2,12 @@
 NeighborsService - Nachbar-Suche für Gerüstbau.
 
 Findet Nachbargebäude basierend auf:
-1. smart_building_cache (Zielgebäude)
-2. tiles.db (EGID-Index für alle Gebäude in heruntergeladenen Tiles)
-3. On-demand GDB-Parsing für Polygone
+1. building_3d.db (primär - alle pre-processed Gebäude)
+2. smart_building_cache (Fallback für Bundle-Daten)
+3. tiles.db (EGID-Index, nur für Koordinaten)
+
+WICHTIG: building_3d.db enthält ALLE Gebäude aus heruntergeladenen Tiles
+(via tile_prefetch). Dies ist viel schneller als GDB-Parsing!
 """
 
 import json
@@ -44,7 +47,7 @@ class NeighborsResult:
     neighbors: List[NeighborBuilding] = field(default_factory=list)
     radius_m: float = 10.0
     query_time_ms: float = 0.0
-    source: str = "smart_building_cache+tiles.db"
+    source: str = "building_3d.db"
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
@@ -56,15 +59,19 @@ class NeighborsService:
     """
     Service für Nachbar-Suche.
 
-    Verwendet SmartBuildingService für das Zielgebäude und
-    smart_building_cache + tiles.db für die Nachbar-Suche.
+    Alle Nachbarn werden aus building_3d.db geholt (O(1), ~1ms).
+    Diese DB enthält ALLE Gebäude aus heruntergeladenen Tiles (via tile_prefetch).
+
+    Für das Zielgebäude wird zusätzlich smart_building_cache als Fallback
+    genutzt (in _get_building_from_cache), falls das Bundle noch nicht
+    in building_3d.db ist (z.B. bei erstem Aufruf).
     """
 
     def __init__(self):
         self.data_path = Path(__file__).parent.parent / "data"
-        self.contexts_db_path = self.data_path / "building_contexts.db"
-        self.tiles_db_path = self.data_path / "tiles.db"
+        self.building_3d_db_path = self.data_path / "building_3d.db"
         self._smart_service = None
+        self._building_3d_service = None
 
     def _get_smart_service(self):
         """Lazy-Loading des SmartBuildingService."""
@@ -73,13 +80,43 @@ class NeighborsService:
             self._smart_service = get_smart_building_service()
         return self._smart_service
 
+    def _get_building_3d_service(self):
+        """Lazy-Loading des Building3DService."""
+        if self._building_3d_service is None:
+            from .building_3d_service import get_building_3d_service
+            self._building_3d_service = get_building_3d_service()
+        return self._building_3d_service
+
     def _get_building_from_cache(self, egid: str) -> Optional[Dict]:
         """
-        Lädt Gebäude über SmartBuildingService.
+        Lädt Gebäude mit 3-Stufen Lookup.
 
-        Für das Zielgebäude wird der SmartBuildingService verwendet,
-        der den Cache verwaltet.
+        1. building_3d.db (primär) - Enthält alle pre-processed Gebäude
+        2. smart_building_cache (Fallback) - Vollständige Bundle-Daten
         """
+        # STUFE 1: building_3d.db prüfen (schnell!)
+        try:
+            building_3d_service = self._get_building_3d_service()
+            building = building_3d_service.get_by_egid(int(egid))
+            if building:
+                # Polygon aus JSON parsen falls String
+                polygon = building.get('polygon')
+                if isinstance(polygon, str):
+                    polygon = json.loads(polygon)
+
+                return {
+                    'egid': str(building.get('egid')),
+                    'polygon': polygon,
+                    'lv95_e': building.get('center_e'),
+                    'lv95_n': building.get('center_n'),
+                    'traufhoehe_m': building.get('traufhoehe_m'),
+                    'firsthoehe_m': building.get('firsthoehe_m'),
+                    'gebaeudehoehe_m': building.get('gebaeudehoehe_m'),
+                }
+        except Exception:
+            pass  # Fallback auf smart_building_cache
+
+        # STUFE 2: smart_building_cache (Fallback)
         try:
             smart_service = self._get_smart_service()
             bundle = smart_service.get_bundle_by_egid(egid)
@@ -141,39 +178,42 @@ class NeighborsService:
         found_egids = set()
         found_egids.add(egid)  # Zielgebäude ausschließen
 
-        # 2. Nachbarn aus smart_building_cache suchen
-        if self.contexts_db_path.exists():
-            conn = sqlite3.connect(self.contexts_db_path)
+        # 2. PRIMÄR: Nachbarn aus building_3d.db suchen (schnell!)
+        # Dies enthält ALLE Gebäude aus heruntergeladenen Tiles via prefetch
+        if self.building_3d_db_path.exists():
+            conn = sqlite3.connect(self.building_3d_db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
             search_radius = radius_m + 50
             cursor.execute("""
-                SELECT egid, bundle_json
-                FROM smart_building_cache
-                WHERE egid != ?
-            """, (egid,))
+                SELECT egid, polygon, center_e, center_n,
+                       traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
+                FROM buildings_3d
+                WHERE center_e BETWEEN ? AND ?
+                  AND center_n BETWEEN ? AND ?
+                  AND egid != ?
+            """, (
+                target_e - search_radius, target_e + search_radius,
+                target_n - search_radius, target_n + search_radius,
+                int(egid)
+            ))
 
             for row in cursor.fetchall():
-                neighbor_egid = row['egid']
+                neighbor_egid = str(row['egid'])
                 if neighbor_egid in found_egids:
                     continue
 
-                bundle = json.loads(row['bundle_json'])
-                neighbor_e = bundle.get('lv95_e', 0)
-                neighbor_n = bundle.get('lv95_n', 0)
+                neighbor_e = row['center_e']
+                neighbor_n = row['center_n']
 
-                # Koordinaten normalisieren
-                if neighbor_e < 2000000:
-                    neighbor_e += 2000000
-                if neighbor_n < 1000000:
-                    neighbor_n += 1000000
-
-                # Grobe Filterung
-                if abs(neighbor_e - target_e) > search_radius or abs(neighbor_n - target_n) > search_radius:
-                    continue
-
-                neighbor_polygon = bundle.get('polygon')
+                # Polygon aus JSON parsen
+                neighbor_polygon = None
+                if include_polygons and row['polygon']:
+                    try:
+                        neighbor_polygon = json.loads(row['polygon'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
                 # Distanz berechnen
                 if target_polygon and neighbor_polygon:
@@ -196,61 +236,9 @@ class NeighborsService:
                     direction=direction,
                     center_e=neighbor_e,
                     center_n=neighbor_n,
-                    traufhoehe_m=bundle.get('traufhoehe_m'),
-                    firsthoehe_m=bundle.get('firsthoehe_m'),
-                    gebaeudehoehe_m=bundle.get('gebaeudehoehe_m')
-                ))
-                found_egids.add(neighbor_egid)
-
-            conn.close()
-
-        # 3. Zusätzlich im tiles.db EGID-Index suchen
-        if self.tiles_db_path.exists():
-            conn = sqlite3.connect(self.tiles_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            search_radius = radius_m + 50
-            cursor.execute("""
-                SELECT egid, lv95_e, lv95_n, tile_id
-                FROM egid_tile_index
-                WHERE lv95_e BETWEEN ? AND ?
-                  AND lv95_n BETWEEN ? AND ?
-            """, (
-                target_e - search_radius, target_e + search_radius,
-                target_n - search_radius, target_n + search_radius
-            ))
-
-            for row in cursor.fetchall():
-                neighbor_egid = str(row['egid'])
-                if neighbor_egid in found_egids:
-                    continue
-
-                neighbor_e = row['lv95_e']
-                neighbor_n = row['lv95_n']
-
-                # Distanz berechnen (Zentrum-zu-Zentrum)
-                dx = neighbor_e - target_e
-                dy = neighbor_n - target_n
-                distance = math.sqrt(dx*dx + dy*dy)
-
-                if distance > radius_m:
-                    continue
-
-                direction = self._calculate_direction(target_e, target_n, neighbor_e, neighbor_n)
-
-                # Polygon on-demand laden wenn nötig und nah genug
-                neighbor_polygon = None
-                if include_polygons and distance < 20:
-                    neighbor_polygon = self._load_polygon_from_tile(row['tile_id'], int(row['egid']))
-
-                neighbors.append(NeighborBuilding(
-                    egid=neighbor_egid,
-                    polygon=neighbor_polygon,
-                    distance_m=round(distance, 2),
-                    direction=direction,
-                    center_e=neighbor_e,
-                    center_n=neighbor_n,
+                    traufhoehe_m=row['traufhoehe_m'],
+                    firsthoehe_m=row['firsthoehe_m'],
+                    gebaeudehoehe_m=row['gebaeudehoehe_m']
                 ))
                 found_egids.add(neighbor_egid)
 
@@ -269,7 +257,7 @@ class NeighborsService:
             neighbors=neighbors,
             radius_m=radius_m,
             query_time_ms=round(query_time, 2),
-            source="smart_building_cache+tiles.db"
+            source="building_3d.db"
         )
 
     def _polygon_distance(self, poly1: List, poly2: List) -> float:
@@ -338,50 +326,6 @@ class NeighborsService:
             return "W"
         else:
             return "NW"
-
-    def _load_polygon_from_tile(self, tile_id: str, egid: int) -> Optional[List]:
-        """Lädt Polygon aus GDB-Tile on-demand."""
-        try:
-            from .tile_cache import get_tile_cache
-            tile_cache = get_tile_cache()
-            gdb_path = tile_cache.get_tile_path(tile_id)
-
-            if not gdb_path or not gdb_path.exists():
-                return None
-
-            import geopandas as gpd
-            import fiona
-
-            layers = fiona.listlayers(gdb_path)
-            target_layer = None
-            for layer in layers:
-                if 'building' in layer.lower():
-                    target_layer = layer
-                    break
-            if not target_layer and layers:
-                target_layer = layers[0]
-
-            if not target_layer:
-                return None
-
-            gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
-            matching = gdf[gdf['EGID'] == egid]
-
-            if matching.empty:
-                return None
-
-            geom = matching.iloc[0].geometry
-            if geom is None:
-                return None
-
-            if hasattr(geom, 'exterior'):
-                return [(round(c[0], 2), round(c[1], 2)) for c in geom.exterior.coords]
-
-            return None
-
-        except Exception:
-            return None
-
 
 # Singleton
 _neighbors_service: Optional[NeighborsService] = None

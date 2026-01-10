@@ -1,9 +1,14 @@
-"""Gerüstbau-App API Router."""
+﻿"""GerÃ¼stbau-App API Router."""
 
+import logging
 import math
 import uuid
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
+from sse_starlette.sse import EventSourceResponse
+
+logger = logging.getLogger(__name__)
 
 from ..models.geruestbau import (
     Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
@@ -17,7 +22,7 @@ from ..services.address_parser import get_address_parser
 from ..services.parzellen_service import get_parzellen_service
 from ..services.neighbors_service import get_neighbors_service
 
-router = APIRouter(prefix="/api/v1/geruestbau", tags=["Gerüstbau"])
+router = APIRouter(prefix="/api/v1/geruestbau", tags=["GerÃ¼stbau"])
 
 project_service = ProjectService()
 
@@ -72,7 +77,7 @@ async def update_project(project_id: str, update: ProjectUpdate):
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
-    """Projekt löschen."""
+    """Projekt lÃ¶schen."""
     success = await project_service.delete_project(project_id)
     if not success:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
@@ -81,7 +86,7 @@ async def delete_project(project_id: str):
 
 @router.post("/projects/{project_id}/enrich", response_model=ProjectWithGeodata)
 async def enrich_project(project_id: str):
-    """Projekt mit Geodaten anreichern (GWR, Höhen, Polygon)."""
+    """Projekt mit Geodaten anreichern (GWR, HÃ¶hen, Polygon)."""
     project = await project_service.enrich_with_geodata(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
@@ -105,16 +110,16 @@ async def analyze_photo(project_id: str, photo_id: str):
 
 @router.get("/projects/{project_id}/scaffold", response_model=ScaffoldConfig)
 async def get_scaffold_config(project_id: str):
-    """Aktuelle Gerüst-Konfiguration abrufen."""
+    """Aktuelle GerÃ¼st-Konfiguration abrufen."""
     config = await project_service.get_scaffold_config(project_id)
     if not config:
-        raise HTTPException(status_code=404, detail="Keine Gerüst-Konfiguration")
+        raise HTTPException(status_code=404, detail="Keine GerÃ¼st-Konfiguration")
     return config
 
 
 @router.put("/projects/{project_id}/scaffold", response_model=ScaffoldConfig)
 async def update_scaffold_config(project_id: str, config: ScaffoldConfig):
-    """Gerüst-Konfiguration aktualisieren."""
+    """GerÃ¼st-Konfiguration aktualisieren."""
     return await project_service.update_scaffold_config(project_id, config)
 
 
@@ -122,7 +127,7 @@ async def update_scaffold_config(project_id: str, config: ScaffoldConfig):
 async def export_project(project_id: str, format: str = "pdf"):
     """Projekt exportieren (pdf, ifc, dxf, xlsx)."""
     if format not in ["pdf", "xlsx", "ifc", "dxf"]:
-        raise HTTPException(status_code=400, detail="Ungültiges Format")
+        raise HTTPException(status_code=400, detail="UngÃ¼ltiges Format")
     return await project_service.export_project(project_id, format)
 
 
@@ -133,7 +138,7 @@ async def extract_from_document(file: UploadFile = File(...)):
 
     Verwendet Claude Vision API für OCR und Datenextraktion.
 
-    Unterstützte Formate:
+    UnterstÃ¼tzte Formate:
     - PDF-Dokumente
     - Bilder (JPG, PNG, GIF, WebP)
 
@@ -168,7 +173,7 @@ async def import_from_url(request: UrlImportRequest):
     """
     Importiert Ausschreibungsdaten von einer URL (z.B. simap.ch).
 
-    Unterstützte URLs:
+    UnterstÃ¼tzte URLs:
     - simap.ch Projekt-Details
 
     Args:
@@ -217,22 +222,22 @@ def _azimuth_to_direction(azimuth: float) -> str:
 
 @router.get("/configurator/facades", response_model=Dict[str, Any])
 async def get_facade_data_for_configurator(
-    address: str = Query(..., description="Adresse des Gebäudes"),
+    address: str = Query(..., description="Adresse des GebÃ¤udes"),
     include_roof: bool = Query(True, description="Dachanalyse einbeziehen"),
     simplify_epsilon: Optional[float] = Query(
         None,
-        description="Douglas-Peucker Toleranz in Metern (None = dynamisch basierend auf Gebäudegrösse)",
+        description="Douglas-Peucker Toleranz in Metern (None = dynamisch basierend auf GebÃ¤udegrÃ¶sse)",
         ge=0.1,
         le=5.0
     )
 ):
     """
-    Lädt Fassaden-Daten für den Scaffold Configurator.
+    LÃ¤dt Fassaden-Daten für den Scaffold Configurator.
 
     Kombiniert Daten aus:
     - geodienste.ch WFS (Polygon)
-    - sonnendach.ch API (Dachflächen)
-    - Lokale DB (Höhen)
+    - sonnendach.ch API (DachflÃ¤chen)
+    - Lokale DB (HÃ¶hen)
 
     Returns:
         ProjectInput-kompatibles JSON für ScaffoldConfigurator
@@ -247,7 +252,7 @@ async def get_facade_data_for_configurator(
     e = geocode_result.coordinates.lv95_e
     n = geocode_result.coordinates.lv95_n
 
-    # 2. Gebäudedaten vom Composite Service holen
+    # 2. GebÃ¤udedaten vom Composite Service holen
     service = get_swissbuildings3d_service()
     building = await service.get_building_by_coordinates(
         e, n,
@@ -258,7 +263,7 @@ async def get_facade_data_for_configurator(
     if not building or not building.polygon:
         raise HTTPException(
             status_code=404,
-            detail="Keine Gebäudegeometrie gefunden. Möglicherweise unterstützt dieser Kanton geodienste.ch WFS nicht."
+            detail="Keine GebÃ¤udegeometrie gefunden. MÃ¶glicherweise unterstÃ¼tzt dieser Kanton geodienste.ch WFS nicht."
         )
 
     # 3. Fassaden aus Polygon-Seiten ableiten
@@ -291,7 +296,7 @@ async def get_facade_data_for_configurator(
         length = side.get("length_m", math.sqrt(dx*dx + dy*dy))
 
         # Azimut der Fassade (senkrecht zur Wand, nach aussen)
-        # Die Fassade zeigt nach aussen, also 90° zur Wandrichtung
+        # Die Fassade zeigt nach aussen, also 90Â° zur Wandrichtung
         wall_azimuth = _calculate_azimuth(dx, dy)
         facade_azimuth = (wall_azimuth + 90) % 360  # Nach aussen zeigend
         direction = _azimuth_to_direction(facade_azimuth)
@@ -319,7 +324,7 @@ async def get_facade_data_for_configurator(
         polygon=[(p[0], p[1]) for p in building.polygon],
     )
 
-    # 5. Zonen-Daten aus SmartBuildingService holen (für komplexe Gebäude)
+    # 5. Zonen-Daten aus SmartBuildingService holen (für komplexe GebÃ¤ude)
     from app.services.smart_building.service import get_smart_building_service
     smart_service = get_smart_building_service()
 
@@ -334,7 +339,7 @@ async def get_facade_data_for_configurator(
             address=address,
             force_refresh=False,
             include_research=True,
-            include_zones_analysis=False,  # Nur bekannte Gebäude, keine neue Claude-Analyse
+            include_zones_analysis=False,  # Nur bekannte GebÃ¤ude, keine neue Claude-Analyse
         )
 
         if bundle.zones:
@@ -377,7 +382,7 @@ async def get_facade_data_for_configurator(
         },
         "selected_facades": selected_facades,
         "roof": roof_data.to_dict(),
-        # Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
+        # Zonen-Daten für komplexe GebÃ¤ude (NEU 05.01.2026)
         "zones": zones_data,
         "building_name": building_name,
         "complexity": complexity,
@@ -425,23 +430,23 @@ async def search_addresses(q: str = Query(..., min_length=3)):
 @router.get("/building/{egid}/neighbors", response_model=Dict[str, Any])
 async def get_building_neighbors(
     egid: str,
-    radius_m: float = Query(10.0, ge=0, le=50, description="Suchradius in Metern (0=angrenzend, 10=Standard)"),
+    radius_m: float = Query(10.0, ge=0, le=100, description="Suchradius in Metern (0=angrenzend, max 100m)"),
     include_polygons: bool = Query(True, description="Polygone der Nachbarn mitliefern")
 ):
     """
-    Findet alle Nachbargebäude im Umkreis.
+    Findet alle NachbargebÃ¤ude im Umkreis.
 
-    Für Gerüstbau: Erkennt angrenzende Gebäude die Fassaden blockieren.
-    Bei Reihenhäusern (z.B. Knospenweg 2,4,6,8,10) wird erkannt,
-    dass nur 2 von 4 Seiten eingerüstet werden können.
+    FÃ¼r GerÃ¼stbau: Erkennt angrenzende GebÃ¤ude die Fassaden blockieren.
+    Bei ReihenhÃ¤usern (z.B. Knospenweg 2,4,6,8,10) wird erkannt,
+    dass nur 2 von 4 Seiten eingerÃ¼stet werden kÃ¶nnen.
 
     Args:
-        egid: EGID des Zielgebäudes
+        egid: EGID des ZielgebÃ¤udes
         radius_m: Suchradius (0=nur direkt angrenzend, 5=nah, 10=Kontext)
         include_polygons: Polygone für 3D-View mitliefern
 
     Returns:
-        - target: Zielgebäude mit Polygon
+        - target: ZielgebÃ¤ude mit Polygon
         - neighbors: Liste der Nachbarn mit Distanz und Richtung
         - blocked_sides: Liste der blockierten Fassadenrichtungen
 
@@ -473,8 +478,8 @@ async def get_building_neighbors(
     if not result:
         raise HTTPException(
             status_code=404,
-            detail=f"Gebäude mit EGID {egid} nicht im smart_building_cache gefunden. "
-                   "Bitte zuerst über SmartBuildingService laden."
+            detail=f"GebÃ¤ude mit EGID {egid} nicht im smart_building_cache gefunden. "
+                   "Bitte zuerst Ã¼ber SmartBuildingService laden."
         )
 
     # Blockierte Seiten aus Nachbarn ableiten
@@ -497,16 +502,16 @@ async def resolve_address_range(
     address: str = Query(..., description="Adresse mit Bereich, z.B. 'Knospenweg 2-10, Bern'")
 ):
     """
-    Löst eine Adresse mit Hausnummern-Bereich zu einzelnen EGIDs auf.
+    LÃ¶st eine Adresse mit Hausnummern-Bereich zu einzelnen EGIDs auf.
 
-    Unterstützte Formate:
-    - Range: "Knospenweg 2-10, Bern" → [2, 4, 6, 8, 10]
-    - Explizit: "Kramgasse 27/29, Bern" → [27, 29]
-    - Liste: "Hauptstrasse 1, 3, 5, Zürich" → [1, 3, 5]
+    UnterstÃ¼tzte Formate:
+    - Range: "Knospenweg 2-10, Bern" â†’ [2, 4, 6, 8, 10]
+    - Explizit: "Kramgasse 27/29, Bern" â†’ [27, 29]
+    - Liste: "Hauptstrasse 1, 3, 5, ZÃ¼rich" â†’ [1, 3, 5]
 
     Returns:
         - parsed: Parsing-Ergebnis (Strasse, Nummern, Typ)
-        - buildings: Liste der gefundenen Gebäude mit EGID
+        - buildings: Liste der gefundenen GebÃ¤ude mit EGID
         - errors: Nicht gefundene Adressen
 
     Beispiel Response:
@@ -540,14 +545,14 @@ async def parse_address_only(
     """
     Parst eine Adresse ohne Geocoding (nur Syntax-Analyse).
 
-    Nützlich zum Testen des Parsers oder für Vorschau.
+    NÃ¼tzlich zum Testen des Parsers oder für Vorschau.
 
     Returns:
         - street: Erkannte Strasse
         - city: Erkannter Ort
         - numbers: Liste der Hausnummern
         - range_type: single, range, oder explicit
-        - full_addresses: Generierte vollständige Adressen
+        - full_addresses: Generierte vollstÃ¤ndige Adressen
     """
     parser = get_address_parser()
     parsed = parser.parse(address)
@@ -578,15 +583,15 @@ async def get_parzelle_at_coordinates(
     Verwendet die swisstopo Identify-API für die amtliche Vermessung.
 
     Returns:
-        - egrid: Eidg. Grundstücksidentifikator
+        - egrid: Eidg. GrundstÃ¼cksidentifikator
         - number: Parzellennummer
         - canton: Kanton
         - polygon: Parzellengrenze (optional)
-        - area_m2: Fläche
-        - has_building: Ob ein Gebäude auf der Parzelle existiert
+        - area_m2: FlÃ¤che
+        - has_building: Ob ein GebÃ¤ude auf der Parzelle existiert
 
     Anwendungsfall Neubau:
-        Wenn kein Gebäude auf der Parzelle existiert, kann das
+        Wenn kein GebÃ¤ude auf der Parzelle existiert, kann das
         Parzellen-Polygon als Baufeld-Grenze verwendet werden.
     """
     parzellen_service = get_parzellen_service()
@@ -611,7 +616,7 @@ async def get_parzelle_by_egrid(egrid: str):
     Findet eine Parzelle anhand der EGRID.
 
     Args:
-        egrid: Eidg. Grundstücksidentifikator (z.B. "CH280652308630")
+        egrid: Eidg. GrundstÃ¼cksidentifikator (z.B. "CH280652308630")
 
     Returns:
         Parzellen-Daten mit Polygon und Metadaten
@@ -640,7 +645,7 @@ async def get_parzelle_for_address(
     Returns:
         - geocoding: Adress-Match und Koordinaten
         - parzelle: Parzellen-Daten (EGRID, Polygon, etc.)
-        - building: Gebäude-Infos falls vorhanden
+        - building: GebÃ¤ude-Infos falls vorhanden
     """
     # 1. Geocoding
     swisstopo = SwisstopoService()
@@ -660,7 +665,7 @@ async def get_parzelle_for_address(
         include_geometry=True
     )
 
-    # 3. Gebäude prüfen
+    # 3. GebÃ¤ude prÃ¼fen
     has_building = True
     if parzelle:
         has_building = await parzellen_service.check_building_on_parcel(parzelle)
@@ -679,3 +684,235 @@ async def get_parzelle_for_address(
         "has_building": has_building,
         "neubau_possible": not has_building,  # Neubau-Support Flag
     }
+
+
+# ============ PROJECT CONTEXT STREAMING API ============
+
+from ..services.project_context_stream import get_project_context_stream_service
+
+
+@router.get("/projects/{project_id}/context/stream")
+async def stream_project_context(
+    project_id: str,
+    max_radius_m: float = Query(100.0, ge=0, le=500, description="Maximaler Radius für Nachbar-Suche"),
+    include_blocked_facades: bool = Query(True, description="Blockierte Fassaden berechnen"),
+    include_neighbors: bool = Query(True, description="Nachbarn laden")
+):
+    """
+    Streamt Projekt-Kontext via Server-Sent Events (SSE).
+
+    Progressive Datenlieferung:
+    1. centroid - Projekt-Mittelpunkt (~10ms)
+    2. project_buildings - Projekt-GebÃ¤ude mit Polygonen (~20ms)
+    3. blocked_facades - Blockierte Fassaden pro GebÃ¤ude (~50ms)
+    4. neighbors - Nachbarn in Schichten (20m, 50m, 100m)
+    5. complete - Abschluss-Signal
+
+    WICHTIG für Multi-Building Projekte:
+    - Centroid wird aus allen Projekt-GebÃ¤uden berechnet
+    - blocked_facades exkludiert Projekt-GebÃ¤ude (nur externe blockieren)
+
+    Beispiel mit EventSource:
+    ```javascript
+    const es = new EventSource('/api/v1/geruestbau/projects/abc123/context/stream');
+    es.addEventListener('centroid', (e) => console.log('Centroid:', JSON.parse(e.data)));
+    es.addEventListener('blocked_facades', (e) => markBlockedFacades(JSON.parse(e.data)));
+    es.addEventListener('complete', (e) => es.close());
+    ```
+
+    Returns:
+        text/event-stream mit SSE Events
+    """
+    # Projekt laden
+    project = await project_service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+
+    # EGIDs sammeln (aus buildings Liste oder einzelnes egid)
+    project_egids = []
+
+    if project.buildings:
+        project_egids = [b.egid for b in project.buildings if b.egid]
+
+    if project.egid and project.egid not in project_egids:
+        project_egids.append(project.egid)
+
+    if not project_egids:
+        raise HTTPException(
+            status_code=400,
+            detail="Projekt hat keine GebÃ¤ude (keine EGIDs definiert)"
+        )
+
+    # Streaming Service
+    stream_service = get_project_context_stream_service()
+
+    async def event_generator():
+        """Generator für SSE Events."""
+        async for event in stream_service.stream_context(
+            project_egids=project_egids,
+            max_radius_m=max_radius_m,
+            include_blocked_facades=include_blocked_facades,
+            include_neighbors=include_neighbors
+        ):
+            yield {
+                "event": event.event,
+                "data": event.data
+            }
+
+    return EventSourceResponse(event_generator())
+
+
+@router.get("/building/{egid}/blocked-facades", response_model=Dict[str, Any])
+async def get_blocked_facades(
+    egid: str,
+    exclude_egids: str = Query(None, description="Komma-separierte EGIDs die nicht als Blocker gelten"),
+    threshold_m: float = Query(2.0, ge=0.5, le=5.0, description="Distanz-Schwellenwert in Metern")
+):
+    """
+    Berechnet blockierte Fassaden für ein GebÃ¤ude.
+
+    Eine Fassade gilt als blockiert wenn ein externes GebÃ¤ude
+    nÃ¤her als threshold_m ist (Standard: 2m = GerÃ¼stbreite).
+
+    Args:
+        egid: EGID des zu analysierenden GebÃ¤udes
+        exclude_egids: Komma-separierte EGIDs die ignoriert werden (z.B. andere Projekt-GebÃ¤ude)
+        threshold_m: Schwellenwert für Blockierung
+
+    Returns:
+        - egid: Analysiertes GebÃ¤ude
+        - blocked_indices: Liste der blockierten Fassaden-Indizes (0-basiert)
+        - total_facades: Gesamtzahl Fassaden
+        - free_facades: Anzahl freier Fassaden
+        - blockers: Details zu jedem blockierenden GebÃ¤ude
+
+    Beispiel Response:
+    ```json
+    {
+        "egid": "123456",
+        "blocked_indices": [1, 3],
+        "total_facades": 4,
+        "free_facades": 2,
+        "blockers": [
+            {"facade_index": 1, "egid": "123457", "distance_m": 0.8, "direction": "E"},
+            {"facade_index": 3, "egid": "123458", "distance_m": 1.2, "direction": "W"}
+        ]
+    }
+    ```
+    """
+    from ..services.blocked_facades_service import get_blocked_facades_service
+
+    # exclude_egids parsen
+    exclude_set = set()
+    if exclude_egids:
+        exclude_set = set(e.strip() for e in exclude_egids.split(",") if e.strip())
+
+    blocked_service = get_blocked_facades_service()
+    result = blocked_service.calculate_blocked_facades(
+        egid=egid,
+        exclude_egids=exclude_set,
+        threshold_m=threshold_m
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"GebÃ¤ude {egid} nicht in building_3d.db gefunden. "
+                   "Bitte zuerst Ã¼ber SmartBuildingService laden."
+        )
+
+    return {
+        "egid": result.egid,
+        "blocked_indices": result.blocked_indices,
+        "total_facades": result.total_facades,
+        "free_facades": result.free_facades,
+        "query_time_ms": result.query_time_ms,
+        "blockers": [
+            {
+                "facade_index": bf.facade_index,
+                "egid": bf.blockers[0].egid if bf.blockers else None,
+                "distance_m": bf.min_distance_m,
+                "direction": bf.blockers[0].direction if bf.blockers else None
+            }
+            for bf in result.blocked_facades
+        ]
+    }
+
+
+# ============ BUILDING DATA STREAMING API ============
+
+from ..services.building_data_stream import get_building_data_stream_service
+
+
+@router.get("/building/data/stream")
+async def stream_building_data(
+    address: str = Query(..., description="Adresse des GebÃ¤udes"),
+    include_research: bool = Query(True, description="GebÃ¤udename-Recherche"),
+    include_zones: bool = Query(True, description="Zonen-Analyse"),
+    include_terrain: bool = Query(True, description="Terrain-Daten"),
+    force_refresh: bool = Query(False, description="Cache ignorieren")
+):
+    """
+    Streamt GebÃ¤udedaten via Server-Sent Events (SSE).
+
+    Wird verwendet bei Projekt-Erstellung für progressives Feedback.
+
+    Progressive Datenlieferung:
+    1. geocoding - Adress-Match, Koordinaten, EGID (~50ms)
+    2. gwr - GWR-Daten (Geschosse, Kategorie) (~100ms)
+    3. polygon - GebÃ¤ude-Polygon (~200ms oder ~5s bei Tile-Download)
+    4. heights - HÃ¶hendaten (~50ms)
+    5. terrain - Terrain-HÃ¶he, Hanglage (~200ms)
+    6. zones - Zonen-Analyse (~500ms)
+    7. research - GebÃ¤udename (~1s, optional)
+    8. complete - VollstÃ¤ndiges Bundle
+
+    Bei Tile-Download wird zusÃ¤tzlich "polygon_progress" gesendet:
+    ```json
+    {"status": "downloading", "message": "Lade GebÃ¤udedaten..."}
+    ```
+
+    Beispiel mit EventSource:
+    ```javascript
+    const es = new EventSource('/api/v1/geruestbau/building/data/stream?address=Kramgasse+10,+Bern');
+
+    es.addEventListener('geocoding', (e) => {
+        const data = JSON.parse(e.data);
+        setCoordinates(data.coordinates);
+    });
+
+    es.addEventListener('polygon', (e) => {
+        const data = JSON.parse(e.data);
+        renderPolygon(data.polygon);
+    });
+
+    es.addEventListener('complete', (e) => {
+        const data = JSON.parse(e.data);
+        setFullBundle(data.bundle);
+        es.close();
+    });
+    ```
+
+    Returns:
+        text/event-stream mit SSE Events
+    """
+    stream_service = get_building_data_stream_service()
+
+    async def event_generator():
+        """Generator für SSE Events."""
+        import json
+        async for event in stream_service.stream_building_data(
+            address=address,
+            include_research=include_research,
+            include_zones=include_zones,
+            include_terrain=include_terrain,
+            force_refresh=force_refresh
+        ):
+            # WICHTIG: data muss als JSON-String Ã¼bergeben werden, nicht als Dict!
+            # EventSourceResponse konvertiert Dicts mit str() statt json.dumps()
+            yield {
+                "event": event.event,
+                "data": json.dumps(event.data, ensure_ascii=False)
+            }
+
+    return EventSourceResponse(event_generator())

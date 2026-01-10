@@ -1,28 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   MapPin,
   Building2,
-  Ruler,
-  Layers,
   CheckCircle2,
   AlertCircle,
   Loader2,
   RefreshCw,
-  Mountain,
-  Box,
   Zap,
   Bot,
   Database,
   Settings,
-  Landmark,
+  Download,
 } from 'lucide-react'
-import type { ExtractedProjectData, Geodata, BuildingEntry } from '../../../types/project'
+import type { ExtractedProjectData, Geodata, BuildingEntry, ZoneInfo } from '../../../types/project'
+import BuildingDataCard from '../../ui/BuildingDataCard'
 import { geruestbauApi } from '../../../api/geruestbau'
+import { useBuildingDataStream, type CompleteData, type ZonesData, type ErrorData } from '../../../hooks/useBuildingDataStream'
 
 interface GeodataStepProps {
   data: ExtractedProjectData
   source: 'pdf' | 'photo' | 'url' | 'manual'
-  loadGeodata: (address: string) => Promise<Geodata | null>
+  loadGeodata?: (address: string) => Promise<Geodata | null>  // Optional, nur für Fallback
   onBack: () => void
   onSubmit: (geodata: Geodata | null, buildings?: BuildingEntry[]) => void
   loading: boolean
@@ -33,8 +31,8 @@ interface LoadingState {
   geocoding: 'pending' | 'loading' | 'success' | 'error'
   gwr: 'pending' | 'loading' | 'success' | 'error'
   building3d: 'pending' | 'loading' | 'success' | 'error'  // Höhen + Polygon aus swissBUILDINGS3D
-  terrain: 'pending' | 'loading' | 'success' | 'error'     // Terrain + Hanglage
-  research: 'pending' | 'loading' | 'success' | 'error'    // Gebäude-Recherche (known_buildings / Claude API)
+  enrichment: 'pending' | 'loading' | 'success' | 'error'  // Enrichment: Terrain + Hanglage (nach 3D-Daten)
+  research: 'pending' | 'loading' | 'success' | 'error'    // Gebäude-Recherche (parallel mit Enrichment)
 }
 
 // Status-Detail für Recherche-Phase
@@ -43,13 +41,15 @@ type ResearchStatus = 'idle' | 'checking_known' | 'calling_claude' | 'done'
 export default function GeodataStep({
   data,
   source: _source,  // Reserved for future source-specific handling
-  loadGeodata,
+  loadGeodata: _loadGeodata,  // Unused - kept for backwards compatibility
   onBack,
   onSubmit,
   loading,
   onLoadComplete,
 }: GeodataStepProps) {
   void _source  // Suppress unused variable warning
+  void _loadGeodata  // Unused - we use streaming now
+
   const [geodata, setGeodata] = useState<Geodata | null>(null)
   const [buildings, setBuildings] = useState<BuildingEntry[]>([])
   const [addressErrors, setAddressErrors] = useState<{ address: string; error: string }[]>([])
@@ -58,137 +58,190 @@ export default function GeodataStep({
     geocoding: 'pending',
     gwr: 'pending',
     building3d: 'pending',
-    terrain: 'pending',
+    enrichment: 'pending',
     research: 'pending',
   })
   const [researchStatus, setResearchStatus] = useState<ResearchStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingMulti, setIsLoadingMulti] = useState(false)
 
-  const loadData = async () => {
-    if (!data.address) return
+  // ==========================================================================
+  // SSE Streaming Hook für Single-Address
+  // ==========================================================================
+  const {
+    start: startStream,
+    isLoading: isStreamLoading,
+    isDownloading,
+  } = useBuildingDataStream({
+    includeResearch: false,  // Research wird separat im zones-Step gemacht
+    includeZones: true,
+    includeTerrain: true,
 
-    setIsLoading(true)
+    // Event Callbacks - Update loading states progressiv
+    onGeocoding: useCallback(() => {
+      setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
+    }, []),
+
+    onGWR: useCallback(() => {
+      setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
+    }, []),
+
+    onPolygon: useCallback(() => {
+      setLoadingStates((s) => ({ ...s, building3d: 'success', enrichment: 'loading' }))
+    }, []),
+
+    onTerrain: useCallback(() => {
+      setLoadingStates((s) => ({ ...s, enrichment: 'success', research: 'loading' }))
+      setResearchStatus('checking_known')
+    }, []),
+
+    onZones: useCallback((zonesData: ZonesData) => {
+      // Zones enthält auch building_name wenn vorhanden
+      if (zonesData.source === 'claude') {
+        setResearchStatus('calling_claude')
+      }
+      setLoadingStates((s) => ({ ...s, research: 'success' }))
+      setResearchStatus('done')
+    }, []),
+
+    onComplete: useCallback((completeData: CompleteData) => {
+      // Stream komplett - Geodata aus Bundle aufbauen
+      const bundle = completeData.bundle
+      const newGeodata: Geodata = {
+        egid: completeData.egid ?? undefined,
+        address: completeData.address,
+        traufhoehe_m: bundle.traufhoehe_m ?? undefined,
+        firsthoehe_m: bundle.firsthoehe_m ?? undefined,
+        gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
+        terrain_height_m: bundle.terrain?.reference_height_m,
+        slope_class: bundle.terrain?.slope_class,
+        polygon: bundle.polygon ?? undefined,
+        sides: bundle.sides ?? undefined,
+        perimeter_m: bundle.perimeter_m ?? undefined,
+        footprint_area_m2: bundle.footprint_area_m2 ?? undefined,
+        gwr_floors: bundle.gwr_floors ?? undefined,
+        gwr_area_m2: bundle.gwr_area_m2 ?? undefined,
+        gwr_category: bundle.gwr_category ?? undefined,
+        gwr_category_code: bundle.gwr_category_code ?? undefined,
+        zones: bundle.zones?.map(z => ({
+          ...z,
+          zone_type: z.zone_type as ZoneInfo['zone_type'],
+          traufhoehe_m: z.traufhoehe_m ?? undefined,
+          firsthoehe_m: z.firsthoehe_m ?? undefined,
+          sonderkonstruktion: ['turm', 'kuppel'].includes(z.zone_type),
+          confidence: 1.0,
+        })) ?? undefined,
+        complexity: (bundle.complexity as Geodata['complexity']) ?? undefined,
+        building_name: bundle.building_name ?? undefined,
+        research_source: (bundle.research_source as Geodata['research_source']) ?? (bundle.zones && bundle.zones.length > 0 ? 'auto' : undefined),
+        coordinates: bundle.lv95_e && bundle.lv95_n ? {
+          lv95_e: bundle.lv95_e,
+          lv95_n: bundle.lv95_n,
+        } : undefined,
+      }
+      setGeodata(newGeodata)
+      setResearchStatus('done')
+    }, []),
+
+    onError: useCallback((errorData: ErrorData) => {
+      setError(errorData.message)
+      setLoadingStates((s) => ({
+        ...s,
+        geocoding: s.geocoding === 'loading' ? 'error' : s.geocoding,
+        gwr: s.gwr === 'loading' ? 'error' : s.gwr,
+        building3d: s.building3d === 'loading' ? 'error' : s.building3d,
+        enrichment: s.enrichment === 'loading' ? 'error' : s.enrichment,
+        research: s.research === 'loading' ? 'error' : s.research,
+      }))
+      setResearchStatus('done')
+    }, []),
+  })
+
+  // Kombinierter Loading-State
+  const isLoading = isStreamLoading || isLoadingMulti
+
+  // ==========================================================================
+  // Multi-Address Laden (Range wie "2-10")
+  // ==========================================================================
+  const loadMultiAddress = useCallback(async (address: string) => {
+    setIsLoadingMulti(true)
     setError(null)
     setGeodata(null)
     setBuildings([])
     setAddressErrors([])
-    setIsMultiAddress(false)
-
-    // Simulate progressive loading
-    setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending', terrain: 'pending', research: 'pending' })
-    setResearchStatus('idle')
+    setIsMultiAddress(true)
+    setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending', enrichment: 'pending', research: 'pending' })
 
     try {
-      // Check if address contains a range (e.g., "2-10" or "1-9")
-      const hasRange = /\d+\s*-\s*\d+/.test(data.address)
+      setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
+      const resolved = await geruestbauApi.resolveAddressRange(address)
+      setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
 
-      if (hasRange) {
-        // Multi-Address: Use address resolution API
-        setIsMultiAddress(true)
+      if (resolved.buildings && resolved.buildings.length > 0) {
+        const buildingEntries: BuildingEntry[] = resolved.buildings.map(b => ({
+          egid: b.egid,
+          address: b.matched_address || b.address,
+          traufhoehe_m: b.traufhoehe_m,
+          firsthoehe_m: b.firsthoehe_m,
+          coordinates: b.coordinates,
+          egid_source: 'swissBUILDINGS3D',
+        }))
+        setBuildings(buildingEntries)
 
-        await new Promise((r) => setTimeout(r, 100))
-        setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
-
-        const resolved = await geruestbauApi.resolveAddressRange(data.address)
-
-        await new Promise((r) => setTimeout(r, 100))
-        setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
-
-        if (resolved.buildings && resolved.buildings.length > 0) {
-          // Convert to BuildingEntry format
-          const buildingEntries: BuildingEntry[] = resolved.buildings.map(b => ({
-            egid: b.egid,
-            address: b.matched_address || b.address,
-            traufhoehe_m: b.traufhoehe_m,
-            firsthoehe_m: b.firsthoehe_m,
-            coordinates: b.coordinates,
-            egid_source: 'swissBUILDINGS3D',
-          }))
-          setBuildings(buildingEntries)
-
-          // Use first building for geodata display
-          const firstBuilding = resolved.buildings[0]
-          setGeodata({
-            egid: firstBuilding.egid,
-            address: firstBuilding.matched_address || firstBuilding.address,
-            traufhoehe_m: firstBuilding.traufhoehe_m,
-            firsthoehe_m: firstBuilding.firsthoehe_m,
-          })
-          setLoadingStates((s) => ({ ...s, building3d: 'success', terrain: 'loading', research: 'loading' }))
-
-          // For multi-address projects, enrichment is done per-building when configuring
-          // Mark as success since the basic data is loaded
-          await new Promise((r) => setTimeout(r, 100))
-          setLoadingStates((s) => ({ ...s, terrain: 'success', research: 'success' }))
-        } else {
-          setError(`Keine Gebäude gefunden für: ${data.address}`)
-          setLoadingStates((s) => ({ ...s, building3d: 'error', terrain: 'error', research: 'error' }))
-        }
-
-        // Store address errors for display
-        if (resolved.errors && resolved.errors.length > 0) {
-          setAddressErrors(resolved.errors.map(e => ({ address: e, error: 'Adresse nicht gefunden' })))
-        }
+        const firstBuilding = resolved.buildings[0]
+        setGeodata({
+          egid: firstBuilding.egid,
+          address: firstBuilding.matched_address || firstBuilding.address,
+          traufhoehe_m: firstBuilding.traufhoehe_m,
+          firsthoehe_m: firstBuilding.firsthoehe_m,
+        })
+        setLoadingStates((s) => ({ ...s, building3d: 'success', enrichment: 'success', research: 'success' }))
       } else {
-        // Single Address: Use existing loadGeodata
-        await new Promise((r) => setTimeout(r, 100))
-        setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
+        setError(`Keine Gebäude gefunden für: ${address}`)
+        setLoadingStates((s) => ({ ...s, building3d: 'error', enrichment: 'error', research: 'error' }))
+      }
 
-        await new Promise((r) => setTimeout(r, 100))
-        setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
-
-        // Show research status while loading (Backend macht beides parallel)
-        setLoadingStates((s) => ({ ...s, terrain: 'loading', research: 'loading' }))
-        setResearchStatus('checking_known')
-
-        const result = await loadGeodata(data.address)
-        setLoadingStates((s) => ({ ...s, building3d: 'success' }))
-        setGeodata(result)
-
-        if (!result) {
-          setError('Keine Gebäudedaten gefunden')
-          setLoadingStates((s) => ({ ...s, terrain: 'error', research: 'error' }))
-          setResearchStatus('done')
-        } else {
-          // Update research status based on actual result
-          if (result.research_source === 'known_buildings') {
-            setResearchStatus('done')
-          } else if (result.research_source === 'claude_api') {
-            setResearchStatus('calling_claude')
-            await new Promise((r) => setTimeout(r, 200)) // Brief pause to show Claude status
-            setResearchStatus('done')
-          } else {
-            setResearchStatus('done')
-          }
-
-          // Mark terrain and research as success
-          setLoadingStates((s) => ({
-            ...s,
-            terrain: result.terrain_height_m ? 'success' : 'success', // Even without terrain, mark as success
-            research: result.zones && result.zones.length > 0 ? 'success' : 'success',
-          }))
-        }
+      if (resolved.errors && resolved.errors.length > 0) {
+        setAddressErrors(resolved.errors.map(e => ({ address: e, error: 'Adresse nicht gefunden' })))
       }
     } catch (err) {
       console.error('Fehler beim Laden der Grunddaten:', err)
       setError('Fehler beim Laden der Grunddaten')
-      setLoadingStates({
-        geocoding: 'error',
-        gwr: 'error',
-        building3d: 'error',
-        terrain: 'error',
-        research: 'error',
-      })
-      setResearchStatus('done')
+      setLoadingStates({ geocoding: 'error', gwr: 'error', building3d: 'error', enrichment: 'error', research: 'error' })
     } finally {
-      setIsLoading(false)
+      setIsLoadingMulti(false)
     }
-  }
+  }, [])
 
+  // ==========================================================================
+  // Start Loading - Entscheidung Single vs Multi
+  // ==========================================================================
+  const loadData = useCallback(() => {
+    if (!data.address) return
+
+    setError(null)
+    setGeodata(null)
+    setBuildings([])
+    setAddressErrors([])
+    setResearchStatus('idle')
+    setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending', enrichment: 'pending', research: 'pending' })
+
+    // Check if address contains a range (e.g., "2-10" or "1-9")
+    const hasRange = /\d+\s*-\s*\d+/.test(data.address)
+
+    if (hasRange) {
+      setIsMultiAddress(true)
+      loadMultiAddress(data.address)
+    } else {
+      setIsMultiAddress(false)
+      startStream(data.address)
+    }
+  }, [data.address, loadMultiAddress, startStream])
+
+  // Initial load
   useEffect(() => {
     loadData()
-  }, [data.address])
+  }, [data.address])  // Only re-run when address changes, not loadData
 
   // Notify parent when loading completes
   useEffect(() => {
@@ -197,7 +250,7 @@ export default function GeodataStep({
         loadingStates.geocoding === 'success' &&
         loadingStates.gwr === 'success' &&
         loadingStates.building3d === 'success' &&
-        (loadingStates.terrain === 'success' || loadingStates.terrain === 'pending') &&
+        (loadingStates.enrichment === 'success' || loadingStates.enrichment === 'pending') &&
         (loadingStates.research === 'success' || loadingStates.research === 'pending')
       onLoadComplete(allSuccess)
     }
@@ -213,58 +266,6 @@ export default function GeodataStep({
         return <AlertCircle className="w-4 h-4 text-red-500" />
       default:
         return <div className="w-4 h-4 rounded-full bg-gray-200" />
-    }
-  }
-
-  // Research Source Badge - zeigt woher die Daten stammen
-  const getResearchSourceBadge = (researchSource?: string) => {
-    switch (researchSource) {
-      case 'known_buildings':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-            <Zap className="w-3 h-3" />
-            Bekanntes Gebäude
-          </span>
-        )
-      case 'claude_api':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-            <Bot className="w-3 h-3" />
-            Claude analysiert
-          </span>
-        )
-      case 'cache':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-            <Database className="w-3 h-3" />
-            Aus Cache
-          </span>
-        )
-      case 'auto':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <Settings className="w-3 h-3" />
-            Automatisch
-          </span>
-        )
-      default:
-        return null
-    }
-  }
-
-  // Position Label für Zonen
-  const getPositionLabel = (position?: string) => {
-    switch (position) {
-      case 'vorne':
-        return 'Front'
-      case 'zentral':
-        return 'Zentral'
-      case 'hinten':
-        return 'Hinten'
-      case 'flankierend':
-        return 'Seite'
-      default:
-        return null
     }
   }
 
@@ -293,10 +294,19 @@ export default function GeodataStep({
           </div>
           <div className="flex items-center gap-3">
             {getStatusIcon(loadingStates.building3d)}
-            <span className="text-sm">3D-Daten laden</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">3D-Daten laden</span>
+              {/* Tile-Download Indikator */}
+              {isDownloading && loadingStates.building3d === 'loading' && (
+                <span className="text-xs text-blue-600 font-medium inline-flex items-center gap-1">
+                  <Download className="w-3 h-3 animate-bounce" />
+                  Lade Gebäudedaten von swisstopo...
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            {getStatusIcon(loadingStates.terrain)}
+            {getStatusIcon(loadingStates.enrichment)}
             <span className="text-sm">Terrain & Hanglage</span>
           </div>
           <div className="flex items-center gap-3">
@@ -409,149 +419,8 @@ export default function GeodataStep({
         </div>
       )}
 
-      {/* Building Data Card - Single Address */}
-      {!isMultiAddress && geodata && (
-        <div className="card border-green-200 bg-green-50">
-          {/* Header mit Gebäudename und Research-Source Badge */}
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="font-medium text-green-800 flex items-center gap-2">
-                {geodata.building_name ? (
-                  <>
-                    <Landmark className="w-5 h-5" />
-                    {geodata.building_name}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Gebäude gefunden
-                  </>
-                )}
-              </h3>
-              {geodata.complexity === 'complex' && (
-                <span className="text-xs text-green-600 mt-0.5">Komplexes Gebäude</span>
-              )}
-            </div>
-            {getResearchSourceBadge(geodata.research_source)}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            {geodata.egid && (
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">EGID:</span>{' '}
-                  <strong>{geodata.egid}</strong>
-                </div>
-              </div>
-            )}
-
-            {geodata.traufhoehe_m && (
-              <div className="flex items-center gap-2">
-                <Ruler className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Traufhöhe:</span>{' '}
-                  <strong>{geodata.traufhoehe_m.toFixed(1)} m</strong>
-                </div>
-              </div>
-            )}
-
-            {geodata.firsthoehe_m && (
-              <div className="flex items-center gap-2">
-                <Ruler className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Firsthöhe:</span>{' '}
-                  <strong>{geodata.firsthoehe_m.toFixed(1)} m</strong>
-                </div>
-              </div>
-            )}
-
-            {geodata.area_m2 && (
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Fläche:</span>{' '}
-                  <strong>{geodata.area_m2.toFixed(0)} m²</strong>
-                </div>
-              </div>
-            )}
-
-            {geodata.perimeter_m && (
-              <div className="flex items-center gap-2">
-                <Ruler className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Umfang:</span>{' '}
-                  <strong>{geodata.perimeter_m.toFixed(1)} m</strong>
-                </div>
-              </div>
-            )}
-
-            {/* Enrichment: Terrain */}
-            {geodata.terrain_height_m && (
-              <div className="flex items-center gap-2">
-                <Mountain className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Geländehöhe:</span>{' '}
-                  <strong>{geodata.terrain_height_m.toFixed(1)} m ü.M.</strong>
-                </div>
-              </div>
-            )}
-
-            {/* Enrichment: Hanglage */}
-            {geodata.slope_class && (
-              <div className="flex items-center gap-2">
-                <Mountain className="w-4 h-4 text-green-600" />
-                <div>
-                  <span className="text-green-700">Hanglage:</span>{' '}
-                  <strong>
-                    {geodata.slope_class}
-                    {geodata.slope_m !== undefined && ` (${geodata.slope_m.toFixed(1)}m)`}
-                  </strong>
-                </div>
-              </div>
-            )}
-
-            {/* Enrichment: Zonen */}
-            {geodata.zones && geodata.zones.length > 1 && (
-              <div className="col-span-2 mt-2 pt-2 border-t border-green-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Box className="w-4 h-4 text-green-600" />
-                  <span className="text-green-700 font-medium">
-                    {geodata.zones.length} Gebäudezonen erkannt
-                  </span>
-                </div>
-                <div className="space-y-1 text-xs">
-                  {geodata.zones.map((zone) => (
-                    <div
-                      key={zone.id}
-                      className="flex items-center justify-between p-1.5 bg-white rounded border border-green-100"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{zone.name}</span>
-                        {zone.position && (
-                          <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600 text-[10px]">
-                            {getPositionLabel(zone.position)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <span>
-                          {zone.firsthoehe_m?.toFixed(1) || zone.traufhoehe_m?.toFixed(1) || zone.gebaeudehoehe_m?.toFixed(1) || '–'} m
-                        </span>
-                        {zone.sonderkonstruktion && (
-                          <span className="px-1 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px]">
-                            Spezial
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Building Data Card - Single Address (Shared Component) */}
+      {!isMultiAddress && geodata && <BuildingDataCard geodata={geodata} />}
 
       {/* Error State */}
       {error && !isLoading && (

@@ -283,6 +283,19 @@ export function simplifyPolygon(
     epsilon = calculateDynamicEpsilon(points);
   }
 
+  // epsilon === 0 means NO simplification (Original)
+  if (epsilon === 0) {
+    const sides = calculateSides(points);
+    return {
+      originalPoints: originalCount,
+      simplifiedPoints: points.length,
+      polygon: points,
+      sides,
+      epsilon: 0,
+      angleToleranceDeg: 0,
+    };
+  }
+
   // Winkeltoleranz bestimmen
   const angleToleranceDeg = options.angleTolerance ?? getAngleToleranceForEpsilon(epsilon);
 

@@ -1,13 +1,15 @@
 """
 Test-Case: Knospenweg Datenintegrität
 
-VERALTET (04.01.2026): Diese Tests prüften building_geodata.db, die nicht mehr existiert.
-Die Gebäudedaten werden jetzt im smart_building_cache (building_contexts.db) gespeichert.
-Der Test wird automatisch übersprungen, wenn die DB nicht existiert.
+VERALTET (08.01.2026): Diese Tests sind obsolet.
 
-Ursprünglicher Zweck:
-Prüft, dass alle 10 Knospenweg-Gebäude (1-10) korrekt in der DB gespeichert sind
-und ohne erneuten STAC-Download abgerufen werden können.
+Historischer Hintergrund:
+- building_geodata.db wurde entfernt (siehe OPT-001 in known-bugs.md)
+- Gebäudedaten werden jetzt in building_3d.db gespeichert (via tile_prefetch)
+- Die Tabellen-Struktur hat sich grundlegend geändert
+
+Diese Test-Datei wird bei allen Tests übersprungen (kein building_geodata.db).
+Die Tests können gelöscht werden sobald die Migration vollständig verifiziert ist.
 """
 
 import pytest

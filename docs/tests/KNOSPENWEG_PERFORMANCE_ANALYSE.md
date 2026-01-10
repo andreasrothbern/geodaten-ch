@@ -38,7 +38,7 @@
 
 ### 2. DB-Performance (Direkter Zugriff)
 
-Alle 10 Knospenweg-Gebäude sind in `building_geodata.db` gespeichert:
+Alle 10 Knospenweg-Gebäude sind in `building_3d.db` gespeichert (via tile_prefetch):
 
 | EGID | Adresse | Traufhöhe | Firsthöhe | Polygon | Lookup |
 |------|---------|-----------|-----------|---------|--------|
@@ -103,12 +103,12 @@ curl "http://localhost:8000/api/v1/geruestbau/address/resolve?address=Knospenweg
 # Single Building Test
 curl "http://localhost:8000/api/v1/geruestbau/configurator/facades?address=Knospenweg%203,%20Bern"
 
-# DB Performance Test
+# DB Performance Test (HINWEIS: Tabelle jetzt buildings_3d in building_3d.db)
 python -c "
 import sqlite3
-conn = sqlite3.connect('backend/app/data/building_geodata.db')
+conn = sqlite3.connect('backend/app/data/building_3d.db')
 cursor = conn.cursor()
-cursor.execute('SELECT egid, traufhoehe_m, firsthoehe_m FROM buildings WHERE egid = ?', ('1243789',))
+cursor.execute('SELECT egid, traufhoehe_m, firsthoehe_m FROM buildings_3d WHERE egid = ?', ('1243789',))
 print(cursor.fetchone())
 "
 ```

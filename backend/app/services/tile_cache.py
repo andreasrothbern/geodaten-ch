@@ -4,24 +4,22 @@ Tile Cache Service
 
 Persistenter Cache für swissBUILDINGS3D Tiles (GDB-Dateien).
 
-Architektur (3 Stufen):
-  1. EGID → Tile-ID Index (SQLite)
-  2. Koordinaten → Tile-ID (Berechnung, kein API-Call!)
-  3. Tile-ID → Lokaler Pfad (Disk-Cache)
+Architektur (2 Stufen):
+  1. Koordinaten → Tile-ID (Berechnung, kein API-Call!)
+  2. Tile-ID → Lokaler Pfad (Disk-Cache)
+
+EGID-Lookups erfolgen über building_3d.db (nicht mehr hier).
+Siehe tile_prefetch.py für das Befüllen von building_3d.db.
 
 Vorteile:
   - Tile-Download nur 1x pro Tile (statt bei jedem Request)
-  - EGID-Lookup ohne GDB-Parsing (nach erstem Import)
   - ~8-15s → ~1ms für gecachte Gebäude
 """
 
 import sqlite3
-import os
 import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime
-from contextlib import contextmanager
+from typing import Optional, Dict, Any, Tuple
 
 # Pfade
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -78,8 +76,10 @@ class TileCacheService:
     Service für persistenten Tile-Cache.
 
     Speichert:
-    - tiles.db: Index (tile_id → Metadaten, egid → tile_id)
+    - tiles.db: Tile-Metadaten (tile_id → local_path, bbox, etc.)
     - tiles/: GDB-Verzeichnisse (tile_id.gdb/)
+
+    HINWEIS: EGID-Lookups erfolgen über building_3d.db (siehe tile_prefetch.py).
     """
 
     def __init__(self):
@@ -112,22 +112,9 @@ class TileCacheService:
                 )
             """)
 
-            # EGID → Tile-ID Index
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS egid_tile_index (
-                    egid INTEGER PRIMARY KEY,
-                    tile_id TEXT NOT NULL,
-                    lv95_e REAL,
-                    lv95_n REAL,
-                    FOREIGN KEY (tile_id) REFERENCES tiles(tile_id)
-                )
-            """)
-
-            # Index für schnelle Tile-Lookups
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_egid_tile
-                ON egid_tile_index(tile_id)
-            """)
+            # HINWEIS: egid_tile_index wurde entfernt (08.01.2026)
+            # EGID-Lookups erfolgen jetzt über building_3d.db
+            # Alte Tabelle wird bei clear_cache() mit gelöscht
 
             conn.commit()
 
@@ -233,51 +220,11 @@ class TileCacheService:
 
         return target_path
 
-    def register_egid(self, egid: int, tile_id: str, e: float = None, n: float = None):
-        """
-        Registriert eine EGID → Tile-ID Zuordnung.
-
-        Wird nach GDB-Parsing aufgerufen.
-        """
-        with sqlite3.connect(TILE_CACHE_DB) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO egid_tile_index
-                (egid, tile_id, lv95_e, lv95_n)
-                VALUES (?, ?, ?, ?)
-            """, (egid, tile_id, e, n))
-            conn.commit()
-
-    def bulk_register_egids(self, entries: List[Dict[str, Any]], tile_id: str):
-        """
-        Registriert mehrere EGIDs auf einmal.
-
-        Args:
-            entries: Liste von {egid, lv95_e, lv95_n}
-            tile_id: Zugehöriges Tile
-        """
-        if not entries:
-            return
-
-        with sqlite3.connect(TILE_CACHE_DB) as conn:
-            cursor = conn.cursor()
-            cursor.executemany("""
-                INSERT OR REPLACE INTO egid_tile_index
-                (egid, tile_id, lv95_e, lv95_n)
-                VALUES (:egid, :tile_id, :lv95_e, :lv95_n)
-            """, [{**e, "tile_id": tile_id} for e in entries])
-
-            # Building-Count im Tile aktualisieren
-            cursor.execute("""
-                UPDATE tiles SET building_count = ?
-                WHERE tile_id = ?
-            """, (len(entries), tile_id))
-
-            conn.commit()
-
     def get_tile_for_egid(self, egid: int) -> Optional[str]:
         """
-        Findet das Tile für eine EGID (O(1) Lookup).
+        Findet das Tile für eine EGID.
+
+        OPTIMIERT 07.01.2026: Nutzt jetzt building_3d.db statt egid_tile_index.
 
         Args:
             egid: Eidgenössischer Gebäudeidentifikator
@@ -285,14 +232,22 @@ class TileCacheService:
         Returns:
             Tile-ID oder None
         """
-        with sqlite3.connect(TILE_CACHE_DB) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT tile_id FROM egid_tile_index WHERE egid = ?",
-                (egid,)
-            )
-            result = cursor.fetchone()
-            return result[0] if result else None
+        # Nutze building_3d.db statt egid_tile_index
+        building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
+        if not building_3d_db.exists():
+            return None
+
+        try:
+            with sqlite3.connect(building_3d_db) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT tile_id FROM buildings_3d WHERE egid = ?",
+                    (egid,)
+                )
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception:
+            return None
 
     def get_stats(self) -> Dict[str, Any]:
         """Gibt Cache-Statistiken zurück."""
@@ -302,10 +257,6 @@ class TileCacheService:
             # Tile-Anzahl
             cursor.execute("SELECT COUNT(*) FROM tiles")
             tile_count = cursor.fetchone()[0]
-
-            # EGID-Anzahl
-            cursor.execute("SELECT COUNT(*) FROM egid_tile_index")
-            egid_count = cursor.fetchone()[0]
 
             # Gesamtgrösse
             cursor.execute("SELECT COALESCE(SUM(file_size_mb), 0) FROM tiles")
@@ -328,14 +279,27 @@ class TileCacheService:
                 for row in cursor.fetchall()
             ]
 
-            return {
-                "tile_count": tile_count,
-                "egid_count": egid_count,
-                "total_size_mb": round(total_size_mb, 2),
-                "tiles_dir": str(TILES_DIR),
-                "db_path": str(TILE_CACHE_DB),
-                "recent_tiles": recent
-            }
+        # EGID-Anzahl aus building_3d.db (OPTIMIERT 07.01.2026)
+        egid_count = 0
+        building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
+        if building_3d_db.exists():
+            try:
+                with sqlite3.connect(building_3d_db) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM buildings_3d")
+                    egid_count = cursor.fetchone()[0]
+            except Exception:
+                pass
+
+        return {
+            "tile_count": tile_count,
+            "egid_count": egid_count,
+            "egid_source": "building_3d.db",  # Neu: Zeigt woher die Zählung kommt
+            "total_size_mb": round(total_size_mb, 2),
+            "tiles_dir": str(TILES_DIR),
+            "db_path": str(TILE_CACHE_DB),
+            "recent_tiles": recent
+        }
 
     def clear_cache(self, older_than_days: int = None) -> int:
         """
@@ -367,15 +331,17 @@ class TileCacheService:
                 if path.exists():
                     shutil.rmtree(path, ignore_errors=True)
 
-                # DB-Einträge löschen
-                cursor.execute(
-                    "DELETE FROM egid_tile_index WHERE tile_id = ?",
-                    (tile_id,)
-                )
+                # DB-Eintrag löschen
                 cursor.execute(
                     "DELETE FROM tiles WHERE tile_id = ?",
                     (tile_id,)
                 )
+
+            # Alte egid_tile_index Tabelle löschen falls noch vorhanden
+            try:
+                cursor.execute("DROP TABLE IF EXISTS egid_tile_index")
+            except Exception:
+                pass
 
             conn.commit()
             return len(tiles_to_delete)

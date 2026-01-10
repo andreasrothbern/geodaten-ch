@@ -3655,6 +3655,7 @@ async def get_smart_building_data(
             # Meta
             "data_sources": [s.value for s in bundle.data_sources],
             "overall_quality": bundle.overall_quality.value if bundle.overall_quality else None,
+            "research_source": bundle.research_source,
             "research_confidence": bundle.research_confidence,
             "analysis_confidence": bundle.analysis_confidence,
             "warnings": bundle.warnings,

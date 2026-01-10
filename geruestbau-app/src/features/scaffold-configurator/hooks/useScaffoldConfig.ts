@@ -159,7 +159,7 @@ const createFacadeElement = (
     levels,
     // Fallback color for unknown direction codes (supports both German NO/O/SO and English NE/E/SE)
     color: FACADE_COLORS[facade.direction] || '#6B7280',  // gray-500 as fallback
-    enabled: true, // All facades enabled by default
+    enabled: false, // No facades enabled by default - user must select
     modifications: {
       removed_cells: new Set<string>(),
       lift_position: null,
@@ -183,7 +183,7 @@ const createCornerElement = (
   connects,
   corner_posts: 4,
   diagonals: maxLevels * 2,
-  enabled: true,
+  enabled: false, // Corners disabled by default (depend on facade selection)
 });
 
 const createElementsFromFacades = (

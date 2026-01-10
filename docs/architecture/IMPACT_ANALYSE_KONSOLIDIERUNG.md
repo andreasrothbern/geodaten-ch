@@ -105,7 +105,7 @@ interface ProjectWithGeodata {
 interface ProjectWithGeodata {
     id: string;
     buildings: BuildingEntry[];
-    geodata: {...};  // Aus building_geodata.db
+    geodata: {...};  // Aus building_3d.db (via tile_prefetch)
     // Terrain/Hanglage: GET /building/{egid}/environment
 }
 ```
@@ -229,7 +229,7 @@ interface ProjectWithGeodata {
 
 ```
 1. GET /projects/{id}
-   → Project + geodata (aus building_geodata.db)
+   → Project + geodata (aus building_3d.db via tile_prefetch)
 
 2. Falls keine geodata:
    GET /configurator/facades?address=...
@@ -297,10 +297,14 @@ GET /smart-building/data?address=...&include_terrain=true
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  building_contexts.db (pro EGID - ändert sich nicht)           │
+│  building_3d.db (Gebäude-Grunddaten via tile_prefetch)         │
 ├─────────────────────────────────────────────────────────────────┤
-│  buildings              → Stammdaten, Koordinaten               │
-│  building_geodata.db    → Polygon, Höhen (Grunddaten)          │
+│  buildings_3d           → EGID, Polygon, Höhen, Koordinaten     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  building_contexts.db (Enrichment pro EGID)                    │
+├─────────────────────────────────────────────────────────────────┤
 │  building_contexts      → Zonen (Claude/known_buildings)        │
 │  building_environment   → Terrain, Hanglage                     │
 │  svg_cache              → Generierte SVGs                       │

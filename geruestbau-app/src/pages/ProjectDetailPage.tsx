@@ -9,8 +9,8 @@ import {
   Calendar,
   ArrowRight,
   Layers,
-  CheckCircle2,
 } from 'lucide-react'
+import BuildingDataCard from '../components/ui/BuildingDataCard'
 import { geruestbauApi } from '../api/geruestbau'
 import type { ProjectWithGeodata } from '../types/project'
 
@@ -153,7 +153,7 @@ export default function ProjectDetailPage() {
       {/* Next Step Action - prominent CTA */}
       {needsScaffoldConfig && (
         <button
-          onClick={() => navigate(`/configurator?projectId=${id}`)}
+          onClick={() => navigate(`/configurator?projectId=${id}`, { state: { project } })}
           className="w-full card bg-red-600 text-white hover:bg-red-700 transition-colors"
         >
           <div className="flex items-center justify-between">
@@ -169,44 +169,9 @@ export default function ProjectDetailPage() {
         </button>
       )}
 
-      {/* Gebaeudedaten */}
+      {/* Gebäudedaten - Shared Component */}
       {project.geodata && (
-        <div className="card">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            Gebaeudedaten
-          </h3>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {project.geodata.traufhoehe_m && (
-              <div>
-                <span className="text-gray-500">Traufhoehe:</span>
-                <span className="font-medium ml-2">
-                  {project.geodata.traufhoehe_m.toFixed(1)} m
-                </span>
-              </div>
-            )}
-            {project.geodata.firsthoehe_m && (
-              <div>
-                <span className="text-gray-500">Firsthoehe:</span>
-                <span className="font-medium ml-2">
-                  {project.geodata.firsthoehe_m.toFixed(1)} m
-                </span>
-              </div>
-            )}
-            {project.geodata.area_m2 && (
-              <div>
-                <span className="text-gray-500">Flaeche:</span>
-                <span className="font-medium ml-2">{project.geodata.area_m2.toFixed(0)} m²</span>
-              </div>
-            )}
-            {project.geodata.perimeter_m && (
-              <div>
-                <span className="text-gray-500">Umfang:</span>
-                <span className="font-medium ml-2">{project.geodata.perimeter_m.toFixed(1)} m</span>
-              </div>
-            )}
-          </div>
-        </div>
+        <BuildingDataCard geodata={project.geodata} egid={project.egid} />
       )}
 
       {/* Aktionen */}
@@ -220,6 +185,7 @@ export default function ProjectDetailPage() {
         </Link>
         <Link
           to={`/configurator?projectId=${id}`}
+          state={{ project }}
           className="card flex flex-col items-center py-6"
         >
           <Ruler className="text-primary-600 mb-2" size={32} />

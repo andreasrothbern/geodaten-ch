@@ -498,7 +498,8 @@ python -m pytest tests/test_geruestbau_e2e.py -v -m "not slow"
 |-----------|----------|----------|
 | `geruestbau.db` | `projects`, `photos` | ProjectService |
 | `building_contexts.db` | `smart_building_cache`, `building_environment` | SmartBuildingService |
-| `tiles.db` | `egid_tile_index` | NeighborsService |
+| `tiles.db` | `tiles` (Metadaten) | TileCacheService |
+| `building_3d.db` | `buildings_3d` | NeighborsService, tile_prefetch |
 
 ---
 

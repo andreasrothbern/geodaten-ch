@@ -9,16 +9,15 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData, type BlockedFacadesResponse } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
 import type { SelectedFacade, RoofData, BuildingZone } from '../features/scaffold-configurator/types/scaffold.types';
-import { simplifyPolygon, sidesToFacades } from '../features/scaffold-configurator/utils/polygonSimplifier';
 
 interface ConfiguratorBuildingData {
   project_id: string;
@@ -179,7 +178,8 @@ function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildin
 function extractPolygon(geodata: Geodata): [number, number][] | null {
   const rawPolygon = geodata.polygon;
   if (!rawPolygon || rawPolygon.length < 3) return null;
-  return rawPolygon;
+  // Cast to expected type - each coordinate should be [e, n]
+  return rawPolygon as [number, number][];
 }
 
 // Helper: Get height values from geodata
@@ -249,12 +249,24 @@ function convertGeodataToConfiguratorFormat(
   // Get EGID from geodata or project
   const egid = geodata.egid ?? project.egid ?? 'unknown';
 
+  // Convert ZoneInfo from geodata to BuildingZone format
+  const zones: BuildingZone[] = (geodata.zones ?? []).map((z, i) => ({
+    id: z.id || `zone_${i + 1}`,
+    name: z.name,
+    zone_type: z.zone_type,
+    position: z.position,
+    traufhoehe_m: z.traufhoehe_m,
+    firsthoehe_m: z.firsthoehe_m,
+    beruesten: z.beruesten ?? true,
+    sonderkonstruktion: z.sonderkonstruktion ?? false,
+  }));
+
   return {
     project_id: project.id,
     building: {
       egid,
       address: geodata.address ?? project.address,
-      name: project.name,
+      name: geodata.building_name || project.name,
       polygon: polygon,
       // polygon_original wird separat von der API geholt (nicht im Projekt gespeichert)
       trauf_height_m: traufHeight,
@@ -264,6 +276,11 @@ function convertGeodataToConfiguratorFormat(
     },
     selected_facades: facades,
     roof: undefined,  // Roof data is fetched fresh from API
+    // Zonen-Daten für komplexe Gebäude (FIX 05.01.2026)
+    zones: zones,
+    building_name: geodata.building_name,
+    complexity: geodata.complexity ?? 'simple',
+    research_source: geodata.research_source ?? 'unknown',
     metadata: {
       source: preSelectedFacades ? 'facade_selection' : 'geodata_cache',
       polygon_points: polygon.length,
@@ -274,6 +291,9 @@ function convertGeodataToConfiguratorFormat(
       roof_surfaces_count: 0,
       height_source: 'geodata_cache',
       confidence: 1.0,
+      // Zonen-Metadaten (NEU)
+      zones_count: zones.length,
+      research_source: geodata.research_source,
     },
   };
 }
@@ -281,9 +301,13 @@ function convertGeodataToConfiguratorFormat(
 export default function ConfiguratorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
 
   // Get projectId from URL if present
   const projectId = searchParams.get('projectId');
+
+  // Get project from Router State (passed from ProjectDetailPage)
+  const passedProject = location.state?.project as ProjectWithGeodata | undefined;
 
   // State
   const [address, setAddress] = useState(searchParams.get('address') || '');
@@ -293,13 +317,13 @@ export default function ConfiguratorPage() {
   const [project, setProject] = useState<ProjectWithGeodata | null>(null);
 
   // Neighbors State (Phase 2)
-  const [neighborsRadius, setNeighborsRadius] = useState<number>(0); // 0 = off, 5 = near, 10 = context
+  // Default to 0 (off) - neighbors loaded on-demand when user selects radius
+  const [neighborsRadius, setNeighborsRadius] = useState<number>(0); // 0 = off (default), 20/50/100 = context radius
   const [neighbors, setNeighbors] = useState<NeighborBuilding[]>([]);
   const [blockedSides, setBlockedSides] = useState<string[]>([]);
+  const [blockedFacadeIndices, setBlockedFacadeIndices] = useState<number[]>([]); // NEU: Fassaden-Indizes
+  const [blockedFacadesData, setBlockedFacadesData] = useState<BlockedFacadesResponse | null>(null); // Details pro blockierte Fassade
   const [neighborsLoading, setNeighborsLoading] = useState(false);
-
-  // Polygon Simplification State
-  const [simplifyEpsilon, setSimplifyEpsilon] = useState<number | null>(null); // null = dynamic
 
   // Multi-Building State (Phase 3)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
@@ -308,14 +332,51 @@ export default function ConfiguratorPage() {
   const [additionalBuildings, setAdditionalBuildings] = useState<MultiBuildingData[]>([]);
   const [loadingAdditionalBuildings, setLoadingAdditionalBuildings] = useState(false);
 
-  // Load project data if projectId is provided
+  // Load project data: prefer Router State, fallback to API
   useEffect(() => {
-    if (projectId) {
+    if (passedProject) {
+      // Use project from Router State (no API call needed!)
+      console.log('Using project from Router State (no API call)');
+      handleProjectLoaded(passedProject);
+    } else if (projectId) {
+      // Fallback: Load from API (for direct links, bookmarks, reload)
+      console.log('Loading project from API (fallback for direct link)');
       loadProjectData(projectId);
     }
-  }, [projectId]);
+  }, [projectId, passedProject]);
 
-  // Load neighbors when building data is available and radius > 0
+  // Load blocked facades ALWAYS when building data is available
+  // This determines which facades are not selectable (disabled in UI)
+  useEffect(() => {
+    const loadBlockedFacades = async () => {
+      if (!buildingData?.building.egid) {
+        setBlockedFacadeIndices([]);
+        setBlockedFacadesData(null);
+        return;
+      }
+
+      try {
+        const blockedResponse = await geruestbauApi.getBlockedFacades(
+          buildingData.building.egid,
+          [], // keine EGIDs exkludieren (Single-Building Mode)
+          2.0 // Standard-Schwellenwert
+        );
+
+        setBlockedFacadesData(blockedResponse);
+        setBlockedFacadeIndices(blockedResponse.blocked_indices);
+        console.log(`Blocked facades: ${blockedResponse.blocked_indices.length}/${blockedResponse.total_facades}`);
+      } catch (err) {
+        console.warn('Failed to load blocked facades:', err);
+        setBlockedFacadeIndices([]);
+        setBlockedFacadesData(null);
+      }
+    };
+
+    loadBlockedFacades();
+  }, [buildingData?.building.egid]);
+
+  // Load neighbors ON-DEMAND when user selects radius > 0
+  // Used for context display in 2D and 3D views
   useEffect(() => {
     const loadNeighbors = async () => {
       if (!buildingData?.building.egid || neighborsRadius === 0) {
@@ -326,14 +387,15 @@ export default function ConfiguratorPage() {
 
       setNeighborsLoading(true);
       try {
-        const response = await geruestbauApi.getNeighbors(
+        const neighborsResponse = await geruestbauApi.getNeighbors(
           buildingData.building.egid,
           neighborsRadius,
-          true // include polygons for 3D view
+          true // include polygons for 2D/3D view
         );
-        setNeighbors(response.neighbors);
-        setBlockedSides(response.blocked_sides);
-        console.log(`Loaded ${response.neighbors.length} neighbors (radius: ${neighborsRadius}m), blocked: ${response.blocked_sides.join(', ')}`);
+
+        setNeighbors(neighborsResponse.neighbors);
+        setBlockedSides(neighborsResponse.blocked_sides);
+        console.log(`Loaded ${neighborsResponse.neighbors.length} neighbors (radius: ${neighborsRadius}m)`);
       } catch (err) {
         console.warn('Failed to load neighbors:', err);
         setNeighbors([]);
@@ -346,54 +408,58 @@ export default function ConfiguratorPage() {
     loadNeighbors();
   }, [buildingData?.building.egid, neighborsRadius]);
 
-  // Load project and use geodata from cache + fresh data for polygon_original
+  // Process loaded project and set building data
+  const handleProjectLoaded = async (loadedProject: ProjectWithGeodata) => {
+    setProject(loadedProject);
+
+    // Check if project has geodata from cache
+    if (loadedProject.geodata?.polygon) {
+      const configData = convertGeodataToConfiguratorFormat(
+        loadedProject,
+        loadedProject.geodata
+      );
+
+      if (configData) {
+        console.log('Using geodata from cache - polygon is ORIGINAL from swissBUILDINGS3D');
+
+        // Calculate roof from cached heights if not present
+        if (!configData.roof && loadedProject.geodata) {
+          const trauf = loadedProject.geodata.traufhoehe_m ?? 10;
+          const first = loadedProject.geodata.firsthoehe_m ?? trauf + 3;
+          const roofHeight = first - trauf;
+          const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
+
+          configData.roof = {
+            roof_type: roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil',
+            roof_angle_deg: roofAngle,
+            roof_orientation: 'N-S',
+            trauf_to_first_m: roofHeight,
+            scaffolding_height_m: first + 1,
+            confidence: 0.7,
+            traufhoehe_m: trauf,
+          };
+        }
+
+        setBuildingData(configData);
+        setLoadingState('success');
+        return;
+      }
+    }
+
+    // Fallback: Use address to fetch from API (project not enriched yet)
+    console.log('No geodata in cache, fetching from API');
+    setAddress(loadedProject.address);
+    await fetchBuildingData(loadedProject.address, loadedProject);
+  };
+
+  // Load project from API (fallback for direct links)
   const loadProjectData = async (id: string) => {
     setLoadingState('loading');
     setError(null);
 
     try {
       const loadedProject = await geruestbauApi.getProject(id);
-      setProject(loadedProject);
-
-      // Check if project has geodata from cache
-      if (loadedProject.geodata?.polygon) {
-        const configData = convertGeodataToConfiguratorFormat(
-          loadedProject,
-          loadedProject.geodata
-        );
-
-        if (configData) {
-          console.log('Using geodata from cache - polygon is ORIGINAL from swissBUILDINGS3D');
-
-          // Calculate roof from cached heights if not present
-          if (!configData.roof && loadedProject.geodata) {
-            const trauf = loadedProject.geodata.traufhoehe_m ?? 10;
-            const first = loadedProject.geodata.firsthoehe_m ?? trauf + 3;
-            const roofHeight = first - trauf;
-            const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
-
-            configData.roof = {
-              roof_type: roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil',
-              roof_angle_deg: roofAngle,
-              roof_orientation: 'N-S',
-              trauf_to_first_m: roofHeight,
-              scaffolding_height_m: first + 1,
-              confidence: 0.7,
-              traufhoehe_m: trauf,
-            };
-          }
-
-          setBuildingData(configData);
-          setLoadingState('success');
-          return;
-        }
-      }
-
-      // Fallback: Use address to fetch from API (project not enriched yet)
-      console.log('No geodata in cache, fetching from API');
-      setAddress(loadedProject.address);
-      await fetchBuildingData(loadedProject.address, loadedProject);
-
+      await handleProjectLoaded(loadedProject);
     } catch (err) {
       console.error('Error loading project:', err);
       setError(err instanceof Error ? err.message : 'Projekt konnte nicht geladen werden');
@@ -508,42 +574,6 @@ export default function ConfiguratorPage() {
       fetchBuildingData(address, project);
     }
   }, [address, fetchBuildingData, project]);
-
-  // Handle simplify epsilon change - LOCAL simplification (no API call!)
-  // IMPORTANT: This useCallback MUST be before any conditional returns!
-  const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
-    setSimplifyEpsilon(newEpsilon);
-
-    // Lokale Vereinfachung - kein API-Call!
-    if (buildingData?.building.polygon) {
-      const result = simplifyPolygon(buildingData.building.polygon, {
-        epsilon: newEpsilon,
-      });
-
-      // Fassaden aus vereinfachtem Polygon berechnen
-      const newFacades = sidesToFacades(
-        result.sides,
-        buildingData.building.trauf_height_m || 10
-      );
-
-      // BuildingData mit neuen Fassaden aktualisieren
-      setBuildingData({
-        ...buildingData,
-        selected_facades: newFacades,
-        metadata: {
-          ...buildingData.metadata,
-          polygon_points: result.originalPoints,
-          facade_count: newFacades.length,
-          // Zusätzliche Info über Vereinfachung
-          simplified_points: result.simplifiedPoints,
-          epsilon_used: result.epsilon,
-          angle_tolerance_deg: result.angleToleranceDeg,
-        },
-      });
-
-      console.log(`Polygon vereinfacht: ${result.originalPoints} -> ${result.simplifiedPoints} Punkte, ${newFacades.length} Fassaden (epsilon=${result.epsilon})`);
-    }
-  }, [buildingData]);
 
   // Convert API response to SelectedFacade format (including coordinates for 3D)
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
@@ -832,44 +862,6 @@ export default function ConfiguratorPage() {
       {/* Settings Bar */}
       <div className="bg-white border-b shadow-sm px-4 py-3">
         <div className="max-w-lg mx-auto space-y-3">
-          {/* Polygon Simplification */}
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-gray-700">
-              Polygon-Vereinfachung:
-            </label>
-            <div className="flex items-center gap-3">
-              {[
-                { value: null, label: 'Auto' },
-                { value: 0.3, label: '0.3m' },
-                { value: 0.5, label: '0.5m' },
-                { value: 1.0, label: '1.0m' },
-                { value: 2.0, label: '2.0m' },
-              ].map((option) => (
-                <button
-                  key={option.value ?? 'auto'}
-                  onClick={() => handleSimplifyChange(option.value)}
-                  className={`px-2 py-1 text-xs rounded-lg transition-colors ${
-                    simplifyEpsilon === option.value
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {buildingData?.metadata && (
-            <div className="text-xs text-gray-500 text-right">
-              {/* Zeige Original -> Vereinfacht -> Fassaden */}
-              {buildingData.metadata.simplified_points ? (
-                <>Polygon: {buildingData.metadata.polygon_points} → {buildingData.metadata.simplified_points} Punkte → {buildingData.selected_facades.length} Fassaden</>
-              ) : (
-                <>Polygon: {buildingData.metadata.polygon_points} Punkte → {buildingData.selected_facades.length} Fassaden</>
-              )}
-            </div>
-          )}
-
           {/* Neighbors Radius */}
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">
@@ -878,8 +870,9 @@ export default function ConfiguratorPage() {
             <div className="flex items-center gap-3">
               {[
                 { value: 0, label: 'Aus' },
-                { value: 5, label: '5m' },
-                { value: 10, label: '10m' },
+                { value: 20, label: '20m' },
+                { value: 50, label: '50m' },
+                { value: 100, label: '100m' },
               ].map((option) => (
                 <button
                   key={option.value}
@@ -921,6 +914,8 @@ export default function ConfiguratorPage() {
         roof={convertRoofData(buildingData)}
         neighbors={neighbors}
         blockedSides={blockedSides}
+        blockedFacadeIndices={blockedFacadeIndices}
+        blockedFacadesDetails={blockedFacadesData?.blocked_facades ?? []}
         additionalBuildings={additionalBuildings}
         // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
         zones={buildingData.zones}

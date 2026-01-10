@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
 import type { MainTab, SelectedFacade, RoofData, BuildingZone } from '../types/scaffold.types';
-import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
+import type { NeighborBuilding, MultiBuildingData, BlockedFacadeInfo } from '../../../api/geruestbau';
 
 // Panels
 import FacadePanel from './FacadePanel';
@@ -23,7 +23,9 @@ interface ScaffoldConfiguratorProps {
   selectedFacades: SelectedFacade[];
   roof?: RoofData;
   neighbors?: NeighborBuilding[];  // Neighboring buildings for 3D view
-  blockedSides?: string[];  // Facade directions blocked by neighbors
+  blockedSides?: string[];  // Facade directions blocked by neighbors (legacy, less precise)
+  blockedFacadeIndices?: number[];  // Facade indices blocked by neighbors (NEW, precise)
+  blockedFacadesDetails?: BlockedFacadeInfo[];  // Details zu blockierten Fassaden (Nachbar-EGID, Abstand)
   additionalBuildings?: MultiBuildingData[];  // Additional selected buildings for 3D view
   // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
   zones?: BuildingZone[];
@@ -42,6 +44,8 @@ export default function ScaffoldConfigurator({
   roof,
   neighbors = [],
   blockedSides = [],
+  blockedFacadeIndices = [],
+  blockedFacadesDetails = [],
   additionalBuildings = [],
   zones = [],
   complexity = 'simple',

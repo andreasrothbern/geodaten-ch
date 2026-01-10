@@ -41,7 +41,7 @@ from app.services.tile_cache import (
     get_tile_cache,
     lv95_to_tile_id,
 )
-from app.services.tile_prefetch import schedule_prefetch
+from app.services.tile_prefetch import schedule_prefetch, schedule_prefetch_with_neighbors
 
 logger = logging.getLogger(__name__)
 
@@ -582,8 +582,7 @@ async def fetch_height_for_coordinates(
             )
             data_path = cached_path
 
-            # EGIDs registrieren
-            _register_egids_from_tile(cached_path, tile_id, tile_cache)
+            # EGID-Registrierung erfolgt via schedule_prefetch() → building_3d.db
 
         finally:
             # Temporäres Verzeichnis löschen (Cache hat Kopie)
@@ -703,9 +702,10 @@ async def fetch_building_polygon_for_coordinates(
 
     This replaces geodienste.ch WFS and works for ALL Swiss cantons.
 
-    Optimierung: Verwendet Tile-Cache für persistente Speicherung.
-    - Erstes Mal: Download ~5-10s, dann Cache
-    - Danach: ~1ms aus lokalem Cache
+    3-STUFEN LOOKUP:
+    1. building_3d.db - Vorverarbeitete Daten (~1ms)
+    2. Tile-Cache GDB - Rohdatei parsen (~100-500ms)
+    3. STAC Download - Neu laden (~5-10s)
 
     Args:
         e: LV95 Easting
@@ -718,18 +718,46 @@ async def fetch_building_polygon_for_coordinates(
     # Ensure coordinates are in LV95 format
     e, n = ensure_lv95(e, n)
 
-    # Tile-Cache initialisieren
+    # ========================================
+    # STUFE 1: building_3d.db (~1ms)
+    # ========================================
+    try:
+        from app.services.building_3d_service import get_building_3d_service
+        building_3d = get_building_3d_service()
+        cached_building = building_3d.get_by_coordinates(e, n, tolerance_m)
+
+        if cached_building and cached_building.get('polygon'):
+            logger.info(f"[3-STUFEN] Stufe 1 HIT: EGID {cached_building.get('egid')} aus building_3d.db (~1ms)")
+
+            polygon = cached_building['polygon']
+            sides = _calculate_polygon_sides(polygon, simplify_epsilon)
+
+            return {
+                "egid": cached_building.get('egid'),
+                "polygon": polygon,
+                "sides": sides,
+                "perimeter_m": cached_building.get('perimeter_m'),
+                "area_m2": cached_building.get('area_m2'),
+                "traufhoehe_m": cached_building.get('traufhoehe_m'),
+                "firsthoehe_m": cached_building.get('firsthoehe_m'),
+                "gebaeudehoehe_m": cached_building.get('gebaeudehoehe_m'),
+                "tile_id": cached_building.get('tile_id'),
+                "source": "swissBUILDINGS3D_3.0",
+                "cache_hit": True,
+                "lookup_level": 1
+            }
+    except Exception as ex:
+        logger.debug(f"[3-STUFEN] Stufe 1 MISS: {ex}")
+
+    # ========================================
+    # STUFE 2: Tile-Cache GDB (~100-500ms)
+    # ========================================
     tile_cache = get_tile_cache()
-
-    # Tile-ID berechnen (KEIN API-Call!)
     tile_id = lv95_to_tile_id(e, n)
-
-    # Cache-Lookup
     cached_path = tile_cache.get_tile_path(tile_id)
 
     if cached_path and cached_path.exists():
-        # Cache-Hit: Direkt aus lokalem GDB laden
-        logger.info(f"Tile-Cache HIT: {tile_id} ({cached_path})")
+        logger.info(f"[3-STUFEN] Stufe 2: Tile {tile_id} - GDB parsen...")
         result = parse_gdb_for_building_polygon(
             cached_path, e, n, tolerance_m, simplify_epsilon
         )
@@ -738,6 +766,25 @@ async def fetch_building_polygon_for_coordinates(
             result["tile_id"] = tile_id
             result["source"] = "swissBUILDINGS3D_3.0"
             result["cache_hit"] = True
+            result["lookup_level"] = 2
+
+            # In building_3d.db speichern für Stufe 1 beim nächsten Mal
+            _save_to_building_3d(result, tile_id)
+
+            # FIX 10.01.2026: Prefetch auch bei Stufe 2 starten
+            # (falls building_3d.db noch nicht alle Gebäude enthält)
+            main_egid = result.get("egid")
+            center_e = result.get("coord_e") or e
+            center_n = result.get("coord_n") or n
+
+            schedule_prefetch_with_neighbors(
+                tile_id=tile_id,
+                gdb_path=cached_path,
+                center_e=center_e,
+                center_n=center_n,
+                main_egid=int(main_egid) if main_egid else None,
+                immediate_radius_m=5.0
+            )
 
         return result
 
@@ -768,8 +815,7 @@ async def fetch_building_polygon_for_coordinates(
 
         logger.info(f"Tile cached: {tile_id} -> {cached_path}")
 
-        # EGIDs im Tile registrieren (für O(1) Lookups später)
-        _register_egids_from_tile(cached_path, tile_id, tile_cache)
+        # EGIDs registrieren - ENTFERNT 07.01.2026 (schedule_prefetch ersetzt dies)
 
         # Parse with polygon extraction
         result = parse_gdb_for_building_polygon(
@@ -781,102 +827,30 @@ async def fetch_building_polygon_for_coordinates(
             result["source"] = "swissBUILDINGS3D_3.0"
             result["cache_hit"] = False
 
-            # 🔄 Background-Job: Alle anderen Gebäude im Tile vorladen
-            # Läuft async, blockiert nicht die Antwort
-            schedule_prefetch(
+            # 🔄 NEUE ARCHITEKTUR (10.01.2026): MINIMAL + ON-DEMAND
+            # 1. SOFORT: Direkte Nachbarn (5m) laden für blocked_facades
+            # 2. ASYNC: Restliche Gebäude im Hintergrund prefetchen
+            main_egid = result.get("egid")
+            center_e = result.get("coord_e") or e
+            center_n = result.get("coord_n") or n
+
+            immediate_count, background_started = schedule_prefetch_with_neighbors(
                 tile_id=tile_id,
                 gdb_path=cached_path,
-                exclude_egid=str(result.get("egid")) if result.get("egid") else None
+                center_e=center_e,
+                center_n=center_n,
+                main_egid=int(main_egid) if main_egid else None,
+                immediate_radius_m=5.0  # 5m Radius für blocked_facades
             )
+
+            result["immediate_neighbors_loaded"] = immediate_count
+            result["background_prefetch_started"] = bool(background_started)
 
         return result
 
     finally:
         # Temporäres Verzeichnis löschen (Cache hat Kopie)
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def _register_egids_from_tile(gdb_path: Path, tile_id: str, tile_cache) -> int:
-    """
-    Registriert alle EGIDs aus einem Tile im Index.
-
-    Wird nach dem ersten Download aufgerufen.
-    Ermöglicht später O(1) Lookups: EGID → Tile-ID.
-
-    Returns:
-        Anzahl registrierter EGIDs
-    """
-    try:
-        import geopandas as gpd
-        import fiona
-    except ImportError:
-        logger.warning("geopandas/fiona nicht verfügbar - EGID-Index übersprungen")
-        return 0
-
-    try:
-        layers = fiona.listlayers(gdb_path)
-
-        # Building-Layer finden
-        target_layer = None
-        for layer in layers:
-            if 'building' in layer.lower() and 'solid' in layer.lower():
-                target_layer = layer
-                break
-        if not target_layer:
-            for layer in layers:
-                if 'building' in layer.lower():
-                    target_layer = layer
-                    break
-        if not target_layer and layers:
-            target_layer = layers[0]
-
-        if not target_layer:
-            return 0
-
-        # Nur EGID und Geometrie lesen (schneller)
-        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
-
-        egid_entries = []
-        for _, row in gdf.iterrows():
-            egid = row.get('EGID')
-            geom = row.get('geometry')
-
-            if egid is None:
-                continue
-
-            try:
-                egid_int = int(egid)
-                if egid_int <= 0:
-                    continue
-            except (ValueError, TypeError):
-                continue
-
-            # Zentroid für Koordinaten
-            lv95_e, lv95_n = None, None
-            if geom is not None:
-                try:
-                    centroid = geom.centroid
-                    lv95_e = round(centroid.x, 1)
-                    lv95_n = round(centroid.y, 1)
-                except Exception:
-                    pass
-
-            egid_entries.append({
-                "egid": egid_int,
-                "lv95_e": lv95_e,
-                "lv95_n": lv95_n
-            })
-
-        # Bulk-Insert
-        if egid_entries:
-            tile_cache.bulk_register_egids(egid_entries, tile_id)
-            logger.info(f"EGID-Index: {len(egid_entries)} Einträge für Tile {tile_id}")
-
-        return len(egid_entries)
-
-    except Exception as e:
-        logger.error(f"EGID-Registrierung fehlgeschlagen: {e}")
-        return 0
 
 
 def parse_gdb_for_building_polygon(
@@ -1063,6 +1037,76 @@ def parse_gdb_for_building_polygon(
         return None
 
 
+def _calculate_polygon_sides(polygon: List[List[float]], simplify_epsilon: Optional[float] = None) -> List[Dict]:
+    """
+    Berechnet Fassaden-Seiten aus Polygon.
+
+    Args:
+        polygon: Liste von [e, n] Koordinaten
+        simplify_epsilon: Optional Vereinfachungs-Toleranz
+
+    Returns:
+        Liste von Seiten-Dicts mit Länge, Azimut, Richtung
+    """
+    if not polygon or len(polygon) < 3:
+        return []
+
+    try:
+        from app.services.polygon_simplifier import simplify_building_polygon
+        simplification = simplify_building_polygon(
+            polygon,
+            epsilon=simplify_epsilon,
+            use_dynamic_epsilon=(simplify_epsilon is None)
+        )
+        return simplification.sides
+    except Exception as e:
+        logger.warning(f"Polygon-Sides Berechnung fehlgeschlagen: {e}")
+        return []
+
+
+def _save_to_building_3d(result: Dict[str, Any], tile_id: str = None):
+    """
+    Speichert Gebäude in building_3d.db für Stufe 1 Lookup.
+
+    Args:
+        result: Dict mit Polygon, Höhen, etc. aus GDB-Parsing
+        tile_id: Tile-Referenz
+    """
+    try:
+        from app.services.building_3d_service import get_building_3d_service
+        building_3d = get_building_3d_service()
+
+        egid = result.get('egid')
+        if not egid:
+            return
+
+        # Zentroid berechnen
+        polygon = result.get('polygon')
+        center_e, center_n = None, None
+        if polygon and len(polygon) > 0:
+            center_e = sum(p[0] for p in polygon) / len(polygon)
+            center_n = sum(p[1] for p in polygon) / len(polygon)
+
+        building_3d.save({
+            'egid': egid,
+            'polygon': polygon,
+            'traufhoehe_m': result.get('traufhoehe_m'),
+            'firsthoehe_m': result.get('firsthoehe_m'),
+            'gebaeudehoehe_m': result.get('gebaeudehoehe_m'),
+            'area_m2': result.get('area_m2'),
+            'perimeter_m': result.get('perimeter_m'),
+            'center_e': center_e,
+            'center_n': center_n,
+            'tile_id': tile_id,
+            'source': 'swissBUILDINGS3D_3.0'
+        })
+
+        logger.debug(f"EGID {egid} in building_3d.db gespeichert")
+
+    except Exception as e:
+        logger.warning(f"Konnte Gebäude nicht in building_3d.db speichern: {e}")
+
+
 def _azimuth_to_direction(azimuth: float) -> str:
     """Convert azimuth (0-360) to cardinal/ordinal direction."""
     # Normalize to 0-360
@@ -1161,8 +1205,7 @@ async def fetch_building_complex_for_coordinates(
             bbox=tuple(bbox) if bbox and len(bbox) >= 4 else None
         )
 
-        # EGIDs registrieren
-        _register_egids_from_tile(cached_path, tile_id, tile_cache)
+        # EGIDs registrieren - ENTFERNT 07.01.2026 (schedule_prefetch ersetzt dies)
 
         # Parse with multi-building extraction
         result = parse_gdb_for_building_complex(

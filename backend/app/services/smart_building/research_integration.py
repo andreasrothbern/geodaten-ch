@@ -109,7 +109,19 @@ async def collect_building_research(
     except Exception as e:
         logger.warning(f"Known buildings lookup failed: {e}")
 
-    # 2. Claude Research API (wenn nicht bekannt)
+    # 2. KOMPLEXITÄTSPRÜFUNG: Claude nur für komplexe Gebäude!
+    # Einfache Wohngebäude brauchen keine Recherche (spart Kosten + Zeit)
+    if not _needs_research(bundle):
+        bundle.research_source = "not_needed"
+        bundle.research_confidence = 0.0
+        logger.info(
+            f"[RESEARCH] Übersprungen für einfaches Gebäude: {bundle.address_matched} "
+            f"(EGID: {bundle.egid}, Fläche: {bundle.footprint_area_m2 or 'unbekannt'}m², "
+            f"GKAT: {bundle.gwr_category_code})"
+        )
+        return
+
+    # 3. Claude Research API (nur wenn komplex genug)
     try:
         from app.services.prompts import get_research_service
         research_service = get_research_service()
@@ -121,7 +133,7 @@ async def collect_building_research(
         }
 
         logger.info(
-            f"[RESEARCH] Claude API wird aufgerufen für: {bundle.address_matched} "
+            f"[RESEARCH] Claude API wird aufgerufen für KOMPLEXES Gebäude: {bundle.address_matched} "
             f"(EGID: {bundle.egid}, force_refresh={force_refresh})"
         )
 
@@ -292,3 +304,59 @@ def create_church_zones(bundle: BuildingDataBundle) -> bool:
 
     logger.info(f"Kirchen-Zonen erstellt: Seitenschiff ({trauf:.1f}m), Kirchenschiff ({kirchenschiff_hoehe:.1f}m), Turm ({first:.1f}m)")
     return True
+
+
+def _needs_research(bundle: BuildingDataBundle) -> bool:
+    """
+    Prüft ob ein Gebäude komplex genug ist für Claude-Recherche.
+
+    WICHTIG: Einfache Wohnhäuser (EFH, MFH) brauchen KEINE Claude-Recherche!
+    Dies spart Kosten (~$0.03-0.05 pro Aufruf) und Zeit (~2-5s).
+
+    Kriterien für Research (eines muss zutreffen):
+    - Extreme Höhendifferenz (First - Trauf > 15m)
+    - Komplexe GWR-Kategorie (Öffentlich, Kirche, Industrie)
+    - Grosses Gebäude (> 1000 m²)
+    - Komplexes Polygon (> 12 Punkte)
+
+    Args:
+        bundle: BuildingDataBundle mit Gebäudedaten
+
+    Returns:
+        True wenn Claude-Recherche sinnvoll ist, False sonst
+    """
+    # 1. Extreme Höhendifferenz (Türme, Kirchen)
+    if bundle.has_extreme_height_diff():
+        logger.debug(f"[NEEDS_RESEARCH] Ja - Extreme Höhendifferenz")
+        return True
+
+    # 2. Komplexe GWR-Kategorie
+    # 1040: Wohngebäude mit Nebennutzung
+    # 1060: Bildung/Kultur
+    # 1080: Gesundheit
+    # 1110: Kirchen, religiöse Gebäude
+    # 1130: Museen, Bibliotheken
+    # 1212: Industriegebäude
+    complex_gkat_codes = {1040, 1060, 1080, 1110, 1130, 1212}
+    if bundle.gwr_category_code and bundle.gwr_category_code in complex_gkat_codes:
+        logger.debug(f"[NEEDS_RESEARCH] Ja - Komplexe GKAT: {bundle.gwr_category_code}")
+        return True
+
+    # 3. Grosses Gebäude (> 1000 m²)
+    if bundle.footprint_area_m2 and bundle.footprint_area_m2 > 1000:
+        logger.debug(f"[NEEDS_RESEARCH] Ja - Grosse Fläche: {bundle.footprint_area_m2}m²")
+        return True
+
+    # 4. Komplexes Polygon (> 12 Punkte nach Vereinfachung)
+    if bundle.polygon and len(bundle.polygon) > 12:
+        logger.debug(f"[NEEDS_RESEARCH] Ja - Komplexes Polygon: {len(bundle.polygon)} Punkte")
+        return True
+
+    # Einfaches Gebäude - keine Recherche nötig
+    logger.debug(
+        f"[NEEDS_RESEARCH] Nein - Einfaches Gebäude "
+        f"(Fläche: {bundle.footprint_area_m2 or 'unbekannt'}m², "
+        f"GKAT: {bundle.gwr_category_code or 'unbekannt'}, "
+        f"Polygon: {len(bundle.polygon) if bundle.polygon else 0} Punkte)"
+    )
+    return False

@@ -25,53 +25,56 @@ logger = logging.getLogger(__name__)
 
 def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -> Optional[int]:
     """
-    Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in tiles.db.
-    
+    Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in building_3d.db.
+
     BUG-013 FIX: GWR identify_buildings kann bei nahen Gebäuden dieselbe EGID
     zurückgeben. swissBUILDINGS3D hat separate EGIDs pro Gebäudesegment.
-    
+
+    OPTIMIERUNG 07.01.2026: Nutzt jetzt building_3d.db statt tiles.db/egid_tile_index.
+    building_3d.db enthält alle pre-processed Gebäude mit center_e/center_n.
+
     Args:
         e: LV95 Ost-Koordinate
         n: LV95 Nord-Koordinate
         tolerance_m: Suchradius in Metern (default: 10m)
-    
+
     Returns:
         EGID als int oder None wenn nicht gefunden
     """
-    tiles_db = Path(__file__).parent.parent / 'data' / 'tiles.db'
-    
-    if not tiles_db.exists():
-        logger.warning(f'tiles.db nicht gefunden: {tiles_db}')
+    building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
+
+    if not building_3d_db.exists():
+        logger.debug(f'building_3d.db nicht gefunden: {building_3d_db}')
         return None
-    
+
     try:
-        conn = sqlite3.connect(tiles_db)
+        conn = sqlite3.connect(building_3d_db)
         cursor = conn.cursor()
-        
+
         # Suche nächstes Gebäude innerhalb Toleranz
         cursor.execute('''
             SELECT egid,
-                   (lv95_e - ?) * (lv95_e - ?) + (lv95_n - ?) * (lv95_n - ?) as dist_sq
-            FROM egid_tile_index
-            WHERE lv95_e BETWEEN ? AND ?
-              AND lv95_n BETWEEN ? AND ?
+                   (center_e - ?) * (center_e - ?) + (center_n - ?) * (center_n - ?) as dist_sq
+            FROM buildings_3d
+            WHERE center_e BETWEEN ? AND ?
+              AND center_n BETWEEN ? AND ?
             ORDER BY dist_sq
             LIMIT 1
         ''', (e, e, n, n, e - tolerance_m, e + tolerance_m, n - tolerance_m, n + tolerance_m))
-        
+
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             egid = row[0]
             dist = row[1] ** 0.5  # sqrt
-            logger.debug(f'tiles.db Lookup: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)')
+            logger.debug(f'building_3d.db Lookup: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)')
             return egid
-        
+
         return None
-        
+
     except Exception as ex:
-        logger.error(f'tiles.db Lookup-Fehler: {ex}')
+        logger.error(f'building_3d.db Lookup-Fehler: {ex}')
         return None
 
 

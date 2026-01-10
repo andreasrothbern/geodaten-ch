@@ -11,20 +11,43 @@ export type ProjectStatus =
 
 // Geodaten aus SmartBuildingService (gecacht in building_contexts.db)
 export interface Geodata {
-  egid: string
+  egid?: string  // Optional - kann bei Geocoding-Fehler fehlen
   address?: string
-  polygon?: [number, number][]  // [[e, n], ...] - Original aus swissBUILDINGS3D
-  polygon_simplified?: [number, number][]  // On-the-fly vereinfacht für Gerüstplanung
+  polygon?: number[][]  // [[e, n], ...] - Original aus swissBUILDINGS3D
+  polygon_simplified?: number[][]  // On-the-fly vereinfacht für Gerüstplanung
   traufhoehe_m?: number
   firsthoehe_m?: number
   gebaeudehoehe_m?: number
   area_m2?: number
+  footprint_area_m2?: number  // Grundfläche aus Polygon
   perimeter_m?: number
   center_e?: number
   center_n?: number
   coord_e?: number
   coord_n?: number
+  coordinates?: {  // Alternative Koordinaten-Struktur
+    lv95_e: number
+    lv95_n: number
+  }
   fetched_at?: string
+  // Fassaden-Daten (aus swissBUILDINGS3D)
+  sides?: Array<{
+    index: number
+    start: { x: number; y: number }
+    end: { x: number; y: number }
+    start_point: number[]
+    end_point: number[]
+    length_m: number
+    azimuth_deg: number
+    angle_deg: number
+    normal_azimuth_deg: number
+    direction: string
+  }>
+  // GWR-Daten
+  gwr_floors?: number
+  gwr_area_m2?: number
+  gwr_category?: string
+  gwr_category_code?: number
   // Enrichment-Daten (aus building_environment)
   terrain_height_m?: number
   slope_m?: number

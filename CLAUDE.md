@@ -11,6 +11,16 @@ Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
 | `.claude/rules/data-sources.md` | swisstopo, geodienste.ch, swissBUILDINGS3D |
 | `.claude/rules/smart-building.md` | 10-Schritte Pipeline, Zonen-Erkennung |
 | `.claude/rules/svg-generation.md` | SVG-Stil, Farben, Zonen-Typen |
+| `.claude/rules/data-flow.md` | Datenfluss building_3d.db, tiles.db |
+| `.claude/rules/known-bugs.md` | Bugs, Optimierungen, Performance-Logs |
+
+### Architektur-Dokumentation
+
+| Datei | Inhalt |
+|-------|--------|
+| `docs/architecture/BATCH_IMPORT.md` | Tile-Import, Reset-Prozedur, Optimierungen |
+| `docs/architecture/STREAMING_ARCHITECTURE.md` | 3-Stufen Lookup, SSE-Streaming |
+| `docs/architecture/POLYGON_DATENFLUSS.md` | Polygon-Vereinfachung, Douglas-Peucker |
 
 ### Weitere Dokumentation
 
@@ -74,6 +84,57 @@ git push -u origin feature/neues-feature
 - `chore/` - Wartung (z.B. `chore/update-deps`)
 
 Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert automatisch, falls du auf `main` bist.
+
+## Wichtige Prozeduren
+
+### Cache-Reset (WICHTIG! - Singleton-Problem)
+
+Bei Problemen mit Gebäudedaten: **Backend STOPPEN**, dann **ALLE 3 Caches** löschen!
+
+```bash
+# 1. Backend ZUERST stoppen (Windows)
+taskkill /F /IM python.exe
+# oder: Ctrl+C im Terminal
+
+# 2. ALLE 3 Caches löschen (WICHTIG: zusammen!)
+rm backend/app/data/building_3d.db   # Gebäude-Grunddaten
+rm backend/app/data/tiles.db         # Tile-Metadaten
+rm -rf backend/app/data/tiles/       # GDB-Rohdateien
+
+# 3. Backend neu starten
+cd backend
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+**Warum Backend zuerst stoppen?**
+Die Services nutzen **Singleton-Pattern mit Lazy Initialization**:
+- Beim ersten Zugriff: `_initialized = True` gesetzt
+- Wenn DB gelöscht wird während Backend läuft: Singleton denkt "schon initialisiert"
+- → Tabellen werden NICHT neu erstellt → Fehler `no such table`
+
+**Warum alle 3 zusammen?**
+- Wenn `tiles.db` existiert aber `building_3d.db` leer → Tile-Cache wird verwendet aber kein Prefetch
+- Wenn `tiles/` existiert aber `tiles.db` leer → GDB-Dateien werden nicht gefunden
+
+> Siehe [`docs/architecture/BATCH_IMPORT.md`](docs/architecture/BATCH_IMPORT.md) für vollständige Reset-Prozedur und Timing-Analyse.
+
+### Tile-Import (Pre-Deployment)
+
+```bash
+# Region Bern importieren (~20 Tiles, ~10min)
+python scripts/import_tiles.py --region bern
+
+# Nur neue/geänderte Tiles
+python scripts/import_tiles.py --update
+
+# Einzelnes Tile
+python scripts/import_tiles.py --tile 1322-21
+
+# Status anzeigen
+python scripts/import_tiles.py --status
+```
+
+> Siehe `docs/architecture/BATCH_IMPORT.md` für vollständige Dokumentation.
 
 ## Datenfluss (SmartBuildingService)
 

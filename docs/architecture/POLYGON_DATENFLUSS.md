@@ -6,6 +6,26 @@
 
 ---
 
+## ⚠️ HINWEIS: Architektur-Änderungen (08.01.2026)
+
+Dieses Dokument beschreibt teilweise eine ältere Architektur. Folgende Änderungen wurden vorgenommen:
+
+| Alt | Neu | Beschreibung |
+|-----|-----|--------------|
+| `building_geodata.db` | `building_3d.db` | Gebäudedaten werden jetzt via `tile_prefetch.py` in `building_3d.db` gespeichert |
+| `geodata_service.py` | entfernt | Funktionalität in `tile_prefetch.py` und `neighbors_service.py` integriert |
+| `egid_tile_index` (in tiles.db) | entfernt | EGID-Lookups erfolgen jetzt direkt über `building_3d.db` |
+| `register_egid()` | entfernt | Nicht mehr benötigt, da alle Gebäude beim Prefetch gespeichert werden |
+
+**Aktuelle Datenbank-Struktur:**
+- `tiles.db` - Tile-Metadaten (tile_id → local_path, bbox)
+- `building_3d.db` - Gebäude (EGID, Polygon, Höhen, Koordinaten) via tile_prefetch
+- `building_contexts.db` - Enrichment (Zonen, Terrain)
+
+**Referenz:** Siehe `.claude/rules/data-flow.md` für die aktuelle Architektur.
+
+---
+
 ## 0. Zuständigkeiten
 
 ### Zwei Projekte, klare Trennung
@@ -3216,3 +3236,158 @@ const getPositionOffset = (position: string): Vector3 => {
 | Berner Münster | 1230337 | Turm(vorne), Kirchenschiff(zentral), Seitenkapellen(flankierend) |
 | St. Peter und Paul | 191821074 | Westturm(vorne), Kirchenschiff(zentral), Seitenschiffe(flankierend), Chor(hinten) |
 | Bundeshaus | 2242547 | Arkaden(vorne), Hauptgebäude(zentral), Kuppel(zentral-oben) |
+
+---
+
+## 14. BUG-ANALYSE: 3D-Viewer zeigt keine Zonen (05.01.2026)
+
+### Problem
+
+Im 3D-Viewer (`ScaffoldScene.tsx`) werden die Zonen nicht angezeigt obwohl:
+- Die Zonen in `known_buildings.py` definiert sind
+- Das Backend die Zonen korrekt sammelt und zurückgibt
+
+**Console-Output:**
+```
+Scene content updated: { zones: 0, complexity: 'simple' }
+```
+
+### Analyse: Datenfluss Frontend
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               ZONEN-DATENFLUSS FRONTEND                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. API-Response (geruestbau.py:381)                           │
+│     ════════════════════════════════                            │
+│     {                                                           │
+│       "zones": [...],              ← Zonen vorhanden!          │
+│       "building_name": "...",                                   │
+│       "complexity": "complex",                                  │
+│       "research_source": "known_buildings"                      │
+│     }                                                           │
+│                                                                 │
+│  2. ConfiguratorPage.tsx (Zeile 432)                           │
+│     ══════════════════════════════                              │
+│     const data: ConfiguratorBuildingData = await response.json()│
+│     setBuildingData(data)                                       │
+│                                                                 │
+│     PROBLEM?: Prüfe ob buildingData.zones gesetzt ist!         │
+│                                                                 │
+│  3. ScaffoldConfigurator.tsx (Zeile 849)                       │
+│     ═══════════════════════════════════                         │
+│     <ScaffoldConfigurator                                       │
+│       zones={buildingData.zones}    ← Wird weitergegeben       │
+│       complexity={buildingData.complexity}                      │
+│     />                                                          │
+│                                                                 │
+│  4. ThreeDPanel.tsx (Zeile 75)                                 │
+│     ══════════════════════════════                              │
+│     <ScaffoldScene                                              │
+│       zones={zones}                 ← Props weitergegeben       │
+│       complexity={complexity}                                   │
+│     />                                                          │
+│                                                                 │
+│  5. ScaffoldScene.tsx (Zeile 983)                              │
+│     ═════════════════════════════                               │
+│     console.log('Scene content updated:', {                     │
+│       zones: zones.length           ← ZEIGT 0!                 │
+│     })                                                          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Mögliche Ursachen
+
+| Stelle | Mögliches Problem | Prüfung |
+|--------|-------------------|---------|
+| API-Response | Zonen fehlen | `curl` API-Test |
+| ConfiguratorPage | `zones` nicht aus Response extrahiert | Console.log in Zeile 435 |
+| TypeScript Interface | `zones` fehlt in `ConfiguratorBuildingData` | Interface prüfen |
+| Props-Weitergabe | Default-Wert `[]` überschreibt | Props-Kette prüfen |
+
+### Backend-Ablauf (korrekt)
+
+```
+geruestbau.py:/configurator/facades
+    │
+    ├─ SmartBuildingService.collect_all_data()
+    │   │
+    │   ├─ Phase 3: _collect_research_data()
+    │   │   └─ collect_building_research()
+    │   │       └─ bundle._known_zones = known["zones"]  ← GESETZT
+    │   │
+    │   └─ Phase 4: _create_default_zone()
+    │       └─ create_zones_from_known_building(bundle)
+    │           └─ bundle.zones = [ZoneInfo(...), ...]   ← ERSTELLT
+    │
+    └─ Response (Zeile 381):
+        zones_data = [{ "id": z.id, "name": z.name, ... } for z in bundle.zones]
+```
+
+### Debug-Schritte
+
+1. **API-Response prüfen:**
+   ```bash
+   curl "http://localhost:8000/api/v1/geruestbau/configurator/facades?address=Rathausgasse%202,%203011%20Bern" | jq '.zones'
+   ```
+
+2. **Frontend Console-Log:**
+   ```typescript
+   // In ConfiguratorPage.tsx nach Zeile 432
+   console.log('=== API RESPONSE ZONES ===', data.zones, data.building_name, data.complexity);
+   ```
+
+3. **TypeScript Interface prüfen:**
+   ```typescript
+   // In ConfiguratorPage.tsx - ConfiguratorBuildingData muss haben:
+   zones?: BuildingZone[];
+   building_name?: string;
+   complexity?: 'simple' | 'moderate' | 'complex';
+   ```
+
+### Lösung (05.01.2026)
+
+**Problem gefunden:** `convertGeodataToConfiguratorFormat()` hat die Zonen-Daten NICHT übertragen.
+
+**Fix:** Funktion erweitert um Zonen, building_name, complexity, research_source:
+
+```typescript
+// ConfiguratorPage.tsx:251-297 (nach Fix)
+
+// Convert ZoneInfo from geodata to BuildingZone format
+const zones: BuildingZone[] = (geodata.zones ?? []).map((z, i) => ({
+  id: z.id || `zone_${i + 1}`,
+  name: z.name,
+  zone_type: z.zone_type,
+  position: z.position,
+  traufhoehe_m: z.traufhoehe_m,
+  firsthoehe_m: z.firsthoehe_m,
+  beruesten: z.beruesten ?? true,
+  sonderkonstruktion: z.sonderkonstruktion ?? false,
+}));
+
+return {
+  project_id: project.id,
+  building: { ... },
+  selected_facades: facades,
+  roof: undefined,
+  // Zonen-Daten für komplexe Gebäude (FIX 05.01.2026)
+  zones: zones,
+  building_name: geodata.building_name,
+  complexity: geodata.complexity ?? 'simple',
+  research_source: geodata.research_source ?? 'unknown',
+  metadata: {
+    ...
+    zones_count: zones.length,
+    research_source: geodata.research_source,
+  },
+};
+```
+
+### Verbleibende Aufgabe
+
+Die Zonen werden jetzt aus dem Cache übertragen. Aber sie müssen auch:
+1. Beim Projekt-Erstellen in `geodata` gespeichert werden
+2. Von der API `/configurator/facades` korrekt geliefert werden

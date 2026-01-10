@@ -57,6 +57,23 @@ export interface AddressRangeResponse {
   error_count: number
 }
 
+// Blocked Facades API Types
+export interface BlockedFacadeInfo {
+  facade_index: number
+  egid: string | null
+  distance_m: number
+  direction: string | null
+}
+
+export interface BlockedFacadesResponse {
+  egid: string
+  blocked_indices: number[]
+  total_facades: number
+  free_facades: number
+  blocked_facades: BlockedFacadeInfo[]
+  query_time_ms: number
+}
+
 export const geruestbauApi = {
   // Projekte
   listProjects: () =>
@@ -143,6 +160,27 @@ export const geruestbauApi = {
       throw new Error(`Neighbors API error: ${response.status}`)
     }
     return response.json() as Promise<NeighborsResponse>
+  },
+
+  // Blockierte Fassaden (durch Nachbargebäude)
+  getBlockedFacades: async (
+    egid: string,
+    excludeEgids?: string[],
+    thresholdM: number = 2.0
+  ): Promise<BlockedFacadesResponse> => {
+    const params = new URLSearchParams({
+      threshold_m: thresholdM.toString(),
+    })
+    if (excludeEgids && excludeEgids.length > 0) {
+      params.set('exclude_egids', excludeEgids.join(','))
+    }
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/building/${egid}/blocked-facades?${params}`
+    )
+    if (!response.ok) {
+      throw new Error(`Blocked Facades API error: ${response.status}`)
+    }
+    return response.json()
   },
 
   // Gebäude-Polygon für Multi-Building 3D-View
