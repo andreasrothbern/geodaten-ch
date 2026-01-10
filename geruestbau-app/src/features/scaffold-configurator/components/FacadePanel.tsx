@@ -73,10 +73,70 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     });
   };
 
-  // Check if a facade direction is blocked by neighbors
-  const isFacadeBlocked = (direction: string): boolean => {
-    return blockedSides.includes(direction);
-  };
+  // Geometry-based blocking: Calculate distance from facade to neighbor polygons
+  const BLOCKING_THRESHOLD_M = 2.0;
+
+  // Point-to-segment distance (same algorithm as backend)
+  const pointToSegmentDistance = useCallback((
+    px: number, py: number,
+    ax: number, ay: number,
+    bx: number, by: number
+  ): number => {
+    const abx = bx - ax, aby = by - ay;
+    const apx = px - ax, apy = py - ay;
+    const abSq = abx * abx + aby * aby;
+    if (abSq === 0) return Math.sqrt(apx * apx + apy * apy);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abSq));
+    const dx = px - (ax + t * abx), dy = py - (ay + t * aby);
+    return Math.sqrt(dx * dx + dy * dy);
+  }, []);
+
+  // Facade-to-polygon distance
+  const facadeToPolygonDistance = useCallback((
+    facadeStart: [number, number],
+    facadeEnd: [number, number],
+    neighborPolygon: [number, number][]
+  ): number => {
+    let minDist = Infinity;
+    const [fx1, fy1] = facadeStart;
+    const [fx2, fy2] = facadeEnd;
+
+    // Check facade endpoints to neighbor edges
+    for (let i = 0; i < neighborPolygon.length; i++) {
+      const [p1x, p1y] = neighborPolygon[i];
+      const [p2x, p2y] = neighborPolygon[(i + 1) % neighborPolygon.length];
+      minDist = Math.min(minDist, pointToSegmentDistance(fx1, fy1, p1x, p1y, p2x, p2y));
+      minDist = Math.min(minDist, pointToSegmentDistance(fx2, fy2, p1x, p1y, p2x, p2y));
+    }
+
+    // Check neighbor polygon points to facade edge
+    for (const [px, py] of neighborPolygon) {
+      minDist = Math.min(minDist, pointToSegmentDistance(px, py, fx1, fy1, fx2, fy2));
+    }
+
+    return minDist;
+  }, [pointToSegmentDistance]);
+
+  // Check if a facade is blocked by neighbors (geometry-based)
+  const isFacadeBlocked = useCallback((facade: ScaffoldFacade): boolean => {
+    if (!facade.start_point || !facade.end_point) return false;
+
+    // Check distance to each neighbor polygon
+    for (const neighbor of neighbors) {
+      if (!neighbor.polygon || neighbor.polygon.length < 3) continue;
+      const dist = facadeToPolygonDistance(
+        facade.start_point as [number, number],
+        facade.end_point as [number, number],
+        neighbor.polygon as [number, number][]
+      );
+      if (dist < BLOCKING_THRESHOLD_M) {
+        return true;
+      }
+    }
+
+    // Fallback to direction-based check
+    return blockedSides.includes(facade.direction);
+  }, [neighbors, blockedSides, facadeToPolygonDistance]);
 
   // Get default height from existing facades
   const defaultHeight = useMemo(() => {
@@ -146,7 +206,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     const facadeElements = facades.map((facade) => {
       if (!facade.start_point || !facade.end_point) return null;
 
-      const isBlocked = isFacadeBlocked(facade.direction);
+      const isBlocked = isFacadeBlocked(facade);
       const isEnabled = facade.enabled && !isBlocked;
       const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 
@@ -215,7 +275,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
         </g>
       </svg>
     );
-  }, [polygon, facades, neighbors, blockedSides, toggleFacadeEnabled]);
+  }, [polygon, facades, neighbors, isFacadeBlocked, toggleFacadeEnabled]);
 
   return (
     <div className="space-y-4">
@@ -311,7 +371,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
         <h3 className="font-semibold text-gray-700 mb-3">Fassaden ({facades.length})</h3>
         <div className="space-y-2">
           {facades.map((facade) => {
-            const isBlocked = isFacadeBlocked(facade.direction);
+            const isBlocked = isFacadeBlocked(facade);
             const isEnabled = facade.enabled && !isBlocked;
             const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 

@@ -44,8 +44,8 @@ export default function ScaffoldConfigurator({
   roof,
   neighbors = [],
   blockedSides = [],
-  blockedFacadeIndices = [],
-  blockedFacadesDetails = [],
+  blockedFacadeIndices: _blockedFacadeIndices = [],
+  blockedFacadesDetails: _blockedFacadesDetails = [],
   additionalBuildings = [],
   zones = [],
   complexity = 'simple',
@@ -55,6 +55,8 @@ export default function ScaffoldConfigurator({
 }: ScaffoldConfiguratorProps) {
   void _onComplete; // Reserved for future use
   void researchSource; // Reserved for future use (display in 3D info panel)
+  void _blockedFacadeIndices; // Now using geometry-based blocking in FacadePanel
+  void _blockedFacadesDetails; // Now using geometry-based blocking in FacadePanel
   const {
     currentTab,
     setCurrentTab,
