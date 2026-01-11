@@ -23,8 +23,27 @@ Schema:
         center_n REAL,
         tile_id TEXT,           -- Quell-Tile für Debugging
         imported_at TIMESTAMP,
-        source TEXT             -- 'swissBUILDINGS3D_3.0'
+        source TEXT,            -- 'swissBUILDINGS3D_3.0'
+        -- NEU 11.01.2026: Erweiterte Attribute
+        objektart TEXT,         -- Gebäudetyp aus swissBUILDINGS3D
+        name_komplett TEXT,     -- Gebäudename (wenn vorhanden)
+        gebaeude_nutzung TEXT,  -- Nutzungsart
+        gebaeudeeinheit TEXT,   -- Verknüpfung zu anderen Layern
+        roof_form TEXT,         -- Berechnete Dachform
+        roof_form_confidence REAL, -- Konfidenz der Erkennung (0-1)
+        roof_orientation TEXT,  -- First-Verlauf (N-S, O-W, etc.)
+        has_3d_layers INTEGER   -- Flag für erweiterte 3D-Daten
     )
+
+    building_roofs (id, gebaeudeeinheit, egid, dach_min, dach_max,
+                    roof_form, roof_angle_deg, roof_orientation, z_levels,
+                    geometry_wkb, has_full_geometry, calculated_at, calculation_method)
+
+    building_walls (id, gebaeudeeinheit, egid, z_min, z_max,
+                    geometry_wkb, created_at)
+
+    building_floors (id, gebaeudeeinheit, egid, gelaendepunkt,
+                     geometry_wkb, created_at)
 
 Batch-Import:
     python -m app.services.building_3d_service --import-tile 1332-21
@@ -107,7 +126,7 @@ class Building3DService:
         with sqlite3.connect(BUILDING_3D_DB) as conn:
             cursor = conn.cursor()
 
-            # Haupttabelle für Gebäudedaten
+            # Haupttabelle für Gebäudedaten (erweitert 11.01.2026)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS buildings_3d (
                     egid INTEGER PRIMARY KEY,
@@ -121,7 +140,60 @@ class Building3DService:
                     center_n REAL,
                     tile_id TEXT,
                     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    source TEXT DEFAULT 'swissBUILDINGS3D_3.0'
+                    source TEXT DEFAULT 'swissBUILDINGS3D_3.0',
+                    -- NEU 11.01.2026: Erweiterte Attribute
+                    objektart TEXT,
+                    name_komplett TEXT,
+                    gebaeude_nutzung TEXT,
+                    gebaeudeeinheit TEXT,
+                    roof_form TEXT,
+                    roof_form_confidence REAL,
+                    roof_orientation TEXT,
+                    has_3d_layers INTEGER DEFAULT 0
+                )
+            """)
+
+            # NEU 11.01.2026: building_roofs Tabelle
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS building_roofs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gebaeudeeinheit TEXT NOT NULL,
+                    egid TEXT,
+                    dach_min REAL,
+                    dach_max REAL,
+                    roof_form TEXT,
+                    roof_angle_deg REAL,
+                    roof_orientation TEXT,
+                    z_levels TEXT,
+                    geometry_wkb BLOB,
+                    has_full_geometry INTEGER DEFAULT 0,
+                    calculated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    calculation_method TEXT
+                )
+            """)
+
+            # NEU 11.01.2026: building_walls Tabelle
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS building_walls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gebaeudeeinheit TEXT NOT NULL,
+                    egid TEXT,
+                    z_min REAL,
+                    z_max REAL,
+                    geometry_wkb BLOB,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # NEU 11.01.2026: building_floors Tabelle
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS building_floors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gebaeudeeinheit TEXT NOT NULL,
+                    egid TEXT,
+                    gelaendepunkt REAL,
+                    geometry_wkb BLOB,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -322,11 +394,14 @@ class Building3DService:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
+            # NEU 11.01.2026: Erweiterte Spalten
             cursor.execute("""
                 INSERT OR REPLACE INTO buildings_3d
                 (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
-                 area_m2, perimeter_m, center_e, center_n, tile_id, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 area_m2, perimeter_m, center_e, center_n, tile_id, source,
+                 objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
+                 roof_form, roof_form_confidence, roof_orientation, has_3d_layers)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 egid,
                 polygon,
@@ -338,7 +413,15 @@ class Building3DService:
                 building.get('center_e') or building.get('coord_e'),
                 building.get('center_n') or building.get('coord_n'),
                 building.get('tile_id'),
-                building.get('source', 'swissBUILDINGS3D_3.0')
+                building.get('source', 'swissBUILDINGS3D_3.0'),
+                building.get('objektart'),
+                building.get('name_komplett'),
+                building.get('gebaeude_nutzung'),
+                building.get('gebaeudeeinheit'),
+                building.get('roof_form'),
+                building.get('roof_form_confidence'),
+                building.get('roof_orientation'),
+                building.get('has_3d_layers', 0)
             ))
 
             conn.commit()
@@ -349,13 +432,16 @@ class Building3DService:
         Task 4: Prepared Statement für Bulk-Insert.
 
         Wiederverwendet das gleiche Statement für alle Inserts.
+        NEU 11.01.2026: Erweiterte Spalten für 3D-Layer.
         """
         if self._prepared_insert is None:
             self._prepared_insert = """
                 INSERT OR REPLACE INTO buildings_3d
                 (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
-                 area_m2, perimeter_m, center_e, center_n, tile_id, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 area_m2, perimeter_m, center_e, center_n, tile_id, source,
+                 objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
+                 roof_form, roof_form_confidence, roof_orientation, has_3d_layers)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         return self._prepared_insert
 
@@ -429,6 +515,7 @@ class Building3DService:
         start_time = datetime.now()
 
         # Daten vorbereiten (Polygon serialisieren, ungültige filtern)
+        # NEU 11.01.2026: Erweiterte Spalten für 3D-Layer
         prepared_data = []
         for building in buildings:
             egid = building.get('egid')
@@ -450,7 +537,16 @@ class Building3DService:
                 building.get('center_e') or building.get('coord_e'),
                 building.get('center_n') or building.get('coord_n'),
                 tile_id or building.get('tile_id'),
-                building.get('source', 'swissBUILDINGS3D_3.0')
+                building.get('source', 'swissBUILDINGS3D_3.0'),
+                # Erweiterte Attribute (11.01.2026)
+                building.get('objektart'),
+                building.get('name_komplett'),
+                building.get('gebaeude_nutzung'),
+                building.get('gebaeudeeinheit'),
+                building.get('roof_form'),
+                building.get('roof_form_confidence'),
+                building.get('roof_orientation'),
+                building.get('has_3d_layers', 0)
             ))
 
         if not prepared_data:

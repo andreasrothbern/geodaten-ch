@@ -2,7 +2,120 @@
 
 ## Offene Bugs
 
-*(Keine offenen Bugs)*
+### BUG-017: Fassaden bei Knospenweg 1 falsch dargestellt
+
+**Status:** 🔴 Offen (erkannt 11.01.2026)
+
+**Problem:**
+Bei Knospenweg 1, Bern werden die Fassaden falsch dargestellt:
+1. **Halbe Fassade:** Eine Fassade erscheint nur halb/abgeschnitten
+2. **Falsche Blockierung:** Fassaden werden als blockiert angezeigt, obwohl sie frei sind
+3. **Traufhöhe 0.0m:** Die Traufhöhe wird als 0.0m angezeigt (sollte ~5.5m sein)
+
+**Screenshot:** `2026-01-11 19_11_47-Task-Manager.png`
+
+**Betroffene Adresse:**
+- Knospenweg 1, Bern (EGID 1243787)
+
+**Vermutete Ursache:**
+- Polygon-Vereinfachung (Douglas-Peucker) schneidet Fassade falsch ab
+- blocked_facades Berechnung verwendet falsches EGID (siehe BUG-015)
+- Höhendaten werden nicht korrekt zugeordnet
+
+**Betroffene Dateien:**
+- `backend/app/services/facade_service.py`
+- `backend/app/routers/geruestbau.py` - blocked_facades Endpunkt
+
+---
+
+### BUG-016: Dach-Orientierung bei Reihenhäusern inkonsistent
+
+**Status:** 🟡 Wartet auf 3D-Layer-Migration (erkannt 11.01.2026)
+
+**Problem:**
+Bei Reihenhäusern (z.B. Knospenweg 2-10, Bern) wechselt die Dach-Orientierung
+zwischen benachbarten Gebäuden, obwohl alle Dächer gleich ausgerichtet sein sollten.
+
+**Beispiel Knospenweg:**
+```
+EGID 1243788: Azimut=173° → N-S (First Ost-West)
+EGID 1243790: Azimut=265° → O-W (First Nord-Süd)
+EGID 1243792: Azimut=355° → N-S (First Ost-West)
+EGID 1243794: Azimut=265° → O-W (First Nord-Süd)
+```
+
+**Ursache:**
+Aktuell wird eine **Fallback-Heuristik** verwendet (längste Polygon-Seite),
+weil die echten 3D-Layer-Daten (`has_3d_layers=0`) noch nicht extrahiert sind.
+
+**Lösung:**
+Die korrekte Dach-Orientierung sollte aus den **swissBUILDINGS3D 3D-Layern** kommen:
+- `building_roofs.roof_orientation` - aus DACH-Layer Geometrie berechnet
+- `building_roofs.roof_form` - Satteldach, Walmdach, etc.
+
+**Aktueller Stand:**
+```sql
+SELECT has_3d_layers, roof_orientation FROM buildings_3d WHERE egid=1243790;
+-- has_3d_layers=0, roof_orientation=NULL → 3D-Layer noch nicht extrahiert
+```
+
+**Nächste Schritte:**
+1. 3D-Layer-Migration für Knospenweg-Tile durchführen
+2. `roof_orientation` aus DACH-Layer Geometrie extrahieren
+3. Frontend: `roof_orientation` aus API verwenden statt Heuristik
+
+**Betroffene Dateien:**
+- `geruestbau-app/src/features/scaffold-configurator/components/threeDView/ScaffoldScene.tsx:17-47`
+  - `calculatePolygonRoofOrientation()` - NUR als Fallback wenn keine DB-Daten
+- `backend/app/services/roof.py` - Sollte DB-Wert priorisieren
+- `backend/app/services/layer_extractor.py` - 3D-Layer Extraktion
+
+---
+
+### BUG-015: EGID-Zuordnung bei Koordinaten-Lookup fehlerhaft
+
+**Status:** ✅ Gefixt am 11.01.2026 19:45
+
+**Problem:**
+Bei der Koordinaten-basierten Gebäudesuche wurde das Gebäude mit dem
+**nächsten Zentrum** zur Geocoding-Koordinate gesucht. Aber die Geocoding-Koordinate
+zeigt auf den **Hauseingang**, nicht aufs Gebäudezentrum. Bei Reihenhäusern liegt
+der Hauseingang oft näher am Nachbar-Zentrum!
+
+**Beispiel Knospenweg, Bern (vor Fix):**
+```
+Geocoding "Knospenweg 4": E=2596299.06, N=1199805.22 (Hauseingang)
+
+Gebäude-Zentren in building_3d.db:
+  EGID 1243790: E=2596300.3, N=1199805.4  ← Knospenweg 4 (1.3m entfernt)
+  EGID 1243792: E=2596299.7, N=1199812.8  ← Knospenweg 6 (7.6m entfernt)
+  EGID 1243794: E=2596299.0, N=1199820.1  ← Knospenweg 8 (14.9m entfernt)
+
+ALT: Nächstes Zentrum → EGID 1243790 (zufällig korrekt für Nr. 4)
+ABER: Bei Nr. 6 war Zentrum von Nr. 8 näher als von Nr. 6 selbst!
+```
+
+**Fix:**
+Statt nur nach nächstem Zentrum zu suchen, wird jetzt **Point-in-Polygon** geprüft:
+
+1. Alle Kandidaten im Suchradius laden (mit Polygon)
+2. Für jeden: Liegt die Geocoding-Koordinate **im Gebäudepolygon**?
+3. Falls Match: Diese EGID zurückgeben (korrekt!)
+4. Falls kein Match: Fallback auf nächstes Zentrum (mit Warnung)
+
+**Geänderte Datei:**
+- `backend/app/services/address_parser.py:26-128` - `_lookup_egid_by_coordinates()`
+  - Neue Hilfsfunktion `_point_in_polygon()` (Ray-Casting, keine Dependencies)
+  - Point-in-Polygon Check vor Zentrum-Fallback
+
+**Test:**
+```bash
+# Multi-Adresse auflösen
+curl "http://localhost:8000/api/v1/geruestbau/address/resolve?address=Knospenweg%204-8,%20Bern"
+# → Jetzt sollten 3 verschiedene EGIDs zurückkommen
+```
+
+---
 
 ---
 

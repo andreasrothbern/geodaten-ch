@@ -59,18 +59,19 @@ _prefetch_lock = Lock()
 async def prefetch_tile_buildings(
     tile_id: str,
     gdb_path: Path,
-    exclude_egid: Optional[str] = None
+    exclude_egids: Optional[Set[int]] = None
 ) -> int:
     """
     Speichert alle Gebäude aus einem Tile in building_3d.db.
 
-    Läuft im Hintergrund, blockiert nicht die ursprüngliche Anfrage.
-    WIEDERHERGESTELLT (07.01.2026): Speichert in building_3d.db für O(1) Lookups.
+    REFACTORED 11.01.2026: exclude_egid → exclude_egids (Set)
+    - Vereint prefetch_tile_buildings + prefetch_tile_buildings_excluding
+    - Macht IMMER Roof_solid Parsing
 
     Args:
         tile_id: Tile-Referenz (z.B. "1088-22")
         gdb_path: Pfad zum GDB-Verzeichnis
-        exclude_egid: EGID die nicht gespeichert werden soll (wurde schon gespeichert)
+        exclude_egids: Set von EGIDs die nicht gespeichert werden (bereits geladen)
 
     Returns:
         Anzahl gespeicherter Gebäude
@@ -86,7 +87,7 @@ async def prefetch_tile_buildings(
         logger.info(f"[PREFETCH] Gebäude-Import gestartet für Tile {tile_id}")
         start_time = datetime.now()
 
-        # GDB parsen
+        # GDB parsen - Building_solid
         buildings = _parse_all_buildings_from_gdb(gdb_path)
 
         if not buildings:
@@ -97,28 +98,38 @@ async def prefetch_tile_buildings(
         from app.services.building_3d_service import get_building_3d_service
         building_3d_service = get_building_3d_service()
 
-        # Gebäude vorbereiten (ohne exclude_egid)
-        # OPTIMIERUNG 07.01.2026: register_egid() entfernt (58s Overhead!)
-        # building_3d.db hat bereits center_e/center_n für Koordinaten-Lookup
-        # egid_tile_index in tiles.db ist damit obsolet
+        # Gebäude filtern (exclude bereits geladene)
+        exclude_egids = exclude_egids or set()
         buildings_to_save = []
         for building in buildings:
             egid = building.get("egid")
             if not egid:
                 continue
-            if exclude_egid and str(egid) == str(exclude_egid):
+            if egid in exclude_egids:
                 continue
 
             building["tile_id"] = tile_id
             buildings_to_save.append(building)
 
-        # Bulk-Save in building_3d.db
+        # NEU 11.01.2026: Roof_solid parsen und Dachform berechnen
+        # FIX 11.01.2026 22:30: Roofs VOR bulk_save parsen, damit roof_form in buildings landet!
+        roofs = _parse_roof_solid_from_gdb(gdb_path)
+        roof_count = 0
+        if roofs:
+            from app.services.roof_3d_service import get_roof_3d_service
+            roof_service = get_roof_3d_service()
+            roof_count = roof_service.bulk_save(roofs)
+
+            # Dachform in buildings_to_save eintragen BEVOR bulk_save
+            _update_buildings_with_roof_data(buildings_to_save, roofs, building_3d_service)
+
+        # Bulk-Save in building_3d.db (jetzt MIT roof_form!)
         saved_count = building_3d_service.bulk_save(buildings_to_save, tile_id)
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(
             f"[PREFETCH] Abgeschlossen: {tile_id} | "
-            f"{saved_count} Gebäude gespeichert | "
+            f"{saved_count} Gebäude + {roof_count} Dächer | "
             f"{elapsed:.1f}s"
         )
 
@@ -132,6 +143,103 @@ async def prefetch_tile_buildings(
         # Lock freigeben
         with _prefetch_lock:
             _prefetch_in_progress.discard(tile_id)
+
+
+def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
+    """
+    Parsed Roof_solid Layer für Dachform-Berechnung.
+
+    NEU 11.01.2026: Extrahiert Z-Levels und berechnet Dachform.
+    Geometrie wird NICHT gespeichert (On-Demand für komplexe Gebäude).
+
+    Returns:
+        Liste von Dach-Dicts mit gebaeudeeinheit, roof_form, z_levels, etc.
+    """
+    try:
+        import fiona
+        from shapely.geometry import shape
+    except ImportError:
+        logger.error("fiona/shapely nicht verfügbar für Roof-Parsing")
+        return []
+
+    from app.services.roof_form_detector import analyze_roof
+
+    roofs = []
+    parse_start = time.time()
+
+    try:
+        layers = fiona.listlayers(gdb_path)
+
+        # Roof_solid Layer finden
+        target_layer = None
+        for layer in layers:
+            if 'roof' in layer.lower() and 'solid' in layer.lower():
+                target_layer = layer
+                break
+
+        if not target_layer:
+            logger.debug(f"Kein Roof_solid Layer in {gdb_path}")
+            return []
+
+        with fiona.open(gdb_path, layer=target_layer) as src:
+            valid_count = 0
+
+            for feature in src:
+                props = feature['properties']
+                gebaeudeeinheit = props.get('GEBAEUDEEINHEIT')
+
+                if not gebaeudeeinheit:
+                    continue
+
+                valid_count += 1
+
+                # Geometrie parsen für Z-Level-Analyse
+                geom = None
+                if feature['geometry'] is not None:
+                    try:
+                        geom = shape(feature['geometry'])
+                    except Exception as e:
+                        logger.debug(f"Geometrie-Fehler: {e}")
+                        continue
+
+                # Dachform analysieren
+                roof_analysis = analyze_roof(geom)
+
+                # NEU 11.01.2026: Echte Geometrie speichern!
+                geometry_wkb = None
+                if geom is not None:
+                    try:
+                        geometry_wkb = geom.wkb
+                    except Exception as e:
+                        logger.debug(f"WKB-Konvertierung fehlgeschlagen: {e}")
+
+                roofs.append({
+                    "gebaeudeeinheit": gebaeudeeinheit,
+                    "egid": props.get('EGID'),
+                    "dach_min": props.get('DACH_MIN'),
+                    "dach_max": props.get('DACH_MAX'),
+                    "roof_form": roof_analysis.get('roof_form'),
+                    "roof_angle_deg": roof_analysis.get('angle_deg'),
+                    "roof_orientation": roof_analysis.get('orientation'),
+                    "roof_form_confidence": roof_analysis.get('confidence'),
+                    "z_levels": roof_analysis.get('z_levels'),
+                    "calculation_method": "z_level_analysis",
+                    "has_full_geometry": 1 if geometry_wkb else 0,
+                    "geometry_wkb": geometry_wkb,  # Echte 3D-Geometrie!
+                })
+
+        parse_time_ms = (time.time() - parse_start) * 1000
+        if valid_count > 0:
+            logger.info(
+                f"[ROOF] Roof_solid geparst: {len(roofs)} Dächer | "
+                f"{parse_time_ms:.0f}ms ({parse_time_ms/len(roofs):.1f}ms/Dach)"
+            )
+
+        return roofs
+
+    except Exception as e:
+        logger.error(f"Roof_solid-Parsing-Fehler: {e}")
+        return []
 
 
 def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
@@ -269,6 +377,7 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                     if dach_max_f is not None:
                         firsthoehe = round(dach_max_f - terrain_f, 2)
 
+                # NEU 11.01.2026: Erweiterte Attribute für 3D-Layer
                 buildings.append({
                     "egid": egid_int,
                     "polygon": polygon,
@@ -281,6 +390,11 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                     "center_n": center_n,
                     "coord_e": center_e,
                     "coord_n": center_n,
+                    # Erweiterte Attribute aus swissBUILDINGS3D 3.0
+                    "objektart": props.get('OBJEKTART'),
+                    "name_komplett": props.get('NAME_KOMPLETT'),
+                    "gebaeude_nutzung": props.get('GEBAEUDE_NUTZUNG'),
+                    "gebaeudeeinheit": props.get('GEBAEUDEEINHEIT'),
                 })
 
         # Performance-Metriken erfassen
@@ -311,27 +425,89 @@ def get_parsing_metrics() -> Dict[str, Any]:
     return _parsing_metrics.copy()
 
 
+def _update_buildings_with_roof_data(
+    buildings: List[Dict[str, Any]],
+    roofs: List[Dict[str, Any]],
+    building_service
+) -> int:
+    """
+    Aktualisiert buildings_3d mit Dachform aus Roof_solid.
+
+    NEU 11.01.2026: Verknüpft über gebaeudeeinheit oder EGID.
+    Speichert roof_form, roof_form_confidence, roof_orientation direkt in buildings_3d
+    für schnellen Zugriff ohne Join.
+
+    Args:
+        buildings: Liste der Building-Dicts
+        roofs: Liste der Roof-Dicts
+        building_service: Building3DService für Updates
+
+    Returns:
+        Anzahl aktualisierter Gebäude
+    """
+    if not roofs:
+        return 0
+
+    # Index für schnelles Lookup
+    roof_by_gebaeudeeinheit = {
+        r['gebaeudeeinheit']: r for r in roofs if r.get('gebaeudeeinheit')
+    }
+    roof_by_egid = {
+        str(r['egid']): r for r in roofs if r.get('egid')
+    }
+
+    updated = 0
+    for building in buildings:
+        roof = None
+
+        # Zuerst nach gebaeudeeinheit suchen
+        gebaeudeeinheit = building.get('gebaeudeeinheit')
+        if gebaeudeeinheit and gebaeudeeinheit in roof_by_gebaeudeeinheit:
+            roof = roof_by_gebaeudeeinheit[gebaeudeeinheit]
+
+        # Fallback: nach EGID suchen
+        if not roof:
+            egid = str(building.get('egid', ''))
+            if egid and egid in roof_by_egid:
+                roof = roof_by_egid[egid]
+
+        if roof:
+            building['roof_form'] = roof.get('roof_form')
+            building['roof_form_confidence'] = roof.get('roof_form_confidence')
+            building['roof_orientation'] = roof.get('roof_orientation')
+            updated += 1
+
+    if updated > 0:
+        logger.info(f"[ROOF] {updated} Gebäude mit Dachform-Daten aktualisiert")
+
+    return updated
+
+
 def schedule_prefetch(tile_id: str, gdb_path: Path, exclude_egid: Optional[str] = None):
     """
     Plant einen Prefetch-Job im Hintergrund.
 
     Fire-and-forget: Kehrt sofort zurück, Job läuft async.
+    REFACTORED 11.01.2026: Konvertiert exclude_egid zu exclude_egids Set.
 
     Args:
         tile_id: Tile-Referenz
         gdb_path: Pfad zum gecachten GDB
-        exclude_egid: EGID die nicht geladen werden soll
+        exclude_egid: EGID die nicht geladen werden soll (Rückwärtskompatibilität)
     """
+    # Konvertiere zu Set für neue API
+    exclude_egids = {int(exclude_egid)} if exclude_egid else None
+    
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(
-            prefetch_tile_buildings(tile_id, gdb_path, exclude_egid)
+            prefetch_tile_buildings(tile_id, gdb_path, exclude_egids)
         )
         logger.debug(f"Prefetch-Task geplant für {tile_id}")
     except RuntimeError:
         # Kein laufender Event-Loop - synchron starten
         logger.debug(f"Kein Event-Loop, starte Prefetch synchron für {tile_id}")
-        asyncio.run(prefetch_tile_buildings(tile_id, gdb_path, exclude_egid))
+        asyncio.run(prefetch_tile_buildings(tile_id, gdb_path, exclude_egids))
 
 
 def get_prefetch_status() -> dict:
@@ -490,6 +666,7 @@ def find_immediate_neighbors(
                             for i in range(len(polygon) - 1)
                         ), 2)
 
+                    # NEU 11.01.2026: Erweiterte Attribute für 3D-Layer
                     neighbors.append({
                         "egid": egid_int,
                         "polygon": polygon,
@@ -501,6 +678,11 @@ def find_immediate_neighbors(
                         "center_e": round(cx, 1),
                         "center_n": round(cy, 1),
                         "distance_m": round(dist, 2),
+                        # Erweiterte Attribute aus swissBUILDINGS3D 3.0
+                        "objektart": props.get('OBJEKTART'),
+                        "name_komplett": props.get('NAME_KOMPLETT'),
+                        "gebaeude_nutzung": props.get('GEBAEUDE_NUTZUNG'),
+                        "gebaeudeeinheit": props.get('GEBAEUDEEINHEIT'),
                     })
 
                 except Exception as e:
@@ -613,10 +795,11 @@ def schedule_prefetch_with_neighbors(
         exclude_egids = {main_egid} if main_egid else set()
 
     # 2. ASYNC: Background-Prefetch für restliche Gebäude
+    # REFACTORED 11.01.2026 21:50: Nutzt jetzt prefetch_tile_buildings (vereint)
     def _background_prefetch():
         """Läuft in separatem Thread."""
         try:
-            asyncio.run(prefetch_tile_buildings_excluding(
+            asyncio.run(prefetch_tile_buildings(
                 tile_id=tile_id,
                 gdb_path=gdb_path,
                 exclude_egids=exclude_egids
@@ -635,72 +818,6 @@ def schedule_prefetch_with_neighbors(
     return immediate_count, background_started
 
 
-async def prefetch_tile_buildings_excluding(
-    tile_id: str,
-    gdb_path: Path,
-    exclude_egids: Set[int] = None
-) -> int:
-    """
-    Prefetcht alle Gebäude AUSSER den bereits geladenen.
-
-    Args:
-        tile_id: Tile-Referenz
-        gdb_path: Pfad zum GDB-Verzeichnis
-        exclude_egids: Set von EGIDs die übersprungen werden
-
-    Returns:
-        Anzahl gespeicherter Gebäude
-    """
-    exclude_egids = exclude_egids or set()
-
-    # Check ob bereits ein Prefetch für dieses Tile läuft
-    with _prefetch_lock:
-        if tile_id in _prefetch_in_progress:
-            logger.debug(f"Prefetch für {tile_id} läuft bereits, überspringe")
-            return 0
-        _prefetch_in_progress.add(tile_id)
-
-    try:
-        logger.info(
-            f"[PREFETCH-ASYNC] Start für {tile_id} | "
-            f"Ausgeschlossen: {len(exclude_egids)} EGIDs"
-        )
-        start_time = datetime.now()
-
-        # GDB parsen
-        buildings = _parse_all_buildings_from_gdb(gdb_path)
-
-        if not buildings:
-            logger.warning(f"Keine Gebäude in Tile {tile_id} gefunden")
-            return 0
-
-        # Bereits geladene filtern
-        buildings_to_save = [
-            b for b in buildings
-            if b.get("egid") and b["egid"] not in exclude_egids
-        ]
-
-        for b in buildings_to_save:
-            b["tile_id"] = tile_id
-
-        # Speichern
-        from app.services.building_3d_service import get_building_3d_service
-        building_3d_service = get_building_3d_service()
-        saved_count = building_3d_service.bulk_save(buildings_to_save, tile_id)
-
-        elapsed = (datetime.now() - start_time).total_seconds()
-        logger.info(
-            f"[PREFETCH-ASYNC] Abgeschlossen: {tile_id} | "
-            f"{saved_count} Gebäude (von {len(buildings)} total, {len(exclude_egids)} übersprungen) | "
-            f"{elapsed:.1f}s"
-        )
-
-        return saved_count
-
-    except Exception as e:
-        logger.error(f"Prefetch-Fehler für {tile_id}: {e}")
-        return 0
-
-    finally:
-        with _prefetch_lock:
-            _prefetch_in_progress.discard(tile_id)
+# ENTFERNT 11.01.2026 21:50: prefetch_tile_buildings_excluding()
+# → Zusammengeführt mit prefetch_tile_buildings() (Zeile 59)
+# → exclude_egids Parameter übernommen, Roof_solid Parsing funktioniert jetzt

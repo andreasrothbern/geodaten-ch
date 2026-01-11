@@ -409,8 +409,8 @@ class SmartBuildingService:
         Sammelt alle verfügbaren Daten für ein oder mehrere Gebäude.
 
         NEU 11.01.2026: Rückwärtskompatible Multi-Adress-Unterstützung.
-        Bei einer Liste von Adressen wird für jedes Gebäude _enrich_building()
-        aufgerufen, mit interner Cache-Prüfung.
+        Bei einer Liste von Adressen werden die _collect_* Methoden für
+        jedes Gebäude aufgerufen, mit interner Cache-Prüfung.
 
         Args:
             address: Schweizer Adresse (String) oder Liste von Adressen
@@ -438,7 +438,7 @@ class SmartBuildingService:
                 include_terrain=include_terrain,
             )
 
-        # Einzelne Adresse - REFACTORED 11.01.2026: Nutzt jetzt _enrich_building()
+        # Einzelne Adresse - REFACTORED 11.01.2026: Bundle-basiert wie Multi-Address
         cache_key = self._cache_key(address)
 
         # 1. Quick Cache Check (ohne Lock - read-only)
@@ -466,30 +466,55 @@ class SmartBuildingService:
 
             logger.info(f"Collecting data for {address} (holding lock)")
 
-            # 3. Geocoding (liefert Koordinaten + EGID)
-            geo = await self._geocode_address(address)
+            # 3. Bundle erstellen und Geocoding
+            bundle = BuildingDataBundle(
+                address_input=address,
+                collection_timestamp=datetime.now(),
+            )
+            await self._collect_geocoding(bundle)
 
-            if not geo.get("lv95_e") or not geo.get("lv95_n"):
+            if not bundle.lv95_e or not bundle.lv95_n:
                 logger.error(f"Geocoding failed for {address}, cannot proceed")
-                bundle = BuildingDataBundle(address_input=address)
                 bundle.add_error("Geocoding fehlgeschlagen - keine weiteren Daten verfügbar")
                 return bundle
 
-            # 4. Enrichment via gemeinsame Methode (Phase 2-5)
-            bundle = await self._enrich_building(
-                address=address,
-                egid=geo.get("egid"),
-                coordinates=(geo["lv95_e"], geo["lv95_n"]),
-                matched_address=geo.get("matched_address"),
-                force_refresh=force_refresh,
-                include_research=include_research,
-                include_zones_analysis=include_zones_analysis,
-                include_terrain=include_terrain,
-            )
+            # 4. Enrichment via _collect_* Methoden (wie Multi-Address)
+            await self._collect_gwr_data(bundle)
+            await self._collect_building_3d_data(bundle)
+            if include_terrain:
+                await self._collect_terrain_data(bundle)
+            await self._collect_sonnendach_data(bundle)
+            await self._calculate_roof_data(bundle)
+            if include_zones_analysis:
+                self._create_default_zone(bundle)
+            if include_research:
+                await self._collect_research_data(bundle, force_refresh)
+            self._calculate_access_points(bundle)
+            self._assess_data_quality(bundle)
+
+            # 5. Cache speichern
+            self._save_bundle_cache(cache_key, bundle)
 
             return bundle
 
-    # _collect_geocoding() entfernt 11.01.2026 - ersetzt durch _geocode_address()
+    async def _collect_geocoding(self, bundle: BuildingDataBundle):
+        """Schritt 1: Geocoding - fuellt Bundle mit Koordinaten"""
+        try:
+            from app.services.swisstopo import SwisstopoService
+            swisstopo = SwisstopoService()
+
+            geo = await swisstopo.geocode(bundle.address_input)
+            if geo and geo.coordinates:
+                bundle.lv95_e = geo.coordinates.lv95_e
+                bundle.lv95_n = geo.coordinates.lv95_n
+                bundle.address_matched = geo.matched_address
+                if hasattr(geo, 'egid') and geo.egid:
+                    bundle.egid = str(geo.egid)
+                bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
+
+        except Exception as e:
+            logger.error(f'Geocoding error for {bundle.address_input}: {e}')
+            bundle.add_warning(f'Geocoding fehlgeschlagen: {str(e)}')
 
     async def _collect_gwr_data(self, bundle: BuildingDataBundle):
         """Schritt 2: GWR-Daten"""
@@ -599,6 +624,10 @@ class SmartBuildingService:
                     except Exception as shape_error:
                         logger.warning(f"Shape analysis failed: {shape_error}")
 
+                # === DACH-DATEN aus building_roofs (NEU 11.01.2026) ===
+                # Echte 3D-Daten aus Roof_solid Layer (gleicher Tile-Import!)
+                self._load_roof_data_from_db(bundle)
+
             else:
                 bundle.add_warning("Gebäude nicht in swissBUILDINGS3D gefunden")
 
@@ -645,6 +674,90 @@ class SmartBuildingService:
 
         except Exception as e:
             logger.warning(f"Fallback height lookup failed: {e}")
+
+    def _load_roof_data_from_db(self, bundle: BuildingDataBundle):
+        """
+        NEU 11.01.2026: Lädt echte Dach-Daten aus building_roofs.
+
+        Diese Daten kommen aus dem Roof_solid Layer (gleicher Tile-Import wie
+        buildings_3d). Sie haben Vorrang vor berechneten Werten.
+
+        Setzt:
+        - roof_type (flachdach, satteldach, etc.)
+        - roof_angle_deg
+        - roof_orientation
+        - roof_geometry_wkb (echte 3D-Geometrie)
+        - roof_z_levels (für Analyse)
+        - roof_dach_min_m / roof_dach_max_m (m ü.M.)
+        """
+        if not bundle.egid:
+            return
+
+        try:
+            from app.services.roof_3d_service import get_roof_3d_service
+            from app.services.building_3d_service import get_building_3d_service
+
+            roof_service = get_roof_3d_service()
+            building_service = get_building_3d_service()
+
+            # 1. Versuche per EGID
+            roof_data = roof_service.get_by_egid(str(bundle.egid))
+
+            # 2. Falls nicht gefunden, über gebaeudeeinheit
+            if not roof_data:
+                building_data = building_service.get_by_egid(int(bundle.egid))
+                if building_data and building_data.get('gebaeudeeinheit'):
+                    gebaeudeeinheit = building_data['gebaeudeeinheit']
+                    bundle.roof_gebaeudeeinheit = gebaeudeeinheit
+                    roof_data = roof_service.get_by_gebaeudeeinheit(gebaeudeeinheit)
+
+            if not roof_data:
+                logger.debug(f"[ROOF_3D] Keine Dach-Daten in DB für EGID {bundle.egid}")
+                return
+
+            # === Echte Dach-Daten übernehmen ===
+            logger.info(
+                f"[ROOF_3D] Echte Dach-Daten für EGID {bundle.egid}: "
+                f"Form={roof_data.get('roof_form')}, "
+                f"Orientierung={roof_data.get('roof_orientation')}, "
+                f"has_geometry={roof_data.get('has_full_geometry')}"
+            )
+
+            # Dachform (primäre Quelle!)
+            if roof_data.get('roof_form'):
+                bundle.roof_type = roof_data['roof_form']
+                bundle.roof_confidence = 0.95  # Hohe Konfidenz für echte Daten
+
+            # FIX 11.01.2026 21:30 - 0.0 ist falsy, daher explizit None-Check
+            # Neigung (0.0 ist gültig für Flachdächer!)
+            if roof_data.get('roof_angle_deg') is not None:
+                bundle.roof_angle_deg = roof_data['roof_angle_deg']
+
+            # Orientierung (None ist gültig für Flachdächer ohne Orientierung)
+            if roof_data.get('roof_orientation') is not None:
+                bundle.roof_orientation = roof_data['roof_orientation']
+
+            # Absolute Höhen (m ü.M.)
+            bundle.roof_dach_min_m = roof_data.get('dach_min')
+            bundle.roof_dach_max_m = roof_data.get('dach_max')
+
+            # Z-Level Verteilung
+            bundle.roof_z_levels = roof_data.get('z_levels')
+
+            # Gebaeudeeinheit
+            if roof_data.get('gebaeudeeinheit'):
+                bundle.roof_gebaeudeeinheit = roof_data['gebaeudeeinheit']
+
+            # 3D-Geometrie (für Frontend)
+            if roof_data.get('has_full_geometry') and roof_data.get('geometry_wkb'):
+                bundle.roof_geometry_wkb = roof_data['geometry_wkb']
+                bundle.has_roof_geometry = True
+                logger.info(f"[ROOF_3D] Echte 3D-Geometrie geladen für EGID {bundle.egid}")
+            else:
+                bundle.has_roof_geometry = False
+
+        except Exception as e:
+            logger.warning(f"[ROOF_3D] Fehler beim Laden der Dach-Daten: {e}")
 
     async def _collect_terrain_data(self, bundle: BuildingDataBundle):
         """Schritt 4: Terrain-Daten (Hanglage) - ENRICHMENT
@@ -780,7 +893,23 @@ class SmartBuildingService:
             logger.warning(f"Could not save terrain to environment: {e}")
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):
-        """Schritt 6: Dach-Analyse (berechnet)"""
+        """Schritt 6: Dach-Analyse (berechnet) - NUR ALS FALLBACK!
+
+        NEU 11.01.2026: Diese Methode wird nur ausgeführt wenn KEINE echten
+        Dach-Daten aus building_roofs (Roof_solid Layer) vorhanden sind.
+
+        Priorität:
+        1. building_roofs (echte 3D-Daten) → bereits in _load_roof_data_from_db()
+        2. Berechnet (diese Methode) → nur als Fallback
+        """
+        # Skip wenn bereits echte Dach-Daten vorhanden
+        if bundle.roof_type and bundle.roof_confidence >= 0.9:
+            logger.debug(
+                f"[ROOF] Skip Berechnung - echte Daten vorhanden: "
+                f"type={bundle.roof_type}, confidence={bundle.roof_confidence}"
+            )
+            return
+
         try:
             from app.services.roof import get_roof_service
             roof_service = get_roof_service()
@@ -793,24 +922,47 @@ class SmartBuildingService:
             )
 
             if result:
-                bundle.roof_type = result.roof_type.value if hasattr(result.roof_type, 'value') else str(result.roof_type)
-                bundle.roof_angle_deg = result.roof_angle_deg
-                bundle.roof_orientation = result.roof_orientation
+                # Nur setzen wenn noch nicht vorhanden
+                if not bundle.roof_type:
+                    bundle.roof_type = result.roof_type.value if hasattr(result.roof_type, 'value') else str(result.roof_type)
+                if not bundle.roof_angle_deg:
+                    bundle.roof_angle_deg = result.roof_angle_deg
+                if not bundle.roof_orientation:
+                    bundle.roof_orientation = result.roof_orientation
+
+                # Diese werden immer gesetzt (ergänzend)
                 bundle.roof_area_m2 = result.roof_area_m2
-                bundle.roof_confidence = result.confidence
-                bundle.add_source(DataSource.CALCULATED)
+
+                # Konfidenz nur setzen wenn noch keine echten Daten
+                if bundle.roof_confidence < 0.9:
+                    bundle.roof_confidence = result.confidence
+                    bundle.add_source(DataSource.CALCULATED)
+                    logger.info(f"[ROOF] Berechnet: type={bundle.roof_type}, angle={bundle.roof_angle_deg}°")
 
         except Exception as e:
             logger.error(f"Roof calculation error: {e}")
 
     async def _collect_sonnendach_data(self, bundle: BuildingDataBundle):
-        """Schritt 6b: Detaillierte Dachgeometrie aus Sonnendach.ch (BFE)
+        """Schritt 6b: Ergänzende Dachgeometrie aus Sonnendach.ch (BFE) - ENRICHMENT
 
-        Liefert:
-        - Exakte Dachflächen-Polygone
-        - Neigung pro Dachfläche (tilt)
-        - Ausrichtung (Azimut 0-360°)
-        - Dachüberstand (berechnet aus Polygon-Differenz)
+        NEU 11.01.2026: Diese Methode ist NUR für ERGÄNZENDE Daten zuständig!
+        Echte Dach-Daten aus building_roofs (Roof_solid) haben VORRANG.
+
+        Priorität der Datenquellen:
+        1. building_roofs (Roof_solid Layer) → in _load_roof_data_from_db()
+        2. Sonnendach.ch (diese Methode) → NUR ergänzend
+        3. Berechnet (_calculate_roof_data) → Fallback
+
+        Sonnendach.ch liefert ERGÄNZEND:
+        - roof_surfaces: Dachflächen-Polygone mit Eignung
+        - roof_tilt_deg: Neigung (Sonnendach-spezifisch)
+        - roof_azimuth_deg: Ausrichtung (Sonnendach-spezifisch)
+        - roof_overhang_m: Dachüberstand (NICHT in building_roofs!)
+
+        ÜBERSCHREIBT NICHT (wenn aus building_roofs vorhanden):
+        - roof_type
+        - roof_angle_deg
+        - roof_orientation
 
         Falls keine Daten: Standard-Dachüberstand 40cm wird verwendet.
         """
@@ -840,16 +992,21 @@ class SmartBuildingService:
                     for s in analysis.surfaces
                 ]
 
-                # Aggregierte Werte übernehmen (bessere Genauigkeit als berechnet)
+                # === ENRICHMENT: Ergänzende Daten (NICHT überschreiben!) ===
+                # NEU 11.01.2026: Echte Dach-Daten aus building_roofs haben Vorrang!
+
+                # Neigung: Sonnendach-spezifisches Feld (immer setzen)
                 if analysis.main_tilt_degrees:
                     bundle.roof_tilt_deg = analysis.main_tilt_degrees
-                    # Überschreibe berechneten Wert wenn Sonnendach genauer
-                    if bundle.roof_angle_deg is None or bundle.roof_confidence < 0.8:
+                    # roof_angle_deg nur setzen wenn KEINE echten Daten (confidence < 0.9)
+                    if bundle.roof_angle_deg is None or bundle.roof_confidence < 0.9:
                         bundle.roof_angle_deg = analysis.main_tilt_degrees
-                        bundle.roof_confidence = 0.9
+                        # Nur Konfidenz erhöhen wenn noch keine echten Daten
+                        if bundle.roof_confidence < 0.9:
+                            bundle.roof_confidence = 0.85  # Sonnendach ist gut, aber nicht so gut wie Roof_solid
 
-                # Dachtyp aus Sonnendach
-                if analysis.roof_type:
+                # Dachtyp: NUR setzen wenn KEINE echten Daten vorhanden!
+                if analysis.roof_type and (not bundle.roof_type or bundle.roof_confidence < 0.9):
                     sonnendach_roof_type = analysis.roof_type
                     # Mapping: flat→flachdach, gabled→satteldach, hipped→walmdach
                     type_map = {
@@ -859,23 +1016,23 @@ class SmartBuildingService:
                         "complex": "komplex",
                     }
                     bundle.roof_type = type_map.get(sonnendach_roof_type, bundle.roof_type)
+                    logger.debug(f"[SONNENDACH] roof_type gesetzt: {bundle.roof_type}")
 
-                # FIX 11.01.2026 02:30 - Dach-Ausrichtung aus Sonnendach.ch übernehmen
-                # main_orientation ist die Haupt-Neigungsrichtung der grössten Dachfläche
+                # Azimut: Sonnendach-spezifisches Feld (immer setzen)
+                # roof_orientation: NUR setzen wenn KEINE echten Daten!
                 if analysis.main_orientation:
-                    # Berechne roof_azimuth_deg aus den Dachflächen (flächen-gewichtet)
                     azimuth_deg = self._calculate_weighted_azimuth(analysis.surfaces)
                     if azimuth_deg is not None:
-                        bundle.roof_azimuth_deg = azimuth_deg
-                        # roof_orientation aus Azimut ableiten:
-                        # - E/W (67.5-112.5° oder 247.5-292.5°): Dach neigt O-W
-                        # - N/S (sonst): Dach neigt N-S
-                        if (67.5 <= azimuth_deg < 112.5) or (247.5 <= azimuth_deg < 292.5):
-                            bundle.roof_orientation = "O-W"
-                        else:
-                            bundle.roof_orientation = "N-S"
-                        logger.info(f"Sonnendach Ausrichtung: {analysis.main_orientation} → "
-                                   f"azimuth={azimuth_deg:.1f}° → {bundle.roof_orientation}")
+                        bundle.roof_azimuth_deg = azimuth_deg  # Immer setzen (Sonnendach-spezifisch)
+
+                        # roof_orientation nur setzen wenn keine echten Daten
+                        if not bundle.roof_orientation or bundle.roof_confidence < 0.9:
+                            if (67.5 <= azimuth_deg < 112.5) or (247.5 <= azimuth_deg < 292.5):
+                                bundle.roof_orientation = "O-W"
+                            else:
+                                bundle.roof_orientation = "N-S"
+                            logger.info(f"Sonnendach Ausrichtung: {analysis.main_orientation} → "
+                                       f"azimuth={azimuth_deg:.1f}° → {bundle.roof_orientation}")
 
                 # Dachüberstand aus Polygon-Differenz berechnen
                 overhang = self._calculate_roof_overhang(bundle, analysis.surfaces)
@@ -1434,73 +1591,55 @@ class SmartBuildingService:
 
         logger.info(f"[MULTI-BUILDING] Starte Datensammlung für {len(addresses)} Adressen")
 
-        # Phase 1: Geocoding für alle Adressen parallel
-        geocoding_tasks = [self._geocode_address(addr) for addr in addresses]
-        geocoding_results = await asyncio.gather(*geocoding_tasks, return_exceptions=True)
+        # Phase 1: Bundles erstellen und Geocoding durchfuehren
+        bundles = []
+        for addr in addresses:
+            bundle = BuildingDataBundle(
+                address_input=addr,
+                collection_timestamp=datetime.now(),
+            )
+            await self._collect_geocoding(bundle)
+            if bundle.lv95_e and bundle.lv95_n:
+                bundles.append(bundle)
+            else:
+                logger.warning(f"Geocoding failed for {addr}")
 
-        # Gültige Geocoding-Ergebnisse extrahieren
-        valid_geocodings = []
-        for i, result in enumerate(geocoding_results):
-            if isinstance(result, Exception):
-                logger.warning(f"Geocoding failed for {addresses[i]}: {result}")
-                continue
-            if result and result.get("lv95_e") and result.get("lv95_n"):
-                valid_geocodings.append({
-                    "address": addresses[i],
-                    **result
-                })
-
-        if not valid_geocodings:
+        if not bundles:
             logger.error("[MULTI-BUILDING] Kein Geocoding erfolgreich")
             return []
 
-        logger.info(f"[MULTI-BUILDING] {len(valid_geocodings)}/{len(addresses)} Adressen geocodiert")
+        logger.info(f"[MULTI-BUILDING] {len(bundles)}/{len(addresses)} Adressen geocodiert")
 
         # Phase 2: Centroid berechnen aus allen Koordinaten
-        centroid_e = sum(g["lv95_e"] for g in valid_geocodings) / len(valid_geocodings)
-        centroid_n = sum(g["lv95_n"] for g in valid_geocodings) / len(valid_geocodings)
+        centroid_e = sum(b.lv95_e for b in bundles) / len(bundles)
+        centroid_n = sum(b.lv95_n for b in bundles) / len(bundles)
         logger.info(f"[MULTI-BUILDING] Centroid: E={centroid_e:.1f}, N={centroid_n:.1f}")
 
-        # Phase 3: Tile laden mit Centroid (triggert Prefetch für alle Gebäude)
-        # Ein Tile-Download reicht für alle Gebäude (sie liegen nahe beieinander)
+        # Phase 3: Tile laden mit Centroid (triggert Prefetch fuer alle Gebaeude)
         await self._ensure_tile_loaded(centroid_e, centroid_n)
 
-        # Phase 4: Für jedes Gebäude: _enrich_building()
-        bundles = []
-        for geo in valid_geocodings:
-            bundle = await self._enrich_building(
-                address=geo["address"],
-                egid=geo.get("egid"),
-                coordinates=(geo["lv95_e"], geo["lv95_n"]),
-                matched_address=geo.get("matched_address"),
-                force_refresh=force_refresh,
-                include_research=include_research,
-                include_zones_analysis=include_zones_analysis,
-                include_terrain=include_terrain,
-            )
-            bundles.append(bundle)
+        # Phase 4: Fuer jedes Bundle: Enrichment durchfuehren
+        enriched_bundles = []
+        for bundle in bundles:
+            # Enrichment via bestehende Methoden
+            await self._collect_gwr_data(bundle)
+            await self._collect_building_3d_data(bundle)
+            if include_terrain:
+                await self._collect_terrain_data(bundle)
+            await self._collect_sonnendach_data(bundle)
+            await self._calculate_roof_data(bundle)
+            if include_zones_analysis:
+                self._create_default_zone(bundle)
+            if include_research:
+                await self._collect_research_data(bundle, force_refresh)
+            self._calculate_access_points(bundle)
+            self._assess_data_quality(bundle)
+            cache_key = self._cache_key(bundle.address_input, bundle.egid)
+            self._save_bundle_cache(cache_key, bundle)
+            enriched_bundles.append(bundle)
 
         logger.info(f"[MULTI-BUILDING] {len(bundles)} Bundles erstellt")
         return bundles
-
-    async def _geocode_address(self, address: str) -> Dict[str, Any]:
-        """Geocoding für eine einzelne Adresse."""
-        try:
-            from app.services.swisstopo import SwisstopoService
-            swisstopo = SwisstopoService()
-
-            geo = await swisstopo.geocode(address)
-            if geo:
-                return {
-                    "matched_address": geo.matched_address,
-                    "lv95_e": geo.coordinates.lv95_e,
-                    "lv95_n": geo.coordinates.lv95_n,
-                    "egid": str(geo.egid) if hasattr(geo, 'egid') and geo.egid else None,
-                }
-            return {}
-        except Exception as e:
-            logger.error(f"Geocoding error for {address}: {e}")
-            return {}
 
     async def _ensure_tile_loaded(self, e: float, n: float):
         """Stellt sicher, dass das Tile für die Koordinaten geladen ist."""
@@ -1510,103 +1649,6 @@ class SmartBuildingService:
             await fetch_building_polygon_for_coordinates(e=e, n=n, tolerance_m=50.0)
         except Exception as e:
             logger.warning(f"Tile loading failed for E={e}, N={n}: {e}")
-
-    async def _enrich_building(
-        self,
-        address: str,
-        egid: Optional[str],
-        coordinates: Tuple[float, float],
-        matched_address: Optional[str] = None,
-        force_refresh: bool = False,
-        include_research: bool = True,
-        include_zones_analysis: bool = True,
-        include_terrain: bool = True,
-    ) -> BuildingDataBundle:
-        """
-        Enrichment für ein einzelnes Gebäude mit interner Cache-Prüfung.
-
-        NEU 11.01.2026: Diese Methode prüft zuerst ob das Bundle bereits
-        im Cache existiert. Falls ja, wird es direkt zurückgegeben.
-        Falls nicht, wird das vollständige Enrichment durchgeführt.
-
-        Args:
-            address: Original-Adresse
-            egid: Eidgenössische Gebäudeidentifikation (falls bekannt)
-            coordinates: (lv95_e, lv95_n) Koordinaten
-            matched_address: Gematchte Adresse aus Geocoding
-            force_refresh: Cache ignorieren
-            include_research: Claude-Recherche
-            include_zones_analysis: Claude-Analyse
-            include_terrain: Terrain-Daten
-
-        Returns:
-            BuildingDataBundle (aus Cache oder neu erstellt)
-        """
-        cache_key = self._cache_key(address, egid)
-
-        # 1. Cache-Prüfung (falls nicht force_refresh)
-        if not force_refresh:
-            cached = self._get_cached_bundle(cache_key)
-            if cached:
-                logger.info(f"[ENRICH] Cache-Hit für {address} (EGID: {egid})")
-                return cached
-
-        # 2. Neues Bundle erstellen
-        bundle = BuildingDataBundle(
-            address_input=address,
-            address_matched=matched_address or address,
-            lv95_e=coordinates[0],
-            lv95_n=coordinates[1],
-            egid=egid,
-            collection_timestamp=datetime.now(),
-        )
-        bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
-
-        # 3. Daten parallel sammeln
-        phase2_tasks = [
-            self._collect_gwr_data(bundle),
-            self._collect_building_3d_data(bundle),
-            self._collect_sonnendach_data(bundle),
-        ]
-        if include_terrain:
-            phase2_tasks.append(self._collect_terrain_data(bundle))
-        if include_research:
-            phase2_tasks.append(self._collect_research_data(bundle, force_refresh))
-
-        await asyncio.gather(*phase2_tasks, return_exceptions=True)
-
-        # 4. Validierung
-        from .validation import validate_heights, validate_zone_consistency
-        validate_heights(bundle)
-
-        # 5. Dach-Berechnung
-        await self._calculate_roof_data(bundle)
-
-        # 6. Zonen-Analyse
-        if include_zones_analysis and self._needs_zones_analysis(bundle):
-            await self._collect_zones_analysis(bundle)
-        else:
-            self._create_default_zone(bundle)
-
-        validate_zone_consistency(bundle)
-
-        # 7. Zugänge berechnen
-        self._calculate_access_points(bundle)
-
-        # 8. Qualität bewerten
-        self._assess_data_quality(bundle)
-
-        # 9. Cache speichern
-        self._save_bundle_cache(cache_key, bundle)
-
-        logger.info(
-            f"[ENRICH] Bundle erstellt für {address}\n"
-            f"  ├─ EGID: {bundle.egid}\n"
-            f"  ├─ Zonen: {len(bundle.zones)}\n"
-            f"  └─ Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m"
-        )
-
-        return bundle
 
     def _assess_data_quality(self, bundle: BuildingDataBundle):
         """Bewertet die Gesamtqualität der gesammelten Daten"""

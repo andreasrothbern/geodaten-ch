@@ -200,6 +200,15 @@ class BuildingDataBundle:
     roof_azimuth_deg: Optional[float] = None  # Genaue Ausrichtung (0-360°)
     sonnendach_available: bool = False  # Sonnendach.ch Daten verfügbar?
 
+    # === DACH (swissBUILDINGS3D Roof_solid) - NEU 11.01.2026 ===
+    # Echte 3D-Dachgeometrie aus Roof_solid Layer
+    roof_geometry_wkb: Optional[bytes] = None  # 3D-Geometrie als WKB (für Frontend)
+    has_roof_geometry: bool = False  # Echte Geometrie verfügbar?
+    roof_z_levels: Optional[List[float]] = None  # Z-Level Verteilung für Analyse
+    roof_dach_min_m: Optional[float] = None  # Traufhöhe (m ü.M.) aus Roof_solid
+    roof_dach_max_m: Optional[float] = None  # Firsthöhe (m ü.M.) aus Roof_solid
+    roof_gebaeudeeinheit: Optional[str] = None  # Verknüpfung zu Roof_solid
+
     # === ZONEN ===
     zones: List[ZoneInfo] = field(default_factory=list)
     complexity: str = "simple"  # simple, moderate, complex

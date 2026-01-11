@@ -3229,6 +3229,202 @@ async def get_building_environment(
     }
 
 
+# =============================================================================
+# 3D-LAYER ENDPUNKTE (NEU 11.01.2026)
+# =============================================================================
+
+@app.get("/api/v1/building/{egid}/3d-layers",
+         tags=["3D-Layer"])
+async def get_building_3d_layers(egid: str):
+    """
+    Gibt alle 3D-Layer für ein Gebäude zurück.
+
+    **Liefert:**
+    - polygon: Grundriss aus buildings_3d (immer vorhanden)
+    - roof: Dach-Daten aus building_roofs (mit Geometrie!)
+    - walls: Fassaden aus building_walls (nur wenn on-demand geladen)
+    - floors: Grundriss aus building_floors (nur wenn on-demand geladen)
+
+    **Beispiel:** `/api/v1/building/2242547/3d-layers`
+    """
+    from app.services.building_3d_service import get_building_3d_service
+    from app.services.roof_3d_service import get_roof_3d_service
+    from app.services.layer_fetcher import get_layer_fetcher_service
+
+    building_service = get_building_3d_service()
+    roof_service = get_roof_3d_service()
+    layer_fetcher = get_layer_fetcher_service()
+
+    # Grunddaten aus buildings_3d
+    building = building_service.get_by_egid(int(egid))
+    if not building:
+        return {
+            "success": False,
+            "error": f"Gebäude {egid} nicht gefunden",
+            "egid": egid
+        }
+
+    result = {
+        "success": True,
+        "egid": egid,
+        "has_3d_layers": building.get('has_3d_layers', 0) == 1,
+        "polygon": building.get('polygon'),
+        "traufhoehe_m": building.get('traufhoehe_m'),
+        "firsthoehe_m": building.get('firsthoehe_m'),
+        "gebaeudeeinheit": building.get('gebaeudeeinheit'),
+        "roof_form": building.get('roof_form'),
+        "roof_orientation": building.get('roof_orientation'),
+    }
+
+    # Dach-Daten aus building_roofs
+    gebaeudeeinheit = building.get('gebaeudeeinheit')
+    if gebaeudeeinheit:
+        roof = roof_service.get_by_gebaeudeeinheit(gebaeudeeinheit)
+        if roof:
+            result['roof'] = {
+                "dach_min": roof.get('dach_min'),
+                "dach_max": roof.get('dach_max'),
+                "roof_form": roof.get('roof_form'),
+                "roof_angle_deg": roof.get('roof_angle_deg'),
+                "roof_orientation": roof.get('roof_orientation'),
+                "z_levels": roof.get('z_levels'),
+                "has_geometry": roof.get('has_full_geometry', 0) == 1,
+                # WKB zu WKT konvertieren wenn vorhanden
+                "geometry_wkt": _wkb_to_wkt(roof.get('geometry_wkb')) if roof.get('geometry_wkb') else None
+            }
+
+    # Wall-Daten (nur wenn on-demand geladen)
+    walls = layer_fetcher.get_walls_for_building(egid)
+    if walls:
+        result['walls'] = [
+            {
+                "z_min": w.get('z_min'),
+                "z_max": w.get('z_max'),
+                "geometry_wkt": _wkb_to_wkt(w.get('geometry_wkb')) if w.get('geometry_wkb') else None
+            }
+            for w in walls
+        ]
+
+    # Floor-Daten (nur wenn on-demand geladen)
+    floors = layer_fetcher.get_floors_for_building(egid)
+    if floors:
+        result['floors'] = [
+            {
+                "gelaendepunkt": f.get('gelaendepunkt'),
+                "geometry_wkt": _wkb_to_wkt(f.get('geometry_wkb')) if f.get('geometry_wkb') else None
+            }
+            for f in floors
+        ]
+
+    return result
+
+
+@app.post("/api/v1/building/{egid}/load-3d-layers",
+          tags=["3D-Layer"])
+async def load_building_3d_layers(
+    egid: str,
+    force: bool = Query(False, description="Erzwingt Neuladen auch wenn vorhanden")
+):
+    """
+    Lädt 3D-Layer (Wall, Floor) on-demand für ein Gebäude.
+
+    Wird automatisch aufgerufen wenn:
+    - Gebäude als COMPLEX klassifiziert ist
+    - 3D-Visualisierung aktiviert wird
+
+    **Ablauf:**
+    1. Tile downloaden (temporär)
+    2. Wall + Floor parsen
+    3. In DB speichern
+    4. has_3d_layers Flag setzen
+
+    **Beispiel:** `POST /api/v1/building/2242547/load-3d-layers`
+    """
+    from app.services.layer_fetcher import get_layer_fetcher_service
+
+    layer_fetcher = get_layer_fetcher_service()
+    result = await layer_fetcher.fetch_3d_layers_for_building(egid, force=force)
+
+    return result
+
+
+@app.get("/api/v1/building/{egid}/roof",
+         tags=["3D-Layer"])
+async def get_building_roof(egid: str):
+    """
+    Gibt nur Dach-Daten für ein Gebäude zurück.
+
+    **Liefert:**
+    - roof_form: Dachform (flachdach, satteldach, etc.)
+    - roof_angle_deg: Dachneigung
+    - roof_orientation: First-Ausrichtung
+    - z_levels: Höhenverteilung
+    - geometry_wkt: 3D-Geometrie als WKT
+
+    **Beispiel:** `/api/v1/building/2242547/roof`
+    """
+    from app.services.building_3d_service import get_building_3d_service
+    from app.services.roof_3d_service import get_roof_3d_service
+
+    building_service = get_building_3d_service()
+    roof_service = get_roof_3d_service()
+
+    # Gebäude für gebaeudeeinheit
+    building = building_service.get_by_egid(int(egid))
+    if not building:
+        return {
+            "success": False,
+            "error": f"Gebäude {egid} nicht gefunden"
+        }
+
+    gebaeudeeinheit = building.get('gebaeudeeinheit')
+
+    # Dach-Daten
+    roof = None
+    if gebaeudeeinheit:
+        roof = roof_service.get_by_gebaeudeeinheit(gebaeudeeinheit)
+
+    if not roof:
+        # Fallback: aus buildings_3d
+        return {
+            "success": True,
+            "egid": egid,
+            "source": "buildings_3d",
+            "roof_form": building.get('roof_form'),
+            "roof_orientation": building.get('roof_orientation'),
+            "traufhoehe_m": building.get('traufhoehe_m'),
+            "firsthoehe_m": building.get('firsthoehe_m'),
+        }
+
+    return {
+        "success": True,
+        "egid": egid,
+        "source": "building_roofs",
+        "roof_form": roof.get('roof_form'),
+        "roof_form_confidence": roof.get('roof_form_confidence'),
+        "roof_angle_deg": roof.get('roof_angle_deg'),
+        "roof_orientation": roof.get('roof_orientation'),
+        "dach_min": roof.get('dach_min'),
+        "dach_max": roof.get('dach_max'),
+        "z_levels": roof.get('z_levels'),
+        "has_geometry": roof.get('has_full_geometry', 0) == 1,
+        "geometry_wkt": _wkb_to_wkt(roof.get('geometry_wkb')) if roof.get('geometry_wkb') else None
+    }
+
+
+def _wkb_to_wkt(wkb_bytes: bytes) -> str:
+    """Konvertiert WKB zu WKT für API-Response."""
+    if not wkb_bytes:
+        return None
+    try:
+        from shapely import wkb
+        geom = wkb.loads(wkb_bytes)
+        return geom.wkt
+    except Exception as e:
+        logger.warning(f"WKB zu WKT Konvertierung fehlgeschlagen: {e}")
+        return None
+
+
 @app.get("/api/v1/building/{egid}/svg/{svg_type}",
          tags=["SVG Cache"],
          response_class=Response)
@@ -3607,12 +3803,17 @@ async def get_smart_building_data(
                 "requires_level_compensation": bundle.terrain.requires_level_compensation,
             } if bundle.terrain else None,
 
-            # Dach
+            # Dach (Basis)
             "roof_type": bundle.roof_type,
             "roof_angle_deg": bundle.roof_angle_deg,
             "roof_orientation": bundle.roof_orientation,
             "roof_area_m2": bundle.roof_area_m2,
             "roof_confidence": bundle.roof_confidence,
+            # Dach (3D-Layer - NEU 11.01.2026)
+            "roof_dach_min_m": bundle.roof_dach_min_m,
+            "roof_dach_max_m": bundle.roof_dach_max_m,
+            "has_roof_geometry": bundle.has_roof_geometry,
+            "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
 
             # Zonen
             "zones": [
