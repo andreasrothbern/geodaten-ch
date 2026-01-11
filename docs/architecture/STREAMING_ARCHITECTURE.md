@@ -1,7 +1,7 @@
 # Streaming Architecture
 
-> **Version:** 3.6 (11.01.2026)
-> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅
+> **Version:** 3.8 (12.01.2026)
+> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅
 
 ---
 
@@ -14,20 +14,25 @@
 5. [Teil D: Pipeline-Optimierung](#teil-d-smartbuildingservice-pipeline-optimierung) (implementiert)
 6. [Teil E: Tile-Prefetch Timing](#teil-e-tile-prefetch-timing--on-demand-architektur) (implementiert)
 7. [Teil F: Frontend Service-Aufrufe](#teil-f-frontend-service-aufrufe-configuratorpage) (Analyse)
-8. [Services für Streaming](#services-für-streaming)
-9. [Implementierungsplan](#implementierungsplan)
+8. [Teil G: 3D Layer Architecture](#teil-g-3d-layer-architecture-dach-daten) (implementiert)
+9. [Services für Streaming](#services-für-streaming)
+10. [Implementierungsplan](#implementierungsplan)
 
 ---
 
 ## Übersicht
 
-Diese Architektur besteht aus drei Teilen:
+Diese Architektur besteht aus mehreren Teilen:
 
 | Teil | Zweck | Status |
 |------|-------|--------|
 | **A: Cache-Lookup** | Schneller Datenzugriff durch 3-Stufen Lookup | ✅ Implementiert |
 | **B: Project-Context-Streaming** | Blockierte Fassaden, Nachbarn für bestehende Projekte | ✅ Implementiert |
 | **C: Building-Data-Streaming** | Progressive Datenladung bei Projekt-Erstellung | ✅ Implementiert |
+| **D: Pipeline-Optimierung** | Maximale Parallelisierung im SmartBuildingService | ✅ Implementiert |
+| **E: Tile-Prefetch** | MINIMAL + ON-DEMAND Architektur | ✅ Implementiert |
+| **F: Frontend Service-Aufrufe** | Analyse der ConfiguratorPage Calls | ✅ Dokumentiert |
+| **G: 3D Layer Architecture** | Roof_solid Integration für echte Dach-Daten | ✅ Implementiert |
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1287,6 +1292,83 @@ async def _enrich_building(
 | `smart_building/service.py` | `_geocode_address()` - Geocoding extrahiert |
 | `smart_building/service.py` | `_ensure_tile_loaded()` - Tile-Download triggern |
 
+### E.6.6 BUG-015: Point-in-Polygon für EGID-Auflösung (11.01.2026)
+
+**Problem:** Bei Reihenhäusern zeigt die Geocoding-Koordinate auf den **Hauseingang**,
+der oft näher am Nachbar-Zentrum liegt als am eigenen Gebäude-Zentrum.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              EGID-LOOKUP BEI REIHENHÄUSERN                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Knospenweg 4, 6, 8 (Reihenhäuser)                         │
+│                                                             │
+│       ┌─────────┬─────────┬─────────┐                      │
+│       │ EGID    │ EGID    │ EGID    │                      │
+│       │ 1243790 │ 1243792 │ 1243794 │                      │
+│       │    ●    │    ●    │    ●    │  ● = Gebäude-Zentrum │
+│       │         │         │         │                      │
+│       │    X    │    X    │    X    │  X = Hauseingang     │
+│       └─────────┴─────────┴─────────┘      (Geocoding)     │
+│                                                             │
+│  ALT (Nächstes Zentrum):                                   │
+│  ─────────────────────────                                 │
+│  Geocoding "Knospenweg 6" → X bei (2596298, 1199812)       │
+│  Nächstes Zentrum = EGID 1243794 (Nr. 8!) ← FALSCH!       │
+│                                                             │
+│  NEU (Point-in-Polygon):                                   │
+│  ─────────────────────────                                 │
+│  Geocoding "Knospenweg 6" → X bei (2596298, 1199812)       │
+│  Punkt liegt im Polygon von EGID 1243792 → KORREKT!       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Lösung:** 2-Stufen Lookup mit Point-in-Polygon Priorität:
+
+```python
+# address_parser.py - resolve_to_egids()
+
+# Stufe 1: building_3d.db mit Point-in-Polygon
+swissbuildings_egid = _lookup_egid_by_coordinates(e, n, tolerance_m=10.0)
+
+# Stufe 2: Falls nicht in DB → Tile laden + Point-in-Polygon
+if swissbuildings_egid is None:
+    from app.services.swissbuildings3d_fetcher import fetch_building_polygon_for_coordinates
+    result = await fetch_building_polygon_for_coordinates(e, n, skip_prefetch=True)
+    if result and result.get('egid'):
+        swissbuildings_egid = int(result.get('egid'))
+```
+
+**Implementierung in beiden Dateien:**
+
+| Datei | Funktion | Methode |
+|-------|----------|---------|
+| `address_parser.py` | `_lookup_egid_by_coordinates()` | Ray-Casting (`_point_in_polygon()`) |
+| `swissbuildings3d_fetcher.py` | `parse_gdb_for_building_polygon()` | Shapely `contains()` |
+
+**skip_prefetch Parameter:**
+
+```python
+# swissbuildings3d_fetcher.py
+async def fetch_building_polygon_for_coordinates(
+    e: float, n: float,
+    skip_prefetch: bool = False  # NEU: Für Address Parser
+) -> Optional[Dict]:
+    """
+    skip_prefetch=True:
+    - Lädt Tile (falls nicht gecacht)
+    - Findet Gebäude via Point-in-Polygon
+    - Triggert KEINEN Background-Prefetch
+    - Verwendet von: address_parser.py (nur EGID brauchen)
+
+    skip_prefetch=False (default):
+    - Wie oben PLUS Background-Prefetch starten
+    - Verwendet von: SmartBuildingService
+    """
+```
+
 ## E.7 Zusammenfassung (GEMESSEN 10.01.2026)
 
 | Aspekt | VORHER | NACHHER (implementiert) | Verbesserung |
@@ -1728,10 +1810,233 @@ interface ScaffoldConfig {
 
 ---
 
+# Teil G: 3D Layer Architecture (Dach-Daten)
+
+> **NEU 11.01.2026:** Integration von swissBUILDINGS3D Roof_solid Layer
+
+## G.1 Übersicht: Datenquellen für Dach-Daten
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DACH-DATEN PRIORITÄT                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  PRIO 1: building_roofs (Roof_solid Layer)                      │
+│  ═══════════════════════════════════════════                     │
+│  → Echte 3D-Geometrie aus swissBUILDINGS3D Tile                 │
+│  → roof_form: Aus Z-Level-Analyse (flachdach, satteldach, etc.) │
+│  → roof_orientation: Aus Geometrie berechnet                     │
+│  → roof_geometry_wkb: Echte 3D-Daten für Frontend               │
+│  → Konfidenz: 0.95                                               │
+│                                                                  │
+│  PRIO 2: Sonnendach.ch (BFE) - ERGÄNZEND                        │
+│  ═══════════════════════════════════════════                     │
+│  → roof_tilt_deg: Genauere Neigung (Sonnendach-spezifisch)      │
+│  → roof_azimuth_deg: Genaue Ausrichtung                          │
+│  → roof_overhang_m: Dachüberstand (NICHT in Roof_solid!)        │
+│  → roof_surfaces: Dachflächen mit Eignung                        │
+│  → Überschreibt NICHT: roof_type, roof_orientation              │
+│                                                                  │
+│  PRIO 3: Berechnet (Fallback)                                    │
+│  ═════════════════════════════                                   │
+│  → Nur wenn KEINE echten Daten vorhanden                        │
+│  → Aus Trauf-/Firsthöhe + Polygon berechnet                     │
+│  → Konfidenz: 0.5-0.7                                            │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## G.2 Datenfluss: Tile-Import → SmartBuildingService
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              TILE-IMPORT (tile_prefetch.py)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  swissBUILDINGS3D Tile (.gdb)                                   │
+│       │                                                          │
+│       ├─── Building_solid Layer                                  │
+│       │    └─► buildings_3d (EGID, Polygon, Höhen)              │
+│       │                                                          │
+│       └─── Roof_solid Layer                                      │
+│            │                                                     │
+│            ├─► Z-Level-Analyse (roof_form_detector.py)          │
+│            │   └─ flachdach, satteldach, walmdach, etc.         │
+│            │                                                     │
+│            └─► building_roofs (geometry_wkb, roof_form, ...)    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ Verknüpfung via gebaeudeeinheit
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              SMARTBUILDINGSERVICE                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  _collect_building_3d_data()                                    │
+│       │                                                          │
+│       ├─► Polygon + Höhen aus buildings_3d                      │
+│       │                                                          │
+│       └─► _load_roof_data_from_db()  ← NEU 11.01.2026           │
+│           │                                                      │
+│           ├─ Query building_roofs via EGID                      │
+│           ├─ Falls nicht gefunden: via gebaeudeeinheit          │
+│           │                                                      │
+│           └─► Bundle erhält:                                    │
+│               • roof_type (echte Dachform)                      │
+│               • roof_orientation (echte Ausrichtung)            │
+│               • roof_geometry_wkb (3D-Geometrie)                │
+│               • roof_z_levels (für Analyse)                     │
+│               • roof_confidence = 0.95                          │
+│                                                                  │
+│  _calculate_roof_data()  ← NUR ALS FALLBACK                     │
+│       │                                                          │
+│       └─► Nur wenn roof_confidence < 0.9                        │
+│                                                                  │
+│  _collect_sonnendach_data()  ← ENRICHMENT                       │
+│       │                                                          │
+│       └─► Ergänzt: roof_tilt_deg, roof_azimuth_deg,            │
+│                    roof_overhang_m, roof_surfaces               │
+│       └─► Überschreibt NICHT: roof_type, roof_orientation       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## G.3 Datenbank-Schema
+
+### building_roofs (in building_3d.db)
+
+```sql
+CREATE TABLE building_roofs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gebaeudeeinheit TEXT NOT NULL,    -- Verknüpfung zu anderen Layern
+    egid TEXT,                         -- Eidg. Gebäudeidentifikator
+    dach_min REAL,                     -- Traufhöhe (m ü.M.)
+    dach_max REAL,                     -- Firsthöhe (m ü.M.)
+    roof_form TEXT,                    -- flachdach, satteldach, walmdach, etc.
+    roof_angle_deg REAL,               -- Berechnete Neigung
+    roof_orientation TEXT,             -- First-Verlauf (N-S, O-W, etc.)
+    z_levels TEXT,                     -- JSON: [546.9, 551.0, ...]
+    geometry_wkb BLOB,                 -- 3D-Geometrie als WKB
+    has_full_geometry INTEGER DEFAULT 0,
+    calculated_at TEXT,
+    calculation_method TEXT            -- z_level_analysis, etc.
+);
+
+CREATE INDEX idx_building_roofs_egid ON building_roofs(egid);
+CREATE INDEX idx_building_roofs_gebaeudeeinheit ON building_roofs(gebaeudeeinheit);
+```
+
+### BuildingDataBundle Felder (NEU 11.01.2026)
+
+```python
+# In smart_building/models.py
+@dataclass
+class BuildingDataBundle:
+    # ... bestehende Felder ...
+
+    # === DACH (swissBUILDINGS3D Roof_solid) - NEU 11.01.2026 ===
+    roof_geometry_wkb: Optional[bytes] = None  # 3D-Geometrie als WKB
+    has_roof_geometry: bool = False            # Echte Geometrie verfügbar?
+    roof_z_levels: Optional[List[float]] = None  # Z-Level Verteilung
+    roof_dach_min_m: Optional[float] = None    # Traufhöhe (m ü.M.)
+    roof_dach_max_m: Optional[float] = None    # Firsthöhe (m ü.M.)
+    roof_gebaeudeeinheit: Optional[str] = None # Verknüpfung zu Roof_solid
+```
+
+## G.4 Dachform-Erkennung (roof_form_detector.py)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              DACHFORM AUS Z-LEVELS                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Z-Level-Verteilung analysieren:                                │
+│  ─────────────────────────────                                   │
+│  • Alle Z-Koordinaten der 3D-Geometrie sammeln                  │
+│  • Eindeutige Levels clustern (Toleranz ±0.5m)                  │
+│  • Verteilung auswerten:                                        │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  1-2 Levels, geringe Variation  → FLACHDACH            │   │
+│  │  2-3 Levels, First-Trauf-Diff   → SATTELDACH           │   │
+│  │  3-4 Levels, abgestuft          → WALMDACH             │   │
+│  │  1 Level zentral höher          → ZELTDACH             │   │
+│  │  Asymmetrisch, 1 Seite höher    → PULTDACH             │   │
+│  │  Geknickt, >4 Levels            → MANSARDDACH          │   │
+│  │  Viele Levels, komplex          → KOMPLEX              │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Zusätzlich berechnet:                                          │
+│  • roof_angle_deg: Neigung aus Höhendifferenz + Tiefe          │
+│  • roof_orientation: Aus Geometrie-Analyse (längste Kante)     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## G.5 Implementierte Dateien
+
+| Datei | Beschreibung |
+|-------|--------------|
+| `services/roof_3d_service.py` | Service für building_roofs Tabelle |
+| `services/roof_form_detector.py` | Dachform aus Z-Levels erkennen |
+| `services/tile_prefetch.py` | Parst Roof_solid beim Tile-Import |
+| `services/building_3d_service.py` | Tabellen-Schema + Auto-Create |
+| `services/smart_building/service.py` | `_load_roof_data_from_db()` |
+| `services/smart_building/models.py` | Neue Bundle-Felder |
+
+## G.6 API-Endpunkte
+
+```
+GET /api/v1/building/{egid}/roof
+    → Dach-Daten für ein Gebäude
+
+GET /api/v1/building/{egid}/3d-layers
+    → Alle 3D-Layer (Roof, Wall, Floor)
+
+POST /api/v1/building/{egid}/load-3d-layers
+    → On-demand Wall/Floor laden (für komplexe Gebäude)
+```
+
+## G.7 On-Demand Layer Loading
+
+Für komplexe Gebäude können Wall und Floor Layer nachgeladen werden:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              ON-DEMAND LAYER LOADING                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Pre-Import (automatisch):                                       │
+│  • Building_solid → buildings_3d                                │
+│  • Roof_solid → building_roofs (mit Geometrie!)                 │
+│                                                                  │
+│  On-Demand (bei Bedarf):                                        │
+│  • Wall → building_walls                                        │
+│  • Floor → building_floors                                      │
+│                                                                  │
+│  Trigger:                                                        │
+│  • User klickt "3D-Daten laden" im Frontend                     │
+│  • Gebäude als MODERATE/COMPLEX klassifiziert                   │
+│  • 3D-Visualisierung aktiviert                                  │
+│                                                                  │
+│  Ablauf (layer_fetcher.py):                                     │
+│  1. Koordinaten aus buildings_3d holen                          │
+│  2. Tile downloaden (temporär)                                  │
+│  3. Wall + Floor parsen (nur passende GEBAEUDEEINHEIT)         │
+│  4. In DB speichern                                             │
+│  5. has_3d_layers Flag setzen                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 # Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 11.01.2026 | 3.7 | Teil G: 3D Layer Architecture (Roof_solid Integration) |
 | 11.01.2026 | 3.6 | Teil E.6: Multi-Building SmartBuildingService (collect_all_data mit List) |
 | 10.01.2026 | 3.5 | Teil F: Frontend Service-Aufrufe Analyse (ConfiguratorPage) |
 | 10.01.2026 | 3.4 | Teil E: Stufe 2 Fix - Prefetch auch bei gecachten Tiles, Timing gemessen |

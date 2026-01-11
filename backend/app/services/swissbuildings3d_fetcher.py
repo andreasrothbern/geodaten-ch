@@ -695,7 +695,8 @@ async def fetch_building_polygon_for_coordinates(
     e: float,
     n: float,
     tolerance_m: float = 30.0,
-    simplify_epsilon: Optional[float] = None
+    simplify_epsilon: Optional[float] = None,
+    skip_prefetch: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch building polygon from swissBUILDINGS3D for given coordinates.
@@ -710,6 +711,8 @@ async def fetch_building_polygon_for_coordinates(
     Args:
         e: LV95 Easting
         n: LV95 Northing
+        skip_prefetch: Falls True, wird der Background-Prefetch übersprungen.
+                       Nützlich für Address Parser (nur EGID brauchen, Prefetch später).
         tolerance_m: Search radius around the point
 
     Returns:
@@ -773,18 +776,20 @@ async def fetch_building_polygon_for_coordinates(
 
             # FIX 10.01.2026: Prefetch auch bei Stufe 2 starten
             # (falls building_3d.db noch nicht alle Gebäude enthält)
-            main_egid = result.get("egid")
-            center_e = result.get("coord_e") or e
-            center_n = result.get("coord_n") or n
+            # FIX 11.01.2026: skip_prefetch für Address Parser (nur EGID brauchen)
+            if not skip_prefetch:
+                main_egid = result.get("egid")
+                center_e = result.get("coord_e") or e
+                center_n = result.get("coord_n") or n
 
-            schedule_prefetch_with_neighbors(
-                tile_id=tile_id,
-                gdb_path=cached_path,
-                center_e=center_e,
-                center_n=center_n,
-                main_egid=int(main_egid) if main_egid else None,
-                immediate_radius_m=5.0
-            )
+                schedule_prefetch_with_neighbors(
+                    tile_id=tile_id,
+                    gdb_path=cached_path,
+                    center_e=center_e,
+                    center_n=center_n,
+                    main_egid=int(main_egid) if main_egid else None,
+                    immediate_radius_m=5.0
+                )
 
         return result
 
@@ -830,23 +835,32 @@ async def fetch_building_polygon_for_coordinates(
             # 🔄 NEUE ARCHITEKTUR (10.01.2026): MINIMAL + ON-DEMAND
             # 1. SOFORT: Direkte Nachbarn (5m) laden für blocked_facades
             # 2. ASYNC: Restliche Gebäude im Hintergrund prefetchen
-            main_egid = result.get("egid")
-            center_e = result.get("coord_e") or e
-            center_n = result.get("coord_n") or n
+            # FIX 11.01.2026: skip_prefetch für Address Parser (nur EGID brauchen)
+            if not skip_prefetch:
+                main_egid = result.get("egid")
+                center_e = result.get("coord_e") or e
+                center_n = result.get("coord_n") or n
 
-            immediate_count, background_started = schedule_prefetch_with_neighbors(
-                tile_id=tile_id,
-                gdb_path=cached_path,
-                center_e=center_e,
-                center_n=center_n,
-                main_egid=int(main_egid) if main_egid else None,
-                immediate_radius_m=5.0  # 5m Radius für blocked_facades
-            )
+                immediate_count, background_started = schedule_prefetch_with_neighbors(
+                    tile_id=tile_id,
+                    gdb_path=cached_path,
+                    center_e=center_e,
+                    center_n=center_n,
+                    main_egid=int(main_egid) if main_egid else None,
+                    immediate_radius_m=5.0  # 5m Radius für blocked_facades
+                )
 
-            result["immediate_neighbors_loaded"] = immediate_count
-            result["background_prefetch_started"] = bool(background_started)
+                result["immediate_neighbors_loaded"] = immediate_count
+                result["background_prefetch_started"] = bool(background_started)
+            else:
+                result["immediate_neighbors_loaded"] = 0
+                result["background_prefetch_started"] = False
 
         return result
+
+    except Exception as ex:
+        logger.error(f"[EGID-LOOKUP] GDB-Fehler: {ex}")
+        return None
 
     finally:
         # Temporäres Verzeichnis löschen (Cache hat Kopie)
@@ -910,8 +924,16 @@ def parse_gdb_for_building_polygon(
         # Create target point
         target_point = Point(target_e, target_n)
 
-        # Find closest building
-        best_match = None
+        # BUG-015 FIX 11.01.2026: Point-in-Polygon hat Priorität!
+        # Bei Reihenhäusern liegt der Hauseingang (Geocoding-Koordinate) oft
+        # näher am Nachbar-Zentrum als am eigenen Gebäude-Zentrum.
+        #
+        # Strategie:
+        # 1. ERST: Point-in-Polygon Check (Punkt liegt IM Gebäude)
+        # 2. FALLBACK: Nächstes Zentrum (wie bisher, wenn kein Polygon-Match)
+
+        point_in_polygon_match = None
+        best_distance_match = None
         best_distance = float('inf')
 
         for _, row in gdf.iterrows():
@@ -943,18 +965,38 @@ def parse_gdb_for_building_polygon(
                 else:
                     continue
 
-                # Calculate distance
+                # BUG-015 FIX: Point-in-Polygon Check ZUERST
+                if footprint.contains(target_point):
+                    egid = row.get('EGID', 'unknown')
+                    logger.info(f"[BUG-015 FIX] Point-in-Polygon Match: ({target_e:.1f}, {target_n:.1f}) → EGID {egid}")
+                    point_in_polygon_match = {
+                        "geometry": footprint,
+                        "row": row
+                    }
+                    break  # Gefunden! Keine weitere Suche nötig.
+
+                # Fallback: Distance-basierte Suche (wie bisher)
                 distance = footprint.centroid.distance(target_point)
 
                 if distance < tolerance_m and distance < best_distance:
                     best_distance = distance
-                    best_match = {
+                    best_distance_match = {
                         "geometry": footprint,
                         "row": row
                     }
 
             except Exception:
                 continue
+
+        # Priorität: Point-in-Polygon > Distance
+        best_match = point_in_polygon_match or best_distance_match
+
+        if best_match and not point_in_polygon_match and best_distance_match:
+            egid = best_distance_match["row"].get('EGID', 'unknown')
+            logger.warning(
+                f"[BUG-015] Kein Polygon-Match für ({target_e:.1f}, {target_n:.1f}). "
+                f"Fallback auf nächstes Zentrum: EGID {egid} (dist={best_distance:.1f}m)"
+            )
 
         if not best_match:
             return None

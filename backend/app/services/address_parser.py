@@ -14,6 +14,7 @@ Unterstützte Formate:
 """
 
 import re
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -23,18 +24,64 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
+def _point_in_polygon(px: float, py: float, polygon: List) -> bool:
+    """
+    Prüft ob ein Punkt innerhalb eines Polygons liegt (Ray-Casting Algorithmus).
+
+    Funktioniert ohne externe Dependencies (kein shapely nötig).
+
+    Args:
+        px, py: Punkt-Koordinaten
+        polygon: Liste von [x, y] Koordinaten
+
+    Returns:
+        True wenn Punkt im Polygon liegt
+    """
+    n = len(polygon)
+    if n < 3:
+        return False
+
+    inside = False
+    j = n - 1
+
+    for i in range(n):
+        # Koordinaten extrahieren (unterstützt [x,y] und {"x":..., "y":...})
+        if isinstance(polygon[i], dict):
+            xi, yi = polygon[i].get('x', polygon[i].get(0, 0)), polygon[i].get('y', polygon[i].get(1, 0))
+            xj, yj = polygon[j].get('x', polygon[j].get(0, 0)), polygon[j].get('y', polygon[j].get(1, 0))
+        else:
+            xi, yi = polygon[i][0], polygon[i][1]
+            xj, yj = polygon[j][0], polygon[j][1]
+
+        # Ray-Casting: Zähle Kreuzungen
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+
+        j = i
+
+    return inside
+
+
 def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -> Optional[int]:
     """
     Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in building_3d.db.
 
-    BUG-013 FIX: GWR identify_buildings kann bei nahen Gebäuden dieselbe EGID
-    zurückgeben. swissBUILDINGS3D hat separate EGIDs pro Gebäudesegment.
+    BUG-015 FIX 11.01.2026: Verwendet jetzt Point-in-Polygon Check statt nur
+    nächstes Zentrum. Bei Reihenhäusern liegt der Hauseingang (Geocoding-Koordinate)
+    oft näher am Nachbar-Zentrum als am eigenen Gebäude-Zentrum.
 
-    OPTIMIERUNG 07.01.2026: Nutzt jetzt building_3d.db statt tiles.db/egid_tile_index.
-    building_3d.db enthält alle pre-processed Gebäude mit center_e/center_n.
+    WICHTIG: Diese Funktion setzt voraus, dass das Tile bereits geladen ist!
+    Siehe _ensure_tile_loaded() für den Tile-Preload.
+
+    Strategie:
+    1. Alle Kandidaten im Suchradius laden (mit Polygon)
+    2. Point-in-Polygon Check: Liegt die Koordinate im Gebäudepolygon?
+    3. Falls Match: Diese EGID zurückgeben (korrekt!)
+    4. Falls kein Match: Fallback auf nächstes Zentrum (mit Warnung)
 
     Args:
-        e: LV95 Ost-Koordinate
+        e: LV95 Ost-Koordinate (Geocoding = Hauseingang)
         n: LV95 Nord-Koordinate
         tolerance_m: Suchradius in Metern (default: 10m)
 
@@ -51,27 +98,52 @@ def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -
         conn = sqlite3.connect(building_3d_db)
         cursor = conn.cursor()
 
-        # Suche nächstes Gebäude innerhalb Toleranz
+        # FIX BUG-015: Alle Kandidaten im Radius laden (nicht nur nächstes)
         cursor.execute('''
-            SELECT egid,
+            SELECT egid, polygon, center_e, center_n,
                    (center_e - ?) * (center_e - ?) + (center_n - ?) * (center_n - ?) as dist_sq
             FROM buildings_3d
             WHERE center_e BETWEEN ? AND ?
               AND center_n BETWEEN ? AND ?
             ORDER BY dist_sq
-            LIMIT 1
         ''', (e, e, n, n, e - tolerance_m, e + tolerance_m, n - tolerance_m, n + tolerance_m))
 
-        row = cursor.fetchone()
+        candidates = cursor.fetchall()
         conn.close()
 
-        if row:
-            egid = row[0]
-            dist = row[1] ** 0.5  # sqrt
-            logger.debug(f'building_3d.db Lookup: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)')
-            return egid
+        if not candidates:
+            logger.debug(f'Keine Gebäude im Radius {tolerance_m}m um ({e:.1f}, {n:.1f})')
+            return None
 
-        return None
+        # Schritt 1: Point-in-Polygon Check für alle Kandidaten
+        for row in candidates:
+            egid, polygon_json, center_e, center_n, dist_sq = row
+
+            if not polygon_json:
+                continue
+
+            try:
+                polygon = json.loads(polygon_json) if isinstance(polygon_json, str) else polygon_json
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            # Prüfe ob Punkt im Polygon liegt
+            if _point_in_polygon(e, n, polygon):
+                dist = dist_sq ** 0.5
+                logger.info(f'[BUG-015 FIX] Point-in-Polygon Match: ({e:.1f}, {n:.1f}) → EGID {egid} (center_dist={dist:.1f}m)')
+                return egid
+
+        # Schritt 2: Fallback auf nächstes Zentrum (wie bisher, aber mit Warnung)
+        first = candidates[0]
+        egid = first[0]
+        dist = first[4] ** 0.5
+
+        logger.warning(
+            f'[BUG-015] Kein Polygon-Match für ({e:.1f}, {n:.1f}). '
+            f'Fallback auf nächstes Zentrum: EGID {egid} (dist={dist:.1f}m). '
+            f'Geprüft: {len(candidates)} Kandidaten.'
+        )
+        return egid
 
     except Exception as ex:
         logger.error(f'building_3d.db Lookup-Fehler: {ex}')
@@ -385,15 +457,25 @@ class AddressParserService:
                     })
                     continue
 
-                # 2. Get EGID - prefer swissBUILDINGS3D (tiles.db) over GWR
+                # 3. Get EGID - prefer swissBUILDINGS3D over GWR
                 e = geo_result.coordinates.lv95_e
                 n = geo_result.coordinates.lv95_n
-                
-                # BUG-013 FIX: Use swissBUILDINGS3D EGID from tiles.db
-                # GWR identify_buildings can return same EGID for nearby buildings
+
+                # BUG-015 FIX 11.01.2026: Point-in-Polygon Check bei Reihenhäusern
+                # Schritt 1: Versuche Lookup in building_3d.db (schnell, ~1ms)
                 swissbuildings_egid = _lookup_egid_by_coordinates(e, n, tolerance_m=10.0)
+
+                # Schritt 2: Falls nicht gefunden → Point-in-Polygon direkt im Tile
+                # (ohne Prefetch zu triggern - das passiert später im SmartBuildingService)
+                if swissbuildings_egid is None:
+                    logger.info(f"[BUG-015] Keine Daten in building_3d.db für ({e:.1f}, {n:.1f}) - prüfe Tile...")
+                    from app.services.swissbuildings3d_fetcher import fetch_building_polygon_for_coordinates
+                    result = await fetch_building_polygon_for_coordinates(e, n, skip_prefetch=True)
+                    if result and result.get('egid'):
+                        swissbuildings_egid = int(result.get('egid'))
+
                 logger.info(f"[DEBUG] Lookup for ({e:.1f}, {n:.1f}): swissbuildings_egid={swissbuildings_egid}")
-                
+
                 if swissbuildings_egid:
                     buildings.append({
                         "address": full_address,
