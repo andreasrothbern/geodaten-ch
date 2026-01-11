@@ -1,6 +1,6 @@
 # Streaming Architecture
 
-> **Version:** 3.5 (10.01.2026)
+> **Version:** 3.6 (11.01.2026)
 > **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅
 
 ---
@@ -1152,36 +1152,140 @@ prefetch_remaining(gdb_path, exclude=exclude_egids)
 
 ## E.6 Multi-Building Projekte
 
-Ein Projekt kann mehrere Gebäude umfassen (z.B. "Knospenweg 2-10").
+Ein Projekt kann mehrere Gebäude umfassen (z.B. "Knospenweg 4-6").
+
+### E.6.1 SmartBuildingService Multi-Adress-Unterstützung (NEU 11.01.2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              MULTI-BUILDING PROJEKT                         │
+│          SMARTBUILDINGSERVICE MULTI-ADRESS FLOW             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  Projekt: "Knospenweg 2-10, Bern"                          │
+│  Eingang: ["Knospenweg 4, Bern", "Knospenweg 6, Bern"]     │
 │       │                                                     │
 │       ▼                                                     │
-│  buildings = [                                              │
-│    {egid: 1243794, address: "Knospenweg 4"},               │
-│    {egid: 1243795, address: "Knospenweg 6"},               │
-│    {egid: 1243796, address: "Knospenweg 8"},               │
-│  ]                                                          │
+│  collect_all_data(addresses: List[str])                    │
 │       │                                                     │
 │       ▼                                                     │
-│  blocked_facades Berechnung:                               │
-│  - Nachbarn im 5m-Radius suchen                            │
-│  - ABER: Projekt-Gebäude AUSSCHLIESSEN!                    │
-│  - Knospenweg 6 ist kein "blockierender Nachbar" für 4     │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Phase 1: Geocoding PARALLEL für alle Adressen       │   │
+│  │ → [{egid: 1243790, coords: ...},                    │   │
+│  │    {egid: 1243792, coords: ...}]                    │   │
+│  └─────────────────────────────────────────────────────┘   │
 │       │                                                     │
 │       ▼                                                     │
-│  Implementierung:                                           │
-│  neighbors = get_neighbors(egid, radius=5)                 │
-│  neighbors = [n for n in neighbors                         │
-│               if n.egid not in project_egids]              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Phase 2: Centroid berechnen                          │   │
+│  │ → Mittelpunkt aller Koordinaten                      │   │
+│  │ → Für Tile-Download Optimierung                      │   │
+│  └─────────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Phase 3: Tile laden (EIN Aufruf)                     │   │
+│  │ → Prefetch startet für alle Gebäude im Tile          │   │
+│  └─────────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Phase 4: Für JEDES Gebäude: _enrich_building()      │   │
+│  │ → Interne Cache-Prüfung                              │   │
+│  │ → Falls gecacht: sofort zurück                       │   │
+│  │ → Falls nicht: GWR + 3D + Terrain + Zonen           │   │
+│  └─────────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│  Ausgang: [Bundle1, Bundle2]                               │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### E.6.2 Rückwärtskompatibilität
+
+```python
+# VORHER (Single-Adresse):
+bundle = await service.collect_all_data("Knospenweg 4, Bern")
+# → BuildingDataBundle
+
+# NACHHER (Multi-Adresse):
+bundles = await service.collect_all_data(["Knospenweg 4", "Knospenweg 6"])
+# → List[BuildingDataBundle]
+
+# NACHHER (Single-Adresse - unverändert):
+bundle = await service.collect_all_data("Knospenweg 4, Bern")
+# → BuildingDataBundle (wie vorher!)
+```
+
+### E.6.3 _enrich_building() - Gemeinsame Enrichment-Logik
+
+```python
+async def _enrich_building(
+    self,
+    address: str,
+    egid: Optional[str],
+    coordinates: Tuple[float, float],
+    ...
+) -> BuildingDataBundle:
+    """
+    Enrichment für ein einzelnes Gebäude.
+    Wird von BEIDEN Pfaden genutzt (Single + Multi).
+
+    1. Cache-Prüfung (mit address|egid Key)
+    2. Bundle erstellen
+    3. Phase 2: GWR, Building3D, Sonnendach, Terrain, Research (parallel)
+    4. Validierung
+    5. Dach-Berechnung
+    6. Zonen-Analyse
+    7. Zugänge berechnen
+    8. Qualität bewerten
+    9. Cache speichern
+    """
+```
+
+### E.6.4 blocked_facades bei Multi-Building
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              BLOCKED_FACADES BERECHNUNG                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Projekt-Gebäude: [EGID_A, EGID_B]                         │
+│                                                             │
+│       ┌─────┐                                               │
+│       │  C  │ ← Externes Gebäude (NICHT im Projekt)        │
+│       └─────┘                                               │
+│          ↑ 3m Abstand                                       │
+│    ┌─────┬─────┐                                            │
+│    │  A  │  B  │ ← Projekt-Gebäude (zu einrüsten)          │
+│    └─────┴─────┘                                            │
+│                                                             │
+│  BERECHNUNG für Gebäude A:                                  │
+│  ─────────────────────────                                  │
+│  1. Nachbarn im 5m-Radius suchen → [B, C]                  │
+│  2. Projekt-Gebäude AUSSCHLIESSEN → [C]                    │
+│  3. blocked_facades = Fassaden Richtung C                  │
+│                                                             │
+│  → A und B blockieren sich NICHT gegenseitig!              │
+│                                                             │
+│  Implementierung (project_context_stream.py):               │
+│  ─────────────────────────────────────────────              │
+│  neighbors = get_neighbors(egid, radius=5)                 │
+│  external = [n for n in neighbors                          │
+│              if n.egid not in project_egids]               │
+│  blocked = calculate_blocked_from(external)                │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### E.6.5 Geänderte Dateien (11.01.2026)
+
+| Datei | Änderung |
+|-------|----------|
+| `smart_building/service.py` | `collect_all_data()` akzeptiert `Union[str, List[str]]` |
+| `smart_building/service.py` | `_enrich_building()` - gemeinsame Enrichment-Logik |
+| `smart_building/service.py` | `_collect_multi_building_data()` - Multi-Adress-Orchestrierung |
+| `smart_building/service.py` | `_geocode_address()` - Geocoding extrahiert |
+| `smart_building/service.py` | `_ensure_tile_loaded()` - Tile-Download triggern |
 
 ## E.7 Zusammenfassung (GEMESSEN 10.01.2026)
 
@@ -1628,6 +1732,7 @@ interface ScaffoldConfig {
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 11.01.2026 | 3.6 | Teil E.6: Multi-Building SmartBuildingService (collect_all_data mit List) |
 | 10.01.2026 | 3.5 | Teil F: Frontend Service-Aufrufe Analyse (ConfiguratorPage) |
 | 10.01.2026 | 3.4 | Teil E: Stufe 2 Fix - Prefetch auch bei gecachten Tiles, Timing gemessen |
 | 10.01.2026 | 3.3 | Teil E implementiert: MINIMAL + ON-DEMAND Architektur |

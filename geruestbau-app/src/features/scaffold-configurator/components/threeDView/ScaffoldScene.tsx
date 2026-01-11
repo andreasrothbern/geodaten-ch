@@ -12,6 +12,40 @@ import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D, Bui
 import type { NeighborBuilding, MultiBuildingData } from '../../../../api/geruestbau';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
+// FIX 11.01.2026 02:40 - Dach-Orientierung aus Polygon berechnen
+// Gleiche Logik wie Backend (roof.py): First senkrecht zur längsten Seite
+function calculatePolygonRoofOrientation(polygon: [number, number][]): 'O-W' | 'N-S' {
+  if (!polygon || polygon.length < 3) return 'O-W';
+
+  // Längste Seite finden
+  let maxLength = 0;
+  let longestSideVector = { dx: 1, dy: 0 };
+
+  for (let i = 0; i < polygon.length; i++) {
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % polygon.length];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length > maxLength) {
+      maxLength = length;
+      longestSideVector = { dx, dy };
+    }
+  }
+
+  // Azimut berechnen (0° = Nord, 90° = Ost)
+  let azimuthDeg = Math.atan2(longestSideVector.dx, longestSideVector.dy) * (180 / Math.PI);
+  if (azimuthDeg < 0) azimuthDeg += 360;
+
+  // Klassifizierung: Längste Seite ~O-W (67.5-112.5° oder 247.5-292.5°) → Dach neigt O-W
+  if ((azimuthDeg >= 67.5 && azimuthDeg < 112.5) ||
+      (azimuthDeg >= 247.5 && azimuthDeg < 292.5)) {
+    return 'O-W';
+  }
+  return 'N-S';
+}
+
 interface ScaffoldSceneProps {
   configuration: ScaffoldConfiguration;
   activeView: View3D;
@@ -346,91 +380,14 @@ function createRoofFromPolygon(
       roofOrientation
     );
 
-    // DEBUG: Log roof geometry
-    console.log('Satteldach Debug:', {
-      roofOrientation,
-      yEaves,
-      yPeak,
-      vertexCount: roofGeom.vertices.length / 3,
-      vertices: roofGeom.vertices,
-      indices: roofGeom.indices,
-      centeredPointsBbox: {
-        minX: Math.min(...centeredPoints.map(p => p.x)),
-        maxX: Math.max(...centeredPoints.map(p => p.x)),
-        minZ: Math.min(...centeredPoints.map(p => p.z)),
-        maxZ: Math.max(...centeredPoints.map(p => p.z)),
-      }
-    });
+    // Create roof mesh from geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(roofGeom.vertices), 3));
+    geometry.setIndex(roofGeom.indices);
+    geometry.computeVertexNormals();
 
-    // DEBUG: Render each triangle SEPARATELY with different colors to see what's happening
-    const triangleColors = [
-      0xff0000,  // West slope triangle 1: RED
-      0xff4444,  // West slope triangle 2: LIGHT RED
-      0x0000ff,  // East slope triangle 1: BLUE
-      0x4444ff,  // East slope triangle 2: LIGHT BLUE
-      0x00ff00,  // North gable: GREEN
-      0xffff00,  // South gable: YELLOW
-    ];
-
-    // Create separate meshes for each triangle to visualize them
-    for (let triIdx = 0; triIdx < roofGeom.indices.length / 3; triIdx++) {
-      const i0 = roofGeom.indices[triIdx * 3];
-      const i1 = roofGeom.indices[triIdx * 3 + 1];
-      const i2 = roofGeom.indices[triIdx * 3 + 2];
-
-      const triGeom = new THREE.BufferGeometry();
-      const triVerts = new Float32Array([
-        roofGeom.vertices[i0 * 3], roofGeom.vertices[i0 * 3 + 1], roofGeom.vertices[i0 * 3 + 2],
-        roofGeom.vertices[i1 * 3], roofGeom.vertices[i1 * 3 + 1], roofGeom.vertices[i1 * 3 + 2],
-        roofGeom.vertices[i2 * 3], roofGeom.vertices[i2 * 3 + 1], roofGeom.vertices[i2 * 3 + 2],
-      ]);
-      triGeom.setAttribute('position', new THREE.BufferAttribute(triVerts, 3));
-      triGeom.setIndex([0, 1, 2]);
-      triGeom.computeVertexNormals();
-
-      const triMat = new THREE.MeshStandardMaterial({
-        color: triangleColors[triIdx % triangleColors.length],
-        side: THREE.DoubleSide,
-      });
-      const triMesh = new THREE.Mesh(triGeom, triMat);
-      group.add(triMesh);
-
-      // Log each triangle for debugging
-      console.log(`Triangle ${triIdx}:`, {
-        indices: [i0, i1, i2],
-        v0: [roofGeom.vertices[i0 * 3], roofGeom.vertices[i0 * 3 + 1], roofGeom.vertices[i0 * 3 + 2]],
-        v1: [roofGeom.vertices[i1 * 3], roofGeom.vertices[i1 * 3 + 1], roofGeom.vertices[i1 * 3 + 2]],
-        v2: [roofGeom.vertices[i2 * 3], roofGeom.vertices[i2 * 3 + 1], roofGeom.vertices[i2 * 3 + 2]],
-        color: triangleColors[triIdx % triangleColors.length].toString(16),
-      });
-    }
-
-    // DEBUG: Add ridge line (CYAN thick line) to visualize first position
-    const ridgePoints = [];
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14]));
-    ridgePoints.push(new THREE.Vector3(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17]));
-    const ridgeGeometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
-    const ridgeLine = new THREE.Line(ridgeGeometry, new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 10 }));
-    group.add(ridgeLine);
-
-    // Add CYAN spheres at ridge points
-    const ridgeMarkerGeo = new THREE.SphereGeometry(0.5);
-    const ridgeMarkerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-    const ridgeN = new THREE.Mesh(ridgeMarkerGeo, ridgeMarkerMat);
-    ridgeN.position.set(roofGeom.vertices[12], roofGeom.vertices[13], roofGeom.vertices[14]);
-    group.add(ridgeN);
-    const ridgeS = new THREE.Mesh(ridgeMarkerGeo, ridgeMarkerMat);
-    ridgeS.position.set(roofGeom.vertices[15], roofGeom.vertices[16], roofGeom.vertices[17]);
-    group.add(ridgeS);
-
-    // DEBUG: Add eave corner markers (green spheres)
-    const markerGeo = new THREE.SphereGeometry(0.3);
-    const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    for (let i = 0; i < 4; i++) {
-      const marker = new THREE.Mesh(markerGeo, markerMat);
-      marker.position.set(roofGeom.vertices[i*3], roofGeom.vertices[i*3+1], roofGeom.vertices[i*3+2]);
-      group.add(marker);
-    }
+    const mesh = new THREE.Mesh(geometry, roofMaterial);
+    group.add(mesh);
 
   } else if (roofType === 'pultdach') {
     // Shed roof following actual polygon shape - single slope
@@ -1053,27 +1010,11 @@ export default function ScaffoldScene({
       const shouldRenderRoof = !hasSpecialZones || buildingComplexity === 'simple';
 
       if (shouldRenderRoof) {
-        // Add roof for simple/moderate buildings
         const roofType = config.roof?.roof_type || 'satteldach';
         const roofHeight = config.roof?.trauf_to_first_m || 3;
         const roofOrientation = config.roof?.roof_orientation || 'O-W';
         const roofOverhang = config.roof?.roof_overhang_m || 0.4;
-
-        console.log('=== ROOF DEBUG ===', {
-          roofType,
-          roofOrientation,
-          roofHeight,
-          roofOverhang,
-          buildingHeight,
-        });
-
         parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
-      } else {
-        console.log('=== SKIPPING ROOF (complex building with special zones) ===', {
-          hasSpecialZones,
-          buildingComplexity,
-          zoneTypes: buildingZones.map(z => z.zone_type),
-        });
       }
 
       // Add zones for complex buildings (Türme, Kuppeln, Anbauten, etc.)
@@ -1197,9 +1138,13 @@ export default function ScaffoldScene({
           buildingMesh.position.set(offsetX, 0, offsetZ);
           parent.add(buildingMesh);
 
-          // Add simple roof for additional buildings
+          // Add roof for additional buildings
+          // FIX 11.01.2026 02:40 - Dach-Typ und Orientierung pro Gebäude berechnen
           const addRoofHeight = (building.firsthoehe_m || addBuildingHeight + 3) - addBuildingHeight;
-          const additionalRoof = createRoofFromPolygon(normalizedBuilding, addBuildingHeight, addRoofHeight, 'satteldach', 'O-W');
+          // Dachtyp aus Höhendifferenz: < 0.5m = flachdach, sonst satteldach
+          const addRoofType = addRoofHeight < 0.5 ? 'flachdach' : 'satteldach';
+          const addRoofOrientation = calculatePolygonRoofOrientation(building.polygon);
+          const additionalRoof = createRoofFromPolygon(normalizedBuilding, addBuildingHeight, addRoofHeight, addRoofType, addRoofOrientation);
           additionalRoof.position.set(offsetX, 0, offsetZ);
           parent.add(additionalRoof);
 

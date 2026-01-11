@@ -728,6 +728,9 @@ async def stream_project_context(
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
 
+    # DEBUG 10.01.2026 21:10 - Was enthält das Projekt?
+    print(f"[SSE] Project {project_id}: egid={project.egid}, buildings={[b.egid for b in project.buildings] if project.buildings else []}")
+
     # EGIDs sammeln (aus buildings Liste oder einzelnes egid)
     project_egids = []
 
@@ -736,6 +739,8 @@ async def stream_project_context(
 
     if project.egid and project.egid not in project_egids:
         project_egids.append(project.egid)
+
+    print(f"[SSE] Final project_egids for stream: {project_egids}")
 
     if not project_egids:
         raise HTTPException(
@@ -748,15 +753,17 @@ async def stream_project_context(
 
     async def event_generator():
         """Generator für SSE Events."""
+        import json
         async for event in stream_service.stream_context(
             project_egids=project_egids,
             max_radius_m=max_radius_m,
             include_blocked_facades=include_blocked_facades,
             include_neighbors=include_neighbors
         ):
+            # FIX 10.01.2026 20:50 - data muss als JSON-String übergeben werden
             yield {
                 "event": event.event,
-                "data": event.data
+                "data": json.dumps(event.data)
             }
 
     return EventSourceResponse(event_generator())

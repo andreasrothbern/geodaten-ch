@@ -116,6 +116,10 @@ class ProjectContextStreamService:
         start_time = time.time()
         project_egids_set = set(str(e) for e in project_egids)
 
+        # DEBUG 10.01.2026 21:05 - Welche EGIDs sind im Projekt?
+        print(f"[SSE] stream_context called with project_egids: {project_egids}")
+        print(f"[SSE] project_egids_set (exclude for blocked_facades): {project_egids_set}")
+
         try:
             # ===============================
             # 1. Projekt-Gebäude laden
@@ -176,10 +180,12 @@ class ProjectContextStreamService:
             # ===============================
             if include_blocked_facades:
                 blocked_facades_service = self._get_blocked_facades_service()
+                print(f"[SSE] Calling calculate_for_project with egids: {list(project_egids_set)}")
                 blocked_results = blocked_facades_service.calculate_for_project(
                     project_egids=list(project_egids_set),
                     threshold_m=2.0  # Standard-Schwellenwert
                 )
+                print(f"[SSE] blocked_results: {list(blocked_results.keys())} - blocked: {[(k, v.blocked_indices) for k,v in blocked_results.items()]}")
 
                 # Formatieren für Frontend
                 blocked_data = {}

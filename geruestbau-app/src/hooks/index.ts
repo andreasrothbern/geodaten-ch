@@ -14,7 +14,7 @@ export {
   type CompleteData as ProjectCompleteData,
   type ErrorData as ProjectErrorData,
   type StreamState as ProjectStreamState,
-  type StreamOptions as ProjectStreamOptions,
+  type StartOptions as ProjectStreamOptions,
 } from './useProjectContextStream';
 
 // Building Data Streaming (für Projekt-Erstellung)

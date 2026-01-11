@@ -108,10 +108,20 @@ class ProjectService:
         deadline = getattr(data, 'deadline', None)
         description = getattr(data, 'description', None)  # Nicht im Model, aber in DB
 
+        # FIX 10.01.2026 21:30 - Multi-Building Support: buildings als JSON speichern
+        buildings_json = None
+        if hasattr(data, 'buildings') and data.buildings:
+            buildings_list = [b.model_dump() if hasattr(b, 'model_dump') else b for b in data.buildings]
+            buildings_json = json.dumps(buildings_list)
+            # Falls kein egid gesetzt, erstes Building nehmen
+            if not egid and len(data.buildings) > 0:
+                first_building = data.buildings[0]
+                egid = first_building.egid if hasattr(first_building, 'egid') else first_building.get('egid')
+
         cursor.execute('''
             INSERT INTO projects (id, name, address, status, egid, client_name,
-                                  client_contact, deadline, description, building_data, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  client_contact, deadline, description, building_data, buildings, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             project_id,
             data.name,
@@ -123,6 +133,7 @@ class ProjectService:
             deadline,
             description,
             building_data_json,
+            buildings_json,
             now, now
         ))
 
@@ -519,12 +530,24 @@ class ProjectService:
         HINWEIS: building_data wird nicht mehr im Project gespeichert.
         Enrichment-Daten (Terrain, Hanglage) sind in building_contexts.db → building_environment.
         """
+        # FIX 10.01.2026 21:35 - Multi-Building Support: buildings aus JSON parsen
+        buildings = []
+        buildings_json = row['buildings'] if 'buildings' in row.keys() else None
+        if buildings_json:
+            try:
+                from ...models.geruestbau import BuildingEntry
+                buildings_list = json.loads(buildings_json)
+                buildings = [BuildingEntry(**b) for b in buildings_list]
+            except (json.JSONDecodeError, TypeError, Exception) as e:
+                print(f"[Gerüstbau] Fehler beim Parsen von buildings: {e}")
+
         return Project(
             id=row['id'],
             name=row['name'],
             address=row['address'],
             status=ProjectStatus(row['status']),
             egid=row['egid'],
+            buildings=buildings,
             client_name=row['client_name'],
             client_contact=row['client_contact'],
             deadline=datetime.fromisoformat(row['deadline']) if row['deadline'] else None,

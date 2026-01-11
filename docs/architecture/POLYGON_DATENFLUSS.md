@@ -20,7 +20,7 @@ Dieses Dokument beschreibt teilweise eine ältere Architektur. Folgende Änderun
 **Aktuelle Datenbank-Struktur:**
 - `tiles.db` - Tile-Metadaten (tile_id → local_path, bbox)
 - `building_3d.db` - Gebäude (EGID, Polygon, Höhen, Koordinaten) via tile_prefetch
-- `building_contexts.db` - Enrichment (Zonen, Terrain)
+- `building_contexts.db` - Enrichment (Dach, Zonen, Terrain)
 
 **Referenz:** Siehe `.claude/rules/data-flow.md` für die aktuelle Architektur.
 

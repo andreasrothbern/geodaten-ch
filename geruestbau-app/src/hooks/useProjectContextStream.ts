@@ -1,6 +1,9 @@
 /**
  * useProjectContextStream - React Hook für SSE-basiertes Projekt-Kontext Streaming.
  *
+ * REFACTORED 10.01.2026 20:30 - Options werden an start() übergeben, nicht als Hook-Parameter.
+ * Das verhindert Endlosschleifen durch sich ändernde Dependencies.
+ *
  * Nutzt Server-Sent Events (SSE) für progressive Datenlieferung:
  * 1. centroid - Projekt-Mittelpunkt (~10ms)
  * 2. project_buildings - Projekt-Gebäude mit Polygonen (~20ms)
@@ -10,15 +13,20 @@
  *
  * @example
  * ```tsx
- * const { data, isLoading, error, start, stop } = useProjectContextStream();
+ * const { data, isLoading, start, stop } = useProjectContextStream();
  *
- * // Streaming starten
- * start(projectId);
+ * // Streaming starten mit Options
+ * useEffect(() => {
+ *   if (projectId) {
+ *     start(projectId, { maxRadiusM: 100 });
+ *   }
+ *   return () => stop();
+ * }, [projectId]); // NICHT start/stop als Dependencies!
  *
  * // Auf Events reagieren
  * useEffect(() => {
  *   if (data.blockedFacades) {
- *     markBlockedFacades(data.blockedFacades);
+ *     setBlockedFacadesData(data.blockedFacades);
  *   }
  * }, [data.blockedFacades]);
  * ```
@@ -102,35 +110,18 @@ export interface StreamState {
   error: ErrorData | null;
 }
 
-export interface StreamOptions {
+// NEU: Options werden an start() übergeben, nicht als Hook-Parameter
+export interface StartOptions {
   maxRadiusM?: number;
   includeBlockedFacades?: boolean;
   includeNeighbors?: boolean;
-  onCentroid?: (data: CentroidData) => void;
-  onProjectBuildings?: (data: ProjectBuildingData[]) => void;
-  onBlockedFacades?: (data: BlockedFacadesData) => void;
-  onNeighbors?: (data: NeighborsData) => void;
-  onComplete?: (data: CompleteData) => void;
-  onError?: (data: ErrorData) => void;
 }
 
 // =============================================================================
 // Hook
 // =============================================================================
 
-export function useProjectContextStream(options: StreamOptions = {}) {
-  const {
-    maxRadiusM = 100,
-    includeBlockedFacades = true,
-    includeNeighbors = true,
-    onCentroid,
-    onProjectBuildings,
-    onBlockedFacades,
-    onNeighbors,
-    onComplete,
-    onError,
-  } = options;
-
+export function useProjectContextStream() {
   const [isLoading, setIsLoading] = useState(false);
   const [data, setData] = useState<StreamState>({
     centroid: null,
@@ -146,9 +137,11 @@ export function useProjectContextStream(options: StreamOptions = {}) {
 
   /**
    * Stoppt den aktuellen Stream.
+   * Stabile Referenz (keine Dependencies).
    */
   const stop = useCallback(() => {
     if (eventSourceRef.current) {
+      console.log('[SSE] Stopping stream');
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
@@ -157,9 +150,17 @@ export function useProjectContextStream(options: StreamOptions = {}) {
 
   /**
    * Startet den Stream für ein Projekt.
+   * REFACTORED: Options werden hier übergeben, nicht als Hook-Parameter.
+   * Stabile Referenz (nur stop als Dependency).
    */
   const start = useCallback(
-    (projectId: string) => {
+    (projectId: string, options: StartOptions = {}) => {
+      const {
+        maxRadiusM = 100,
+        includeBlockedFacades = true,
+        includeNeighbors = true,
+      } = options;
+
       // Bestehenden Stream stoppen
       stop();
 
@@ -182,6 +183,7 @@ export function useProjectContextStream(options: StreamOptions = {}) {
       });
 
       const url = `${API_BASE}/api/v1/geruestbau/projects/${projectId}/context/stream?${params}`;
+      console.log(`[SSE] Starting stream: ${url}`);
 
       // EventSource erstellen
       const es = new EventSource(url);
@@ -190,38 +192,40 @@ export function useProjectContextStream(options: StreamOptions = {}) {
       // Event Listener registrieren
       es.addEventListener('centroid', (e) => {
         const eventData: CentroidData = JSON.parse(e.data);
+        console.log(`[SSE] centroid: ${eventData.building_count} buildings`);
         setData((prev) => ({ ...prev, centroid: eventData }));
-        onCentroid?.(eventData);
       });
 
       es.addEventListener('project_buildings', (e) => {
         const eventData = JSON.parse(e.data);
         const buildings: ProjectBuildingData[] = eventData.buildings || [];
+        console.log(`[SSE] project_buildings: ${buildings.length} buildings`);
         setData((prev) => ({ ...prev, projectBuildings: buildings }));
-        onProjectBuildings?.(buildings);
       });
 
       es.addEventListener('blocked_facades', (e) => {
         const eventData: BlockedFacadesData = JSON.parse(e.data);
+        const egids = Object.keys(eventData);
+        const totalBlocked = egids.reduce((sum, egid) => sum + eventData[egid].blocked_indices.length, 0);
+        console.log(`[SSE] blocked_facades: ${totalBlocked} blocked across ${egids.length} buildings`);
         setData((prev) => ({ ...prev, blockedFacades: eventData }));
-        onBlockedFacades?.(eventData);
       });
 
       es.addEventListener('neighbors', (e) => {
         const eventData: NeighborsData = JSON.parse(e.data);
+        console.log(`[SSE] neighbors (${eventData.radius_m}m): ${eventData.count} buildings`);
         setData((prev) => {
           const newNeighbors = new Map(prev.neighbors);
           newNeighbors.set(eventData.radius_m, eventData.buildings);
           return { ...prev, neighbors: newNeighbors };
         });
-        onNeighbors?.(eventData);
       });
 
       es.addEventListener('complete', (e) => {
         const eventData: CompleteData = JSON.parse(e.data);
+        console.log(`[SSE] complete: ${eventData.duration_ms}ms, ${eventData.total_neighbors} neighbors`);
         setData((prev) => ({ ...prev, complete: eventData }));
         setIsLoading(false);
-        onComplete?.(eventData);
         es.close();
       });
 
@@ -236,39 +240,29 @@ export function useProjectContextStream(options: StreamOptions = {}) {
             message: 'Verbindung zum Server fehlgeschlagen',
           };
         }
+        console.error(`[SSE] error:`, errorData);
         setData((prev) => ({ ...prev, error: errorData }));
         setIsLoading(false);
-        onError?.(errorData);
         es.close();
       });
 
       // Verbindungsfehler
       es.onerror = () => {
         if (es.readyState === EventSource.CLOSED) {
+          console.log('[SSE] Connection closed');
           setIsLoading(false);
         }
       };
     },
-    [
-      stop,
-      maxRadiusM,
-      includeBlockedFacades,
-      includeNeighbors,
-      onCentroid,
-      onProjectBuildings,
-      onBlockedFacades,
-      onNeighbors,
-      onComplete,
-      onError,
-    ]
+    [stop] // NUR stop als Dependency - stabile Referenz!
   );
 
   /**
-   * Lädt den Kontext neu.
+   * Lädt den Kontext neu (mit gleichen Options).
    */
-  const reload = useCallback(() => {
+  const reload = useCallback((options?: StartOptions) => {
     if (projectIdRef.current) {
-      start(projectIdRef.current);
+      start(projectIdRef.current, options);
     }
   }, [start]);
 

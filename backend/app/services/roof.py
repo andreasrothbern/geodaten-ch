@@ -33,9 +33,15 @@ class RoofType(str, Enum):
 
 
 class RoofOrientation(str, Enum):
-    """Hauptausrichtung des Dachfirsts"""
-    NORTH_SOUTH = "N-S"       # First verläuft Nord-Süd
-    EAST_WEST = "O-W"         # First verläuft Ost-West
+    """
+    Dach-Neigungsrichtung (wohin das Dach zeigt), NICHT First-Richtung!
+
+    Gemäss CLAUDE.md:
+    - 'N-S' = Dach neigt sich nach Nord UND Süd → First verläuft Ost-West
+    - 'O-W' = Dach neigt sich nach Ost UND West → First verläuft Nord-Süd
+    """
+    NORTH_SOUTH = "N-S"       # Dach neigt sich N-S, First läuft O-W
+    EAST_WEST = "O-W"         # Dach neigt sich O-W, First läuft N-S
     NORTHEAST_SOUTHWEST = "NO-SW"
     NORTHWEST_SOUTHEAST = "NW-SO"
 
@@ -240,23 +246,37 @@ def calculate_roof_orientation(
     # First ist senkrecht zur längsten Seite
     first_azimuth = (azimuth_deg + 90) % 360
 
-    # Klassifizierung
+    # FIX 10.01.2026 22:55 - Klassifizierung nach NEIGUNGSRICHTUNG (nicht First-Richtung!)
+    # Gemäss CLAUDE.md: roof_orientation = "wohin das Dach ZEIGT" (Neigungsrichtung)
+    # - 'O-W' bedeutet: Dach neigt sich nach Ost und West → First verläuft Nord-Süd
+    # - 'N-S' bedeutet: Dach neigt sich nach Nord und Süd → First verläuft Ost-West
+    #
+    # azimuth_deg = Richtung der längsten Seite (0°=Nord, 90°=Ost)
+    # Wenn längste Seite Ost-West läuft (azimuth ~90° oder ~270°):
+    #   → First senkrecht dazu = Nord-Süd
+    #   → Dach neigt sich Ost-West
+    #   → Return 'O-W'
+    # Wenn längste Seite Nord-Süd läuft (azimuth ~0° oder ~180°):
+    #   → First senkrecht dazu = Ost-West
+    #   → Dach neigt sich Nord-Süd
+    #   → Return 'N-S'
+
     if 337.5 <= azimuth_deg or azimuth_deg < 22.5:
-        orientation = RoofOrientation.EAST_WEST  # First O-W
+        orientation = RoofOrientation.NORTH_SOUTH    # Längste Seite ~N → Dach neigt N-S
     elif 22.5 <= azimuth_deg < 67.5:
-        orientation = RoofOrientation.NORTHWEST_SOUTHEAST
+        orientation = RoofOrientation.NORTHEAST_SOUTHWEST  # Diagonale
     elif 67.5 <= azimuth_deg < 112.5:
-        orientation = RoofOrientation.NORTH_SOUTH  # First N-S
+        orientation = RoofOrientation.EAST_WEST      # Längste Seite ~E → Dach neigt O-W
     elif 112.5 <= azimuth_deg < 157.5:
-        orientation = RoofOrientation.NORTHEAST_SOUTHWEST
+        orientation = RoofOrientation.NORTHWEST_SOUTHEAST  # Diagonale
     elif 157.5 <= azimuth_deg < 202.5:
-        orientation = RoofOrientation.EAST_WEST
+        orientation = RoofOrientation.NORTH_SOUTH    # Längste Seite ~S → Dach neigt N-S
     elif 202.5 <= azimuth_deg < 247.5:
-        orientation = RoofOrientation.NORTHWEST_SOUTHEAST
+        orientation = RoofOrientation.NORTHEAST_SOUTHWEST  # Diagonale
     elif 247.5 <= azimuth_deg < 292.5:
-        orientation = RoofOrientation.NORTH_SOUTH
+        orientation = RoofOrientation.EAST_WEST      # Längste Seite ~W → Dach neigt O-W
     else:  # 292.5 <= azimuth_deg < 337.5
-        orientation = RoofOrientation.NORTHEAST_SOUTHWEST
+        orientation = RoofOrientation.NORTHWEST_SOUTHEAST  # Diagonale
 
     return orientation, first_azimuth
 

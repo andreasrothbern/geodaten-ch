@@ -36,7 +36,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union, Tuple, overload
 import os
 
 from .models import (
@@ -398,18 +398,22 @@ class SmartBuildingService:
 
     async def collect_all_data(
         self,
-        address: str,
+        address: Union[str, List[str]],
         force_refresh: bool = False,
         include_research: bool = True,
         include_zones_analysis: bool = True,
         include_terrain: bool = True,
         include_neighbors: bool = False,  # TODO
-    ) -> BuildingDataBundle:
+    ) -> Union[BuildingDataBundle, List[BuildingDataBundle]]:
         """
-        Sammelt alle verfügbaren Daten für ein Gebäude.
+        Sammelt alle verfügbaren Daten für ein oder mehrere Gebäude.
+
+        NEU 11.01.2026: Rückwärtskompatible Multi-Adress-Unterstützung.
+        Bei einer Liste von Adressen wird für jedes Gebäude _enrich_building()
+        aufgerufen, mit interner Cache-Prüfung.
 
         Args:
-            address: Schweizer Adresse
+            address: Schweizer Adresse (String) oder Liste von Adressen
             force_refresh: Cache ignorieren
             include_research: Claude-Recherche für Gebäude-Identifikation
             include_zones_analysis: Claude-Analyse für komplexe Gebäude
@@ -417,13 +421,24 @@ class SmartBuildingService:
             include_neighbors: Nachbargebäude analysieren (TODO)
 
         Returns:
-            BuildingDataBundle mit allen gesammelten Daten
+            BuildingDataBundle (bei String) oder List[BuildingDataBundle] (bei Liste)
 
         Request-Deduplizierung:
             Bei parallelen Anfragen für dieselbe Adresse wartet die zweite
             Anfrage auf das Ergebnis der ersten (via asyncio.Lock).
             Dies verhindert doppelte API-Calls zu swisstopo/geodienste.ch.
         """
+        # NEU 11.01.2026: Multi-Adress-Unterstützung
+        if isinstance(address, list):
+            return await self._collect_multi_building_data(
+                addresses=address,
+                force_refresh=force_refresh,
+                include_research=include_research,
+                include_zones_analysis=include_zones_analysis,
+                include_terrain=include_terrain,
+            )
+
+        # Einzelne Adresse - REFACTORED 11.01.2026: Nutzt jetzt _enrich_building()
         cache_key = self._cache_key(address)
 
         # 1. Quick Cache Check (ohne Lock - read-only)
@@ -451,105 +466,30 @@ class SmartBuildingService:
 
             logger.info(f"Collecting data for {address} (holding lock)")
 
-            # 3. Neues Bundle erstellen
-            bundle = BuildingDataBundle(
-                address_input=address,
-                collection_timestamp=datetime.now(),
-            )
+            # 3. Geocoding (liefert Koordinaten + EGID)
+            geo = await self._geocode_address(address)
 
-            # 4. Daten sammeln (OPTIMIERT: Parallelisierung wo möglich)
-
-            # PHASE 1: Geocoding MUSS zuerst (liefert Koordinaten + EGID)
-            await self._collect_geocoding(bundle)
-
-            if not bundle.lv95_e or not bundle.lv95_n:
+            if not geo.get("lv95_e") or not geo.get("lv95_n"):
                 logger.error(f"Geocoding failed for {address}, cannot proceed")
+                bundle = BuildingDataBundle(address_input=address)
                 bundle.add_error("Geocoding fehlgeschlagen - keine weiteren Daten verfügbar")
                 return bundle
 
-            # PHASE 2: MAXIMAL PARALLEL nach Geocoding
-            # OPTIMIERT 10.01.2026: Alles was nur Koordinaten/EGID braucht parallel starten
-            # Vorher: 4.5s (sequentiell) → Nachher: ~1.5s (parallel)
-            phase2_tasks = [
-                self._collect_gwr_data(bundle),           # braucht EGID
-                self._collect_building_3d_data(bundle),   # braucht Koordinaten → Polygon + Höhen
-                self._collect_sonnendach_data(bundle),    # braucht Koordinaten → Dachgeometrie
-            ]
-            if include_terrain:
-                phase2_tasks.append(self._collect_terrain_data(bundle))  # braucht Koordinaten (Polygon optional)
-            if include_research:
-                phase2_tasks.append(self._collect_research_data(bundle, force_refresh))  # braucht Adresse
-
-            await asyncio.gather(*phase2_tasks, return_exceptions=True)
-            logger.info(f"Phase 2 complete: GWR, Building3D, Sonnendach, Terrain, Research (PARALLEL)")
-
-            # VALIDIERUNG: Höhen-Plausibilität prüfen (BUG-011)
-            validate_heights(bundle)
-
-            # PHASE 3: Berechnungen (brauchen Ergebnisse aus Phase 2)
-            phase3_tasks = [
-                self._calculate_roof_data(bundle),  # braucht Höhen + Polygon
-            ]
-
-            await asyncio.gather(*phase3_tasks, return_exceptions=True)
-            logger.info(f"Phase 3 complete: Roof calculations")
-
-            # PHASE 4: Sequentiell - braucht alles vorher
-            if include_zones_analysis and self._needs_zones_analysis(bundle):
-                await self._collect_zones_analysis(bundle)
-            else:
-                self._create_default_zone(bundle)
-
-            # VALIDIERUNG: Zone/API-Konsistenz prüfen (BUG-012)
-            validate_zone_consistency(bundle)
-
-            # PHASE 5: Berechnungen (synchron, schnell)
-            self._calculate_access_points(bundle)
-
-            if include_neighbors:
-                await self._collect_neighbor_data(bundle)
-
-            # 5. Qualität bewerten
-            self._assess_data_quality(bundle)
-
-            # 6. Cache speichern
-            self._save_bundle_cache(cache_key, bundle)
-
-            # Zusammenfassung loggen
-            sources_str = ", ".join(s.value for s in bundle.data_sources)
-            logger.info(
-                f"[SMART_BUILDING] Daten gesammelt für: {address}\n"
-                f"  ├─ EGID: {bundle.egid}\n"
-                f"  ├─ Research-Quelle: {bundle.research_source}\n"
-                f"  ├─ Gebäudename: {bundle.building_name or 'unbekannt'}\n"
-                f"  ├─ Zonen: {len(bundle.zones)} ({bundle.complexity})\n"
-                f"  ├─ Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m\n"
-                f"  └─ Datenquellen: {sources_str}"
+            # 4. Enrichment via gemeinsame Methode (Phase 2-5)
+            bundle = await self._enrich_building(
+                address=address,
+                egid=geo.get("egid"),
+                coordinates=(geo["lv95_e"], geo["lv95_n"]),
+                matched_address=geo.get("matched_address"),
+                force_refresh=force_refresh,
+                include_research=include_research,
+                include_zones_analysis=include_zones_analysis,
+                include_terrain=include_terrain,
             )
+
             return bundle
 
-    async def _collect_geocoding(self, bundle: BuildingDataBundle):
-        """Schritt 1: Geocoding"""
-        try:
-            from app.services.swisstopo import SwisstopoService
-            swisstopo = SwisstopoService()
-
-            geo = await swisstopo.geocode(bundle.address_input)
-            if geo:
-                bundle.address_matched = geo.matched_address
-                bundle.lv95_e = geo.coordinates.lv95_e
-                bundle.lv95_n = geo.coordinates.lv95_n
-                bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
-
-                # EGID aus Geocoding (falls vorhanden)
-                if hasattr(geo, 'egid') and geo.egid:
-                    bundle.egid = str(geo.egid)
-            else:
-                bundle.add_error(f"Geocoding fehlgeschlagen für: {bundle.address_input}")
-
-        except Exception as e:
-            logger.error(f"Geocoding error: {e}")
-            bundle.add_error(f"Geocoding-Fehler: {str(e)}")
+    # _collect_geocoding() entfernt 11.01.2026 - ersetzt durch _geocode_address()
 
     async def _collect_gwr_data(self, bundle: BuildingDataBundle):
         """Schritt 2: GWR-Daten"""
@@ -920,6 +860,23 @@ class SmartBuildingService:
                     }
                     bundle.roof_type = type_map.get(sonnendach_roof_type, bundle.roof_type)
 
+                # FIX 11.01.2026 02:30 - Dach-Ausrichtung aus Sonnendach.ch übernehmen
+                # main_orientation ist die Haupt-Neigungsrichtung der grössten Dachfläche
+                if analysis.main_orientation:
+                    # Berechne roof_azimuth_deg aus den Dachflächen (flächen-gewichtet)
+                    azimuth_deg = self._calculate_weighted_azimuth(analysis.surfaces)
+                    if azimuth_deg is not None:
+                        bundle.roof_azimuth_deg = azimuth_deg
+                        # roof_orientation aus Azimut ableiten:
+                        # - E/W (67.5-112.5° oder 247.5-292.5°): Dach neigt O-W
+                        # - N/S (sonst): Dach neigt N-S
+                        if (67.5 <= azimuth_deg < 112.5) or (247.5 <= azimuth_deg < 292.5):
+                            bundle.roof_orientation = "O-W"
+                        else:
+                            bundle.roof_orientation = "N-S"
+                        logger.info(f"Sonnendach Ausrichtung: {analysis.main_orientation} → "
+                                   f"azimuth={azimuth_deg:.1f}° → {bundle.roof_orientation}")
+
                 # Dachüberstand aus Polygon-Differenz berechnen
                 overhang = self._calculate_roof_overhang(bundle, analysis.surfaces)
                 if overhang is not None:
@@ -935,6 +892,49 @@ class SmartBuildingService:
         except Exception as e:
             logger.warning(f"Sonnendach.ch error: {e}")
             # Standard-Dachüberstand bleibt bei 0.4m
+
+    def _calculate_weighted_azimuth(self, surfaces: list) -> Optional[float]:
+        """
+        Berechnet flächen-gewichteten Durchschnitts-Azimut aus Sonnendach-Flächen.
+
+        Args:
+            surfaces: Liste von RoofSurface Objekten
+
+        Returns:
+            Azimut in Grad (0-360°) oder None
+        """
+        import math
+
+        if not surfaces:
+            return None
+
+        total_weight = 0.0
+        weighted_sum_sin = 0.0
+        weighted_sum_cos = 0.0
+
+        for surface in surfaces:
+            azimuth = getattr(surface, 'azimuth_degrees', None)
+            area = getattr(surface, 'area_m2', None)
+
+            if azimuth is not None and area and area > 0:
+                rad = math.radians(azimuth)
+                weighted_sum_sin += area * math.sin(rad)
+                weighted_sum_cos += area * math.cos(rad)
+                total_weight += area
+
+        if total_weight == 0:
+            return None
+
+        avg_azimuth = math.degrees(math.atan2(
+            weighted_sum_sin / total_weight,
+            weighted_sum_cos / total_weight
+        ))
+
+        # Normalisieren auf 0-360°
+        if avg_azimuth < 0:
+            avg_azimuth += 360
+
+        return round(avg_azimuth, 1)
 
     def _calculate_roof_overhang(
         self,
@@ -1397,6 +1397,216 @@ class SmartBuildingService:
         """Schritt 9: Nachbargebäude (TODO)"""
         # TODO: Implementierung für Nachbargebäude-Erkennung
         pass
+
+    # ========================================================================
+    # Multi-Building Support (NEU 11.01.2026)
+    # ========================================================================
+
+    async def _collect_multi_building_data(
+        self,
+        addresses: List[str],
+        force_refresh: bool = False,
+        include_research: bool = True,
+        include_zones_analysis: bool = True,
+        include_terrain: bool = True,
+    ) -> List[BuildingDataBundle]:
+        """
+        Sammelt Daten für mehrere Gebäude (z.B. "Knospenweg 4-6").
+
+        Ablauf:
+        1. Geocoding für alle Adressen (parallel)
+        2. Centroid berechnen (für Tile-Download Optimierung)
+        3. Für jedes Gebäude: _enrich_building() mit interner Cache-Prüfung
+        4. Liste der Bundles zurückgeben
+
+        Args:
+            addresses: Liste von Adressen
+            force_refresh: Cache ignorieren
+            include_research: Claude-Recherche
+            include_zones_analysis: Claude-Analyse
+            include_terrain: Terrain-Daten
+
+        Returns:
+            List[BuildingDataBundle] für alle Gebäude
+        """
+        if not addresses:
+            return []
+
+        logger.info(f"[MULTI-BUILDING] Starte Datensammlung für {len(addresses)} Adressen")
+
+        # Phase 1: Geocoding für alle Adressen parallel
+        geocoding_tasks = [self._geocode_address(addr) for addr in addresses]
+        geocoding_results = await asyncio.gather(*geocoding_tasks, return_exceptions=True)
+
+        # Gültige Geocoding-Ergebnisse extrahieren
+        valid_geocodings = []
+        for i, result in enumerate(geocoding_results):
+            if isinstance(result, Exception):
+                logger.warning(f"Geocoding failed for {addresses[i]}: {result}")
+                continue
+            if result and result.get("lv95_e") and result.get("lv95_n"):
+                valid_geocodings.append({
+                    "address": addresses[i],
+                    **result
+                })
+
+        if not valid_geocodings:
+            logger.error("[MULTI-BUILDING] Kein Geocoding erfolgreich")
+            return []
+
+        logger.info(f"[MULTI-BUILDING] {len(valid_geocodings)}/{len(addresses)} Adressen geocodiert")
+
+        # Phase 2: Centroid berechnen aus allen Koordinaten
+        centroid_e = sum(g["lv95_e"] for g in valid_geocodings) / len(valid_geocodings)
+        centroid_n = sum(g["lv95_n"] for g in valid_geocodings) / len(valid_geocodings)
+        logger.info(f"[MULTI-BUILDING] Centroid: E={centroid_e:.1f}, N={centroid_n:.1f}")
+
+        # Phase 3: Tile laden mit Centroid (triggert Prefetch für alle Gebäude)
+        # Ein Tile-Download reicht für alle Gebäude (sie liegen nahe beieinander)
+        await self._ensure_tile_loaded(centroid_e, centroid_n)
+
+        # Phase 4: Für jedes Gebäude: _enrich_building()
+        bundles = []
+        for geo in valid_geocodings:
+            bundle = await self._enrich_building(
+                address=geo["address"],
+                egid=geo.get("egid"),
+                coordinates=(geo["lv95_e"], geo["lv95_n"]),
+                matched_address=geo.get("matched_address"),
+                force_refresh=force_refresh,
+                include_research=include_research,
+                include_zones_analysis=include_zones_analysis,
+                include_terrain=include_terrain,
+            )
+            bundles.append(bundle)
+
+        logger.info(f"[MULTI-BUILDING] {len(bundles)} Bundles erstellt")
+        return bundles
+
+    async def _geocode_address(self, address: str) -> Dict[str, Any]:
+        """Geocoding für eine einzelne Adresse."""
+        try:
+            from app.services.swisstopo import SwisstopoService
+            swisstopo = SwisstopoService()
+
+            geo = await swisstopo.geocode(address)
+            if geo:
+                return {
+                    "matched_address": geo.matched_address,
+                    "lv95_e": geo.coordinates.lv95_e,
+                    "lv95_n": geo.coordinates.lv95_n,
+                    "egid": str(geo.egid) if hasattr(geo, 'egid') and geo.egid else None,
+                }
+            return {}
+        except Exception as e:
+            logger.error(f"Geocoding error for {address}: {e}")
+            return {}
+
+    async def _ensure_tile_loaded(self, e: float, n: float):
+        """Stellt sicher, dass das Tile für die Koordinaten geladen ist."""
+        try:
+            from app.services.swissbuildings3d_fetcher import fetch_building_polygon_for_coordinates
+            # Dieser Aufruf triggert automatisch den Tile-Download und Prefetch
+            await fetch_building_polygon_for_coordinates(e=e, n=n, tolerance_m=50.0)
+        except Exception as e:
+            logger.warning(f"Tile loading failed for E={e}, N={n}: {e}")
+
+    async def _enrich_building(
+        self,
+        address: str,
+        egid: Optional[str],
+        coordinates: Tuple[float, float],
+        matched_address: Optional[str] = None,
+        force_refresh: bool = False,
+        include_research: bool = True,
+        include_zones_analysis: bool = True,
+        include_terrain: bool = True,
+    ) -> BuildingDataBundle:
+        """
+        Enrichment für ein einzelnes Gebäude mit interner Cache-Prüfung.
+
+        NEU 11.01.2026: Diese Methode prüft zuerst ob das Bundle bereits
+        im Cache existiert. Falls ja, wird es direkt zurückgegeben.
+        Falls nicht, wird das vollständige Enrichment durchgeführt.
+
+        Args:
+            address: Original-Adresse
+            egid: Eidgenössische Gebäudeidentifikation (falls bekannt)
+            coordinates: (lv95_e, lv95_n) Koordinaten
+            matched_address: Gematchte Adresse aus Geocoding
+            force_refresh: Cache ignorieren
+            include_research: Claude-Recherche
+            include_zones_analysis: Claude-Analyse
+            include_terrain: Terrain-Daten
+
+        Returns:
+            BuildingDataBundle (aus Cache oder neu erstellt)
+        """
+        cache_key = self._cache_key(address, egid)
+
+        # 1. Cache-Prüfung (falls nicht force_refresh)
+        if not force_refresh:
+            cached = self._get_cached_bundle(cache_key)
+            if cached:
+                logger.info(f"[ENRICH] Cache-Hit für {address} (EGID: {egid})")
+                return cached
+
+        # 2. Neues Bundle erstellen
+        bundle = BuildingDataBundle(
+            address_input=address,
+            address_matched=matched_address or address,
+            lv95_e=coordinates[0],
+            lv95_n=coordinates[1],
+            egid=egid,
+            collection_timestamp=datetime.now(),
+        )
+        bundle.add_source(DataSource.SWISSTOPO_GEOCODING)
+
+        # 3. Daten parallel sammeln
+        phase2_tasks = [
+            self._collect_gwr_data(bundle),
+            self._collect_building_3d_data(bundle),
+            self._collect_sonnendach_data(bundle),
+        ]
+        if include_terrain:
+            phase2_tasks.append(self._collect_terrain_data(bundle))
+        if include_research:
+            phase2_tasks.append(self._collect_research_data(bundle, force_refresh))
+
+        await asyncio.gather(*phase2_tasks, return_exceptions=True)
+
+        # 4. Validierung
+        from .validation import validate_heights, validate_zone_consistency
+        validate_heights(bundle)
+
+        # 5. Dach-Berechnung
+        await self._calculate_roof_data(bundle)
+
+        # 6. Zonen-Analyse
+        if include_zones_analysis and self._needs_zones_analysis(bundle):
+            await self._collect_zones_analysis(bundle)
+        else:
+            self._create_default_zone(bundle)
+
+        validate_zone_consistency(bundle)
+
+        # 7. Zugänge berechnen
+        self._calculate_access_points(bundle)
+
+        # 8. Qualität bewerten
+        self._assess_data_quality(bundle)
+
+        # 9. Cache speichern
+        self._save_bundle_cache(cache_key, bundle)
+
+        logger.info(
+            f"[ENRICH] Bundle erstellt für {address}\n"
+            f"  ├─ EGID: {bundle.egid}\n"
+            f"  ├─ Zonen: {len(bundle.zones)}\n"
+            f"  └─ Höhen: Trauf={bundle.traufhoehe_m}m, First={bundle.firsthoehe_m}m"
+        )
+
+        return bundle
 
     def _assess_data_quality(self, bundle: BuildingDataBundle):
         """Bewertet die Gesamtqualität der gesammelten Daten"""

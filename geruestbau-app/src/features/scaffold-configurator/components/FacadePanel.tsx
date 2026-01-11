@@ -9,15 +9,21 @@ import { Check, ArrowRight, Compass, AlertTriangle, SlidersHorizontal } from 'lu
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade, SelectedFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
-import type { NeighborBuilding } from '../../../api/geruestbau';
+import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
 import { simplifyPolygon, sidesToFacades } from '../utils/polygonSimplifier';
+// NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support)
+import type { BlockedFacadesData } from '../../../hooks/useProjectContextStream';
 
 interface FacadePanelProps {
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
+  // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support via SSE)
+  blockedFacadesData?: BlockedFacadesData | null;
+  // NEU 10.01.2026 22:35 - Zusätzliche Projekt-Gebäude (Multi-Building)
+  additionalBuildings?: MultiBuildingData[];
 }
 
-export default function FacadePanel({ neighbors = [], blockedSides = [] }: FacadePanelProps) {
+export default function FacadePanel({ neighbors = [], blockedSides = [], blockedFacadesData, additionalBuildings = [] }: FacadePanelProps) {
   const {
     buildingName,
     buildingAddress,
@@ -28,6 +34,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     setSimplifyEpsilon,
     applySimplification,
   } = useScaffoldConfig();
+
 
   const elements = useElements();
   const settings = useSettings();
@@ -117,13 +124,51 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     return minDist;
   }, [pointToSegmentDistance]);
 
-  // Check if a facade is blocked by neighbors (geometry-based)
-  const isFacadeBlocked = useCallback((facade: ScaffoldFacade): boolean => {
-    if (!facade.start_point || !facade.end_point) return false;
+  // FIX 11.01.2026 01:15 - Blockierte Richtungen vom ersten Projekt-Gebäude
+  // Beide Gebäude sind TEIL EINES OBJEKTS (z.B. "Knospenweg 4-6")
+  // Wir zeigen aktuell Fassaden vom ersten Gebäude, daher dessen blockierte Richtungen
+  const blockedDirectionsFromSSE = useMemo(() => {
+    if (!blockedFacadesData) return new Set<string>();
+
+    const directions = new Set<string>();
+    // Erstes Projekt-Gebäude (dessen Fassaden aktuell angezeigt werden)
+    const firstBuildingEgid = Object.keys(blockedFacadesData)[0];
+    if (firstBuildingEgid) {
+      const egidData = blockedFacadesData[firstBuildingEgid];
+      if (egidData && egidData.blockers) {
+        for (const blocker of egidData.blockers) {
+          if (blocker.direction) {
+            directions.add(blocker.direction);
+          }
+        }
+      }
+    }
+    return directions;
+  }, [blockedFacadesData]);
+
+  // Check if a facade is blocked by neighbors (direction-based or geometry-based)
+  // FIX 11.01.2026 00:45 - facadeIndex no longer used (direction-based matching)
+  const isFacadeBlocked = useCallback((facade: ScaffoldFacade, _facadeIndex: number): boolean => {
+    // FIX 11.01.2026 00:45 - Priority 1: Check by DIRECTION (not index!)
+    // This works correctly even after polygon simplification
+    if (blockedDirectionsFromSSE.size > 0) {
+      const facadeDirection = facade.direction;
+      if (facadeDirection && blockedDirectionsFromSSE.has(facadeDirection)) {
+        return true;
+      }
+      return false;
+    }
+
+    // Fallback: Geometry-based calculation (for address-search or when SSE not available)
+    if (!facade.start_point || !facade.end_point) {
+      return false;
+    }
 
     // Check distance to each neighbor polygon
     for (const neighbor of neighbors) {
-      if (!neighbor.polygon || neighbor.polygon.length < 3) continue;
+      if (!neighbor.polygon || neighbor.polygon.length < 3) {
+        continue;
+      }
       const dist = facadeToPolygonDistance(
         facade.start_point as [number, number],
         facade.end_point as [number, number],
@@ -136,7 +181,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
 
     // Fallback to direction-based check
     return blockedSides.includes(facade.direction);
-  }, [neighbors, blockedSides, facadeToPolygonDistance]);
+  }, [neighbors, blockedSides, blockedDirectionsFromSSE, facadeToPolygonDistance]);
 
   // Get default height from existing facades
   const defaultHeight = useMemo(() => {
@@ -158,16 +203,16 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
 
     // Apply to store
     applySimplification(newFacades);
-
-    console.log(`Vereinfachung: ${polygon.length} → ${result.simplifiedPoints} Punkte, ${newFacades.length} Fassaden (epsilon=${result.epsilon})`);
   }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification]);
 
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {
     if (!polygon || polygon.length < 3 || facades.length === 0) return null;
 
-    // Calculate bounds including neighbors
-    const allPolygons = [polygon, ...neighbors.filter(n => n.polygon).map(n => n.polygon!)];
+    // Calculate bounds including neighbors AND additional project buildings
+    // NEU 10.01.2026 22:35 - additionalBuildings für Multi-Building Support
+    const additionalPolygons = additionalBuildings.filter(b => b.polygon && b.polygon.length >= 3).map(b => b.polygon);
+    const allPolygons = [polygon, ...additionalPolygons, ...neighbors.filter(n => n.polygon).map(n => n.polygon!)];
     const allXs = allPolygons.flatMap(p => p.map(pt => pt[0]));
     const allYs = allPolygons.flatMap(p => p.map(pt => pt[1]));
 
@@ -185,7 +230,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
     // Create main building polygon path
     const pathData = polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
 
-    // Create neighbor polygon paths
+    // Create neighbor polygon paths (gray - external buildings)
     const neighborElements = neighbors.filter(n => n.polygon && n.polygon.length >= 3).map((neighbor, idx) => {
       const neighborPath = neighbor.polygon!.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
       return (
@@ -200,13 +245,52 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
       );
     });
 
+    // FIX 11.01.2026 01:25 - ALLE Projekt-Gebäude als EIN OBJEKT darstellen
+    // Beide haben den gleichen Stil UND eine Projekt-Umrandung
+    const projectBorderWidth = width * 0.012; // Dickere Linie für Projekt-Grenze
+
+    // FIX 11.01.2026 01:25 - Zusätzliche Projekt-Gebäude darstellen
+    const additionalBuildingElements = additionalBuildings.filter(b => b.polygon && b.polygon.length >= 3).map((building, idx) => {
+      const buildingPath = building.polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+      return (
+        <g key={`additional-${idx}`}>
+          {/* Projekt-Umrandung (dicker, blau) - zeigt Zugehörigkeit zum Objekt */}
+          <path
+            d={buildingPath}
+            fill="none"
+            stroke="#3b82f6"
+            strokeWidth={projectBorderWidth}
+            opacity={0.6}
+          />
+          {/* Gebäude-Füllung */}
+          <path
+            d={buildingPath}
+            fill="#f3f4f6"
+            stroke="#ddd"
+            strokeWidth={width * 0.005}
+          />
+        </g>
+      );
+    });
+
+    // Projekt-Umrandung auch für das Hauptgebäude (für einheitliches Aussehen)
+    const mainBuildingProjectBorder = (
+      <path
+        d={pathData}
+        fill="none"
+        stroke="#3b82f6"
+        strokeWidth={projectBorderWidth}
+        opacity={0.6}
+      />
+    );
+
     // Create facade segments - thicker lines for better visibility
     const lineWidth = width * 0.06; // Dickere Linien für bessere Farbsichtbarkeit
 
-    const facadeElements = facades.map((facade) => {
+    const facadeElements = facades.map((facade, index) => {
       if (!facade.start_point || !facade.end_point) return null;
 
-      const isBlocked = isFacadeBlocked(facade);
+      const isBlocked = isFacadeBlocked(facade, index);
       const isEnabled = facade.enabled && !isBlocked;
       const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 
@@ -256,9 +340,13 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
       <svg viewBox={viewBox} className="w-full h-64 bg-gray-50 rounded-lg">
         {/* Transform to flip Y-axis (LV95 has Y increasing northward) */}
         <g transform={`translate(0, ${maxY + minY}) scale(1, -1)`}>
-          {/* Neighbor buildings (behind main building) */}
+          {/* Neighbor buildings (external, NOT part of project) - gray */}
           {neighborElements}
-          {/* Building outline */}
+          {/* Zusätzliche Projekt-Gebäude (Teil des EINEN Objekts) */}
+          {additionalBuildingElements}
+          {/* Projekt-Umrandung für erstes Gebäude (nur bei Multi-Building) */}
+          {additionalBuildings.length > 0 && mainBuildingProjectBorder}
+          {/* Erstes Projekt-Gebäude */}
           <path
             d={pathData}
             fill="#f3f4f6"
@@ -275,7 +363,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
         </g>
       </svg>
     );
-  }, [polygon, facades, neighbors, isFacadeBlocked, toggleFacadeEnabled]);
+  }, [polygon, facades, neighbors, additionalBuildings, isFacadeBlocked, toggleFacadeEnabled]);
 
   return (
     <div className="space-y-4">
@@ -370,8 +458,8 @@ export default function FacadePanel({ neighbors = [], blockedSides = [] }: Facad
       <div className="bg-white rounded-xl p-4 shadow-sm">
         <h3 className="font-semibold text-gray-700 mb-3">Fassaden ({facades.length})</h3>
         <div className="space-y-2">
-          {facades.map((facade) => {
-            const isBlocked = isFacadeBlocked(facade);
+          {facades.map((facade, index) => {
+            const isBlocked = isFacadeBlocked(facade, index);
             const isEnabled = facade.enabled && !isBlocked;
             const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
 

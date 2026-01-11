@@ -8,15 +8,17 @@
  * 4. ScaffoldConfigurator is rendered with the data
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData, type BlockedFacadesResponse } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeodata, Geodata } from '../types/project';
+// NEU 10.01.2026 19:15 - SSE-Hook für Multi-Building blocked facades
+import { useProjectContextStream, type BlockedFacadesData } from '../hooks/useProjectContextStream';
 import type { SelectedFacade, RoofData, BuildingZone } from '../features/scaffold-configurator/types/scaffold.types';
 
 interface ConfiguratorBuildingData {
@@ -127,6 +129,45 @@ function calculateArea(polygon: [number, number][]): number {
   return Math.abs(area) / 2;
 }
 
+// FIX 11.01.2026 02:15 - Dach-Orientierung aus Polygon berechnen
+// Gleiche Logik wie Backend (roof.py): First senkrecht zur LÄNGSTEN Seite
+function calculateRoofOrientation(polygon: [number, number][]): 'O-W' | 'N-S' {
+  if (!polygon || polygon.length < 3) return 'O-W';
+
+  // Längste Seite finden
+  let maxLength = 0;
+  let longestSideVector = { dx: 1, dy: 0 }; // Default: Ost-West
+
+  for (let i = 0; i < polygon.length; i++) {
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % polygon.length];
+
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length > maxLength) {
+      maxLength = length;
+      longestSideVector = { dx, dy };
+    }
+  }
+
+  // Azimut berechnen (0° = Nord, 90° = Ost)
+  const { dx, dy } = longestSideVector;
+  let azimuthDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+  if (azimuthDeg < 0) azimuthDeg += 360;
+
+  // Klassifizierung nach Neigungsrichtung (wie Backend)
+  // - Längste Seite ~O-W (azimuth 67.5-112.5 oder 247.5-292.5): Dach neigt O-W
+  // - Längste Seite ~N-S (azimuth 0-22.5, 157.5-202.5, 337.5-360): Dach neigt N-S
+  if ((azimuthDeg >= 67.5 && azimuthDeg < 112.5) ||
+      (azimuthDeg >= 247.5 && azimuthDeg < 292.5)) {
+    return 'O-W';  // Längste Seite läuft O-W → Dach neigt O-W
+  } else {
+    return 'N-S';  // Längste Seite läuft N-S → Dach neigt N-S
+  }
+}
+
 // Helper: Get selected facades from sessionStorage (from FacadeSelectionPage)
 interface SelectedSide {
   index: number;
@@ -145,6 +186,18 @@ function invalidateStoreIfNewSelection() {
     console.log('New facade selection detected - clearing Zustand store cache');
     localStorage.removeItem('scaffold-config-storage'); // Correct key from useScaffoldConfig
   }
+}
+
+// FIX 10.01.2026 22:30 - Cache invalidieren wenn Projekt sich ändert
+// Vergleicht aktuelle projectId mit zuletzt geladener
+function invalidateStoreIfProjectChanged(projectId: string | null) {
+  if (!projectId) return;
+  const lastProjectId = sessionStorage.getItem('lastLoadedProjectId');
+  if (lastProjectId && lastProjectId !== projectId) {
+    console.log(`[Cache] Project changed: ${lastProjectId} -> ${projectId}, clearing store cache`);
+    localStorage.removeItem('scaffold-config-storage');
+  }
+  sessionStorage.setItem('lastLoadedProjectId', projectId);
 }
 
 // Call immediately on module load (before Zustand hydrates)
@@ -321,19 +374,52 @@ export default function ConfiguratorPage() {
   const [neighborsRadius, setNeighborsRadius] = useState<number>(0); // 0 = off (default), 20/50/100 = context radius
   const [neighbors, setNeighbors] = useState<NeighborBuilding[]>([]);
   const [blockedSides, setBlockedSides] = useState<string[]>([]);
-  const [blockedFacadeIndices, setBlockedFacadeIndices] = useState<number[]>([]); // NEU: Fassaden-Indizes
-  const [blockedFacadesData, setBlockedFacadesData] = useState<BlockedFacadesResponse | null>(null); // Details pro blockierte Fassade
   const [neighborsLoading, setNeighborsLoading] = useState(false);
+
+  // NEU 10.01.2026 19:15 - Blocked Facades per EGID (für Multi-Building Support)
+  // REFACTORED 10.01.2026 20:30 - SSE-Hook ohne Parameter, Options an start()
+  const [blockedFacadesData, setBlockedFacadesData] = useState<BlockedFacadesData | null>(null);
+
+  // NEU 10.01.2026 21:45 - SSE projectBuildings separat speichern (für verzögerte Anwendung)
+  const [sseProjectBuildings, setSseProjectBuildings] = useState<typeof sseData.projectBuildings>(null);
+
+  // SSE-Hook (stabile Referenzen, keine reaktiven Options)
+  const { data: sseData, start: startSSE, stop: stopSSE } = useProjectContextStream();
 
   // Multi-Building State (Phase 3)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
   const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
   const [isMultiMode, setIsMultiMode] = useState(false);
-  const [additionalBuildings, setAdditionalBuildings] = useState<MultiBuildingData[]>([]);
+  // FIX 11.01.2026 00:15 - Hybrid: Manual selection + SSE override
+  // State für manuelle Auswahl (Multi-Building Mode bei Projekt-Erstellung)
+  const [manualAdditionalBuildings, setManualAdditionalBuildings] = useState<MultiBuildingData[]>([]);
   const [loadingAdditionalBuildings, setLoadingAdditionalBuildings] = useState(false);
+
+  // FIX 11.01.2026 - Derived value: SSE-Daten haben Priorität, dann manuelle Auswahl
+  const additionalBuildings = useMemo<MultiBuildingData[]>(() => {
+    // SSE-Daten haben Priorität (für gespeicherte Projekte)
+    if (sseData.projectBuildings && sseData.projectBuildings.length > 1) {
+      const additional = sseData.projectBuildings.slice(1)
+        .filter(b => b.polygon && b.polygon.length >= 3)
+        .map(b => ({
+          egid: b.egid,
+          address: '',
+          polygon: b.polygon as [number, number][],
+          center: [b.center_e ?? 0, b.center_n ?? 0] as [number, number],
+          traufhoehe_m: b.traufhoehe_m ?? 0,
+          firsthoehe_m: b.firsthoehe_m ?? 0,
+        }));
+      return additional;
+    }
+    // Fallback: Manuelle Auswahl (für neue Projekte)
+    return manualAdditionalBuildings;
+  }, [sseData.projectBuildings, manualAdditionalBuildings]);
 
   // Load project data: prefer Router State, fallback to API
   useEffect(() => {
+    // FIX 10.01.2026 22:30 - Cache invalidieren wenn Projekt wechselt
+    invalidateStoreIfProjectChanged(projectId);
+
     if (passedProject) {
       // Use project from Router State (no API call needed!)
       console.log('Using project from Router State (no API call)');
@@ -345,57 +431,34 @@ export default function ConfiguratorPage() {
     }
   }, [projectId, passedProject]);
 
-  // Load blocked facades ALWAYS when building data is available
-  // This determines which facades are not selectable (disabled in UI)
+  // REFACTORED 10.01.2026 20:30 - SSE für Projekte, REST API als Fallback für Adress-Suche
   useEffect(() => {
-    const loadBlockedFacades = async () => {
-      if (!buildingData?.building.egid) {
-        setBlockedFacadeIndices([]);
-        setBlockedFacadesData(null);
-        return;
-      }
+    if (!buildingData?.building.egid) return;
 
-      try {
-        const blockedResponse = await geruestbauApi.getBlockedFacades(
-          buildingData.building.egid,
-          [], // keine EGIDs exkludieren (Single-Building Mode)
-          2.0 // Standard-Schwellenwert
-        );
+    // Wenn Projekt vorhanden → SSE nutzen
+    if (projectId) {
+      startSSE(projectId, {
+        maxRadiusM: 100,
+        includeBlockedFacades: true,
+        includeNeighbors: true,
+      });
+      return () => {
+        stopSSE();
+      };
+    }
 
-        setBlockedFacadesData(blockedResponse);
-        setBlockedFacadeIndices(blockedResponse.blocked_indices);
-        console.log(`Blocked facades: ${blockedResponse.blocked_indices.length}/${blockedResponse.total_facades}`);
-      } catch (err) {
-        console.warn('Failed to load blocked facades:', err);
-        setBlockedFacadeIndices([]);
-        setBlockedFacadesData(null);
-      }
-    };
-
-    loadBlockedFacades();
-  }, [buildingData?.building.egid]);
-
-  // Load neighbors ON-DEMAND when user selects radius > 0
-  // Used for context display in 2D and 3D views
-  useEffect(() => {
+    // Fallback: REST API für Adress-basierte Suche (kein Projekt)
     const loadNeighbors = async () => {
-      if (!buildingData?.building.egid || neighborsRadius === 0) {
-        setNeighbors([]);
-        setBlockedSides([]);
-        return;
-      }
-
+      const effectiveRadius = Math.max(5, neighborsRadius);
       setNeighborsLoading(true);
       try {
         const neighborsResponse = await geruestbauApi.getNeighbors(
           buildingData.building.egid,
-          neighborsRadius,
-          true // include polygons for 2D/3D view
+          effectiveRadius,
+          true
         );
-
         setNeighbors(neighborsResponse.neighbors);
         setBlockedSides(neighborsResponse.blocked_sides);
-        console.log(`Loaded ${neighborsResponse.neighbors.length} neighbors (radius: ${neighborsRadius}m)`);
       } catch (err) {
         console.warn('Failed to load neighbors:', err);
         setNeighbors([]);
@@ -404,9 +467,138 @@ export default function ConfiguratorPage() {
         setNeighborsLoading(false);
       }
     };
-
     loadNeighbors();
-  }, [buildingData?.building.egid, neighborsRadius]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildingData?.building.egid, projectId]); // NICHT startSSE/stopSSE - sie sind stabil!
+
+  // SSE blocked_facades → blockedFacadesData + blockedSides
+  // FIX 11.01.2026 01:20 - Verwende buildingData.egid für das aktuell angezeigte Gebäude
+  useEffect(() => {
+    if (sseData.blockedFacades) {
+      setBlockedFacadesData(sseData.blockedFacades);
+
+      const currentBuildingEgid = buildingData?.building.egid;
+      const targetEgid = currentBuildingEgid && sseData.blockedFacades[currentBuildingEgid]
+        ? currentBuildingEgid
+        : Object.keys(sseData.blockedFacades)[0];
+
+      if (targetEgid && sseData.blockedFacades[targetEgid]) {
+        const directions = sseData.blockedFacades[targetEgid].blockers
+          ?.map(b => b.direction)
+          .filter((d): d is string => d !== null) ?? [];
+        const uniqueDirections = [...new Set(directions)];
+        if (uniqueDirections.length > 0) {
+          setBlockedSides(uniqueDirections);
+        }
+      }
+    }
+  }, [sseData.blockedFacades, buildingData?.building.egid]);
+
+  // NEU 10.01.2026 21:20 - SSE projectBuildings speichern für Höhen-Updates
+  useEffect(() => {
+    if (sseData.projectBuildings && sseData.projectBuildings.length > 0) {
+      setSseProjectBuildings(sseData.projectBuildings);
+    }
+  }, [sseData.projectBuildings]);
+
+  // NEU 10.01.2026 21:45 - SSE-Daten auf buildingData anwenden (verzögert)
+  useEffect(() => {
+    if (!sseProjectBuildings || sseProjectBuildings.length === 0) return;
+    if (!buildingData) return;
+
+    const firstBuilding = sseProjectBuildings[0];
+    const updatedBuilding = { ...buildingData.building };
+    let hasChanges = false;
+
+    if (firstBuilding.traufhoehe_m != null && firstBuilding.traufhoehe_m !== updatedBuilding.trauf_height_m) {
+      updatedBuilding.trauf_height_m = firstBuilding.traufhoehe_m;
+      hasChanges = true;
+    }
+    if (firstBuilding.firsthoehe_m != null && firstBuilding.firsthoehe_m !== updatedBuilding.first_height_m) {
+      updatedBuilding.first_height_m = firstBuilding.firsthoehe_m;
+      hasChanges = true;
+    }
+    if (firstBuilding.polygon && firstBuilding.polygon.length >= 3) {
+      updatedBuilding.polygon = firstBuilding.polygon as [number, number][];
+      hasChanges = true;
+    }
+    if (firstBuilding.egid && firstBuilding.egid !== updatedBuilding.egid) {
+      updatedBuilding.egid = firstBuilding.egid;
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      const newTraufHeight = updatedBuilding.trauf_height_m;
+      setBuildingData(prev => {
+        if (!prev) return prev;
+        const updatedFacades = prev.selected_facades.map(facade => {
+          if (facade.height_m === 0 || facade.height_m === prev.building.trauf_height_m) {
+            return { ...facade, height_m: newTraufHeight };
+          }
+          return facade;
+        });
+        return {
+          ...prev,
+          building: updatedBuilding,
+          selected_facades: updatedFacades
+        };
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sseProjectBuildings, buildingData?.building.egid]);
+
+  // SSE neighbors → neighbors (alle Radien gesammelt)
+  useEffect(() => {
+    if (sseData.neighbors && sseData.neighbors.size > 0) {
+      const allNeighbors: NeighborBuilding[] = [];
+      const seenEgids = new Set<string>();
+      sseData.neighbors.forEach((buildings) => {
+        buildings.forEach(b => {
+          if (!seenEgids.has(b.egid)) {
+            seenEgids.add(b.egid);
+            allNeighbors.push({
+              egid: b.egid,
+              distance_m: b.distance_m,
+              direction: b.direction,
+              polygon: b.polygon as [number, number][] | undefined,
+            });
+          }
+        });
+      });
+      setNeighbors(allNeighbors);
+    }
+  }, [sseData.neighbors]);
+
+  // Gefilterte Nachbarn basierend auf Slider (0=Aus, 20/50/100=Radius)
+  const filteredNeighbors = useMemo(() => {
+    if (neighborsRadius === 0) return [];
+    return neighbors.filter(n => n.distance_m <= neighborsRadius);
+  }, [neighbors, neighborsRadius]);
+
+  // REST API Fallback bei Slider-Änderung (nur für Adress-Suche ohne Projekt)
+  useEffect(() => {
+    if (projectId) return; // SSE hat bereits alle Daten
+    if (!buildingData?.building.egid) return;
+
+    const loadNeighbors = async () => {
+      const effectiveRadius = Math.max(5, neighborsRadius);
+      setNeighborsLoading(true);
+      try {
+        const neighborsResponse = await geruestbauApi.getNeighbors(
+          buildingData.building.egid,
+          effectiveRadius,
+          true
+        );
+        setNeighbors(neighborsResponse.neighbors);
+        setBlockedSides(neighborsResponse.blocked_sides);
+      } catch (err) {
+        console.warn('Failed to load neighbors:', err);
+      } finally {
+        setNeighborsLoading(false);
+      }
+    };
+    loadNeighbors();
+  }, [buildingData?.building.egid, neighborsRadius, projectId]);
 
   // Process loaded project and set building data
   const handleProjectLoaded = async (loadedProject: ProjectWithGeodata) => {
@@ -429,10 +621,13 @@ export default function ConfiguratorPage() {
           const roofHeight = first - trauf;
           const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
 
+          // FIX 10.01.2026 22:45 - Dynamische Dach-Orientierung aus Polygon
+          const roofOrientation = calculateRoofOrientation(loadedProject.geodata.polygon as [number, number][]);
+
           configData.roof = {
             roof_type: roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil',
             roof_angle_deg: roofAngle,
-            roof_orientation: 'N-S',
+            roof_orientation: roofOrientation,
             trauf_to_first_m: roofHeight,
             scaffolding_height_m: first + 1,
             confidence: 0.7,
@@ -499,13 +694,6 @@ export default function ConfiguratorPage() {
       }
 
       const data: ConfiguratorBuildingData = await response.json();
-
-      // DEBUG: Log the backend response to see if roof data is present
-      console.log('=== BACKEND RESPONSE ===', {
-        hasRoof: !!data.roof,
-        roof: data.roof,
-        fullResponse: data,
-      });
 
       // If we have an existing project, use its ID
       if (existingProject) {
@@ -733,28 +921,28 @@ export default function ConfiguratorPage() {
                     if (selectedBuildings.length === 1) {
                       // Single building - load directly
                       setIsMultiMode(false);
-                      setAdditionalBuildings([]);
+                      setManualAdditionalBuildings([]);
                       fetchBuildingData(selectedBuildings[0].address, project);
                     } else if (selectedBuildings.length > 1) {
-                      // Multi-building mode: Load first as main, rest as additional
+                      // Multi-Building Projekt: Alle Gebäude sind Teil EINES Objekts
                       setIsMultiMode(false);
                       setLoadingAdditionalBuildings(true);
 
-                      // Load main building
+                      // Lade erstes Projekt-Gebäude (für Fassaden-Anzeige)
                       await fetchBuildingData(selectedBuildings[0].address, project);
 
-                      // Load polygons for additional buildings in parallel
+                      // Lade Polygone für weitere Projekt-Gebäude parallel
                       const additionalAddresses = selectedBuildings.slice(1).map(b => b.address);
                       const additionalData = await Promise.all(
                         additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
                       );
 
-                      // Filter out failed loads
+                      // Filtere fehlgeschlagene Ladevorgänge
                       const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
-                      setAdditionalBuildings(validAdditional);
+                      setManualAdditionalBuildings(validAdditional);
                       setLoadingAdditionalBuildings(false);
 
-                      console.log(`Loaded ${validAdditional.length} additional buildings for 3D view`);
+                      console.log(`Projekt mit ${1 + validAdditional.length} Gebäuden geladen`);
                     }
                   }}
                   disabled={selectedBuildings.length === 0 || loadingAdditionalBuildings}
@@ -905,17 +1093,18 @@ export default function ConfiguratorPage() {
       </div>
 
       {/* Scaffold Configurator */}
+      {/* FIX 11.01.2026 01:10 - Projekt-Name/Adresse haben Vorrang (Multi-Building: "Knospenweg 4-6") */}
       <ScaffoldConfigurator
         projectId={buildingData.project_id}
-        buildingName={buildingData.building_name || buildingData.building.name}
-        buildingAddress={buildingData.building.address}
+        buildingName={project?.name || buildingData.building_name || buildingData.building.name}
+        buildingAddress={project?.address || buildingData.building.address}
         buildingPolygon={buildingData.building.polygon}
         selectedFacades={convertToSelectedFacades(buildingData)}
         roof={convertRoofData(buildingData)}
-        neighbors={neighbors}
+        neighbors={filteredNeighbors}
         blockedSides={blockedSides}
-        blockedFacadeIndices={blockedFacadeIndices}
-        blockedFacadesDetails={blockedFacadesData?.blocked_facades ?? []}
+        // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
+        blockedFacadesData={blockedFacadesData}
         additionalBuildings={additionalBuildings}
         // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
         zones={buildingData.zones}

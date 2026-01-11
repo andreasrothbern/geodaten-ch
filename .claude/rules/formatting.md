@@ -53,6 +53,36 @@
 - Komponenten: `PascalCase`
 - Interfaces: `PascalCase` mit `I`-Prefix optional
 
+## Änderungs-Kommentare im Code
+
+Bei wichtigen Änderungen (FIX, NEU, TODO) im Code **Datum UND Uhrzeit** angeben:
+
+**Format:** `TAG DD.MM.YYYY HH:MM - Kurzbeschreibung`
+
+**Tags:**
+- `FIX` - Bugfix
+- `NEU` - Neues Feature
+- `TODO` - Noch zu erledigen
+- `WICHTIG` - Kritische Stelle
+
+**Beispiele:**
+```python
+# FIX 10.01.2026 18:30 - Math.max(5, radius) für blocked-facades
+const effectiveRadius = Math.max(5, neighborsRadius);
+
+# NEU 05.01.2026 14:15 - Zonen-Daten für komplexe Gebäude
+zones?: BuildingZone[];
+
+# TODO 10.01.2026 19:00 - getBlockedFacades() wird nicht genutzt, entfernen?
+```
+
+**Warum Uhrzeit?**
+- Bei mehreren Änderungen am gleichen Tag ist die Reihenfolge erkennbar
+- Erleichtert Debugging und Code-Review
+- Korreliert mit Git-Commits (`git log --format="%h %ci %s"`)
+
+---
+
 ## Commits
 
 **Format:** `type(scope): description`
