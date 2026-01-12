@@ -28,6 +28,47 @@ Bei Knospenweg 1, Bern werden die Fassaden falsch dargestellt:
 
 ---
 
+### BUG-018: Multi-Adress-Auflösung gibt falsche EGIDs (GEFIXT)
+
+**Status:** ✅ Gefixt am 12.01.2026 03:15
+
+**Problem:**
+Bei Multi-Adress-Auflösung (z.B. "Knospenweg 1-9, Bern") bekamen alle Adressen
+die gleiche EGID statt unterschiedliche EGIDs für jedes Gebäude.
+
+**Beispiel (vor Fix):**
+```
+Knospenweg 1: EGID 1243787
+Knospenweg 3: EGID 1243787 (FALSCH - sollte 1243789 sein)
+Knospenweg 5: EGID 1243787 (FALSCH - sollte 1243791 sein)
+Knospenweg 7: EGID 1243787 (FALSCH - sollte 1243793 sein)
+Knospenweg 9: EGID 1243787 (FALSCH - sollte 1243795 sein)
+```
+
+**Ursache:**
+`building_3d_service.get_by_coordinates()` verwendete `ORDER BY dist_sq LIMIT 1`
+und gab einfach das **nächste Gebäude nach Zentrum-Distanz** zurück - OHNE
+Point-in-Polygon Check! Bei teilweise gefüllter DB (nur 1 Gebäude) wurde
+dieses für alle Koordinaten zurückgegeben.
+
+**Fix:**
+`get_by_coordinates()` in `building_3d_service.py` angepasst:
+1. Alle Kandidaten im Radius laden (nicht nur LIMIT 1)
+2. Point-in-Polygon Check für jeden Kandidaten
+3. Bei Match → Gebäude zurückgeben
+4. Bei keinem Match → None (damit Stufe 2/3 das GDB parst)
+
+**Betroffene Datei:**
+- `backend/app/services/building_3d_service.py:321-420` - `get_by_coordinates()`
+
+**Test:**
+```bash
+curl "http://localhost:8000/api/v1/geruestbau/address/resolve?address=Knospenweg%201-9,%20Bern"
+# → 5 verschiedene EGIDs: 1243787, 1243789, 1243791, 1243793, 1243795
+```
+
+---
+
 ### BUG-016: Dach-Orientierung bei Reihenhäusern inkonsistent
 
 **Status:** 🟡 Wartet auf 3D-Layer-Migration (erkannt 11.01.2026)

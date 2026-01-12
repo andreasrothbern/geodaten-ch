@@ -89,22 +89,36 @@ Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert aut
 
 ### Cache-Reset (WICHTIG! - Singleton-Problem)
 
-Bei Problemen mit Gebäudedaten: **Backend STOPPEN**, dann **ALLE 3 Caches** löschen!
+Bei Problemen mit Gebäudedaten: **Backend STOPPEN**, dann Caches löschen!
 
 ```bash
 # 1. Backend ZUERST stoppen (Windows)
 taskkill /F /IM python.exe
 # oder: Ctrl+C im Terminal
 
-# 2. ALLE 3 Caches löschen (WICHTIG: zusammen!)
-rm backend/app/data/building_3d.db   # Gebäude-Grunddaten
-rm backend/app/data/tiles.db         # Tile-Metadaten
-rm -rf backend/app/data/tiles/       # GDB-Rohdateien
+# 2. Caches löschen (EINFACHER BEFEHL)
+del /F /Q backend\app\data\building_3d.db* backend\app\data\tiles.db* 2>nul & rmdir /S /Q backend\app\data\tiles 2>nul
 
 # 3. Backend neu starten
 cd backend
 python -m uvicorn app.main:app --reload --port 8000
 ```
+
+**Was wird gelöscht:**
+- `building_3d.db*` - Gebäude-Grunddaten + WAL/SHM-Dateien
+- `tiles.db*` - Tile-Metadaten + WAL/SHM-Dateien
+- `tiles/` - GDB-Rohdateien
+
+**Was bleibt erhalten:**
+- `geruestbau.db` - Projekte (NICHT löschen!)
+- `cache.db` - API-Response Cache
+
+**Was sind WAL/SHM-Dateien?**
+SQLite nutzt Write-Ahead Logging (WAL-Mode) für bessere Performance. Dabei entstehen:
+- `.db-wal` - Write-Ahead Log (ausstehende Änderungen)
+- `.db-shm` - Shared Memory Index
+
+Diese müssen zusammen mit der Hauptdatei gelöscht werden!
 
 **Warum Backend zuerst stoppen?**
 Die Services nutzen **Singleton-Pattern mit Lazy Initialization**:

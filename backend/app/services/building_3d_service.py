@@ -325,7 +325,11 @@ class Building3DService:
         tolerance_m: float = 30.0
     ) -> Optional[Dict[str, Any]]:
         """
-        Sucht Gebäude per Koordinaten.
+        Sucht Gebäude per Koordinaten mit Point-in-Polygon Check.
+
+        FIX 12.01.2026 03:00 BUG-018: Verwendet jetzt Point-in-Polygon statt
+        nur nächstes Zentrum. Bei Reihenhäusern liegt der Hauseingang oft
+        näher am Nachbar-Zentrum als am eigenen Gebäude-Zentrum.
 
         Args:
             e: LV95 Easting
@@ -333,12 +337,12 @@ class Building3DService:
             tolerance_m: Suchradius in Metern
 
         Returns:
-            Nächstes Gebäude oder None
+            Gebäude dessen Polygon den Punkt enthält, oder None
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Bounding-Box-Suche für Performance
+            # Alle Kandidaten im Radius laden (nicht nur nächstes!)
             cursor.execute("""
                 SELECT *,
                        ((center_e - ?) * (center_e - ?) +
@@ -347,29 +351,90 @@ class Building3DService:
                 WHERE center_e BETWEEN ? AND ?
                   AND center_n BETWEEN ? AND ?
                 ORDER BY dist_sq ASC
-                LIMIT 1
             """, (
                 e, e, n, n,
                 e - tolerance_m, e + tolerance_m,
                 n - tolerance_m, n + tolerance_m
             ))
 
-            row = cursor.fetchone()
-            if not row:
+            rows = cursor.fetchall()
+            if not rows:
+                logger.debug(f"[get_by_coordinates] Keine Kandidaten im {tolerance_m}m Radius um ({e:.1f}, {n:.1f})")
                 return None
 
-            result = dict(row)
-            result['distance_m'] = (result['dist_sq'] ** 0.5) if result.get('dist_sq') else 0
-            del result['dist_sq']
+            logger.debug(f"[get_by_coordinates] {len(rows)} Kandidaten im {tolerance_m}m Radius um ({e:.1f}, {n:.1f})")
 
-            # Polygon parsen
-            if result.get('polygon'):
-                try:
-                    result['polygon'] = json.loads(result['polygon'])
-                except json.JSONDecodeError:
-                    result['polygon'] = None
+            # Point-in-Polygon Check für alle Kandidaten
+            for row in rows:
+                result = dict(row)
+                egid = result.get('egid')
+                dist = (result['dist_sq'] ** 0.5) if result.get('dist_sq') else 0
 
-            return result
+                # Polygon parsen
+                polygon = None
+                if result.get('polygon'):
+                    try:
+                        polygon = json.loads(result['polygon']) if isinstance(result['polygon'], str) else result['polygon']
+                    except json.JSONDecodeError:
+                        pass
+
+                if not polygon:
+                    logger.debug(f"[get_by_coordinates] EGID {egid}: Kein Polygon, überspringe")
+                    continue
+
+                # Point-in-Polygon Check
+                if self._point_in_polygon(e, n, polygon):
+                    logger.info(f"[get_by_coordinates] Point-in-Polygon MATCH: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)")
+                    result['distance_m'] = dist
+                    del result['dist_sq']
+                    result['polygon'] = polygon
+                    return result
+                else:
+                    logger.debug(f"[get_by_coordinates] EGID {egid}: Point-in-Polygon FALSE (dist={dist:.1f}m)")
+
+            # Kein Match - None zurückgeben damit Stufe 2/3 verwendet wird
+            first = dict(rows[0])
+            first_egid = first.get('egid')
+            first_dist = (first['dist_sq'] ** 0.5) if first.get('dist_sq') else 0
+            logger.warning(
+                f"[get_by_coordinates] Kein Polygon-Match für ({e:.1f}, {n:.1f}). "
+                f"Nächstes Zentrum wäre EGID {first_egid} (dist={first_dist:.1f}m). "
+                f"Geprüft: {len(rows)} Kandidaten. → Fallback auf Stufe 2/3"
+            )
+            return None
+
+    def _point_in_polygon(self, px: float, py: float, polygon: list) -> bool:
+        """
+        Prüft ob ein Punkt innerhalb eines Polygons liegt (Ray-Casting).
+
+        Args:
+            px, py: Punkt-Koordinaten
+            polygon: Liste von [x, y] Koordinaten
+
+        Returns:
+            True wenn Punkt im Polygon liegt
+        """
+        n = len(polygon)
+        if n < 3:
+            return False
+
+        inside = False
+        j = n - 1
+
+        for i in range(n):
+            if isinstance(polygon[i], dict):
+                xi, yi = polygon[i].get('x', 0), polygon[i].get('y', 0)
+                xj, yj = polygon[j].get('x', 0), polygon[j].get('y', 0)
+            else:
+                xi, yi = polygon[i][0], polygon[i][1]
+                xj, yj = polygon[j][0], polygon[j][1]
+
+            if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+                inside = not inside
+
+            j = i
+
+        return inside
 
     def save(self, building: Dict[str, Any]) -> bool:
         """
