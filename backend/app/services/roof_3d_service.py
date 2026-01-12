@@ -270,6 +270,287 @@ class Roof3DService:
                 "roof_forms": forms
             }
 
+    def fetch_geometry_on_demand(self, egid: str) -> Optional[bytes]:
+        """
+        Lädt 3D-Geometrie on-demand aus der GDB für komplexe Gebäude.
+
+        NEU 12.01.2026: Geometrie wird NICHT beim Prefetch gespeichert.
+        Diese Funktion holt sie bei Bedarf aus der gecachten GDB-Datei.
+
+        Args:
+            egid: EGID des Gebäudes
+
+        Returns:
+            WKB-Geometrie als bytes oder None
+        """
+        import time
+        start = time.time()
+
+        # 1. Tile-ID aus building_3d holen
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT tile_id, gebaeudeeinheit FROM buildings_3d WHERE egid = ?
+            """, (egid,))
+            row = cursor.fetchone()
+
+            if not row:
+                logger.warning(f"Gebäude {egid} nicht in building_3d.db gefunden")
+                return None
+
+            tile_id = row['tile_id']
+            gebaeudeeinheit = row['gebaeudeeinheit']
+
+        if not tile_id:
+            logger.warning(f"Keine tile_id für EGID {egid}")
+            return None
+
+        # 2. GDB-Pfad aus tile_cache holen
+        from app.services.tile_cache import get_gdb_path_for_tile
+        gdb_path = get_gdb_path_for_tile(tile_id)
+
+        if not gdb_path or not gdb_path.exists():
+            logger.warning(f"GDB für Tile {tile_id} nicht gefunden")
+            return None
+
+        # 3. Geometrie aus GDB extrahieren
+        try:
+            import fiona
+            from shapely.geometry import shape
+
+            layers = fiona.listlayers(gdb_path)
+            target_layer = None
+            for layer in layers:
+                if 'roof' in layer.lower() and 'solid' in layer.lower():
+                    target_layer = layer
+                    break
+
+            if not target_layer:
+                logger.warning(f"Kein Roof_solid Layer in {gdb_path}")
+                return None
+
+            # FIX 12.01.2026: EGID zu int konvertieren für Vergleich
+            # GDB speichert EGID als int, Parameter kommt als str
+            try:
+                egid_int = int(egid) if egid else None
+            except ValueError:
+                egid_int = None
+
+            with fiona.open(gdb_path, layer=target_layer) as src:
+                for feature in src:
+                    props = feature['properties']
+
+                    # Suche nach gebaeudeeinheit oder EGID
+                    if gebaeudeeinheit and props.get('GEBAEUDEEINHEIT') == gebaeudeeinheit:
+                        pass  # Found!
+                    elif egid_int and props.get('EGID') == egid_int:
+                        pass  # Found by EGID (int comparison)!
+                    else:
+                        continue
+
+                    # Gefunden - Geometrie extrahieren
+                    if feature['geometry'] is not None:
+                        geom = shape(feature['geometry'])
+                        geometry_wkb = geom.wkb
+
+                        # In DB speichern für nächstes Mal
+                        if gebaeudeeinheit:
+                            self.update_with_geometry(gebaeudeeinheit, geometry_wkb)
+
+                        elapsed_ms = (time.time() - start) * 1000
+                        logger.info(
+                            f"[GEOMETRY] On-demand für EGID {egid} geladen | "
+                            f"{len(geometry_wkb)} bytes | {elapsed_ms:.0f}ms"
+                        )
+                        return geometry_wkb
+
+            logger.warning(f"Geometrie für EGID {egid} nicht in GDB gefunden")
+            return None
+
+        except Exception as e:
+            logger.error(f"Fehler beim Laden der Geometrie für {egid}: {e}")
+            return None
+
+    def fetch_all_layers_on_demand(self, egid: str) -> dict:
+        """
+        NEU 12.01.2026: Lädt ALLE 3D-Layer (Roof_solid, Roof, Wall) für komplexe Gebäude.
+
+        Args:
+            egid: EGID des Gebäudes
+
+        Returns:
+            Dict mit geladenen Geometrien:
+            {
+                'roof_solid': bytes | None,
+                'roof': bytes | None,
+                'wall': bytes | None,
+                'loaded_layers': ['Roof_solid', 'Wall', ...]
+            }
+        """
+        import time
+        start = time.time()
+        result = {
+            'roof_solid': None,
+            'roof': None,
+            'wall': None,
+            'loaded_layers': []
+        }
+
+        # 1. Tile-ID und gebaeudeeinheit aus building_3d holen
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT tile_id, gebaeudeeinheit FROM buildings_3d WHERE egid = ?
+            """, (egid,))
+            row = cursor.fetchone()
+
+            if not row:
+                logger.warning(f"[ALL_LAYERS] Gebäude {egid} nicht in building_3d.db")
+                return result
+
+            tile_id = row['tile_id']
+            gebaeudeeinheit = row['gebaeudeeinheit']
+
+        if not tile_id:
+            logger.warning(f"[ALL_LAYERS] Keine tile_id für EGID {egid}")
+            return result
+
+        # 2. GDB-Pfad holen
+        from app.services.tile_cache import get_gdb_path_for_tile
+        gdb_path = get_gdb_path_for_tile(tile_id)
+
+        if not gdb_path or not gdb_path.exists():
+            logger.warning(f"[ALL_LAYERS] GDB für Tile {tile_id} nicht gefunden")
+            return result
+
+        # 3. Alle Layer laden
+        try:
+            import fiona
+            from shapely.geometry import shape
+
+            # EGID zu int für Vergleich
+            try:
+                egid_int = int(egid) if egid else None
+            except ValueError:
+                egid_int = None
+
+            layers = fiona.listlayers(gdb_path)
+
+            # Layer-Mapping: GDB-Layer → Result-Key
+            layer_mapping = {
+                'Roof_solid': 'roof_solid',
+                'Roof': 'roof',
+                'Wall': 'wall'
+            }
+
+            for gdb_layer, result_key in layer_mapping.items():
+                if gdb_layer not in layers:
+                    continue
+
+                with fiona.open(gdb_path, layer=gdb_layer) as src:
+                    for feature in src:
+                        props = feature['properties']
+
+                        # Suche nach gebaeudeeinheit oder EGID
+                        match = False
+                        if gebaeudeeinheit and props.get('GEBAEUDEEINHEIT') == gebaeudeeinheit:
+                            match = True
+                        elif egid_int and props.get('EGID') == egid_int:
+                            match = True
+
+                        if not match:
+                            continue
+
+                        # Gefunden - Geometrie extrahieren
+                        if feature['geometry'] is not None:
+                            geom = shape(feature['geometry'])
+                            result[result_key] = geom.wkb
+                            result['loaded_layers'].append(gdb_layer)
+
+                            # FIX 12.01.2026: Wall-Attribute extrahieren für z_min/z_max
+                            if gdb_layer == 'Wall':
+                                gelaendepunkt = props.get('GELAENDEPUNKT')
+                                gesamthoehe = props.get('GESAMTHOEHE')
+                                result['wall_props'] = {
+                                    'z_min': gelaendepunkt,
+                                    'z_max': (gelaendepunkt + gesamthoehe) if gelaendepunkt and gesamthoehe else None
+                                }
+
+                            # FIX 12.01.2026: Roof-Attribute extrahieren für dach_min/dach_max
+                            if gdb_layer == 'Roof_solid':
+                                result['roof_props'] = {
+                                    'dach_min': props.get('DACH_MIN'),
+                                    'dach_max': props.get('DACH_MAX'),
+                                    'gelaendepunkt': props.get('GELAENDEPUNKT'),
+                                    'gesamthoehe': props.get('GESAMTHOEHE')
+                                }
+
+                            break  # Nur erstes Match pro Layer
+
+            # 4. In DB speichern (auch bei EGID-basiertem Lookup!)
+            self._save_all_layers_to_db(egid, gebaeudeeinheit, result)
+
+            elapsed_ms = (time.time() - start) * 1000
+            logger.info(
+                f"[ALL_LAYERS] EGID {egid} | Layers: {result['loaded_layers']} | {elapsed_ms:.0f}ms"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"[ALL_LAYERS] Fehler für {egid}: {e}")
+            return result
+
+    def _save_all_layers_to_db(self, egid: str, gebaeudeeinheit: str | None, data: dict):
+        """Speichert alle geladenen Layer in die entsprechenden Tabellen."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Roof_solid → building_roofs
+                # FIX 12.01.2026: dach_min/dach_max aus roof_props hinzufügen
+                if data.get('roof_solid'):
+                    roof_props = data.get('roof_props', {})
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO building_roofs
+                        (gebaeudeeinheit, egid, dach_min, dach_max, geometry_wkb, 
+                         has_full_geometry, calculated_at, calculation_method)
+                        VALUES (?, ?, ?, ?, ?, 1, datetime('now'), 'on_demand_complex')
+                    """, (
+                        gebaeudeeinheit or f"egid_{egid}",
+                        egid,
+                        roof_props.get('dach_min'),
+                        roof_props.get('dach_max'),
+                        data['roof_solid']
+                    ))
+
+                # Wall → building_walls
+                # FIX 12.01.2026: z_min und z_max aus wall_props hinzufügen
+                if data.get('wall'):
+                    wall_props = data.get('wall_props', {})
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO building_walls
+                        (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb, created_at)
+                        VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """, (
+                        gebaeudeeinheit or f"egid_{egid}",
+                        egid,
+                        wall_props.get('z_min'),
+                        wall_props.get('z_max'),
+                        data['wall']
+                    ))
+
+                # FIX 12.01.2026: has_3d_layers Flag setzen
+                cursor.execute("""
+                    UPDATE buildings_3d SET has_3d_layers = 1 WHERE egid = ?
+                """, (egid,))
+
+                conn.commit()
+                logger.debug(f"[ALL_LAYERS] Saved to DB: EGID {egid}")
+
+        except Exception as e:
+            logger.error(f"[ALL_LAYERS] DB save error for {egid}: {e}")
+
 
 # Singleton-Accessor
 _service_instance = None

@@ -28,6 +28,148 @@ Bei Knospenweg 1, Bern werden die Fassaden falsch dargestellt:
 
 ---
 
+### BUG-020: Bekannte Gebäude bekommen falsche Zonen (GEFIXT)
+
+**Status:** ✅ Gefixt am 12.01.2026
+
+**Problem:**
+Das Bundeshaus bekam Kirchen-Zonen ("Seitenschiffe", "Kirchenschiff", "Turm") statt
+der korrekten Zonen ("Arkaden", "Hauptgebäude", "Kuppel") aus known_buildings.py.
+
+**Ursache:**
+Zwei Fehler:
+1. **EGID-Typ:** `get_known_building()` erwartete String-EGID, aber bekam Integer
+2. **Reihenfolge:** `_create_default_zone()` wurde VOR `_collect_research_data()` aufgerufen
+
+Die Zonen wurden erstellt BEVOR `_known_zones` aus `known_buildings.py` geladen wurde.
+
+**Fixes:**
+1. `known_buildings.py:601-604` - EGID zu String konvertieren vor Lookup
+2. `service.py:488-493` - Research VOR Zonen-Erstellung aufrufen
+
+**Betroffene Dateien:**
+- `backend/app/services/smart_building/known_buildings.py`
+- `backend/app/services/smart_building/service.py`
+
+**Test:**
+```bash
+curl "http://localhost:8000/api/v1/smart-building/data?address=Bundesplatz%203,%20Bern&include_zones=true"
+# → Zonen: Arkaden, Hauptgebäude, Kuppel
+```
+
+---
+
+### BUG-021: 3D-Layer Attribute werden nicht gespeichert (GEFIXT)
+
+**Status:** ✅ Gefixt am 12.01.2026
+
+**Problem:**
+Bei 3D-Layer Import (on-demand für komplexe Gebäude) wurden wichtige Attribute nicht gespeichert:
+
+| Tabelle | Felder | Status vor Fix |
+|---------|--------|----------------|
+| building_walls | z_min, z_max | NULL |
+| building_roofs | dach_min, dach_max | NULL |
+| buildings_3d | has_3d_layers | 0 (nicht gesetzt) |
+
+**Beispiel Bundeshaus (vor Fix):**
+```sql
+SELECT z_min, z_max FROM building_walls WHERE egid='2242547';
+-- z_min=NULL, z_max=NULL
+
+SELECT dach_min, dach_max FROM building_roofs WHERE egid='2242547';
+-- dach_min=NULL, dach_max=NULL
+
+SELECT has_3d_layers FROM buildings_3d WHERE egid=2242547;
+-- has_3d_layers=0
+```
+
+**Ursache:**
+Mehrere Fehler in `roof_3d_service.py` und `layer_fetcher.py`:
+
+1. **Wall-Layer**: INSERT ohne z_min/z_max, und falsches Attribut (`DACH_MIN` statt `GESAMTHOEHE`)
+2. **Roof-Layer**: INSERT ohne dach_min/dach_max (nur Geometrie gespeichert)
+3. **Flag**: `has_3d_layers` wurde nach dem Import nicht auf 1 gesetzt
+
+**Layer-Attribute in swissBUILDINGS3D:**
+- **Wall-Layer**: `GELAENDEPUNKT` (Terrain), `GESAMTHOEHE` (Höhe) → z_max = GELAENDEPUNKT + GESAMTHOEHE
+- **Roof_solid-Layer**: `DACH_MIN` (Traufe ü.M.), `DACH_MAX` (First ü.M.)
+
+**Fixes in `roof_3d_service.py`:**
+1. Zeile 470-478: Wall-Attribute als `wall_props` extrahieren
+2. Zeile 480-487: Roof-Attribute als `roof_props` extrahieren
+3. Zeile 502-514: Roof INSERT mit dach_min/dach_max erweitert
+4. Zeile 510-522: Wall INSERT mit z_min/z_max erweitert
+5. Zeile 524-526: `has_3d_layers = 1` UPDATE hinzugefügt
+
+**Fix in `layer_fetcher.py`:**
+- Zeile 214-224: z_max aus `GELAENDEPUNKT + GESAMTHOEHE` berechnen
+
+**Ergebnis nach Fix (Bundeshaus):**
+
+| Tabelle | Feld | Wert |
+|---------|------|------|
+| building_walls | z_min | 541.29m |
+| building_walls | z_max | 603.86m |
+| building_roofs | dach_min | 569.75m |
+| building_roofs | dach_max | 571.05m |
+| buildings_3d | has_3d_layers | 1 |
+
+**Test:**
+```bash
+cd backend
+python -c "
+from app.services.roof_3d_service import get_roof_3d_service
+result = get_roof_3d_service().fetch_all_layers_on_demand('2242547')
+print('Layers:', result['loaded_layers'])
+print('Wall:', result.get('wall_props'))
+print('Roof:', result.get('roof_props'))
+"
+# → Layers: ['Roof_solid', 'Roof', 'Wall']
+# → Wall: {'z_min': 541.29, 'z_max': 603.86}
+# → Roof: {'dach_min': 569.75, 'dach_max': 571.05, ...}
+```
+
+**Hinweis Floor-Layer:**
+Der Floor-Layer Import ist deaktiviert wegen `fiona.errors.UnsupportedGeometryTypeError: 2147483648`.
+Der Floor-Layer verwendet einen 3D-Geometrie-Typ, den Fiona nicht unterstützt.
+Die Daten sind redundant zum Building_solid Layer.
+
+**Deaktiviert in:** `layer_fetcher.py:225-247`
+
+---
+
+### BUG-019: NaN-EGID verursacht Parsing-Fehler (GEFIXT)
+
+**Status:** ✅ Gefixt am 12.01.2026
+
+**Problem:**
+Bei manchen Gebäuden im GDB ist EGID als `float('nan')` gespeichert statt als Integer.
+Der Code versuchte `int(nan)` aufzurufen, was fehlschlug:
+```
+[BUG-015] Kein Polygon-Match für (2600683.0, 1199480.0). Fallback auf nächstes Zentrum: EGID nan (dist=30.0m)
+ERROR:root:Error parsing GDB for polygon: cannot convert float NaN to integer
+```
+
+**Ursache:**
+- GDB speichert EGID als `float` (nicht `int`)
+- Gebäude ohne EGID haben den Wert `nan`
+- `if egid` ist `True` für NaN (NaN ist truthy in Python!)
+- `int(nan)` wirft ValueError
+
+**Fix:**
+```python
+# Vor der int-Konvertierung NaN prüfen
+import math
+if egid is not None and isinstance(egid, float) and math.isnan(egid):
+    egid = None
+```
+
+**Betroffene Datei:**
+- `backend/app/services/swissbuildings3d_fetcher.py:1015-1019` - `parse_gdb_for_building_polygon()`
+
+---
+
 ### BUG-018: Multi-Adress-Auflösung gibt falsche EGIDs (GEFIXT)
 
 **Status:** ✅ Gefixt am 12.01.2026 03:15
