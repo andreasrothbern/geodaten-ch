@@ -1,7 +1,7 @@
 # Streaming Architecture
 
-> **Version:** 3.8 (12.01.2026)
-> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅
+> **Version:** 3.10 (14.01.2026)
+> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅ | Fassaden-Höhen ✅
 
 ---
 
@@ -2279,19 +2279,30 @@ bekommen alle Fassaden die gleiche `traufhoehe_m`.
 
 Siehe [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) Teil 6 für vollständige TODO-Liste.
 
-**Kurzfristig (P3):**
-- T1: Wall→Facade Mapping Prototyp (4h)
-- T2: facade_heights in TerrainProfile (2h)
-- T3: facade_heights im SSE-Stream (30min)
-- T4: Frontend nutzt facade_heights (2h)
+**P3 Fassaden-Höhen (T1-T4) - ✅ ALLE ERLEDIGT 14.01.2026:**
+- T1: Wall→Facade Matching Prototyp ✅ 13.01.2026
+- T2: facade_heights in TerrainProfile ✅ 14.01.2026 (models.py, service.py)
+- T3: facade_heights in API ✅ 14.01.2026 (main.py, project_service.py)
+- T4: Frontend: Fassaden-Höhen anzeigen ✅ 14.01.2026 (BuildingDataCard.tsx)
 
-### Offene Fragen
+### Implementierte Features (14.01.2026)
 
-| # | Frage | Status |
-|---|-------|--------|
-| D2 | Entspricht 1 Wall-Eintrag = 1 Fassade? | ❓ Unklar |
-| D3 | Wie matchen wir Wall → unsere Sides? | ❓ Geometrie-Overlap |
-| A1 | Wall-Layer immer oder on-demand laden? | ❓ Empfehlung: On-demand |
+| Feature | Backend | Frontend | Status |
+|---------|---------|----------|--------|
+| Wall→Side Matching (Stufe 1) | `wall_facade_matcher.py` | - | ✅ |
+| Terrain-Sampling (Stufe 2) | `service.py:_collect_facade_heights()` | - | ✅ |
+| Global Fallback (Stufe 3) | `service.py` | - | ✅ |
+| Qualitäts-Badge | - | `BuildingDataCard.tsx:Data3DQualityBadge` | ✅ |
+| Höhen pro Richtung | - | `BuildingDataCard.tsx:FacadeHeightsInfo` | ✅ |
+| Project-Service Integration | `project_service.py` | - | ✅ |
+
+### Offene Fragen (BEANTWORTET)
+
+| # | Frage | Status | Antwort |
+|---|-------|--------|---------|
+| D2 | Entspricht 1 Wall-Eintrag = 1 Fassade? | ✅ | Nein, Wall ist trianguliert → Matching nötig |
+| D3 | Wie matchen wir Wall → unsere Sides? | ✅ | Konvexe Hülle + Azimut-Match |
+| A1 | Wall-Layer immer oder on-demand laden? | ✅ | On-demand, mit Terrain-Sampling als Fallback |
 
 ---
 
@@ -2307,6 +2318,7 @@ Siehe [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) Teil 6 für vollständige T
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 | 3.10 | T1-T4 Fassaden-Höhen End-to-End implementiert |
 | 12.01.2026 | 3.9 | Teil H: Terrain/Hanglage Architecture mit TODOs |
 | 12.01.2026 | 3.8 | Teil G.8: TODO 3D-Layer Daten im SSE-Stream |
 | 11.01.2026 | 3.7 | Teil G: 3D Layer Architecture (Roof_solid Integration) |

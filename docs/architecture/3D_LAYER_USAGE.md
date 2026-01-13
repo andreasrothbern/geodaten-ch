@@ -1,7 +1,7 @@
 # 3D-Layer Datenverwendung
 
-> **Datum:** 13.01.2026 15:30
-> **Status:** P1 + P2 implementiert, T1 (Wall→Facade Matching) Prototyp fertig
+> **Datum:** 14.01.2026 20:00
+> **Status:** P1 + P2 + P3 (T1-T4) ✅ ALLE IMPLEMENTIERT + Cache-Refresh
 > **Basis:** BUILDING_3D_SCHEMA.md, SWISSBUILDINGS3D_ANALYSE.md, 3D_LAYER_ANALYSIS.md
 
 ---
@@ -16,7 +16,9 @@ Diese Daten ermöglichen präzisere Gerüstplanung als die bisherigen Heuristike
 - Korrekte Dach-Orientierung (First-Verlauf)
 - 3D-Visualisierung mit echten Fassaden-Geometrien
 - Automatische Komplexitäts-Erkennung
-- **NEU:** Fassaden-Höhen aus Wall-Layer (T1 Prototyp)
+- **✅ NEU 14.01.2026:** Fassaden-Höhen End-to-End implementiert (T1-T4)
+  - Wall-Layer Matching (±0.1m) → Terrain-Sampling (±0.5m) → Global Fallback
+  - BuildingDataCard zeigt Qualitäts-Badge und Höhen pro Richtung
 
 ---
 
@@ -101,24 +103,33 @@ Diese Daten ermöglichen präzisere Gerüstplanung als die bisherigen Heuristike
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Datenfluss im TerrainProfile (geplant für T2):**
+**Datenfluss im TerrainProfile (✅ T2 implementiert 14.01.2026):**
 
 ```python
 @dataclass
 class TerrainProfile:
     reference_height_m: float      # Terrain am Gebäude-Zentrum
-    min_terrain_m: float           # Niedrigster Punkt
-    max_terrain_m: float           # Höchster Punkt
+    min_height_m: float            # Niedrigster Punkt
+    max_height_m: float            # Höchster Punkt
     slope_m: float                 # Höhendifferenz
-    slope_class: str               # "eben", "leicht", "mittel", "stark"
+    is_sloped: bool                # > 1m Differenz
+    slope_direction: str           # Haupt-Gefällerichtung
 
-    # NEU: Fassaden-Höhen (T2)
-    facade_heights: Dict[str, float] = field(default_factory=dict)
-    # {"N": 541.0, "E": 543.5, "S": 545.0, "W": 542.0}
+    # ✅ IMPLEMENTIERT 14.01.2026 (T2): Fassaden-Höhen
+    facade_z_min: Dict[str, float] = field(default_factory=dict)
+    # {"N": 541.0, "E": 543.5, ...} - Terrain-Höhe (m ü.M.) an der Fassade
+
+    facade_z_max: Dict[str, float] = field(default_factory=dict)
+    # {"N": 550.0, "E": 552.0, ...} - Wandoberkante (m ü.M.) an der Fassade
 
     facade_heights_source: str = "global"
     # "wall_layer" | "terrain_sampled" | "global"
 ```
+
+**Implementierte Dateien:**
+- `models.py:100-107` - TerrainProfile Datenklasse
+- `service.py:850-920` - _collect_facade_heights() Methode
+- `service.py:834-851` - Cache-aware Terrain-Loading mit Fassaden-Höhen
 
 ### TODO: Alpha-Shape für komplexe Gebäude
 
@@ -580,37 +591,52 @@ function detectComplexity(building: BuildingDataBundle): 'simple' | 'moderate' |
 │                                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  4. SSE STREAM (building_data_stream.py) - TODO                         │
-│  ══════════════════════════════════════════════                          │
+│  4. SSE STREAM (building_data_stream.py) - ✅ IMPLEMENTIERT             │
+│  ══════════════════════════════════════════════════════════              │
 │                                                                          │
 │     GET /api/v1/geruestbau/building/data/stream                         │
 │          │                                                               │
 │          ├─► 'heights' Event:                                           │
-│          │   • has_3d_layers  ← NEU HINZUFÜGEN                          │
-│          │   • has_roof_geometry  ← NEU HINZUFÜGEN                      │
-│          │   • roof_dach_min_m  ← NEU HINZUFÜGEN                        │
-│          │   • roof_dach_max_m  ← NEU HINZUFÜGEN                        │
+│          │   • has_3d_layers  ✅                                        │
+│          │   • has_roof_geometry  ✅                                    │
+│          │   • roof_dach_min_m  ✅                                      │
+│          │   • roof_dach_max_m  ✅                                      │
 │          │                                                               │
 │          └─► 'complete' Event (bundle):                                 │
-│              • Alle 3D-Layer Felder  ← NEU HINZUFÜGEN                   │
+│              • Alle 3D-Layer Felder  ✅                                 │
 │                                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  5. FRONTEND (useBuildingDataStream.ts) - TODO                          │
-│  ══════════════════════════════════════════════                          │
+│  5. FRONTEND (useBuildingDataStream.ts) - ✅ IMPLEMENTIERT              │
+│  ═══════════════════════════════════════════════════════                 │
 │                                                                          │
 │     EventSource empfängt:                                               │
 │          │                                                               │
 │          └─► BuildingDataBundle mit 3D-Layer Feldern                    │
 │              │                                                           │
-│              ├─► ConfiguratorPage State                                 │
+│              ├─► ConfiguratorPage State  ✅                             │
 │              │                                                           │
-│              ├─► ScaffoldScene (3D-Viewer)                              │
+│              ├─► ScaffoldScene (3D-Viewer)  ✅                          │
 │              │   • Echte Dach-Orientierung                              │
 │              │   • Präzise Höhen                                        │
 │              │                                                           │
-│              └─► BuildingCard (UI)                                      │
-│                  • Qualitäts-Badge                                      │
+│              └─► BuildingDataCard (UI)  ✅ 14.01.2026                   │
+│                  • Data3DQualityBadge: Grün/Blau/Gelb                   │
+│                  • FacadeHeightsInfo: Höhen pro Richtung                │
+│                                                                          │
+│  6. PROJECT-SERVICE (project_service.py) - ✅ NEU 14.01.2026            │
+│  ════════════════════════════════════════════════════════                │
+│                                                                          │
+│     get_project_with_data():                                            │
+│          │                                                               │
+│          ├─► _get_bundle_from_smart_service(egid)                       │
+│          │   • terrain mit facade_z_min/z_max  ✅                       │
+│          │   • has_3d_layers Flag  ✅                                   │
+│          │                                                               │
+│          └─► geodata Dict für Frontend                                  │
+│              • facade_z_min, facade_z_max  ✅                           │
+│              • facade_heights_source  ✅                                │
+│              • terrain_height_m, slope_m  ✅                            │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -645,16 +671,21 @@ function detectComplexity(building: BuildingDataBundle): 'simple' | 'moderate' |
 - Gelb: "Geschätzt" wenn keine echten 3D-Daten
 - Tooltip mit Details zur Datenquelle
 
-### P3: Nice-to-have / 3D-Layer Erweiterungen
+### P3: Fassaden-Höhen (T1-T4) - ✅ ALLE ERLEDIGT 14.01.2026
+
+| Task | Datei | Status | Ergebnis |
+|------|-------|--------|----------|
+| **T1:** Wall→Facade Matching | `wall_facade_matcher.py` | ✅ 13.01.2026 | Prototyp funktioniert |
+| **T2:** facade_heights in TerrainProfile | `models.py`, `service.py` | ✅ 14.01.2026 | 3-stufige Fallback-Kette |
+| **T3:** facade_heights in API | `main.py`, `project_service.py` | ✅ 14.01.2026 | Serialisierung komplett |
+| **T4:** Frontend: Fassaden-Höhen anzeigen | `BuildingDataCard.tsx` | ✅ 14.01.2026 | Badge + Höhen-Grid |
+
+### P4: Weitere 3D-Layer Erweiterungen (Geplant)
 
 | Task | Datei | Status | Aufwand |
 |------|-------|--------|---------|
-| **T1:** Wall→Facade Matching | `wall_facade_matcher.py` | ✅ Prototyp 13.01.2026 | - |
-| **T2:** facade_heights in TerrainProfile | `models.py`, `service.py` | 📋 Geplant | 1-2h |
-| **T3:** facade_heights im SSE-Stream | `building_data_stream.py` | 📋 Geplant | 1h |
-| **T4:** Frontend: Fassaden-Höhen anzeigen | `BuildingDataCard.tsx` | 📋 Geplant | 2h |
 | Alpha-Shape für komplexe Gebäude | `wall_facade_matcher.py` | 📋 Geplant | 2-3h |
-| Fassaden-Höhen bei Hanglage | `scaffoldCalculator.ts` | 📋 Geplant | 2-3h |
+| Fassaden-Höhen bei Hanglage nutzen | `scaffoldCalculator.ts` | 📋 Geplant | 2-3h |
 | Komplexitäts-Erkennung verbessern | `complexityDetector.ts` | 📋 Geplant | 1h |
 
 ### T1 Details: WallFacadeMatcher (Implementiert)
@@ -690,8 +721,115 @@ facade_heights = matcher.get_facade_heights(egid="2245881", sides=polygon_sides)
 
 ---
 
+---
+
+## Aktueller Projektstand (14.01.2026 18:30)
+
+### Implementierte Features
+
+| Feature | Backend | Frontend | Status |
+|---------|---------|----------|--------|
+| 3D-Layer Import (Roof, Wall) | `roof_3d_service.py` | - | ✅ On-Demand |
+| Dach-Orientierung | `service.py` | `ScaffoldScene.tsx` | ✅ |
+| Qualitäts-Badge | - | `BuildingDataCard.tsx` | ✅ |
+| Fassaden-Höhen (T1-T4) | `service.py`, `project_service.py` | `BuildingDataCard.tsx` | ✅ |
+
+### Service-Layer Verantwortlichkeiten
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    WO WELCHE DATEN HERKOMMEN                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Daten-Quelle           Service                     Datei               │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  swissBUILDINGS3D       Building3DService          building_3d_service.py│
+│  (Polygon, Höhen)       → buildings_3d Tabelle     → Stufe 1 Lookup     │
+│                                                                         │
+│  swissBUILDINGS3D       Roof3DService              roof_3d_service.py   │
+│  (Roof/Wall Layer)      → building_roofs/walls    → On-Demand Fetch    │
+│                                                                         │
+│  swissALTI3D            TerrainService             terrain.py           │
+│  (Terrain-Höhen)        → API-Call pro Punkt       → Terrain-Sampling  │
+│                                                                         │
+│  Cache                  SmartBuildingService       service.py           │
+│  (building_environment) → building_contexts.db     → TerrainProfile     │
+│                                                                         │
+│  Projekt-Daten          ProjectService             project_service.py   │
+│  (Geodata für UI)       → geruestbau.db + Bundle  → get_project_with_data│
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Cache-Refresh Mechanismus (NEU 14.01.2026 20:00)
+
+**Problem:** Alte Cache-Einträge (erstellt vor T2-T4 Implementation) enthalten keine:
+- `has_3d_layers` Flag
+- `facade_z_min` / `facade_z_max` Dicts
+- `facade_heights_source` String
+
+**Lösung:** `_refresh_bundle_from_db()` in `service.py`
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    CACHE-REFRESH MECHANISMUS                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  get_bundle_by_egid(egid)                                              │
+│       │                                                                 │
+│       ├─► smart_building_cache Query (SQLite)                          │
+│       │   • Cache-Hit: bundle_json laden                               │
+│       │   • Cache-Miss: → None (Caller muss collect_all_data nutzen)   │
+│       │                                                                 │
+│       └─► _dict_to_bundle(data)                                        │
+│           │                                                             │
+│           └─► _refresh_bundle_from_db(bundle, egid)  ◄── NEU!          │
+│               │                                                         │
+│               ├─► Building3DService.get_by_egid(egid)                  │
+│               │   • has_3d_layers aus buildings_3d Tabelle             │
+│               │   • Immer frisch (nicht gecacht)                       │
+│               │                                                         │
+│               └─► WallFacadeMatcher.get_facade_heights()               │
+│                   • Nur wenn bundle.terrain.facade_z_min leer          │
+│                   • Nur wenn bundle.sides vorhanden                    │
+│                   • Ergebnis: facade_z_min/z_max pro Richtung          │
+│                                                                         │
+│  Ergebnis: Bundle mit aktuellen 3D-Daten auch bei altem Cache!         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Implementierte Dateien:**
+- `service.py:194-253` - `get_bundle_by_egid()` mit Refresh-Aufruf
+- `service.py:205-253` - `_refresh_bundle_from_db()` Methode
+- `service.py:353` - `has_3d_layers` in `_dict_to_bundle()` restaurieren
+
+**Wann wird refresht?**
+
+| Feld | Aus Cache | Refresht aus |
+|------|-----------|--------------|
+| `has_3d_layers` | Immer False bei alten | `buildings_3d.has_3d_layers` |
+| `facade_z_min` | Leer `{}` bei alten | WallFacadeMatcher oder Terrain |
+| `facade_z_max` | Leer `{}` bei alten | WallFacadeMatcher oder Terrain |
+| `facade_heights_source` | "global" bei alten | Aus Matching-Ergebnis |
+
+**Performance:** ~10-20ms zusätzlich pro Request (1x DB-Query + optionales Matching)
+
+### Nächste Schritte (Vorschläge)
+
+| Priorität | Task | Beschreibung |
+|-----------|------|--------------|
+| P4 | Fassaden-Höhen in Gerüst-Kalkulation | Unterschiedliche Gerüsthöhen pro Fassade bei Hanglage |
+| P4 | Alpha-Shape für komplexe Polygone | Besseres Wall-Matching für U-Form, L-Form |
+| P5 | 3D-Terrain im Viewer | Gelände-Mesh statt flache Ebene |
+| P5 | Echte Wall-Geometrie rendern | 3D-Wände aus WKB |
+
+---
+
 ## Referenzen
 
 - [`STREAMING_ARCHITECTURE.md`](STREAMING_ARCHITECTURE.md) - SSE-Stream Details
 - [`BUILDING_3D_SCHEMA.md`](BUILDING_3D_SCHEMA.md) - DB-Schema Konzept
 - [`SWISSBUILDINGS3D_ANALYSE.md`](SWISSBUILDINGS3D_ANALYSE.md) - Layer-Details
+- [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) - Detailanalyse, Service-Layer Diagramme

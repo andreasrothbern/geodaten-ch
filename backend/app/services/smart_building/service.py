@@ -195,11 +195,63 @@ class SmartBuildingService:
             data = json.loads(row['bundle_json'])
             bundle = self._dict_to_bundle(data)
             bundle.add_source(DataSource.CACHE)
-            logger.debug(f"Loaded bundle for EGID {egid} from cache")
+
+            # FIX 14.01.2026 19:35: Refresh kritischer Felder aus building_3d DB
+            # Alte Cache-Einträge haben keine has_3d_layers oder facade heights
+            bundle = self._refresh_bundle_from_db(bundle, egid)
+
+            logger.debug(f"Loaded bundle for EGID {egid} from cache (has_3d_layers={bundle.has_3d_layers})")
             return bundle
         except Exception as e:
             logger.warning(f"Cache parse error for EGID {egid}: {e}")
             return None
+
+    def _refresh_bundle_from_db(self, bundle: BuildingDataBundle, egid: str) -> BuildingDataBundle:
+        """
+        FIX 14.01.2026 19:35: Refresh kritischer Felder aus building_3d DB.
+
+        Alte Cache-Einträge (vor T2-T4 Implementation) haben keine:
+        - has_3d_layers
+        - facade_z_min/facade_z_max
+        - facade_heights_source
+
+        Diese werden hier aus der DB aufgefrischt.
+        """
+        try:
+            from app.services.building_3d_service import get_building_3d_service
+            building_3d_service = get_building_3d_service()
+            building_data = building_3d_service.get_by_egid(str(egid))
+
+            if building_data:
+                # has_3d_layers immer aus DB (ist dort aktueller)
+                bundle.has_3d_layers = building_data.get('has_3d_layers', 0) == 1
+
+                # Facade heights nur wenn leer (aus Wall-Layer)
+                if bundle.terrain and not bundle.terrain.facade_z_min and bundle.sides:
+                    try:
+                        from app.services.smart_building.wall_facade_matcher import get_wall_facade_matcher
+                        matcher = get_wall_facade_matcher()
+                        facade_heights = matcher.get_facade_heights(str(egid), bundle.sides)
+                        if facade_heights:
+                            # Konvertiere FacadeHeight zu Dict
+                            z_min_dict = {}
+                            z_max_dict = {}
+                            for direction, fh in facade_heights.items():
+                                z_min_dict[direction] = fh.z_min
+                                z_max_dict[direction] = fh.z_max
+                            if z_min_dict:
+                                bundle.terrain.facade_z_min = z_min_dict
+                                bundle.terrain.facade_z_max = z_max_dict
+                                bundle.terrain.facade_heights_source = 'wall-layer'
+                                logger.info(f"[REFRESH] Facade heights für EGID {egid} aus Wall-Layer geladen")
+                    except Exception as e:
+                        logger.debug(f"Wall-Layer facade heights nicht verfügbar: {e}")
+
+                logger.debug(f"[REFRESH] Bundle für EGID {egid}: has_3d_layers={bundle.has_3d_layers}")
+        except Exception as e:
+            logger.debug(f"Bundle refresh für EGID {egid} fehlgeschlagen: {e}")
+
+        return bundle
 
     def _save_bundle_cache(self, cache_key: str, bundle: BuildingDataBundle):
         """Speichert Bundle im Cache"""
@@ -349,6 +401,8 @@ class SmartBuildingService:
             # NEU 05.01.2026: Datenherkunft für UI-Feedback
             research_source=data.get("research_source", "cache"),
             research_confidence=data.get("research_confidence", 0.0),
+            # FIX 14.01.2026 19:30: has_3d_layers wurde nicht aus Cache geladen!
+            has_3d_layers=data.get("has_3d_layers", False),
         )
 
         # Terrain

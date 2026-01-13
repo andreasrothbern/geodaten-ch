@@ -1,8 +1,8 @@
 # 3D-Layer Analyse - Umfassende Bestandsaufnahme
 
-> **Version:** 1.0
-> **Datum:** 13.01.2026 00:30
-> **Status:** Analyse / Konzept
+> **Version:** 1.2
+> **Datum:** 14.01.2026 18:30
+> **Status:** T1-T4 implementiert ✅
 > **Autor:** Claude Code
 
 ---
@@ -390,14 +390,50 @@ On-Demand bei Bedarf:
 
 ## Teil 6: Konkrete TODOs
 
-### 6.1 Kurzfristig (P3)
+### 6.1 Kurzfristig (P3) - ✅ ALLE ERLEDIGT 14.01.2026
 
 | # | Task | Datei | Status |
 |---|------|-------|--------|
 | T1 | Wall→Facade Mapping Prototyp | `wall_facade_matcher.py` | ✅ Implementiert 13.01.2026 |
-| T2 | facade_heights in TerrainProfile | `models.py`, `terrain.py` | Ausstehend |
-| T3 | facade_heights im SSE-Stream | `building_data_stream.py` | Ausstehend |
-| T4 | Frontend: facade_heights nutzen | `ConfiguratorPage.tsx` | Ausstehend |
+| T2 | facade_heights in TerrainProfile | `models.py`, `service.py` | ✅ Implementiert 14.01.2026 |
+| T3 | facade_heights im SSE-Stream | `main.py` (Serialisierung) | ✅ Implementiert 14.01.2026 |
+| T4 | Frontend: facade_heights nutzen | `BuildingDataCard.tsx` | ✅ Implementiert 14.01.2026 |
+
+#### T2-T4 Implementierungsdetails (14.01.2026)
+
+**T2: TerrainProfile erweitert (`models.py:100-107`)**
+```python
+@dataclass
+class TerrainProfile:
+    # ... bestehende Felder ...
+
+    # NEU 14.01.2026: Fassaden-Höhen aus Wall-Layer oder Terrain-Sampling
+    facade_z_min: Dict[str, float] = field(default_factory=dict)
+    # {"N": 541.0, "E": 543.5, ...} - Terrain-Höhe (m ü.M.) an der Fassade
+    facade_z_max: Dict[str, float] = field(default_factory=dict)
+    # {"N": 550.0, "E": 552.0, ...} - Wandoberkante (m ü.M.) an der Fassade
+    facade_heights_source: str = "global"
+    # "wall_layer" | "terrain_sampled" | "global"
+```
+
+**T3: API-Serialisierung (`main.py:3810`)**
+```python
+"terrain": {
+    "reference_height_m": bundle.terrain.reference_height_m,
+    # ... bestehende Felder ...
+    # NEU 14.01.2026 (T2-T4): Fassaden-Höhen
+    "facade_z_min": bundle.terrain.facade_z_min,
+    "facade_z_max": bundle.terrain.facade_z_max,
+    "facade_heights_source": bundle.terrain.facade_heights_source,
+}
+```
+
+**T4: Frontend BuildingDataCard (`BuildingDataCard.tsx:60-103`)**
+- `Data3DQualityBadge`: Zeigt Qualitätsstufe basierend auf Datenquelle
+  - Grün "3D-Daten ✓": `has_3d_layers=true` oder `facade_heights_source='wall_layer'`
+  - Blau "Terrain ✓": `facade_heights_source='terrain_sampled'` (±0.5m Genauigkeit)
+  - Gelb "Geschätzt": `facade_heights_source='global'` (Fallback)
+- `FacadeHeightsInfo`: Zeigt Höhen pro Himmelsrichtung (N, NE, E, SE, S, SW, W, NW)
 
 #### T1: Wall→Facade Matching - Implementierungsdetails
 
@@ -485,32 +521,111 @@ facade_heights = matcher.get_facade_heights(egid, sides)
 
 ---
 
-## Anhang A: Relevante Dateien
+## Anhang A: Service-Layer Architektur (Stand 14.01.2026)
 
-### Backend
+### Datenfluss für Fassaden-Höhen
+
 ```
-backend/app/services/
-├── building_3d_service.py     # DB-Zugriff buildings_3d
-├── roof_3d_service.py         # On-demand 3D-Layer
-├── layer_fetcher.py           # Wall/Floor Fetcher
-├── terrain.py                 # swissALTI3D Integration
-└── smart_building/
-    ├── service.py             # Orchestrierung
-    └── models.py              # BuildingDataBundle, TerrainProfile
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SERVICE-LAYER FÜR FASSADEN-HÖHEN                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  LAYER 1: DATENQUELLEN                                                  │
+│  ═════════════════════                                                  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐        │
+│  │ building_walls  │  │ swissALTI3D API │  │ buildings_3d    │        │
+│  │ (Wall-Layer)    │  │ (Terrain-Höhen) │  │ (Traufhöhe)     │        │
+│  │ z_min, z_max    │  │ get_height()    │  │ traufhoehe_m    │        │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘        │
+│           │                    │                    │                  │
+│           ▼                    ▼                    ▼                  │
+│  LAYER 2: DATEN-SAMMLUNG (service.py)                                  │
+│  ═════════════════════════════════════                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ SmartBuildingService._collect_facade_heights(bundle)            │   │
+│  │                                                                 │   │
+│  │   1. Stufe: WallFacadeMatcher (höchste Präzision ±0.1m)        │   │
+│  │      → Falls has_3d_layers=1 UND building_walls vorhanden      │   │
+│  │      → Matching: Wall-Geometrie → Polygon-Seiten (sides)       │   │
+│  │                                                                 │   │
+│  │   2. Stufe: Terrain-Sampling (gute Präzision ±0.5m)            │   │
+│  │      → terrain_service.get_height() pro Fassaden-Eckpunkt      │   │
+│  │      → z_min = Terrain, z_max = z_min + traufhoehe_m           │   │
+│  │                                                                 │   │
+│  │   3. Stufe: Global Fallback                                    │   │
+│  │      → z_min = terrain.reference_height_m                      │   │
+│  │      → z_max = z_min + traufhoehe_m                            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│           │                                                            │
+│           │ TerrainProfile mit facade_z_min, facade_z_max              │
+│           ▼                                                            │
+│  LAYER 3: BUNDLE-CACHE (building_contexts.db)                          │
+│  ════════════════════════════════════════════                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ _save_terrain_to_environment(bundle)                            │   │
+│  │   → Speichert TerrainProfile inkl. facade_heights pro EGID     │   │
+│  │   → Cache wird bei force_refresh invalidiert                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│           │                                                            │
+│           ▼                                                            │
+│  LAYER 4: API-SERIALISIERUNG (main.py:3810)                           │
+│  ══════════════════════════════════════════                            │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ GET /api/v1/smart-building/data Response:                       │   │
+│  │   "terrain": {                                                  │   │
+│  │     "facade_z_min": {"N": 541.0, "E": 543.5, ...},             │   │
+│  │     "facade_z_max": {"N": 550.0, "E": 552.0, ...},             │   │
+│  │     "facade_heights_source": "terrain_sampled"                  │   │
+│  │   }                                                             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│           │                                                            │
+│           ▼                                                            │
+│  LAYER 5: PROJEKT-SERVICE (project_service.py)                        │
+│  ═════════════════════════════════════════════                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ get_project_with_data() → ProjectWithGeodata                    │   │
+│  │                                                                 │   │
+│  │   geodata = {                                                   │   │
+│  │     "facade_z_min": terrain.get('facade_z_min'),               │   │
+│  │     "facade_z_max": terrain.get('facade_z_max'),               │   │
+│  │     "facade_heights_source": terrain.get('facade_heights_source'),│
+│  │     "has_3d_layers": bundle.get('has_3d_layers'),              │   │
+│  │   }                                                             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│           │                                                            │
+│           ▼                                                            │
+│  LAYER 6: FRONTEND (BuildingDataCard.tsx)                             │
+│  ════════════════════════════════════════                              │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ BuildingDataCard({ geodata })                                   │   │
+│  │   → Data3DQualityBadge: Qualitäts-Indikator                    │   │
+│  │   → FacadeHeightsInfo: Höhen pro Richtung (N, E, S, W, ...)    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Frontend
-```
-geruestbau-app/src/
-├── pages/
-│   └── ConfiguratorPage.tsx   # Daten-Aufbereitung
-├── features/scaffold-configurator/components/threeDView/
-│   └── ScaffoldScene.tsx      # 3D-Rendering
-├── hooks/
-│   └── useBuildingDataStream.ts  # SSE-Hook
-└── types/
-    └── project.ts             # Geodata Interface
-```
+### Backend-Dateien (Relevanz für Fassaden-Höhen)
+
+| Datei | Service | Verantwortung |
+|-------|---------|---------------|
+| `services/smart_building/models.py` | TerrainProfile | Datenmodell: facade_z_min, facade_z_max |
+| `services/smart_building/service.py` | SmartBuildingService | Orchestrierung, _collect_facade_heights() |
+| `services/smart_building/wall_facade_matcher.py` | WallFacadeMatcher | Wall→Side Matching (Stufe 1) |
+| `services/terrain.py` | TerrainService | swissALTI3D Integration (Stufe 2) |
+| `services/geruestbau/project_service.py` | ProjectService | Bundle→Geodata Konvertierung |
+| `main.py:3810` | API | Response-Serialisierung |
+
+### Frontend-Dateien
+
+| Datei | Komponente | Verantwortung |
+|-------|------------|---------------|
+| `components/ui/BuildingDataCard.tsx` | BuildingDataCard | Anzeige der Gebäudedaten |
+| `components/ui/BuildingDataCard.tsx:60` | Data3DQualityBadge | Qualitäts-Badge |
+| `components/ui/BuildingDataCard.tsx:123` | FacadeHeightsInfo | Fassaden-Höhen Grid |
+| `pages/ProjectDetailPage.tsx:174` | - | Verwendet BuildingDataCard |
+| `pages/ConfiguratorPage.tsx:812` | - | Verwendet BuildingDataCard |
+| `types/project.ts` | Geodata Interface | TypeScript Typen |
 
 ### Dokumentation
 ```
@@ -541,3 +656,4 @@ docs/architecture/
 |-------|---------|----------|
 | 13.01.2026 | 1.0 | Initiale Analyse erstellt |
 | 13.01.2026 | 1.1 | T1 (Wall→Facade Matching) implementiert |
+| 14.01.2026 | 1.2 | T2-T4 implementiert: Fassaden-Höhen End-to-End |

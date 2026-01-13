@@ -217,25 +217,55 @@ async def find_tile_for_coordinates(e: float, n: float) -> Optional[Dict[str, An
         return None
 
 
-def download_and_extract_tile(url: str, temp_dir: Path) -> Path:
+def download_and_extract_tile(url: str, temp_dir: Path, tile_id: str = None) -> Path:
     """
     Download a tile ZIP and extract it.
+
+    NEU 14.01.2026: Timing-Instrumentierung für Baseline-Messung.
 
     Args:
         url: Download URL for the tile ZIP
         temp_dir: Temporary directory to extract to
+        tile_id: Optional tile ID for metrics tracking
 
     Returns:
         Path to the extracted GDB or GML file
     """
+    import time
+    from app.services.tile_prefetch import update_import_metrics, reset_import_metrics
+
+    # Reset metrics für neuen Import
+    if tile_id:
+        reset_import_metrics()
+
     zip_path = temp_dir / "tile.zip"
 
-    # Download
+    # Phase 1: Download (mit Timing)
+    download_start = time.time()
     urllib.request.urlretrieve(url, zip_path)
+    download_ms = (time.time() - download_start) * 1000
 
-    # Extract
+    # Dateigrösse erfassen
+    file_size_mb = zip_path.stat().st_size / (1024 * 1024)
+
+    logger.info(f"[DOWNLOAD] {file_size_mb:.1f}MB in {download_ms:.0f}ms")
+
+    # Phase 2: Entpacken (mit Timing)
+    unzip_start = time.time()
     with zipfile.ZipFile(zip_path, 'r') as zf:
         zf.extractall(temp_dir)
+    unzip_ms = (time.time() - unzip_start) * 1000
+
+    logger.info(f"[UNZIP] Entpackt in {unzip_ms:.0f}ms")
+
+    # Metriken aktualisieren
+    if tile_id:
+        update_import_metrics(
+            tile_id=tile_id,
+            download_ms=download_ms,
+            file_size_mb=file_size_mb,
+            unzip_ms=unzip_ms
+        )
 
     # Find GDB directory
     for f in temp_dir.iterdir():

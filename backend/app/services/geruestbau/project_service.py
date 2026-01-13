@@ -193,7 +193,11 @@ class ProjectService:
                 'terrain': {
                     'reference_height_m': bundle.terrain.reference_height_m,
                     'slope_m': bundle.terrain.slope_m,
-                    'slope_class': bundle.terrain.slope_class,
+                    'slope_class': getattr(bundle.terrain, 'slope_class', None),
+                    # NEU 14.01.2026 18:00 - Fassaden-Höhen aus Wall-Layer (T2-T4)
+                    'facade_z_min': bundle.terrain.facade_z_min,
+                    'facade_z_max': bundle.terrain.facade_z_max,
+                    'facade_heights_source': bundle.terrain.facade_heights_source,
                 } if bundle.terrain else None,
                 'zones': [
                     {
@@ -210,6 +214,8 @@ class ProjectService:
                 'roof_orientation': bundle.roof_orientation,
                 'complexity': bundle.complexity,
                 'building_type': bundle.building_type,
+                # NEU 14.01.2026 18:05 - 3D-Layer Flag für BuildingDataCard
+                'has_3d_layers': bundle.has_3d_layers,
             }
         except Exception as e:
             import logging
@@ -255,6 +261,17 @@ class ProjectService:
                     'complexity': bundle.get('complexity'),
                     'building_type': bundle.get('building_type'),
                 }
+                # NEU 14.01.2026 18:00 - Fassaden-Höhen direkt ins geodata (für BuildingDataCard)
+                terrain = bundle.get('terrain')
+                if terrain:
+                    geodata['facade_z_min'] = terrain.get('facade_z_min')
+                    geodata['facade_z_max'] = terrain.get('facade_z_max')
+                    geodata['facade_heights_source'] = terrain.get('facade_heights_source')
+                    geodata['terrain_height_m'] = terrain.get('reference_height_m')
+                    geodata['slope_m'] = terrain.get('slope_m')
+                    geodata['slope_class'] = terrain.get('slope_class')
+                # NEU 14.01.2026 18:05 - 3D-Layer Flag
+                geodata['has_3d_layers'] = bundle.get('has_3d_layers', False)
 
         return ProjectWithGeodata(
             **project.model_dump(),
