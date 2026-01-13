@@ -57,6 +57,39 @@ export interface AddressRangeResponse {
   error_count: number
 }
 
+// Material Estimate API Types (NEU 15.01.2026)
+export interface MaterialItem {
+  article_id: string
+  name: string
+  category: string
+  unit: string
+  quantity_min: number
+  quantity_typical: number
+  quantity_max: number
+  unit_weight_kg: number | null
+  total_weight_kg: number | null
+}
+
+export interface MaterialEstimateSummary {
+  total_pieces: number
+  total_weight_kg: number
+  total_weight_tons: number
+  weight_per_m2_kg: number
+  has_leveling: boolean
+  leveling_pieces: number
+  leveling_weight_kg: number
+}
+
+export interface MaterialEstimateResponse {
+  system_id: string
+  scaffold_area_m2: number
+  short_field_ratio: number
+  terrain_diff_m: number
+  field_count: number
+  materials: MaterialItem[]
+  summary: MaterialEstimateSummary
+}
+
 // Blocked Facades API Types
 export interface BlockedFacadeInfo {
   facade_index: number
@@ -213,6 +246,30 @@ export const geruestbauApi = {
       console.warn(`Error fetching polygon for ${address}:`, err)
       return null
     }
+  },
+
+  // Materialliste schätzen (NEU 15.01.2026)
+  estimateMaterials: async (params: {
+    systemId?: string
+    areaM2: number
+    shortFieldRatio?: number
+    terrainDiffM?: number
+    fieldCount?: number
+  }): Promise<MaterialEstimateResponse> => {
+    const searchParams = new URLSearchParams({
+      system_id: params.systemId || 'blitz70',
+      area_m2: params.areaM2.toString(),
+      short_field_ratio: (params.shortFieldRatio ?? 0.33).toString(),
+      terrain_diff_m: (params.terrainDiffM ?? 0).toString(),
+      field_count: (params.fieldCount ?? 0).toString(),
+    })
+    const response = await fetch(
+      `${API_BASE}/api/v1/catalog/estimate?${searchParams}`
+    )
+    if (!response.ok) {
+      throw new Error(`Material estimate error: ${response.status}`)
+    }
+    return response.json()
   },
 
   // URL-Import (simap.ch)

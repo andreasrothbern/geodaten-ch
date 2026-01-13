@@ -247,7 +247,9 @@ class LayherCatalogService:
         self,
         system_id: str,
         scaffold_area_m2: float,
-        short_field_ratio: float = 0.33
+        short_field_ratio: float = 0.33,
+        terrain_diff_m: float = 0.0,
+        field_count: int = 0
     ) -> list[dict]:
         """
         Schätze Materialmengen basierend auf Richtwerten.
@@ -332,6 +334,26 @@ class LayherCatalogService:
                 "total_weight_kg": round(int(qty_typical) * ref["weight_kg"], 1) if ref["weight_kg"] else None,
                 "notes": ref.get("notes")
             })
+
+        # NEU 15.01.2026: Ausnivellierungs-Material für Hanglage hinzufügen
+        if terrain_diff_m > 0.1 and field_count > 0:
+            leveling_materials = self.calculate_leveling_materials(
+                terrain_diff_m=terrain_diff_m,
+                field_count=field_count,
+                system_id=system_id
+            )
+            for lm in leveling_materials:
+                estimates.append({
+                    "article_number": lm["article_number"],
+                    "name": lm["name"],
+                    "category": "Ausnivellierung (Hanglage)",
+                    "quantity_min": lm["quantity"],
+                    "quantity_max": lm["quantity"],
+                    "quantity_typical": lm["quantity"],
+                    "weight_per_piece_kg": lm["weight_per_piece_kg"],
+                    "total_weight_kg": lm["total_weight_kg"],
+                    "notes": lm["notes"]
+                })
 
         return estimates
 
@@ -482,6 +504,98 @@ class LayherCatalogService:
             }
         }
         return systems_info.get(system_id, systems_info["blitz70"])
+
+    def calculate_leveling_materials(
+        self,
+        terrain_diff_m: float,
+        field_count: int,
+        system_id: str = "blitz70"
+    ) -> list[dict]:
+        """
+        Berechne Ausnivellierungs-Material für Hanglage.
+
+        NEU 15.01.2026: Stellspindeln/Ausgleichsrahmen basierend auf Terrain-Differenz.
+
+        Die Berechnung geht davon aus, dass das Gerüst auf der höchsten Seite
+        aufgestellt wird und zur niedrigsten Seite hin ausgeglichen werden muss.
+        Die Höhendifferenz wird linear über die Felder interpoliert.
+
+        Args:
+            terrain_diff_m: Terrain-Differenz in Metern (max - min)
+            field_count: Anzahl Felder der Fassade
+            system_id: Gerüstsystem-ID (default: blitz70)
+
+        Returns:
+            Liste mit benötigten Materialien und Mengen
+
+        Klassifikation:
+            - Stellspindel 0.40m: 0 - 0.4m Ausgleich
+            - Stellspindel 0.60m: 0.4 - 0.6m Ausgleich
+            - Stellspindel 0.80m: 0.6 - 0.8m Ausgleich
+            - Ausgleichsrahmen 1.00m: 0.8 - 1.0m Ausgleich
+            - Ausgleichsrahmen 1.50m: 1.0 - 1.5m Ausgleich
+            - Ausgleichsrahmen 2.00m: 1.5 - 2.0m Ausgleich
+        """
+        if terrain_diff_m < 0.1 or field_count < 1:
+            return []
+
+        # Standard-Spindel-Artikel nach Höhe
+        spindle_options = [
+            {"article": "2620.040", "max_height": 0.40, "name": "Fussspindel 0.40m", "weight": 3.0, "type": "spindle"},
+            {"article": "2620.060", "max_height": 0.60, "name": "Fussspindel 0.60m", "weight": 4.0, "type": "spindle"},
+            {"article": "2620.080", "max_height": 0.80, "name": "Fussspindel 0.80m", "weight": 5.0, "type": "spindle"},
+            {"article": "2621.100", "max_height": 1.00, "name": "Ausgleichsrahmen 1.00m", "weight": 12.0, "type": "frame"},
+            {"article": "2621.150", "max_height": 1.50, "name": "Ausgleichsrahmen 1.50m", "weight": 15.0, "type": "frame"},
+            {"article": "2621.200", "max_height": 2.00, "name": "Ausgleichsrahmen 2.00m", "weight": 18.5, "type": "frame"},
+        ]
+
+        # Pro Feld berechnen, welche Spindel/Rahmen benötigt wird
+        # Feld 0 = höchste Seite (keine Ausgleich), Feld n = niedrigste Seite (max Ausgleich)
+        material_counts: dict[str, int] = {}
+        material_info: dict[str, dict] = {}
+
+        # +1 für Endständer (field_count Felder = field_count + 1 Ständer)
+        for i in range(field_count + 1):
+            # Lineare Interpolation: Position 0 = 0, Position n = terrain_diff_m
+            extension_needed = (i / field_count) * terrain_diff_m if field_count > 0 else 0
+
+            if extension_needed < 0.1:
+                # Standard-Fussplatte reicht
+                continue
+
+            # Passende Spindel/Rahmen finden
+            selected = None
+            for option in spindle_options:
+                if extension_needed <= option["max_height"]:
+                    selected = option
+                    break
+
+            # Fallback auf größten Rahmen wenn > 2m
+            if selected is None:
+                selected = spindle_options[-1]
+
+            article = selected["article"]
+            if article not in material_counts:
+                material_counts[article] = 0
+                material_info[article] = selected
+            material_counts[article] += 1
+
+        # Ergebnis formatieren
+        result = []
+        for article, count in sorted(material_counts.items()):
+            info = material_info[article]
+            result.append({
+                "article_number": article,
+                "name": info["name"],
+                "quantity": count,
+                "weight_per_piece_kg": info["weight"],
+                "total_weight_kg": round(count * info["weight"], 1),
+                "type": info["type"],
+                "category": "leveling",
+                "notes": f"Für Hanglage {terrain_diff_m:.2f}m"
+            })
+
+        return result
 
     def calculate_total_weight(self, material_list: list[dict]) -> dict:
         """

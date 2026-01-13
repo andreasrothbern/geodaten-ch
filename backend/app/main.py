@@ -1589,7 +1589,9 @@ async def get_load_classes():
 async def estimate_material_quantities(
     system_id: str = Query("blitz70", description="Gerüstsystem: blitz70 oder allround"),
     area_m2: float = Query(..., description="Gerüstfläche in m²"),
-    short_field_ratio: float = Query(0.33, description="Anteil kurze Felder (2.57m): 0=nur 3.07m, 0.33=Standard, 1=nur 2.57m")
+    short_field_ratio: float = Query(0.33, description="Anteil kurze Felder (2.57m): 0=nur 3.07m, 0.33=Standard, 1=nur 2.57m"),
+    terrain_diff_m: float = Query(0.0, description="Terrain-Differenz für Hanglage in Metern (für Stellspindel-Berechnung)"),
+    field_count: int = Query(0, description="Anzahl Gerüst-Felder (für Stellspindel-Verteilung bei Hanglage)")
 ):
     """
     Materialmenge basierend auf Gerüstfläche schätzen.
@@ -1597,28 +1599,49 @@ async def estimate_material_quantities(
     Verwendet Richtwerte pro 100m² Gerüstfläche.
     Der `short_field_ratio` Parameter steuert das Verhältnis von 2.57m zu 3.07m Elementen.
 
+    **NEU 15.01.2026:** Bei Hanglage (`terrain_diff_m > 0`) werden automatisch
+    Stellspindeln und Ausgleichsrahmen zur Materialliste hinzugefügt.
+
     **Beispiel:** `/api/v1/catalog/estimate?system_id=blitz70&area_m2=460&short_field_ratio=0.5`
+    **Mit Hanglage:** `/api/v1/catalog/estimate?system_id=blitz70&area_m2=460&terrain_diff_m=2.5&field_count=8`
     """
     try:
         from app.services.layher_catalog import get_catalog_service
         service = get_catalog_service()
 
-        estimates = service.estimate_material_quantities(system_id, area_m2, short_field_ratio)
+        # NEU 15.01.2026: Stellspindeln bei Hanglage
+        estimates = service.estimate_material_quantities(
+            system_id,
+            area_m2,
+            short_field_ratio,
+            terrain_diff_m=terrain_diff_m,
+            field_count=field_count
+        )
 
         # Gesamtgewicht berechnen
         total_weight = sum(e["total_weight_kg"] or 0 for e in estimates)
         total_pieces = sum(e["quantity_typical"] for e in estimates)
 
+        # NEU 15.01.2026: Ausnivellierungs-Material separat zählen
+        leveling_materials = [e for e in estimates if e.get("category") == "Ausnivellierung (Hanglage)"]
+        leveling_weight = sum(e["total_weight_kg"] or 0 for e in leveling_materials)
+        leveling_pieces = sum(e.get("quantity_typical", e.get("quantity_min", 0)) for e in leveling_materials)
+
         return {
             "system_id": system_id,
             "scaffold_area_m2": area_m2,
             "short_field_ratio": short_field_ratio,
+            "terrain_diff_m": terrain_diff_m,
+            "field_count": field_count,
             "materials": estimates,
             "summary": {
                 "total_pieces": total_pieces,
                 "total_weight_kg": round(total_weight, 1),
                 "total_weight_tons": round(total_weight / 1000, 2),
-                "weight_per_m2_kg": round(total_weight / area_m2, 1) if area_m2 > 0 else 0
+                "weight_per_m2_kg": round(total_weight / area_m2, 1) if area_m2 > 0 else 0,
+                "has_leveling": terrain_diff_m > 0.1,
+                "leveling_pieces": leveling_pieces,
+                "leveling_weight_kg": round(leveling_weight, 1)
             }
         }
     except FileNotFoundError:

@@ -1,7 +1,7 @@
 # 3D-Layer Verwendung: Gerüst-Kalkulation
 
-> **Stand 14.01.2026 22:30**
-> **Status:** ✅ IMPLEMENTIERT
+> **Stand 13.01.2026 23:45**
+> **Status:** ✅ KOMPLETT IMPLEMENTIERT (inkl. Materialliste mit Stellspindeln)
 
 ## Übersicht
 
@@ -647,3 +647,156 @@ Geodata.facade_z_min (pro Richtung)
            ├─ Editor: renderSlopedGround()
            │
            └─ MaterialList: calculateLevelingMaterial()
+```
+
+---
+
+## Materialliste Integration (Stand 13.01.2026 23:40) ✅ IMPLEMENTIERT
+
+### Vollständiger Datenfluss: Frontend → Backend → MaterialList
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    DATENFLUSS: MATERIALLISTE MIT STELLSPINDELN                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                    1. GEODATA (SmartBuildingService)                     │  │
+│  ├──────────────────────────────────────────────────────────────────────────┤  │
+│  │  BuildingDataBundle:                                                     │  │
+│  │    facade_z_min: {"N": 543.0, "S": 540.0, ...}   ← swissALTI3D          │  │
+│  │    facade_z_max: {"N": 555.0, "S": 555.0, ...}   ← swissBUILDINGS3D     │  │
+│  │    terrain.slope_m: 3.0                          ← max(z_min)-min(z_min) │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                      │                                          │
+│                                      ▼                                          │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                    2. FRONTEND (geruestbau-app)                          │  │
+│  ├──────────────────────────────────────────────────────────────────────────┤  │
+│  │                                                                          │  │
+│  │  ConfiguratorPage.tsx                                                    │  │
+│  │       │                                                                  │  │
+│  │       └─ geodata.facade_z_min, geodata.facade_z_max                      │  │
+│  │              │                                                           │  │
+│  │              ▼                                                           │  │
+│  │  useScaffoldConfig.ts: createElementsFromFacades()                       │  │
+│  │       │                                                                  │  │
+│  │       ├─ globalTerrainDiff = max(z_min) - min(z_min)                     │  │
+│  │       │                                                                  │  │
+│  │       └─ ScaffoldFacade.terrain_diff_m = globalTerrainDiff               │  │
+│  │              │                                                           │  │
+│  │              ├──────────────────────┬──────────────────┐                 │  │
+│  │              ▼                      ▼                  ▼                 │  │
+│  │      ScaffoldGrid.tsx       ThreeDPanel.tsx     MaterialListModal        │  │
+│  │      ├─ renderGround()      ├─ 3D-Ansicht       ├─ 📦 Button             │  │
+│  │      └─ renderLeveling      └─ Zusammenfassung  └─ → API-Call            │  │
+│  │         Spindles()                                                       │  │
+│  │         ✅ IMPLEMENTIERT    ✅ IMPLEMENTIERT     ✅ IMPLEMENTIERT        │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                      │                                          │
+│                                      │ API-Call mit terrain_diff_m, field_count │
+│                                      ▼                                          │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                    3. BACKEND (FastAPI)                                  │  │
+│  ├──────────────────────────────────────────────────────────────────────────┤  │
+│  │                                                                          │  │
+│  │  GET /api/v1/catalog/estimate                                            │  │
+│  │       │                                                                  │  │
+│  │       ├─ system_id: "blitz70"                    ✅ vorhanden            │  │
+│  │       ├─ area_m2: 460                            ✅ vorhanden            │  │
+│  │       ├─ short_field_ratio: 0.33                 ✅ vorhanden            │  │
+│  │       ├─ terrain_diff_m: 3.0                     ✅ IMPLEMENTIERT        │  │
+│  │       └─ field_count: 8                          ✅ IMPLEMENTIERT        │  │
+│  │              │                                                           │  │
+│  │              ▼                                                           │  │
+│  │  layher_catalog.py: estimate_material_quantities()                       │  │
+│  │       │                                                                  │  │
+│  │       ├─ Standard-Material berechnen             ✅ funktioniert         │  │
+│  │       │                                                                  │  │
+│  │       └─ if terrain_diff_m > 0.1:                                        │  │
+│  │              │                                                           │  │
+│  │              └─ calculate_leveling_materials()   ✅ IMPLEMENTIERT        │  │
+│  │                    │                                                     │  │
+│  │                    ├─ Fussspindel 0.40m (0-0.4m)                         │  │
+│  │                    ├─ Fussspindel 0.60m (0.4-0.6m)                       │  │
+│  │                    ├─ Fussspindel 0.80m (0.6-0.8m)                       │  │
+│  │                    ├─ Ausgleichsrahmen 1.00m (0.8-1.0m)                  │  │
+│  │                    ├─ Ausgleichsrahmen 1.50m (1.0-1.5m)                  │  │
+│  │                    └─ Ausgleichsrahmen 2.00m (1.5-2.0m)                  │  │
+│  │                                                                          │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Implementierungsstatus ✅ KOMPLETT
+
+| Komponente | Datei | Status |
+|------------|-------|--------|
+| Terrain-Daten sammeln | `service.py` | ✅ Implementiert |
+| Fassaden-Höhen pro Richtung | `scaffold.types.ts` | ✅ Implementiert |
+| globalTerrainDiff berechnen | `useScaffoldConfig.ts:201-207` | ✅ Implementiert |
+| terrain_diff_m in ScaffoldFacade | `useScaffoldConfig.ts:175` | ✅ Implementiert |
+| Schräge Bodenlinie zeichnen | `ScaffoldGrid.tsx:renderGround()` | ✅ Implementiert |
+| Stellspindeln visualisieren | `ScaffoldGrid.tsx:renderLevelingSpindles()` | ✅ Implementiert |
+| calculate_leveling_materials() | `layher_catalog.py:164-244` | ✅ Implementiert |
+| Integration in estimate_material | `layher_catalog.py:338-356` | ✅ Implementiert |
+| API-Endpunkt mit terrain_diff_m | `main.py:1589-1650` | ✅ Implementiert |
+| API-Funktion estimateMaterials | `geruestbau.ts` | ✅ Implementiert |
+| Frontend MaterialList Button | `ThreeDPanel.tsx:310-327` | ✅ Implementiert |
+| MaterialListModal | `ThreeDPanel.tsx:329-463` | ✅ Implementiert |
+
+### API-Test (13.01.2026 23:40)
+
+```bash
+curl "http://localhost:8000/api/v1/catalog/estimate?system_id=blitz70&area_m2=200&terrain_diff_m=1.5&field_count=8"
+```
+
+**Ergebnis:**
+```json
+{
+  "summary": {
+    "total_pieces": 312,
+    "total_weight_kg": 3535.0,
+    "has_leveling": true,
+    "leveling_pieces": 8,
+    "leveling_weight_kg": 72.0
+  },
+  "materials": [
+    // ... Standard-Material ...
+    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.40m", "quantity_typical": 2},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.60m", "quantity_typical": 1},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.80m", "quantity_typical": 1},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.00m", "quantity_typical": 1},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.50m", "quantity_typical": 3}
+  ]
+}
+```
+
+### Berechnung der Stellspindeln (layher_catalog.py)
+
+```
+Beispiel: Hanglage 2.5m, 6 Felder entlang der Fassade
+
+Feld 0 (links/oben):    0.0m Ausgleich → keine Verlängerung
+Feld 1:                 0.5m Ausgleich → Fussspindel 0.60m
+Feld 2:                 1.0m Ausgleich → Ausgleichsrahmen 1.00m
+Feld 3:                 1.5m Ausgleich → Ausgleichsrahmen 1.50m
+Feld 4:                 2.0m Ausgleich → Ausgleichsrahmen 2.00m
+Feld 5 (rechts/unten):  2.5m Ausgleich → Ausgleichsrahmen 2.00m + Stellspindel
+
+Ergebnis:
+  - 1× Fussspindel 0.60m
+  - 1× Ausgleichsrahmen 1.00m
+  - 1× Ausgleichsrahmen 1.50m
+  - 2× Ausgleichsrahmen 2.00m
+```
+
+### Implementierte Dateien
+
+| Datei | Änderung | Status |
+|-------|----------|--------|
+| `backend/app/main.py:1589-1650` | API mit `terrain_diff_m`, `field_count` | ✅ |
+| `backend/app/services/layher_catalog.py` | `calculate_leveling_materials()` | ✅ |
+| `geruestbau-app/src/api/geruestbau.ts` | `estimateMaterials()` API-Funktion | ✅ |
+| `geruestbau-app/src/features/scaffold-configurator/components/ThreeDPanel.tsx` | Button + Modal inline | ✅ |
