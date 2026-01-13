@@ -240,7 +240,13 @@ class Roof3DService:
 
     def get_by_egid(self, egid: str) -> Optional[Dict[str, Any]]:
         """Holt Dach-Daten per EGID."""
-        # FIX 14.01.2026: read_only entfernt - DuckDB erlaubt keine gemischten Configs
+        # FIX 14.01.2026 00:15: EGID zu INTEGER konvertieren (in DB ist egid INTEGER!)
+        try:
+            egid_int = int(egid)
+        except (ValueError, TypeError):
+            logger.warning(f"[ROOF_3D] Ungültige EGID: {egid}")
+            return None
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -248,7 +254,7 @@ class Roof3DService:
                        roof_form, roof_angle_deg, roof_orientation, z_levels,
                        geometry_wkb, has_full_geometry, calculation_method
                 FROM building_roofs WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
 
             row = cursor.fetchone()
             if not row:
