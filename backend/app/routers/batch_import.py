@@ -515,3 +515,27 @@ async def get_db_stats():
         "buildings": building_service.get_stats(),
         "tiles": tile_cache.get_stats()
     }
+
+
+@router.get("/import/metrics")
+async def get_import_metrics_endpoint():
+    """
+    Get detailed timing metrics from the last tile import.
+
+    NEU 14.01.2026: Vollständige Baseline-Metriken für Optimierungs-Analyse.
+
+    Returns timing for all phases:
+    - download_ms: Download time
+    - file_size_mb: ZIP file size
+    - unzip_ms: Extraction time
+    - parse_building_solid_ms/count: Building_solid layer parsing
+    - parse_roof_solid_ms/count: Roof_solid layer parsing
+    - parse_wall_ms/count: Wall layer parsing
+    - db_write_buildings_ms: DB write time for buildings
+    - db_write_roofs_ms: DB write time for roofs
+    - db_write_walls_ms: DB write time for walls
+    - total_ms: Total import time
+    - ms_per_building: Average time per building
+    """
+    from app.services.tile_prefetch import get_import_metrics
+    return get_import_metrics()

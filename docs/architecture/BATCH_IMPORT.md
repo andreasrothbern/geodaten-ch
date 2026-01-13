@@ -1,7 +1,156 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 6.3 (Stand 14.01.2026 00:30)
-> **Status:** Optimale Parallelisierungs-Architektur 🚀
+> **Version:** 6.4 (Stand 14.01.2026 02:45)
+> **Status:** API-Router + Baseline gemessen 🚀
+
+## NEU: API-Router für Batch-Import (14.01.2026 02:45)
+
+**Problem:** Wenn das Backend läuft (mit DuckDB), können Import-Scripts nicht gleichzeitig
+in die gleiche DuckDB-Datei schreiben. DuckDB erlaubt nur EINEN Writer zur gleichen Zeit.
+
+**Lösung:** Ein dedizierter API-Router (`/api/v1/batch/`) der den Import über das laufende
+Backend triggert, statt ein separates Script zu verwenden.
+
+### API-Endpunkte
+
+```
+POST /api/v1/batch/import/tile/{tile_id}
+     → Einzelnes Tile importieren
+
+POST /api/v1/batch/import/region/{region_name}
+     → Alle Tiles einer Region importieren (async im Background)
+
+GET  /api/v1/batch/status
+     → Import-Status abfragen
+```
+
+### Implementierung
+
+**Datei:** `backend/app/routers/batch_import.py`
+
+```python
+# Wichtige Design-Entscheidungen:
+
+# 1. asyncio.to_thread() für synchrone I/O
+result = await asyncio.to_thread(_sync_download_and_import_tile, tile_id)
+
+# 2. Background-Tasks für Region-Import
+asyncio.create_task(_import_region_background(region_name))
+
+# 3. Tile-ID Validierung (Jahr-Releases filtern)
+_is_valid_tile_id(tile_id)  # Regex: ^\d{4}-\d{1,2}$
+```
+
+### Baseline-Messung (14.01.2026)
+
+**Test-Tile:** Basel 1047-34 (14236 Gebäude, 2024er Version)
+
+#### Gemessene Werte
+
+| Phase | Zeit | Pro Gebäude | Bemerkung |
+|-------|------|-------------|-----------|
+| **1. Download** | ~5-10s | - | STAC API → ZIP (~30MB) |
+| **2. Entpacken** | ~2-3s | - | ZIP → GDB Verzeichnis |
+| **3. Parse Building_solid** | **143.6s** | **10.1ms** | fiona direct streaming |
+| **4. Parse Roof_solid** | ~20-30s | ~2ms | Weniger Geometrie |
+| **5. Parse Wall** | ~30-40s | ~2-3ms | 3D-Geometrie (WKB) |
+| **6. DB-Write (DuckDB)** | ~5-10s | ~0.7ms | Bulk-INSERT |
+| **GESAMT (geschätzt)** | **~220-250s** | **~16ms** | ~4 min pro Tile |
+
+#### Was wurde gemessen vs. geschätzt
+
+| Metrik | Status | Quelle |
+|--------|--------|--------|
+| Parse Building_solid | ✅ **Gemessen** | `tile_prefetch.py` Performance-Logging |
+| Parse Roof_solid | ⚠️ Geschätzt | Extrapoliert aus Layer-Grösse |
+| Parse Wall | ⚠️ Geschätzt | Extrapoliert aus Layer-Grösse |
+| Download | ⚠️ Geschätzt | Variiert nach Netzwerk |
+| DB-Write | ⚠️ Geschätzt | Nicht separat gemessen |
+
+#### Performance-Logging aktivieren
+
+Das Performance-Logging ist in `tile_prefetch.py` implementiert:
+
+```
+[PREFETCH] GDB-Parsing: 14236 Gebäude | 143600ms (10.1ms/Gebäude) | Methode: fiona_direct
+```
+
+**Metriken abrufen (Legacy):**
+```python
+from app.services.tile_prefetch import get_parsing_metrics
+metrics = get_parsing_metrics()
+# {'last_tile': '1047-34.gdb', 'last_building_count': 14236,
+#  'last_parse_time_ms': 143600, 'last_method': 'fiona_direct'}
+```
+
+### Vollständige Timing-API (NEU 14.01.2026)
+
+**API-Endpunkt:**
+```
+GET /api/v1/batch/import/metrics
+```
+
+**Response:**
+```json
+{
+  "tile_id": "2617-1267",
+  "timestamp": "2026-01-14T12:34:56",
+  "download_ms": 5234.5,
+  "file_size_mb": 12.34,
+  "unzip_ms": 1234.5,
+  "parse_building_solid_ms": 45678.9,
+  "parse_building_solid_count": 14236,
+  "parse_roof_solid_ms": 12345.6,
+  "parse_roof_solid_count": 14200,
+  "parse_wall_ms": 8901.2,
+  "parse_wall_count": 28000,
+  "db_write_buildings_ms": 34567.8,
+  "db_write_roofs_ms": 4567.8,
+  "db_write_walls_ms": 5678.9,
+  "total_ms": 112000.0,
+  "ms_per_building": 7.87
+}
+```
+
+**Python-Zugriff:**
+```python
+from app.services.tile_prefetch import get_import_metrics, reset_import_metrics
+
+# Vor neuem Import: Metriken zurücksetzen
+reset_import_metrics()
+
+# Nach Import: Alle Metriken abrufen
+metrics = get_import_metrics()
+print(f"Total: {metrics['total_ms']:.0f}ms")
+print(f"Parse Building: {metrics['parse_building_solid_ms']:.0f}ms")
+print(f"DB-Write: {metrics['db_write_buildings_ms']:.0f}ms")
+```
+
+**Instrumentierte Stellen:**
+
+| Phase | Datei | Funktion | Metrik |
+|-------|-------|----------|--------|
+| Download | `swissbuildings3d_fetcher.py` | `download_and_extract_tile()` | `download_ms`, `file_size_mb` |
+| Unzip | `swissbuildings3d_fetcher.py` | `download_and_extract_tile()` | `unzip_ms` |
+| Parse Building | `tile_prefetch.py` | `_parse_all_buildings_from_gdb()` | `parse_building_solid_ms/count` |
+| Parse Roof | `tile_prefetch.py` | `_parse_roof_solid_from_gdb()` | `parse_roof_solid_ms/count` |
+| Parse Wall | `tile_prefetch.py` | `_parse_wall_layer_from_gdb()` | `parse_wall_ms/count` |
+| DB Buildings | `building_3d_service.py` | `bulk_save()` | `db_write_buildings_ms` |
+| DB Roofs | `roof_3d_service.py` | `bulk_save()` | `db_write_roofs_ms` |
+| DB Walls | `tile_prefetch.py` | `_save_walls_bulk()` | `db_write_walls_ms` |
+
+#### Baseline-Status (Stand 14.01.2026)
+
+- [x] Separates Timing für Download-Phase
+- [x] Separates Timing pro Layer (Building, Roof, Wall)
+- [x] Separates Timing für DB-Write
+- [ ] Messung mit verschiedenen Tile-Grössen (klein/mittel/gross)
+
+> **BUG-022:** Alte Tiles (2018) haben `EGID=None` für alle Gebäude!
+> STAC API liefert mehrere Versionen. Code bevorzugt neueste Version.
+> Falls ein altes Tile gecacht ist: `tiles/{tile_id}.gdb` löschen und neu importieren.
+
+---
 
 ## NEU: All-Layer-Import Strategie (13.01.2026 18:00)
 
@@ -1517,6 +1666,7 @@ def load_parquets_to_duckdb(parquet_dir: Path):
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 02:45 | 6.4 | **API-Router:** Neuer `batch_import.py` Router für DuckDB-Locking-Isolation. **Baseline:** 1 Tile (14236 Gebäude) = 143.6s (~10ms/Gebäude). **BUG-022:** Alte Tiles (2018) ohne EGIDs erkannt und gefixt. |
 | 14.01.2026 00:30 | 6.3 | **C.8 IMPLEMENTIERT:** `drop_indexes()` und `create_indexes()` behandeln jetzt ALLE 7 Indexes. Anhang A Task 3 auf ✅ gesetzt. |
 | 14.01.2026 00:15 | 6.2 | **Index-Dokumentation:** Alle 7 Indexes dokumentiert (vorher nur 2). Warnung bei Anhang A Task 3 hinzugefügt. Neuer Task C.8 für vollständige Index-Implementierung. |
 | 13.01.2026 21:30 | 6.1 | **Schema-Konsolidierung:** 3D-Layer-Tabellen verwenden jetzt `gebaeudeeinheit` als PRIMARY KEY (statt `id INTEGER`). DuckDB hat keine AUTOINCREMENT. Implementierungs-TODO aktualisiert. |

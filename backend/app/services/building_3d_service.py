@@ -751,12 +751,18 @@ class Building3DService:
                     conn.commit()
 
         duration = (datetime.now() - start_time).total_seconds()
-        ms_per_building = (duration * 1000 / saved_count) if saved_count > 0 else 0
+        duration_ms = duration * 1000
+        ms_per_building = (duration_ms / saved_count) if saved_count > 0 else 0
         logger.info(
             f"[BULK] {saved_count} Gebäude gespeichert | "
             f"tile: {tile_id} | {duration:.2f}s | {ms_per_building:.2f}ms/Gebäude | "
             f"Engine: {get_db_engine_name()}"
         )
+
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        from app.services.tile_prefetch import update_import_metrics
+        update_import_metrics(db_write_buildings_ms=duration_ms)
+
         return saved_count
 
     def _bulk_save_duckdb(self, conn, prepared_data: list, insert_sql: str, tile_id: str = None) -> int:

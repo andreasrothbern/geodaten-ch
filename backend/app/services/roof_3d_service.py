@@ -142,8 +142,12 @@ class Roof3DService:
         Returns:
             Anzahl gespeicherter Einträge
         """
+        import time
+
         if not roofs:
             return 0
+
+        start_time = time.time()
 
         # Daten vorbereiten
         prepared_data = []
@@ -186,7 +190,13 @@ class Roof3DService:
 
             conn.commit()
 
-        logger.info(f"[ROOF] {len(prepared_data)} Dach-Einträge gespeichert")
+        duration_ms = (time.time() - start_time) * 1000
+        logger.info(f"[ROOF] {len(prepared_data)} Dach-Einträge gespeichert in {duration_ms:.0f}ms")
+
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        from app.services.tile_prefetch import update_import_metrics
+        update_import_metrics(db_write_roofs_ms=duration_ms)
+
         return len(prepared_data)
 
     def get_by_gebaeudeeinheit(self, gebaeudeeinheit: str) -> Optional[Dict[str, Any]]:

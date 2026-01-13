@@ -44,11 +44,38 @@ logger = logging.getLogger(__name__)
 _background_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="prefetch")
 
 # Performance-Metriken für Logging
+# NEU 14.01.2026: Erweiterte Metriken für vollständige Baseline-Messung
 _parsing_metrics: Dict[str, Any] = {
     "last_tile": None,
     "last_building_count": 0,
     "last_parse_time_ms": 0,
     "last_method": None,
+}
+
+# Umfassende Timing-Metriken für alle Phasen
+# NEU 14.01.2026: Für vollständige Baseline-Messung (BATCH_IMPORT.md)
+_import_metrics: Dict[str, Any] = {
+    "tile_id": None,
+    "timestamp": None,
+    # Phase 1: Download
+    "download_ms": None,
+    "file_size_mb": None,
+    # Phase 2: Entpacken
+    "unzip_ms": None,
+    # Phase 3: Parsing pro Layer
+    "parse_building_solid_ms": None,
+    "parse_building_solid_count": None,
+    "parse_roof_solid_ms": None,
+    "parse_roof_solid_count": None,
+    "parse_wall_ms": None,
+    "parse_wall_count": None,
+    # Phase 4: DB-Write
+    "db_write_buildings_ms": None,
+    "db_write_roofs_ms": None,
+    "db_write_walls_ms": None,
+    # Gesamt
+    "total_ms": None,
+    "ms_per_building": None,
 }
 
 # Tracking: Welche Tiles werden gerade geprefetcht (verhindert Duplikate)
@@ -244,6 +271,12 @@ def _parse_wall_layer_from_gdb(gdb_path: Path) -> list:
                 f"{parse_time_ms:.0f}ms ({parse_time_ms/max(1,len(walls)):.1f}ms/Wand)"
             )
 
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        update_import_metrics(
+            parse_wall_ms=parse_time_ms,
+            parse_wall_count=len(walls)
+        )
+
         return walls
 
     except Exception as e:
@@ -338,6 +371,12 @@ def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
                 f"{parse_time_ms:.0f}ms ({parse_time_ms/len(roofs):.1f}ms/Dach) | "
                 f"geometry_wkb=SKIPPED (on-demand)"
             )
+
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        update_import_metrics(
+            parse_roof_solid_ms=parse_time_ms,
+            parse_roof_solid_count=len(roofs)
+        )
 
         return roofs
 
@@ -517,6 +556,12 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                 f"Methode: fiona_direct"
             )
 
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        update_import_metrics(
+            parse_building_solid_ms=parse_time_ms,
+            parse_building_solid_count=len(buildings)
+        )
+
         return buildings
 
     except Exception as e:
@@ -527,6 +572,111 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
 def get_parsing_metrics() -> Dict[str, Any]:
     """Gibt die letzten Parsing-Metriken zurück (für Debugging/Monitoring)."""
     return _parsing_metrics.copy()
+
+
+def get_import_metrics() -> Dict[str, Any]:
+    """
+    Gibt die vollständigen Import-Metriken zurück.
+
+    NEU 14.01.2026: Für vollständige Baseline-Messung (BATCH_IMPORT.md).
+    Enthält Timing für alle Phasen: Download, Unzip, Parse, DB-Write.
+
+    Returns:
+        Dict mit allen Metriken. None-Werte bedeuten "nicht gemessen".
+    """
+    return _import_metrics.copy()
+
+
+def update_import_metrics(
+    tile_id: str = None,
+    download_ms: float = None,
+    file_size_mb: float = None,
+    unzip_ms: float = None,
+    parse_building_solid_ms: float = None,
+    parse_building_solid_count: int = None,
+    parse_roof_solid_ms: float = None,
+    parse_roof_solid_count: int = None,
+    parse_wall_ms: float = None,
+    parse_wall_count: int = None,
+    db_write_buildings_ms: float = None,
+    db_write_roofs_ms: float = None,
+    db_write_walls_ms: float = None,
+):
+    """
+    Aktualisiert die Import-Metriken.
+
+    NEU 14.01.2026: Wird von verschiedenen Stellen aufgerufen (Download, Prefetch).
+    Berechnet automatisch total_ms und ms_per_building.
+
+    Args:
+        tile_id: Tile-ID für die Messung
+        download_ms: Download-Zeit in Millisekunden
+        file_size_mb: Dateigrösse in MB
+        unzip_ms: Entpack-Zeit in Millisekunden
+        parse_*_ms: Parse-Zeit pro Layer
+        parse_*_count: Anzahl geparster Elemente
+        db_write_*_ms: DB-Schreib-Zeit pro Tabelle
+    """
+    global _import_metrics
+    from datetime import datetime
+
+    if tile_id is not None:
+        _import_metrics["tile_id"] = tile_id
+        _import_metrics["timestamp"] = datetime.now().isoformat()
+
+    if download_ms is not None:
+        _import_metrics["download_ms"] = round(download_ms, 1)
+    if file_size_mb is not None:
+        _import_metrics["file_size_mb"] = round(file_size_mb, 2)
+    if unzip_ms is not None:
+        _import_metrics["unzip_ms"] = round(unzip_ms, 1)
+
+    if parse_building_solid_ms is not None:
+        _import_metrics["parse_building_solid_ms"] = round(parse_building_solid_ms, 1)
+    if parse_building_solid_count is not None:
+        _import_metrics["parse_building_solid_count"] = parse_building_solid_count
+    if parse_roof_solid_ms is not None:
+        _import_metrics["parse_roof_solid_ms"] = round(parse_roof_solid_ms, 1)
+    if parse_roof_solid_count is not None:
+        _import_metrics["parse_roof_solid_count"] = parse_roof_solid_count
+    if parse_wall_ms is not None:
+        _import_metrics["parse_wall_ms"] = round(parse_wall_ms, 1)
+    if parse_wall_count is not None:
+        _import_metrics["parse_wall_count"] = parse_wall_count
+
+    if db_write_buildings_ms is not None:
+        _import_metrics["db_write_buildings_ms"] = round(db_write_buildings_ms, 1)
+    if db_write_roofs_ms is not None:
+        _import_metrics["db_write_roofs_ms"] = round(db_write_roofs_ms, 1)
+    if db_write_walls_ms is not None:
+        _import_metrics["db_write_walls_ms"] = round(db_write_walls_ms, 1)
+
+    # Automatisch Gesamtzeit und ms/Gebäude berechnen
+    total = 0
+    for key in ["download_ms", "unzip_ms", "parse_building_solid_ms",
+                "parse_roof_solid_ms", "parse_wall_ms",
+                "db_write_buildings_ms", "db_write_roofs_ms", "db_write_walls_ms"]:
+        val = _import_metrics.get(key)
+        if val is not None:
+            total += val
+
+    if total > 0:
+        _import_metrics["total_ms"] = round(total, 1)
+
+    building_count = _import_metrics.get("parse_building_solid_count")
+    if building_count and building_count > 0 and total > 0:
+        _import_metrics["ms_per_building"] = round(total / building_count, 2)
+
+
+def reset_import_metrics():
+    """
+    Setzt alle Import-Metriken zurück.
+
+    NEU 14.01.2026: Vor einem neuen Tile-Import aufrufen.
+    """
+    global _import_metrics
+    for key in _import_metrics:
+        _import_metrics[key] = None
 
 
 def _update_buildings_with_roof_data(
@@ -944,6 +1094,8 @@ def _save_walls_bulk(walls: List[Dict[str, Any]]) -> int:
     if not walls:
         return 0
 
+    start_time = time.time()
+
     from app.config import get_building_3d_connection, USE_DUCKDB
 
     conn = get_building_3d_connection()
@@ -977,6 +1129,10 @@ def _save_walls_bulk(walls: List[Dict[str, Any]]) -> int:
                 for w in walls
             ])
             conn.commit()
+
+        # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren
+        duration_ms = (time.time() - start_time) * 1000
+        update_import_metrics(db_write_walls_ms=duration_ms)
 
         return len(walls)
 
