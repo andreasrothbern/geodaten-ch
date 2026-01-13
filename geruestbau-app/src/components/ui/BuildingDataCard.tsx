@@ -120,6 +120,7 @@ function getPositionLabel(position?: string) {
 
 // NEU 14.01.2026 (T4) - Fassaden-Höhen Anzeige
 // Zeigt Fassaden-Höhen aus Wall-Layer wenn verfügbar
+// FIX 14.01.2026 22:30 - 2 Dezimalstellen + Hanglage-Erkennung
 function FacadeHeightsInfo({
   facadeZMin,
   facadeZMax,
@@ -149,6 +150,27 @@ function FacadeHeightsInfo({
     (a, b) => directionOrder.indexOf(a) - directionOrder.indexOf(b)
   )
 
+  // Berechne Höhen und erkenne Hanglage
+  const heights: { dir: string; height: number | null; zMin: number }[] = sortedDirections.map((dir) => {
+    const zMin = facadeZMin[dir]
+    const zMax = facadeZMax?.[dir]
+    const height = zMax && zMin ? zMax - zMin : null
+    return { dir, height, zMin }
+  })
+
+  // Hanglage-Erkennung: Terrain-Differenz > 0.5m
+  const zMinValues = heights.map(h => h.zMin).filter(v => v !== undefined)
+  const minTerrain = Math.min(...zMinValues)
+  const maxTerrain = Math.max(...zMinValues)
+  const terrainDiff = maxTerrain - minTerrain
+  const hasSlope = terrainDiff > 0.5
+
+  // Höhen-Differenz (unterschiedliche Gerüsthöhen)
+  const heightValues = heights.map(h => h.height).filter((v): v is number => v !== null)
+  const minHeight = Math.min(...heightValues)
+  const maxHeight = Math.max(...heightValues)
+  const heightDiff = maxHeight - minHeight
+
   return (
     <div className="col-span-2 mt-2 pt-2 border-t border-green-200">
       <div className="flex items-center gap-2 mb-2">
@@ -161,24 +183,43 @@ function FacadeHeightsInfo({
         </span>
       </div>
       <div className="grid grid-cols-4 gap-1 text-xs">
-        {sortedDirections.map((dir) => {
-          const zMin = facadeZMin[dir]
-          const zMax = facadeZMax?.[dir]
-          const height = zMax && zMin ? (zMax - zMin).toFixed(1) : '–'
+        {heights.map(({ dir, height }) => {
+          // Markiere höchste Fassade bei Hanglage
+          const isMax = hasSlope && height !== null && height === maxHeight
 
           return (
             <div
               key={dir}
-              className="flex flex-col items-center p-1.5 bg-white rounded border border-green-100"
+              className={`flex flex-col items-center p-1.5 bg-white rounded border ${
+                isMax ? 'border-orange-300 bg-orange-50' : 'border-green-100'
+              }`}
             >
-              <span className="font-medium text-green-700">{dir}</span>
-              <span className="text-gray-500">
-                {height !== '–' ? `${height}m` : '–'}
+              <span className={`font-medium ${isMax ? 'text-orange-700' : 'text-green-700'}`}>
+                {dir}
+              </span>
+              <span className={isMax ? 'text-orange-600' : 'text-gray-500'}>
+                {height !== null ? `${height.toFixed(2)}m` : '–'}
               </span>
             </div>
           )
         })}
       </div>
+
+      {/* Hanglage-Hinweis mit Ausnivellierung */}
+      {hasSlope && heightDiff > 0.3 && (
+        <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs">
+          <div className="flex items-center gap-1.5 text-orange-700 font-medium">
+            <span>⚠️ Hanglage erkannt</span>
+          </div>
+          <div className="text-orange-600 mt-1">
+            Terrain-Differenz: {terrainDiff.toFixed(2)}m |
+            Höhen-Differenz: {heightDiff.toFixed(2)}m
+          </div>
+          <div className="text-orange-700 mt-1 font-medium">
+            → Gerüst am Grund ausnivellieren erforderlich
+          </div>
+        </div>
+      )}
     </div>
   )
 }

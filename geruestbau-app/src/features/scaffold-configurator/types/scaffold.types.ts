@@ -135,6 +135,10 @@ export interface ScaffoldFacade {
   // Coordinates for 3D positioning (LV95)
   start_point?: [number, number];
   end_point?: [number, number];
+  // NEU 14.01.2026 23:45: Terrain-Daten für Hanglage-Darstellung
+  terrain_z_min?: number;   // Niedrigste Terrain-Höhe (m ü.M.)
+  terrain_z_max?: number;   // Höchste Terrain-Höhe (m ü.M.)
+  terrain_diff_m?: number;  // Terrain-Differenz für Ausnivellierung
 }
 
 export interface FacadeModifications {

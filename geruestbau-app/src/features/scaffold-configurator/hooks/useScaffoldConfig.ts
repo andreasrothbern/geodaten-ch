@@ -131,7 +131,8 @@ const calculateFieldsAndLevels = (
 
 const createFacadeElement = (
   facade: SelectedFacade,
-  settings: ScaffoldSettings
+  settings: ScaffoldSettings,
+  globalTerrainDiff?: number  // NEU 14.01.2026: Globale Terrain-Differenz für Hanglage
 ): ScaffoldFacade => {
   const { fields, levels, targetHeight } = calculateFieldsAndLevels(
     facade.length_m,
@@ -168,6 +169,10 @@ const createFacadeElement = (
     // Include coordinates for 3D positioning
     start_point: facade.start_point,
     end_point: facade.end_point,
+    // NEU 14.01.2026: Terrain-Daten für Hanglage-Darstellung
+    terrain_z_min: facade.facade_z_min,
+    terrain_z_max: facade.facade_z_max,
+    terrain_diff_m: globalTerrainDiff,
   };
 };
 
@@ -193,9 +198,17 @@ const createElementsFromFacades = (
   const elements: ScaffoldElement[] = [];
   const facadeElements: ScaffoldFacade[] = [];
 
+  // NEU 14.01.2026: Globale Terrain-Differenz berechnen für Hanglage
+  const zMinValues = facades
+    .map(f => f.facade_z_min)
+    .filter((v): v is number => v !== undefined && !isNaN(v));
+  const globalTerrainDiff = zMinValues.length > 0
+    ? Math.max(...zMinValues) - Math.min(...zMinValues)
+    : 0;
+
   // Create facade elements
   facades.forEach((facade) => {
-    const facadeEl = createFacadeElement(facade, settings);
+    const facadeEl = createFacadeElement(facade, settings, globalTerrainDiff);
     facadeElements.push(facadeEl);
   });
 

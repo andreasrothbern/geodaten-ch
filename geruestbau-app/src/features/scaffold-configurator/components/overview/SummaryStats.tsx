@@ -57,7 +57,7 @@ export default function SummaryStats({ totals, settings, maxSlope = 0 }: Summary
         </p>
         <p className="flex items-center gap-2">
           <Ruler className="w-4 h-4 opacity-70 rotate-90" />
-          Höhe: {totals.max_height_m.toFixed(1)}m
+          Höhe: {totals.max_height_m.toFixed(2)}m
         </p>
         <p className="flex items-center gap-2">
           <Mountain className="w-4 h-4 opacity-70" />

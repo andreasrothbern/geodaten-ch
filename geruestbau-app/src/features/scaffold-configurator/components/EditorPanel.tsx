@@ -212,7 +212,7 @@ export default function EditorPanel() {
           {currentElement?.type === 'facade' && (
             <div className="text-right">
               <span className="text-sm font-medium text-gray-700">
-                {currentElement.length_m}m × {currentElement.target_height_m.toFixed(1)}m
+                {currentElement.length_m.toFixed(1)}m × {currentElement.target_height_m.toFixed(2)}m
               </span>
               <p className="text-xs text-gray-400">Gefälle: {currentElement.slope_percent}%</p>
             </div>

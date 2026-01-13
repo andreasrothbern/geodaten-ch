@@ -184,7 +184,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], additio
           <div>
             <p className="text-green-100">Max. Höhe</p>
             <p className="font-bold">
-              {totals.max_height_m.toFixed(1)}m ({Math.ceil(totals.max_height_m / (settings?.level_height_m || 2))} Lagen)
+              {totals.max_height_m.toFixed(2)}m ({Math.ceil(totals.max_height_m / (settings?.level_height_m || 2))} Lagen)
             </p>
           </div>
           <div>

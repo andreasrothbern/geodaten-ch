@@ -454,4 +454,196 @@ Fassaden-Höhen (z_min / z_max -> Höhe):
 → Terrain-Höhen variieren pro Richtung (N=557.0m bis W=557.6m)
 → Bei Gebäuden mit mehr Gefälle werden Fassaden-Höhen stärker variieren
 
-**TODO:** Test mit echtem Hanglage-Gebäude (>3m Gefälle, z.B. Muri, Köniz Hang)
+---
+
+## Hanglage-Behandlung (NEU 14.01.2026 23:30)
+
+### z_max Berechnung (BUG FIX)
+
+**Problem gefunden:** Die z_max Berechnung war falsch!
+
+```python
+# FALSCH (vorher):
+z_max[direction] = terrain_height + bundle.traufhoehe_m  # Pro Fassade unterschiedlich!
+
+# RICHTIG (jetzt):
+absolute_dach_hoehe = reference_height + bundle.traufhoehe_m  # Einmal berechnen
+z_max[direction] = absolute_dach_hoehe  # KONSTANT für alle Fassaden!
+```
+
+**Warum?** Bei Gebäuden mit horizontalem Dach ist die Dachkanten-Höhe (z_max)
+für ALLE Fassaden GLEICH. Nur das Terrain (z_min) variiert pro Fassade!
+
+```
+                    ← z_max KONSTANT (555.0m ü.M.) →
+                    ┌─────────────────────────────────┐
+                    │                                 │
+                    │         DACH (horizontal)       │
+    Fassade N       │                                 │       Fassade S
+    Höhe: 12.0m     │                                 │       Höhe: 15.0m
+                    │                                 │
+    ─────┬──────────┴─────────────────────────────────┴──────────┬─────
+         │                      TERRAIN                          │
+   543.0 m ü.M. ─────────────────────────────────────── 540.0 m ü.M.
+   z_min["N"]                                           z_min["S"]
+```
+
+**Fix in:** `backend/app/services/smart_building/service.py:850-870`
+
+### Anzeige mit 2 Dezimalstellen
+
+Die Fassaden-Höhen werden jetzt mit 2 Dezimalstellen angezeigt für präzise Messungen:
+
+```typescript
+// BuildingDataCard.tsx
+{height !== null ? `${height.toFixed(2)}m` : '–'}
+```
+
+### Hanglage-Erkennung im Frontend
+
+Die `BuildingDataCard` erkennt automatisch Hanglage und zeigt einen Hinweis:
+
+```typescript
+// Hanglage-Erkennung: Terrain-Differenz > 0.5m
+const zMinValues = heights.map(h => h.zMin).filter(v => v !== undefined)
+const terrainDiff = Math.max(...zMinValues) - Math.min(...zMinValues)
+const hasSlope = terrainDiff > 0.5
+
+// Höchste Fassade markieren bei Hanglage
+const isMax = hasSlope && height === maxHeight
+```
+
+**UI-Anzeige:**
+- ⚠️ Hanglage erkannt
+- Terrain-Differenz: X.XXm | Höhen-Differenz: X.XXm
+- → Gerüst am Grund ausnivellieren erforderlich
+
+---
+
+## Ausnivellierung bei Hanglage (GEPLANT)
+
+### Konzept
+
+Bei Gebäuden am Hang muss das Gerüst am Grund ausgeglichen werden:
+
+```
+                    ┌──────────────────────┐
+                    │   GERÜST-AUFBAU      │
+                    │   (alle Lagen)       │
+                    │                      │
+                    │                      │
+   ┌────────────────┼──────────────────────┤
+   │ Stellspindel   │                      │ Stellspindel
+   │ 0.4m           │                      │ 0.0m
+   └────────────────┴──────────────────────┘
+         │                                       │
+   ──────┴───────────────────────────────────────┴──────
+              SCHRÄGER BODEN (Terrain)
+```
+
+### Layher Blitz Ausnivellierungs-Material
+
+| Höhe Ausgleich | Material | Art.-Nr. | Gewicht |
+|----------------|----------|----------|---------|
+| 0 - 0.40m | Stellspindel 0.4m | 0730.020 | 4.2 kg |
+| 0.40 - 0.80m | Ausgleichsrahmen 0.5m | 0731.050 | 8.5 kg |
+| 0.80 - 1.30m | Ausgleichsrahmen 1.0m | 0731.100 | 14.0 kg |
+| > 1.30m | Zusätzliche Startlagen | - | variabel |
+
+### Berechnung Ausgleichsmaterial
+
+```typescript
+function calculateLevelingMaterial(terrainDiff: number): LevelingMaterial[] {
+  const materials: LevelingMaterial[] = []
+  const numFields = facade.fields  // Anzahl Felder pro Fassade
+
+  // An der tiefsten Seite: voller Ausgleich nötig
+  // An der höchsten Seite: kein Ausgleich
+  // Dazwischen: linear interpoliert
+
+  for (let field = 0; field < numFields; field++) {
+    const fieldOffset = (terrainDiff / numFields) * field
+
+    if (fieldOffset > 0.4) {
+      materials.push({ type: 'Ausgleichsrahmen', height: 0.5 })
+    } else if (fieldOffset > 0) {
+      materials.push({ type: 'Stellspindel', extension: fieldOffset })
+    }
+  }
+
+  return materials
+}
+```
+
+### Einfluss auf Materialliste
+
+Bei Hanglage werden zusätzlich benötigt:
+
+| Material | Menge | Berechnung |
+|----------|-------|------------|
+| Stellspindeln verlängert | 2 × Ständer | Auf Hangseite |
+| Ausgleichsrahmen | n × Felder | Bei >0.4m Differenz |
+| Fussplatten breit | 2 × Ständer | Für Stabilität |
+
+### Einfluss auf Gewicht
+
+```
+Standard-Gerüst: 20 kg/m²
+
+Mit Ausnivellierung:
+  + Stellspindeln: +0.5 kg/m²
+  + Ausgleichsrahmen: +1-2 kg/m²
+
+→ Gesamt bei Hanglage: 21-23 kg/m²
+```
+
+### Editor-Visualisierung (✅ IMPLEMENTIERT 15.01.2026)
+
+**Datei:** `ScaffoldGrid.tsx`
+
+**Implementierte Funktionen:**
+
+1. **`renderGround()`** - Zeichnet schräge Bodenlinie bei Hanglage
+   - Bodenlinie steigt von links nach rechts basierend auf `terrain_diff_m`
+   - Braune Farbe (#8B4513) bei Hanglage statt Standard-Grau
+   - Terrain-Schraffur als Polygon
+   - Terrain-Differenz-Anzeige (⚠ X.XXm)
+
+2. **`renderLevelingSpindles()`** - Zeichnet Stellspindeln/Ausgleichsrahmen
+   - Lineare Interpolation: links = max Verlängerung, rechts = keine
+   - Farbkodierung nach Verlängerung:
+     - Grau (#666666): Stellspindel bis 0.4m
+     - Orange (#f97316): Lange Stellspindel 0.4-0.8m
+     - Rot (#dc2626): Ausgleichsrahmen >0.8m
+   - Fussplatten-Anzeige
+   - Höhenangabe am ersten Feld
+
+**Datenfluss:**
+
+```
+Geodata.facade_z_min (pro Richtung)
+    │
+    ├─ createElementsFromFacades() berechnet:
+    │   globalTerrainDiff = max(z_min) - min(z_min)
+    │
+    └─ ScaffoldFacade enthält:
+           terrain_z_min, terrain_z_max, terrain_diff_m
+               │
+               └─ ScaffoldGrid rendert:
+                    renderGround() + renderLevelingSpindles()
+```
+
+### Datenfluss für Hanglage
+
+```
+Geodata.facade_z_min (pro Richtung)
+    │
+    ├─ terrain_diff = max(z_min) - min(z_min)
+    │
+    ├─ is_sloped = terrain_diff > 0.5m
+    │
+    └─ ScaffoldFacade.terrain_diff_m
+           │
+           ├─ Editor: renderSlopedGround()
+           │
+           └─ MaterialList: calculateLevelingMaterial()

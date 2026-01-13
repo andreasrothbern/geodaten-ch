@@ -84,14 +84,14 @@ export function getHeightMarkers(
   // Ground level
   markers.push({
     y: dims.startY,
-    label: '±0.0',
+    label: '±0.00',
   });
 
   // Each level
   for (let i = 1; i <= levels; i++) {
     markers.push({
       y: dims.startY - i * dims.cellHeight,
-      label: `+${(i * levelHeight).toFixed(1)}`,
+      label: `+${(i * levelHeight).toFixed(2)}`,
     });
   }
 

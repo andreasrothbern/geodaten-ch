@@ -103,7 +103,7 @@ export default function FacadeCards({
           <div className="bg-gray-50 rounded-lg p-3 text-center">
             <ArrowUpFromLine className="w-4 h-4 mx-auto text-gray-400 mb-1" />
             <p className="text-lg font-semibold text-gray-800">
-              {currentFacade.target_height_m.toFixed(1)}m
+              {currentFacade.target_height_m.toFixed(2)}m
             </p>
             <p className="text-xs text-gray-500">Höhe</p>
           </div>

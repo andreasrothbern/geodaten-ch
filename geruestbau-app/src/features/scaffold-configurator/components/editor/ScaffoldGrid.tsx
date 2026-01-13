@@ -277,28 +277,80 @@ export default function ScaffoldGrid({
     );
   };
 
-  // Render ground
+  // NEU 14.01.2026 23:50: Render ground with slope support for Hanglage
   const renderGround = () => {
+    const terrainDiff = facade.terrain_diff_m || 0;
+    const hasSlope = terrainDiff > 0.5;  // Hanglage ab 0.5m Differenz
+
+    // Berechne Steigung in Pixeln basierend auf der Fassadenhöhe
+    const gridHeight = facade.levels * dims.cellHeight;
+    const gridWidth = facade.fields * dims.cellWidth;
+
+    // Verhältnis Terrain-Diff zur Fassadenhöhe → Pixel-Steigung
+    const facadeHeightM = facade.target_height_m || 10;
+    const slopePixels = (terrainDiff / facadeHeightM) * gridHeight;
+
+    const leftX = dims.startX - 10;
+    const rightX = dims.startX + gridWidth + 10;
+    const leftY = dims.startY;
+    const rightY = hasSlope ? dims.startY - slopePixels : dims.startY;
+
     return (
       <g className="ground">
+        {/* Hauptbodenlinie - schräg bei Hanglage */}
         <line
-          x1={dims.startX - 10}
-          y1={dims.startY}
-          x2={dims.startX + facade.fields * dims.cellWidth + 10}
-          y2={dims.startY}
-          stroke="#374151"
-          strokeWidth={2}
+          x1={leftX}
+          y1={leftY}
+          x2={rightX}
+          y2={rightY}
+          stroke={hasSlope ? '#8B4513' : '#374151'}  // Braun bei Hanglage
+          strokeWidth={hasSlope ? 3 : 2}
         />
+
+        {/* Terrain-Schraffur als Polygon */}
         <pattern id="groundHatch" patternUnits="userSpaceOnUse" width={8} height={8}>
           <path d="M0,8 L8,0" stroke="#666" strokeWidth={0.5} />
         </pattern>
-        <rect
-          x={dims.startX - 10}
-          y={dims.startY}
-          width={facade.fields * dims.cellWidth + 20}
-          height={15}
+        <polygon
+          points={`${leftX},${leftY} ${rightX},${rightY} ${rightX},${rightY + 15} ${leftX},${leftY + 15}`}
           fill="url(#groundHatch)"
         />
+
+        {/* Hanglage-Indikator */}
+        {hasSlope && (
+          <g className="slope-indicator">
+            {/* Terrain-Differenz Beschriftung */}
+            <text
+              x={rightX + 5}
+              y={rightY + 5}
+              fill="#8B4513"
+              fontSize={10}
+              fontWeight="500"
+            >
+              ⚠ {terrainDiff.toFixed(2)}m
+            </text>
+
+            {/* Vertikale Linie zur Visualisierung der Differenz */}
+            <line
+              x1={rightX - 5}
+              y1={leftY}
+              x2={rightX - 5}
+              y2={rightY}
+              stroke="#f97316"
+              strokeWidth={2}
+              strokeDasharray="4 2"
+            />
+            <text
+              x={rightX - 10}
+              y={(leftY + rightY) / 2 + 4}
+              fill="#f97316"
+              fontSize={9}
+              textAnchor="end"
+            >
+              Δ
+            </text>
+          </g>
+        )}
       </g>
     );
   };
@@ -380,7 +432,7 @@ export default function ScaffoldGrid({
     );
   };
 
-  // Render slope indicator
+  // Render slope indicator (für Dach-Gefälle, NICHT für Terrain)
   const renderSlopeIndicator = () => {
     if (facade.slope_percent <= 0) return null;
 
@@ -408,6 +460,95 @@ export default function ScaffoldGrid({
         </text>
       </g>
     );
+  };
+
+  // NEU 15.01.2026 00:00: Render leveling spindles (Stellspindeln) for slope compensation
+  const renderLevelingSpindles = () => {
+    const terrainDiff = facade.terrain_diff_m || 0;
+    if (terrainDiff < 0.1) return null;  // Keine Stellspindeln bei flachem Boden
+
+    const gridHeight = facade.levels * dims.cellHeight;
+    const facadeHeightM = facade.target_height_m || 10;
+
+    // Stellspindel-Elemente für jedes Feld
+    const spindles: JSX.Element[] = [];
+
+    for (let field = 0; field < facade.fields; field++) {
+      // Lineare Interpolation: links = maximale Verlängerung, rechts = keine
+      const extensionM = terrainDiff * (1 - field / Math.max(1, facade.fields - 1));
+
+      if (extensionM < 0.05) continue;  // Zu klein zum Anzeigen
+
+      const fieldCenterX = dims.startX + field * dims.cellWidth + dims.cellWidth / 2;
+
+      // Berechne Pixel-Höhe basierend auf der Fassadenhöhe
+      const extensionPixels = (extensionM / facadeHeightM) * gridHeight;
+
+      // Y-Position: Bodenlinie schräg → interpolieren
+      const baseY = dims.startY - (terrainDiff - extensionM) / facadeHeightM * gridHeight;
+
+      // Stellspindel-Typ basierend auf Verlängerung
+      let spindleColor = '#666666';  // Standard-Grau
+      let spindleLabel = 'S';  // Stellspindel
+      if (extensionM > 0.8) {
+        spindleColor = '#dc2626';  // Rot für Ausgleichsrahmen
+        spindleLabel = 'AR';  // Ausgleichsrahmen
+      } else if (extensionM > 0.4) {
+        spindleColor = '#f97316';  // Orange für lange Stellspindel
+        spindleLabel = 'S+';
+      }
+
+      spindles.push(
+        <g key={`spindle-${field}`} className="spindle">
+          {/* Stellspindel-Körper */}
+          <rect
+            x={fieldCenterX - 4}
+            y={baseY}
+            width={8}
+            height={extensionPixels}
+            fill={spindleColor}
+            stroke="#333"
+            strokeWidth={1}
+            rx={2}
+          />
+          {/* Fussplatte */}
+          <rect
+            x={fieldCenterX - 8}
+            y={baseY + extensionPixels - 3}
+            width={16}
+            height={3}
+            fill="#333"
+          />
+          {/* Beschriftung wenn genug Platz */}
+          {extensionPixels > 15 && (
+            <text
+              x={fieldCenterX}
+              y={baseY + extensionPixels / 2 + 3}
+              fill="white"
+              fontSize={7}
+              textAnchor="middle"
+              fontWeight="bold"
+            >
+              {spindleLabel}
+            </text>
+          )}
+          {/* Höhenangabe */}
+          {field === 0 && (
+            <text
+              x={fieldCenterX - 12}
+              y={baseY + extensionPixels / 2}
+              fill={spindleColor}
+              fontSize={8}
+              textAnchor="end"
+            >
+              {extensionM.toFixed(2)}m
+            </text>
+          )}
+        </g>
+      );
+    }
+
+    return <g className="leveling-spindles">{spindles}</g>;
   };
 
   return (
@@ -451,6 +592,7 @@ export default function ScaffoldGrid({
 
         {/* Render layers */}
         {renderGround()}
+        {renderLevelingSpindles()}  {/* NEU 15.01.2026: Stellspindeln bei Hanglage */}
         {renderRoof()}
         {renderBuildingOutline()}
         {renderHeightMarkers()}

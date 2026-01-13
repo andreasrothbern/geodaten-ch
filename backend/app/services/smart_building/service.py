@@ -1077,6 +1077,12 @@ class SmartBuildingService:
             terrain_service = get_terrain_service()
 
             sampled_count = 0
+            # FIX 14.01.2026: Absolute Dachkanten-Höhe (gleich für alle Fassaden!)
+            # Bei Hanglage ist das Dach horizontal, nur das Terrain variiert.
+            absolute_dach_hoehe = None
+            if bundle.terrain and bundle.terrain.reference_height_m and bundle.traufhoehe_m:
+                absolute_dach_hoehe = bundle.terrain.reference_height_m + bundle.traufhoehe_m
+
             for side in bundle.sides:
                 direction = side.get("direction", "?")
                 start_point = side.get("start_point") or side.get("start", {})
@@ -1093,27 +1099,36 @@ class SmartBuildingService:
                     terrain_height = await terrain_service.get_height(e, n)
                     if terrain_height is not None:
                         bundle.terrain.facade_z_min[direction] = terrain_height
-                        # z_max = terrain + traufhöhe
-                        if bundle.traufhoehe_m:
-                            bundle.terrain.facade_z_max[direction] = terrain_height + bundle.traufhoehe_m
+                        # FIX: z_max ist KONSTANT (absolute Dachkanten-Höhe)
+                        if absolute_dach_hoehe:
+                            bundle.terrain.facade_z_max[direction] = absolute_dach_hoehe
                         sampled_count += 1
 
             if sampled_count > 0:
                 bundle.terrain.facade_heights_source = "terrain_sampled"
-                logger.info(f"[FACADE-HEIGHTS] Terrain-Sampling: {sampled_count} Fassaden")
+                # Log mit Höhendifferenz für Hanglage-Erkennung
+                if bundle.terrain.facade_z_min:
+                    min_terrain = min(bundle.terrain.facade_z_min.values())
+                    max_terrain = max(bundle.terrain.facade_z_min.values())
+                    height_diff = max_terrain - min_terrain
+                    logger.info(
+                        f"[FACADE-HEIGHTS] Terrain-Sampling: {sampled_count} Fassaden, "
+                        f"Hanglage: {height_diff:.2f}m"
+                    )
                 return
 
         except Exception as e:
             logger.warning(f"[FACADE-HEIGHTS] Terrain-Sampling Fehler: {e}")
 
-        # STUFE 3: Global-Fallback
+        # STUFE 3: Global-Fallback (alle Fassaden gleiche Höhe)
         bundle.terrain.facade_heights_source = "global"
         ref_height = bundle.terrain.reference_height_m
+        absolute_dach_hoehe = ref_height + bundle.traufhoehe_m if bundle.traufhoehe_m else None
         for side in bundle.sides:
             direction = side.get("direction", "?")
             bundle.terrain.facade_z_min[direction] = ref_height
-            if bundle.traufhoehe_m:
-                bundle.terrain.facade_z_max[direction] = ref_height + bundle.traufhoehe_m
+            if absolute_dach_hoehe:
+                bundle.terrain.facade_z_max[direction] = absolute_dach_hoehe
 
         logger.info(f"[FACADE-HEIGHTS] Global-Fallback für {len(bundle.sides)} Fassaden")
 

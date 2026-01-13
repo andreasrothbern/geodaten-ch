@@ -403,7 +403,7 @@ export default function FacadePanel({
         <p className="text-sm text-gray-500">{buildingAddress}</p>
         {settings && (
           <div className="flex gap-4 mt-2 text-sm text-gray-600">
-            <span>Traufhöhe: {totals.max_height_m.toFixed(1)}m</span>
+            <span>Traufhöhe: {totals.max_height_m.toFixed(2)}m</span>
           </div>
         )}
       </div>
@@ -545,7 +545,7 @@ export default function FacadePanel({
           </div>
           <div>
             <p className="text-red-600">Gerüsthöhe</p>
-            <p className="text-xl font-bold text-red-800">{totals.max_height_m.toFixed(1)} m</p>
+            <p className="text-xl font-bold text-red-800">{totals.max_height_m.toFixed(2)} m</p>
           </div>
           <div>
             <p className="text-red-600">Geschätzte Fläche</p>
