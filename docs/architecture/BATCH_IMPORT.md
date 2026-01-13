@@ -1,7 +1,7 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 6.4 (Stand 14.01.2026 02:45)
-> **Status:** API-Router + Baseline gemessen 🚀
+> **Version:** 6.5 (Stand 14.01.2026 20:30)
+> **Status:** Event-Loop-Blocking dokumentiert 🔴
 
 ## NEU: API-Router für Batch-Import (14.01.2026 02:45)
 
@@ -1683,10 +1683,100 @@ def load_parquets_to_duckdb(parquet_dir: Path):
 
 ---
 
+## C.10 Das Event-Loop-Blocking Problem (KRITISCH!)
+
+**Status:** 🔴 OFFEN (erkannt 14.01.2026 20:30)
+
+### Problem
+
+Während einem Batch-Import **blockiert das gesamte Backend** - auch einfache Anfragen wie Adressauflösung funktionieren nicht mehr:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PROBLEM: Import blockiert Event-Loop                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Frontend: "Bitte Adresse auflösen"                                     │
+│       │                                                                 │
+│       ▼                                                                 │
+│  Backend Event-Loop: ████████████████████████████████████ (BLOCKIERT)   │
+│                      ↑                                                  │
+│                      │                                                  │
+│                      Download von data.geo.admin.ch (synchron!)         │
+│                      urllib.request.urlretrieve() blockiert             │
+│                                                                         │
+│  → Frontend hängt, keine Antwort                                        │
+│  → Timeout-Fehler im Browser                                            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Ursache
+
+Obwohl wir `asyncio.to_thread()` verwenden, blockieren diese sync-Operationen den Event-Loop:
+
+| Funktion | Problem | Status |
+|----------|---------|--------|
+| `urllib.request.urlretrieve()` | Sync HTTP-Download | 🔴 Blockiert |
+| `fiona.open()` + Iteration | Sync File-I/O | 🔴 Blockiert |
+| `duckdb.execute()` | DB-Write | ⚠️ Teilweise blockiert |
+
+**Verdacht:** `asyncio.to_thread()` funktioniert nicht wie erwartet weil:
+1. Der ThreadPoolExecutor eventuell voll ist
+2. uvicorn ohne `--workers` nur 1 Worker hat (Single-Threaded)
+3. Die GIL (Global Interpreter Lock) verhindert echte Parallelität
+
+### Beobachtetes Verhalten (14.01.2026 20:00)
+
+```
+1. POST /api/v1/batch/import/region/basel_test → 200 OK (sofort)
+2. Import läuft im Hintergrund...
+3. curl /api/v1/batch/import/status → TIMEOUT (keine Antwort!)
+4. curl /health → TIMEOUT (keine Antwort!)
+5. Frontend: Adress-Auflösung → TIMEOUT
+6. Nach ~15+ Minuten: Immer noch blockiert
+```
+
+### Lösungsansätze
+
+| Lösung | Aufwand | Effekt |
+|--------|---------|--------|
+| **L1: Separate Worker** | Mittel | uvicorn mit `--workers 2+` |
+| **L2: ProcessPoolExecutor** | Hoch | Umgehung der GIL |
+| **L3: Separate Import-Queue** | Hoch | Redis/Celery für Background-Jobs |
+| **L4: httpx statt urllib** | Niedrig | Echter async HTTP-Client |
+
+### Empfohlene Lösung: L1 + L4
+
+**Schritt 1:** uvicorn mit Multi-Worker starten:
+```bash
+uvicorn app.main:app --workers 4 --port 8000
+```
+
+**Schritt 2:** Download mit `httpx.AsyncClient` statt `urllib`:
+```python
+async def _download_tile_async(tile_id: str, url: str) -> Path:
+    async with httpx.AsyncClient(timeout=300) as client:
+        response = await client.get(url)
+        # Streaming-Download für grosse Dateien
+        ...
+```
+
+### Implementierungs-TODO (C.10)
+
+| # | Task | Aufwand | Priorität |
+|---|------|---------|-----------|
+| C.10.1 | uvicorn mit `--workers 4` testen | 10min | 🔴 Sofort |
+| C.10.2 | httpx für Downloads einführen | 1h | 🔴 Hoch |
+| C.10.3 | ThreadPool-Grösse erhöhen | 15min | 🟡 Mittel |
+
+---
+
 ## Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 20:30 | 6.5 | **C.10 Event-Loop-Blocking:** Problem dokumentiert - Download/Parsing blockiert Backend. Lösungsansätze: uvicorn `--workers 4`, httpx statt urllib. |
 | 14.01.2026 02:45 | 6.4 | **API-Router:** Neuer `batch_import.py` Router für DuckDB-Locking-Isolation. **Baseline:** 1 Tile (14236 Gebäude) = 143.6s (~10ms/Gebäude). **BUG-022:** Alte Tiles (2018) ohne EGIDs erkannt und gefixt. |
 | 14.01.2026 00:30 | 6.3 | **C.8 IMPLEMENTIERT:** `drop_indexes()` und `create_indexes()` behandeln jetzt ALLE 7 Indexes. Anhang A Task 3 auf ✅ gesetzt. |
 | 14.01.2026 00:15 | 6.2 | **Index-Dokumentation:** Alle 7 Indexes dokumentiert (vorher nur 2). Warnung bei Anhang A Task 3 hinzugefügt. Neuer Task C.8 für vollständige Index-Implementierung. |
