@@ -117,13 +117,8 @@ class TileImporter:
 
     def get_tiles_for_region(self, region_name: str) -> List[str]:
         """
-        Berechnet alle Tile-IDs für eine Region.
-
-        Args:
-            region_name: Name der Region (z.B. 'bern')
-
-        Returns:
-            Liste von Tile-IDs
+        DEPRECATED: Verwendet fehlerhafte lokale Tile-ID Berechnung.
+        Nutze stattdessen get_stac_tiles_for_region() für korrekte IDs.
         """
         if region_name not in REGIONS:
             raise ValueError(f"Unbekannte Region: {region_name}. Verfügbar: {list(REGIONS.keys())}")
@@ -143,8 +138,71 @@ class TileImporter:
                 n += 1000
             e += 1000
 
-        logger.info(f"Region '{region['name']}': {len(tiles)} Tiles gefunden")
+        logger.info(f"Region '{region['name']}': {len(tiles)} Tiles gefunden (lokale Berechnung)")
         return sorted(list(tiles))
+
+    async def get_stac_tiles_for_region(self, region_name: str) -> List[Tuple[str, str]]:
+        """
+        Holt alle Tiles für eine Region direkt via STAC API.
+
+        FIX 13.01.2026: Verwendet echte STAC Tile-IDs statt fehlerhafte lokale Berechnung.
+        Die lokale lv95_to_tile_id() Funktion berechnet IDs die nicht mit STAC übereinstimmen!
+
+        Args:
+            region_name: Name der Region (z.B. 'bern', 'basel_test')
+
+        Returns:
+            Liste von (tile_id, download_url) Tupeln mit echten STAC Tile-IDs
+        """
+        if region_name not in REGIONS:
+            raise ValueError(f"Unbekannte Region: {region_name}. Verfügbar: {list(REGIONS.keys())}")
+
+        region = REGIONS[region_name]
+        bbox = region["bbox"]
+
+        # STAC API abfragen
+        logger.info(f"Querying STAC API for region '{region['name']}' (bbox: {bbox})...")
+        items = await self.discover_tiles_from_stac(bbox)
+
+        tiles = []
+        for item in items:
+            # Tile-ID aus Item-ID extrahieren
+            # Format: swissbuildings3d_3_0_2024_1047-34
+            item_id = item.get("id", "")
+            if "_" in item_id:
+                tile_id = item_id.split("_")[-1]  # z.B. "1047-34"
+            else:
+                tile_id = item_id
+
+            # Download-URL finden
+            download_url = None
+            assets = item.get("assets", {})
+
+            # Priorität: gdb > geodatabase > zip
+            for asset_name, asset in assets.items():
+                if "gdb" in asset_name.lower():
+                    download_url = asset.get("href")
+                    break
+
+            if not download_url:
+                for asset_name, asset in assets.items():
+                    if "geodatabase" in asset_name.lower():
+                        download_url = asset.get("href")
+                        break
+
+            if not download_url:
+                for asset in assets.values():
+                    href = asset.get("href", "")
+                    if href.endswith(".zip"):
+                        download_url = href
+                        break
+
+            if download_url:
+                tiles.append((tile_id, download_url))
+                logger.debug(f"  Found tile: {tile_id}")
+
+        logger.info(f"Region '{region['name']}': {len(tiles)} Tiles via STAC gefunden")
+        return tiles
 
     def get_tiles_from_url_file(self, url_file: Path) -> List[Tuple[str, str]]:
         """
@@ -415,8 +473,11 @@ class TileImporter:
 
         # Tiles sammeln
         if region:
-            tile_ids = self.get_tiles_for_region(region)
-            tile_urls = [(tid, None) for tid in tile_ids]
+            # FIX 13.01.2026: Verwende STAC API für korrekte Tile-IDs
+            tile_urls = await self.get_stac_tiles_for_region(region)
+            if not tile_urls:
+                logger.error(f"Keine Tiles für Region '{region}' gefunden")
+                return
         elif tile_ids:
             tile_urls = [(tid, None) for tid in tile_ids]
         elif not tile_urls:
