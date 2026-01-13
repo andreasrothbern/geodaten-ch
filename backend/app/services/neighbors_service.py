@@ -8,16 +8,20 @@ Findet Nachbargebäude basierend auf:
 
 WICHTIG: building_3d.db enthält ALLE Gebäude aus heruntergeladenen Tiles
 (via tile_prefetch). Dies ist viel schneller als GDB-Parsing!
+
+NEU 13.01.2026 17:00: DuckDB-kompatibel via get_building_3d_connection()
 """
 
 import json
 import math
-import sqlite3
 import time
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+
+# NEU 13.01.2026 17:00: DuckDB-kompatible Connection
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
 
 
 @dataclass
@@ -69,7 +73,8 @@ class NeighborsService:
 
     def __init__(self):
         self.data_path = Path(__file__).parent.parent / "data"
-        self.building_3d_db_path = self.data_path / "building_3d.db"
+        # NEU 13.01.2026 17:00: Nutzt BUILDING_3D_DB_PATH (DuckDB oder SQLite)
+        self.building_3d_db_path = BUILDING_3D_DB_PATH
         self._smart_service = None
         self._building_3d_service = None
 
@@ -178,11 +183,11 @@ class NeighborsService:
         found_egids = set()
         found_egids.add(egid)  # Zielgebäude ausschließen
 
-        # 2. PRIMÄR: Nachbarn aus building_3d.db suchen (schnell!)
+        # 2. PRIMÄR: Nachbarn aus building_3d DB suchen (schnell!)
         # Dies enthält ALLE Gebäude aus heruntergeladenen Tiles via prefetch
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
         if self.building_3d_db_path.exists():
-            conn = sqlite3.connect(self.building_3d_db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_building_3d_connection()
             cursor = conn.cursor()
 
             search_radius = radius_m + 50
@@ -200,18 +205,20 @@ class NeighborsService:
             ))
 
             for row in cursor.fetchall():
-                neighbor_egid = str(row['egid'])
+                # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+                neighbor_egid = str(row[0] if isinstance(row, tuple) else row['egid'])
                 if neighbor_egid in found_egids:
                     continue
 
-                neighbor_e = row['center_e']
-                neighbor_n = row['center_n']
+                neighbor_e = row[2] if isinstance(row, tuple) else row['center_e']
+                neighbor_n = row[3] if isinstance(row, tuple) else row['center_n']
 
                 # Polygon aus JSON parsen
                 neighbor_polygon = None
-                if include_polygons and row['polygon']:
+                polygon_data = row[1] if isinstance(row, tuple) else row['polygon']
+                if include_polygons and polygon_data:
                     try:
-                        neighbor_polygon = json.loads(row['polygon'])
+                        neighbor_polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -236,9 +243,9 @@ class NeighborsService:
                     direction=direction,
                     center_e=neighbor_e,
                     center_n=neighbor_n,
-                    traufhoehe_m=row['traufhoehe_m'],
-                    firsthoehe_m=row['firsthoehe_m'],
-                    gebaeudehoehe_m=row['gebaeudehoehe_m']
+                    traufhoehe_m=row[4] if isinstance(row, tuple) else row['traufhoehe_m'],
+                    firsthoehe_m=row[5] if isinstance(row, tuple) else row['firsthoehe_m'],
+                    gebaeudehoehe_m=row[6] if isinstance(row, tuple) else row['gebaeudehoehe_m']
                 ))
                 found_egids.add(neighbor_egid)
 

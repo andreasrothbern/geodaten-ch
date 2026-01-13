@@ -299,6 +299,11 @@ class SmartBuildingService:
             # NEU 05.01.2026: Datenherkunft für UI-Feedback
             "research_source": bundle.research_source,
             "research_confidence": bundle.research_confidence,
+            # FIX 12.01.2026: 3D-Layer Felder hinzufügen
+            "has_3d_layers": bundle.has_3d_layers,
+            "has_roof_geometry": bundle.has_roof_geometry,
+            "roof_dach_min_m": bundle.roof_dach_min_m,
+            "roof_dach_max_m": bundle.roof_dach_max_m,
         }
 
     def _dict_to_bundle(self, data: Dict[str, Any]) -> BuildingDataBundle:
@@ -445,10 +450,23 @@ class SmartBuildingService:
         if not force_refresh:
             cached = self._get_cached_bundle(cache_key)
             if cached:
+                # FIX 13.01.2026: has_3d_layers immer frisch aus DB laden
+                # Der Prefetch läuft async und kann das Flag nach dem Cache-Write setzen
+                if cached.egid:
+                    try:
+                        from app.services.building_3d_service import get_building_3d_service
+                        building_3d_service = get_building_3d_service()
+                        building_3d_data = building_3d_service.get_by_egid(int(cached.egid))
+                        if building_3d_data:
+                            cached.has_3d_layers = building_3d_data.get('has_3d_layers', 0) == 1
+                    except Exception as e:
+                        logger.debug(f"has_3d_layers refresh failed: {e}")
+
                 logger.info(
                     f"[SMART_BUILDING] Cache-Hit für: {address}\n"
                     f"  ├─ Gebäudename: {cached.building_name or 'unbekannt'}\n"
                     f"  ├─ Original Research-Quelle: {cached.research_source}\n"
+                    f"  ├─ has_3d_layers: {cached.has_3d_layers}\n"
                     f"  └─ Zonen: {len(cached.zones)}"
                 )
                 return cached
@@ -461,6 +479,16 @@ class SmartBuildingService:
             if not force_refresh:
                 cached = self._get_cached_bundle(cache_key)
                 if cached:
+                    # FIX 13.01.2026: has_3d_layers immer frisch aus DB laden
+                    if cached.egid:
+                        try:
+                            from app.services.building_3d_service import get_building_3d_service
+                            building_3d_service = get_building_3d_service()
+                            building_3d_data = building_3d_service.get_by_egid(int(cached.egid))
+                            if building_3d_data:
+                                cached.has_3d_layers = building_3d_data.get('has_3d_layers', 0) == 1
+                        except Exception:
+                            pass
                     logger.info(f"Using cached bundle for {address} (waited for other request)")
                     return cached
 
@@ -485,10 +513,14 @@ class SmartBuildingService:
                 await self._collect_terrain_data(bundle)
             await self._collect_sonnendach_data(bundle)
             await self._calculate_roof_data(bundle)
-            if include_zones_analysis:
-                self._create_default_zone(bundle)
+            # FIX 12.01.2026: Research ZUERST aufrufen um _known_zones zu setzen
+            # Dann erst Zonen erstellen (damit bekannte Gebäude korrekte Zonen bekommen)
             if include_research:
                 await self._collect_research_data(bundle, force_refresh)
+            if include_zones_analysis:
+                self._create_default_zone(bundle)
+            # 3D-Geometrie für komplexe Gebäude laden
+            self._fetch_roof_geometry_for_complex(bundle)
             self._calculate_access_points(bundle)
             self._assess_data_quality(bundle)
 
@@ -599,6 +631,13 @@ class SmartBuildingService:
                         bundle.gwr_egid = bundle.egid  # GWR EGID behalten
                         logger.info(f"EGID Update: GWR {bundle.egid} → swissBUILDINGS3D {swissbuildings_egid}")
                     bundle.egid = str(swissbuildings_egid)
+                    
+                    # FIX 12.01.2026: has_3d_layers direkt hier laden (nicht in _load_roof_data_from_db)
+                    from app.services.building_3d_service import get_building_3d_service
+                    building_3d_service = get_building_3d_service()
+                    building_3d_data = building_3d_service.get_by_egid(int(swissbuildings_egid))
+                    if building_3d_data:
+                        bundle.has_3d_layers = building_3d_data.get('has_3d_layers', 0) == 1
 
                 bundle.add_source(DataSource.SWISSBUILDINGS3D)
                 original_pts = bundle.polygon_point_count or 0
@@ -626,7 +665,9 @@ class SmartBuildingService:
 
                 # === DACH-DATEN aus building_roofs (NEU 11.01.2026) ===
                 # Echte 3D-Daten aus Roof_solid Layer (gleicher Tile-Import!)
+                print(f"[DEBUG] Vor _load_roof_data_from_db für EGID {bundle.egid}")
                 self._load_roof_data_from_db(bundle)
+                print(f"[DEBUG] Nach _load_roof_data_from_db, has_3d_layers={bundle.has_3d_layers}")
 
             else:
                 bundle.add_warning("Gebäude nicht in swissBUILDINGS3D gefunden")
@@ -690,7 +731,9 @@ class SmartBuildingService:
         - roof_z_levels (für Analyse)
         - roof_dach_min_m / roof_dach_max_m (m ü.M.)
         """
+        print(f"[ROOF_3D] _load_roof_data_from_db aufgerufen für EGID: {bundle.egid}")
         if not bundle.egid:
+            print("[ROOF_3D] Kein EGID, return")
             return
 
         try:
@@ -704,8 +747,14 @@ class SmartBuildingService:
             roof_data = roof_service.get_by_egid(str(bundle.egid))
 
             # 2. Falls nicht gefunden, über gebaeudeeinheit
+            # FIX 12.01.2026: has_3d_layers aus building_3d laden
+            building_data = building_service.get_by_egid(int(bundle.egid))
+            if building_data:
+                has_3d_raw = building_data.get('has_3d_layers', 0)
+                bundle.has_3d_layers = has_3d_raw == 1
+                print(f"[ROOF_3D] has_3d_layers für EGID {bundle.egid}: raw={has_3d_raw}, bundle={bundle.has_3d_layers}")
+            
             if not roof_data:
-                building_data = building_service.get_by_egid(int(bundle.egid))
                 if building_data and building_data.get('gebaeudeeinheit'):
                     gebaeudeeinheit = building_data['gebaeudeeinheit']
                     bundle.roof_gebaeudeeinheit = gebaeudeeinheit
@@ -1628,10 +1677,14 @@ class SmartBuildingService:
                 await self._collect_terrain_data(bundle)
             await self._collect_sonnendach_data(bundle)
             await self._calculate_roof_data(bundle)
-            if include_zones_analysis:
-                self._create_default_zone(bundle)
+            # FIX 12.01.2026: Research ZUERST aufrufen um _known_zones zu setzen
+            # Dann erst Zonen erstellen (damit bekannte Gebäude korrekte Zonen bekommen)
             if include_research:
                 await self._collect_research_data(bundle, force_refresh)
+            if include_zones_analysis:
+                self._create_default_zone(bundle)
+            # 3D-Geometrie für komplexe Gebäude laden
+            self._fetch_roof_geometry_for_complex(bundle)
             self._calculate_access_points(bundle)
             self._assess_data_quality(bundle)
             cache_key = self._cache_key(bundle.address_input, bundle.egid)
@@ -1649,6 +1702,44 @@ class SmartBuildingService:
             await fetch_building_polygon_for_coordinates(e=e, n=n, tolerance_m=50.0)
         except Exception as e:
             logger.warning(f"Tile loading failed for E={e}, N={n}: {e}")
+
+    def _fetch_roof_geometry_for_complex(self, bundle: BuildingDataBundle):
+        """NEU 12.01.2026: Lädt ALLE 3D-Layer (Roof, Wall) für komplexe Gebäude on-demand.
+
+        Wird UNABHÄNGIG von include_zones aufgerufen. Nutzt _needs_zones_analysis()
+        um die Komplexität zu prüfen, sodass die Geometrie auch bei
+        include_zones=false geladen wird (z.B. geruestbau-app).
+
+        Geladene Layer:
+        - Roof_solid → building_roofs.geometry_wkb
+        - Wall → building_walls.geometry_wkb
+        """
+        # Nur für Gebäude mit EGID
+        if not bundle.egid:
+            return
+
+        # Prüfe Komplexität über _needs_zones_analysis() ODER bereits gesetzte complexity
+        # Das funktioniert auch wenn include_zones=false (geruestbau-app)
+        is_complex = bundle.complexity == "complex" or self._needs_zones_analysis(bundle)
+        if not is_complex:
+            return
+
+        try:
+            from app.services.roof_3d_service import get_roof_3d_service
+
+            roof_service = get_roof_3d_service()
+            # NEU: Alle Layer laden (Roof_solid, Roof, Wall)
+            result = roof_service.fetch_all_layers_on_demand(bundle.egid)
+
+            if result['loaded_layers']:
+                logger.info(
+                    f"[COMPLEX] 3D-Layer für EGID {bundle.egid} geladen: {result['loaded_layers']}"
+                )
+            else:
+                logger.debug(f"[COMPLEX] Keine 3D-Geometrie für EGID {bundle.egid} verfügbar")
+
+        except Exception as e:
+            logger.warning(f"[COMPLEX] Fehler beim Laden der 3D-Layer für {bundle.egid}: {e}")
 
     def _assess_data_quality(self, bundle: BuildingDataBundle):
         """Bewertet die Gesamtqualität der gesammelten Daten"""

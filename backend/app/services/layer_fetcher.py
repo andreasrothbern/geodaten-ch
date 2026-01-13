@@ -19,19 +19,22 @@ Ablauf:
 7. Tile LÖSCHEN (Speicher sparen)
 
 Version: 1.0 (11.01.2026)
+NEU 13.01.2026 17:00: DuckDB-kompatibel via get_building_3d_connection()
 """
 
-import sqlite3
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
+# NEU 13.01.2026 17:00: DuckDB-kompatible Connection
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
+
 logger = logging.getLogger(__name__)
 
-# Pfad zur Datenbank
+# Pfad zur Datenbank (NEU 13.01.2026: aus config)
 DATA_DIR = Path(__file__).parent.parent / "data"
-BUILDING_3D_DB = DATA_DIR / "building_3d.db"
+BUILDING_3D_DB = BUILDING_3D_DB_PATH
 
 
 class LayerFetcherService:
@@ -268,7 +271,8 @@ class LayerFetcherService:
         if not walls:
             return 0
 
-        conn = sqlite3.connect(BUILDING_3D_DB)
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         try:
@@ -297,7 +301,8 @@ class LayerFetcherService:
         if not floors:
             return 0
 
-        conn = sqlite3.connect(BUILDING_3D_DB)
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         try:
@@ -323,7 +328,8 @@ class LayerFetcherService:
 
     def _update_has_3d_layers(self, egid: str):
         """Setzt has_3d_layers Flag in buildings_3d."""
-        conn = sqlite3.connect(BUILDING_3D_DB)
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         try:
@@ -343,32 +349,59 @@ class LayerFetcherService:
 
     def get_walls_for_building(self, egid: str) -> List[Dict]:
         """Holt Wall-Daten für ein Gebäude."""
-        conn = sqlite3.connect(BUILDING_3D_DB)
-        conn.row_factory = sqlite3.Row
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                SELECT * FROM building_walls WHERE egid = ?
+                SELECT gebaeudeeinheit, egid, z_min, z_max, geometry_wkb
+                FROM building_walls WHERE egid = ?
             """, (egid,))
 
-            return [dict(row) for row in cursor.fetchall()]
+            results = []
+            for row in cursor.fetchall():
+                # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+                if isinstance(row, tuple):
+                    results.append({
+                        'gebaeudeeinheit': row[0],
+                        'egid': row[1],
+                        'z_min': row[2],
+                        'z_max': row[3],
+                        'geometry_wkb': row[4]
+                    })
+                else:
+                    results.append(dict(row))
+            return results
 
         finally:
             conn.close()
 
     def get_floors_for_building(self, egid: str) -> List[Dict]:
         """Holt Floor-Daten für ein Gebäude."""
-        conn = sqlite3.connect(BUILDING_3D_DB)
-        conn.row_factory = sqlite3.Row
+        # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                SELECT * FROM building_floors WHERE egid = ?
+                SELECT gebaeudeeinheit, egid, gelaendepunkt, geometry_wkb
+                FROM building_floors WHERE egid = ?
             """, (egid,))
 
-            return [dict(row) for row in cursor.fetchall()]
+            results = []
+            for row in cursor.fetchall():
+                # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+                if isinstance(row, tuple):
+                    results.append({
+                        'gebaeudeeinheit': row[0],
+                        'egid': row[1],
+                        'gelaendepunkt': row[2],
+                        'geometry_wkb': row[3]
+                    })
+                else:
+                    results.append(dict(row))
+            return results
 
         finally:
             conn.close()

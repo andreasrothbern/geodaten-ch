@@ -76,7 +76,7 @@ class Roof3DService:
 
         NEU 13.01.2026 17:00: Verwendet get_building_3d_connection() aus config.
         """
-        conn = get_building_3d_connection(read_only=read_only)
+        conn = get_building_3d_connection()
         # PRAGMA nur für SQLite, nicht für DuckDB
         if not USE_DUCKDB:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -191,7 +191,8 @@ class Roof3DService:
 
     def get_by_gebaeudeeinheit(self, gebaeudeeinheit: str) -> Optional[Dict[str, Any]]:
         """Holt Dach-Daten per Gebäudeeinheit."""
-        with self._get_connection(read_only=True) as conn:
+        # FIX 14.01.2026: read_only entfernt - DuckDB erlaubt keine gemischten Configs
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT gebaeudeeinheit, egid, dach_min, dach_max,
@@ -229,7 +230,8 @@ class Roof3DService:
 
     def get_by_egid(self, egid: str) -> Optional[Dict[str, Any]]:
         """Holt Dach-Daten per EGID."""
-        with self._get_connection(read_only=True) as conn:
+        # FIX 14.01.2026: read_only entfernt - DuckDB erlaubt keine gemischten Configs
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT gebaeudeeinheit, egid, dach_min, dach_max,
@@ -286,7 +288,8 @@ class Roof3DService:
 
     def get_stats(self) -> Dict[str, Any]:
         """Gibt Statistiken zurück."""
-        with self._get_connection(read_only=True) as conn:
+        # FIX 14.01.2026: read_only entfernt - DuckDB erlaubt keine gemischten Configs
+        with self._get_connection() as conn:
             cursor = conn.cursor()
 
             cursor.execute("SELECT COUNT(*) FROM building_roofs")

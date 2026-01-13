@@ -95,7 +95,9 @@ def get_building_3d_connection(read_only: bool = False):
     Gibt je nach USE_DUCKDB SQLite oder DuckDB Connection zurück.
 
     Args:
-        read_only: Nur Lese-Zugriff (für DuckDB relevant)
+        read_only: IGNORIERT für DuckDB! Akzeptiert für API-Kompatibilität.
+                   DuckDB erlaubt keine gemischten read_only/write Connections
+                   zur gleichen Datei.
 
     Returns:
         Connection-Objekt (sqlite3.Connection oder duckdb.Connection)
@@ -105,18 +107,16 @@ def get_building_3d_connection(read_only: bool = False):
             result = conn.execute("SELECT * FROM buildings_3d LIMIT 1")
 
     WICHTIG (DuckDB): Alle Connections zur gleichen DB müssen die gleiche
-    Konfiguration verwenden! Daher wird config NICHT bei read_only=True
-    übergeben, da die erste Schreib-Connection die Config bereits gesetzt hat.
+    Konfiguration verwenden! read_only wird IGNORIERT um Konflikte zu vermeiden.
     """
     if USE_DUCKDB:
         import duckdb
-        # FIX 13.01.2026 18:15: DuckDB erlaubt keine unterschiedlichen Configs
-        # für die gleiche DB. KEINE config übergeben - DuckDB verwendet
-        # Standard-Werte, die für alle Connections konsistent sind.
-        return duckdb.connect(
-            str(BUILDING_3D_DUCKDB_PATH),
-            read_only=read_only
-        )
+        # FIX 14.01.2026: read_only Parameter IGNORIEREN!
+        # DuckDB erlaubt keine gemischten read_only/write Connections.
+        # Wenn eine write-Connection existiert und jemand read_only=True anfordert,
+        # gibt es einen "different configuration" Fehler.
+        # Lösung: Immer write-Modus verwenden (DuckDB kann trotzdem lesen).
+        return duckdb.connect(str(BUILDING_3D_DUCKDB_PATH))
     else:
         import sqlite3
         conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))

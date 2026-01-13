@@ -9,15 +9,19 @@ WICHTIG für Projekte mit mehreren Gebäuden:
 - project_egids enthält alle Gebäude des Projekts
 - Nur EXTERNE Gebäude blockieren Fassaden
 - Projekt-Gebäude untereinander blockieren NICHT
+
+NEU 13.01.2026 17:00: DuckDB-kompatibel via get_building_3d_connection()
 """
 
 import json
 import math
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Set
+
+# NEU 13.01.2026 17:00: DuckDB-kompatible Connection
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
 
 
 @dataclass
@@ -63,7 +67,8 @@ class BlockedFacadesService:
 
     def __init__(self):
         self.data_path = Path(__file__).parent.parent / "data"
-        self.building_3d_db_path = self.data_path / "building_3d.db"
+        # NEU 13.01.2026 17:00: Nutzt BUILDING_3D_DB_PATH (DuckDB oder SQLite)
+        self.building_3d_db_path = BUILDING_3D_DB_PATH
 
     def calculate_blocked_facades(
         self,
@@ -176,13 +181,13 @@ class BlockedFacadesService:
         return results
 
     def _load_building(self, egid: str) -> Optional[Dict]:
-        """Lädt Gebäude aus building_3d.db."""
+        """Lädt Gebäude aus building_3d DB (DuckDB oder SQLite)."""
         if not self.building_3d_db_path.exists():
             return None
 
         try:
-            conn = sqlite3.connect(self.building_3d_db_path)
-            conn.row_factory = sqlite3.Row
+            # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+            conn = get_building_3d_connection()
             cursor = conn.cursor()
 
             cursor.execute("""
@@ -198,21 +203,24 @@ class BlockedFacadesService:
             if not row:
                 return None
 
+            # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+            # Einheitlicher Zugriff per Index
             polygon = None
-            if row['polygon']:
+            polygon_data = row[1] if isinstance(row, tuple) else row['polygon']
+            if polygon_data:
                 try:
-                    polygon = json.loads(row['polygon'])
+                    polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
                 except (json.JSONDecodeError, TypeError):
                     pass
 
             return {
-                'egid': str(row['egid']),
+                'egid': str(row[0] if isinstance(row, tuple) else row['egid']),
                 'polygon': polygon,
-                'center_e': row['center_e'],
-                'center_n': row['center_n'],
-                'traufhoehe_m': row['traufhoehe_m'],
-                'firsthoehe_m': row['firsthoehe_m'],
-                'gebaeudehoehe_m': row['gebaeudehoehe_m']
+                'center_e': row[2] if isinstance(row, tuple) else row['center_e'],
+                'center_n': row[3] if isinstance(row, tuple) else row['center_n'],
+                'traufhoehe_m': row[4] if isinstance(row, tuple) else row['traufhoehe_m'],
+                'firsthoehe_m': row[5] if isinstance(row, tuple) else row['firsthoehe_m'],
+                'gebaeudehoehe_m': row[6] if isinstance(row, tuple) else row['gebaeudehoehe_m']
             }
         except Exception:
             return None
@@ -224,15 +232,15 @@ class BlockedFacadesService:
         search_radius: float,
         exclude_egids: Set[str]
     ) -> List[Dict]:
-        """Findet Nachbargebäude aus building_3d.db."""
+        """Findet Nachbargebäude aus building_3d DB (DuckDB oder SQLite)."""
         if not self.building_3d_db_path.exists():
             return []
 
         neighbors = []
 
         try:
-            conn = sqlite3.connect(self.building_3d_db_path)
-            conn.row_factory = sqlite3.Row
+            # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite
+            conn = get_building_3d_connection()
             cursor = conn.cursor()
 
             cursor.execute("""
@@ -246,14 +254,16 @@ class BlockedFacadesService:
             ))
 
             for row in cursor.fetchall():
-                neighbor_egid = str(row['egid'])
+                # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+                neighbor_egid = str(row[0] if isinstance(row, tuple) else row['egid'])
                 if neighbor_egid in exclude_egids:
                     continue
 
                 polygon = None
-                if row['polygon']:
+                polygon_data = row[1] if isinstance(row, tuple) else row['polygon']
+                if polygon_data:
                     try:
-                        polygon = json.loads(row['polygon'])
+                        polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
                     except (json.JSONDecodeError, TypeError):
                         continue  # Ohne Polygon können wir nicht analysieren
 
@@ -261,8 +271,8 @@ class BlockedFacadesService:
                     neighbors.append({
                         'egid': neighbor_egid,
                         'polygon': polygon,
-                        'center_e': row['center_e'],
-                        'center_n': row['center_n']
+                        'center_e': row[2] if isinstance(row, tuple) else row['center_e'],
+                        'center_n': row[3] if isinstance(row, tuple) else row['center_n']
                     })
 
             conn.close()

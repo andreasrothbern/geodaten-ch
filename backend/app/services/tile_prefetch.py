@@ -123,13 +123,30 @@ async def prefetch_tile_buildings(
             # Dachform in buildings_to_save eintragen BEVOR bulk_save
             _update_buildings_with_roof_data(buildings_to_save, roofs, building_3d_service)
 
+        # NEU 13.01.2026: Wall-Layer parsen wenn IMPORT_ALL_LAYERS aktiv
+        from app.config import IMPORT_ALL_LAYERS, CLEANUP_TILES_AFTER_IMPORT
+        wall_count = 0
+        if IMPORT_ALL_LAYERS:
+            walls = _parse_wall_layer_from_gdb(gdb_path)
+            if walls:
+                wall_count = _save_walls_bulk(walls)
+                logger.info(f"[WALL] {wall_count} Wände für Tile {tile_id} gespeichert")
+
         # Bulk-Save in building_3d.db (jetzt MIT roof_form!)
         saved_count = building_3d_service.bulk_save(buildings_to_save, tile_id)
+
+        # NEU 13.01.2026: has_3d_layers Flag setzen wenn Walls importiert wurden
+        if wall_count > 0:
+            _update_has_3d_layers_bulk(buildings_to_save)
+
+        # NEU 13.01.2026: Tile-Cleanup nach Import
+        if CLEANUP_TILES_AFTER_IMPORT:
+            _cleanup_tile_after_import(gdb_path, tile_id)
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(
             f"[PREFETCH] Abgeschlossen: {tile_id} | "
-            f"{saved_count} Gebäude + {roof_count} Dächer | "
+            f"{saved_count} Gebäude + {roof_count} Dächer + {wall_count} Wände | "
             f"{elapsed:.1f}s"
         )
 
@@ -143,6 +160,95 @@ async def prefetch_tile_buildings(
         # Lock freigeben
         with _prefetch_lock:
             _prefetch_in_progress.discard(tile_id)
+
+
+def _parse_wall_layer_from_gdb(gdb_path: Path) -> list:
+    """
+    Parsed Wall Layer für Fassaden-Höhen.
+
+    NEU 13.01.2026: All-Layer-Import - Wall-Geometrie wird beim Prefetch gespeichert.
+    Ermöglicht WallFacadeMatcher für präzise Fassaden-Höhen.
+
+    Returns:
+        Liste von Wall-Dicts mit egid, gebaeudeeinheit, z_min, z_max, geometry_wkb
+    """
+    try:
+        import fiona
+        from shapely.geometry import shape
+    except ImportError:
+        logger.error("fiona/shapely nicht verfügbar für Wall-Parsing")
+        return []
+
+    walls = []
+    parse_start = time.time()
+
+    try:
+        layers = fiona.listlayers(gdb_path)
+
+        # Wall Layer finden
+        target_layer = None
+        for layer in layers:
+            if 'wall' in layer.lower() and 'solid' not in layer.lower():
+                target_layer = layer
+                break
+            if 'wall' in layer.lower():
+                target_layer = layer
+
+        if not target_layer:
+            logger.debug(f"Kein Wall Layer in {gdb_path}")
+            return []
+
+        with fiona.open(gdb_path, layer=target_layer) as src:
+            valid_count = 0
+
+            for feature in src:
+                props = feature['properties']
+                gebaeudeeinheit = props.get('GEBAEUDEEINHEIT')
+                egid = props.get('EGID')
+
+                if not gebaeudeeinheit:
+                    continue
+
+                valid_count += 1
+
+                # Geometrie parsen und als WKB speichern
+                geometry_wkb = None
+                if feature['geometry'] is not None:
+                    try:
+                        geom = shape(feature['geometry'])
+                        geometry_wkb = geom.wkb
+                    except Exception as e:
+                        logger.debug(f"Wall-Geometrie-Fehler: {e}")
+                        continue
+
+                # z_min und z_max berechnen
+                # Wall-Layer hat GELAENDEPUNKT (Terrain) und GESAMTHOEHE (Wandhöhe)
+                gelaendepunkt = props.get('GELAENDEPUNKT')
+                gesamthoehe = props.get('GESAMTHOEHE')
+
+                z_min = float(gelaendepunkt) if gelaendepunkt is not None else None
+                z_max = (z_min + float(gesamthoehe)) if z_min is not None and gesamthoehe is not None else None
+
+                walls.append({
+                    "gebaeudeeinheit": gebaeudeeinheit,
+                    "egid": str(egid) if egid else None,
+                    "z_min": z_min,
+                    "z_max": z_max,
+                    "geometry_wkb": geometry_wkb,
+                })
+
+        parse_time_ms = (time.time() - parse_start) * 1000
+        if valid_count > 0:
+            logger.info(
+                f"[WALL] Wall-Layer geparst: {len(walls)} Wände | "
+                f"{parse_time_ms:.0f}ms ({parse_time_ms/max(1,len(walls)):.1f}ms/Wand)"
+            )
+
+        return walls
+
+    except Exception as e:
+        logger.error(f"Wall-Layer-Parsing-Fehler: {e}")
+        return []
 
 
 def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
@@ -205,13 +311,10 @@ def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
                 # Dachform analysieren
                 roof_analysis = analyze_roof(geom)
 
-                # NEU 11.01.2026: Echte Geometrie speichern!
+                # OPTIMIERUNG 12.01.2026: geometry_wkb NICHT beim Prefetch speichern
+                # Reduziert DB-Grösse von ~280MB auf ~50MB (84% Ersparnis!)
+                # Bei komplexen Dächern: On-demand aus GDB nachladen via get_roof_geometry()
                 geometry_wkb = None
-                if geom is not None:
-                    try:
-                        geometry_wkb = geom.wkb
-                    except Exception as e:
-                        logger.debug(f"WKB-Konvertierung fehlgeschlagen: {e}")
 
                 roofs.append({
                     "gebaeudeeinheit": gebaeudeeinheit,
@@ -224,15 +327,16 @@ def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
                     "roof_form_confidence": roof_analysis.get('confidence'),
                     "z_levels": roof_analysis.get('z_levels'),
                     "calculation_method": "z_level_analysis",
-                    "has_full_geometry": 1 if geometry_wkb else 0,
-                    "geometry_wkb": geometry_wkb,  # Echte 3D-Geometrie!
+                    "has_full_geometry": 0,  # Immer 0 beim Prefetch (on-demand)
+                    "geometry_wkb": None,    # Wird on-demand nachgeladen
                 })
 
         parse_time_ms = (time.time() - parse_start) * 1000
         if valid_count > 0:
             logger.info(
                 f"[ROOF] Roof_solid geparst: {len(roofs)} Dächer | "
-                f"{parse_time_ms:.0f}ms ({parse_time_ms/len(roofs):.1f}ms/Dach)"
+                f"{parse_time_ms:.0f}ms ({parse_time_ms/len(roofs):.1f}ms/Dach) | "
+                f"geometry_wkb=SKIPPED (on-demand)"
             )
 
         return roofs
@@ -787,14 +891,11 @@ def schedule_prefetch_with_neighbors(
             f"[IMMEDIATE] {immediate_count} Nachbarn im {immediate_radius_m}m Radius geladen"
         )
 
-        # EGIDs zum Ausschliessen beim grossen Prefetch
-        exclude_egids = set(neighbor_egids)
-        if main_egid:
-            exclude_egids.add(main_egid)
-    else:
-        exclude_egids = {main_egid} if main_egid else set()
+    # FIX 12.01.2026: exclude_egids NICHT mehr setzen!
+    # Prefetch soll alle Gebäude MIT roof_form speichern, inkl. main_egid und Nachbarn.
+    # INSERT OR REPLACE aktualisiert bestehende Einträge mit roof_form.
 
-    # 2. ASYNC: Background-Prefetch für restliche Gebäude
+    # 2. ASYNC: Background-Prefetch für ALLE Gebäude (keine Ausschlüsse mehr)
     # REFACTORED 11.01.2026 21:50: Nutzt jetzt prefetch_tile_buildings (vereint)
     def _background_prefetch():
         """Läuft in separatem Thread."""
@@ -802,7 +903,7 @@ def schedule_prefetch_with_neighbors(
             asyncio.run(prefetch_tile_buildings(
                 tile_id=tile_id,
                 gdb_path=gdb_path,
-                exclude_egids=exclude_egids
+                exclude_egids=None  # FIX 12.01.2026: Keine Ausschlüsse mehr
             ))
         except Exception as e:
             logger.error(f"Background-Prefetch-Fehler: {e}")
@@ -821,3 +922,157 @@ def schedule_prefetch_with_neighbors(
 # ENTFERNT 11.01.2026 21:50: prefetch_tile_buildings_excluding()
 # → Zusammengeführt mit prefetch_tile_buildings() (Zeile 59)
 # → exclude_egids Parameter übernommen, Roof_solid Parsing funktioniert jetzt
+
+
+# =============================================================================
+# NEU 13.01.2026: ALL-LAYER-IMPORT HILFSFUNKTIONEN
+# =============================================================================
+
+def _save_walls_bulk(walls: List[Dict[str, Any]]) -> int:
+    """
+    Speichert Wall-Daten in building_walls Tabelle.
+
+    NEU 13.01.2026 19:20: Schema aus building_3d_schema.py verwenden.
+    gebaeudeeinheit ist PRIMARY KEY (kein auto-increment id).
+
+    Args:
+        walls: Liste von Wall-Dicts aus _parse_wall_layer_from_gdb()
+
+    Returns:
+        Anzahl gespeicherter Walls
+    """
+    if not walls:
+        return 0
+
+    from app.config import get_building_3d_connection, USE_DUCKDB
+
+    conn = get_building_3d_connection()
+
+    try:
+        if USE_DUCKDB:
+            # FIX 14.01.2026: DuckDB-kompatible Syntax
+            for w in walls:
+                try:
+                    conn.execute("""
+                        INSERT INTO building_walls
+                        (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT (gebaeudeeinheit) DO UPDATE SET
+                            egid = excluded.egid,
+                            z_min = excluded.z_min,
+                            z_max = excluded.z_max,
+                            geometry_wkb = excluded.geometry_wkb
+                    """, [w['gebaeudeeinheit'], w['egid'], w['z_min'], w['z_max'], w['geometry_wkb']])
+                except Exception as e:
+                    logger.debug(f"Wall INSERT Fehler für {w['gebaeudeeinheit']}: {e}")
+        else:
+            # SQLite: executemany mit INSERT OR REPLACE
+            cursor = conn.cursor()
+            cursor.executemany("""
+                INSERT OR REPLACE INTO building_walls
+                (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb)
+                VALUES (?, ?, ?, ?, ?)
+            """, [
+                (w['gebaeudeeinheit'], w['egid'], w['z_min'], w['z_max'], w['geometry_wkb'])
+                for w in walls
+            ])
+            conn.commit()
+
+        return len(walls)
+
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern der Walls: {e}")
+        return 0
+
+    finally:
+        conn.close()
+
+
+def _update_has_3d_layers_bulk(buildings: List[Dict[str, Any]]) -> int:
+    """
+    Setzt has_3d_layers Flag für alle Gebäude im Batch.
+
+    NEU 13.01.2026: Nach Wall-Import das Flag setzen.
+
+    Args:
+        buildings: Liste von Building-Dicts mit egid
+
+    Returns:
+        Anzahl aktualisierter Gebäude
+    """
+    if not buildings:
+        return 0
+
+    from app.config import get_building_3d_connection, USE_DUCKDB
+
+    egids = [b['egid'] for b in buildings if b.get('egid')]
+    if not egids:
+        return 0
+
+    conn = get_building_3d_connection()
+
+    try:
+        if USE_DUCKDB:
+            # FIX 14.01.2026: DuckDB-kompatible Syntax (VALUES + JOIN)
+            values_clause = ', '.join([f"({egid})" for egid in egids])
+            conn.execute(f"""
+                UPDATE buildings_3d
+                SET has_3d_layers = 1
+                FROM (VALUES {values_clause}) AS t(egid)
+                WHERE buildings_3d.egid = t.egid
+            """)
+        else:
+            # SQLite: Standard-Placeholder
+            cursor = conn.cursor()
+            placeholders = ','.join(['?' for _ in egids])
+            cursor.execute(f"""
+                UPDATE buildings_3d
+                SET has_3d_layers = 1
+                WHERE egid IN ({placeholders})
+            """, egids)
+            conn.commit()
+
+        logger.info(f"[3D-FLAG] has_3d_layers=1 für {len(egids)} Gebäude gesetzt")
+        return len(egids)
+
+    except Exception as e:
+        logger.error(f"Fehler beim Setzen von has_3d_layers: {e}")
+        return 0
+
+    finally:
+        conn.close()
+
+
+def _cleanup_tile_after_import(gdb_path: Path, tile_id: str):
+    """
+    Löscht Tile-Verzeichnis nach erfolgreichem Import.
+
+    NEU 13.01.2026: Spart Speicher (~70-80%).
+
+    Args:
+        gdb_path: Pfad zum GDB-Verzeichnis
+        tile_id: Tile-ID für Logging
+    """
+    import shutil
+
+    try:
+        # gdb_path ist z.B. tiles/2600-1199/swissBUILDINGS3D.gdb
+        # Wir wollen das Parent-Verzeichnis löschen: tiles/2600-1199/
+        tile_dir = gdb_path.parent if gdb_path.is_dir() else gdb_path.parent
+
+        # Sicherheitscheck: Nur tiles/ Unterverzeichnisse löschen
+        if 'tiles' not in str(tile_dir):
+            logger.warning(f"[CLEANUP] Skipped: {tile_dir} ist kein tiles-Verzeichnis")
+            return
+
+        if tile_dir.exists():
+            shutil.rmtree(tile_dir)
+            logger.info(f"[CLEANUP] Tile-Verzeichnis gelöscht: {tile_dir}")
+
+        # tiles.db aktualisieren: local_path auf NULL setzen
+        from app.services.tile_cache import get_tile_cache
+        tile_cache = get_tile_cache()
+        tile_cache.mark_tile_cleaned(tile_id)
+
+    except Exception as e:
+        logger.error(f"[CLEANUP] Fehler beim Löschen von {gdb_path}: {e}")

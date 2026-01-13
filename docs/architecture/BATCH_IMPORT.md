@@ -1,7 +1,7 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 5.0 (Stand 13.01.2026 18:00)
-> **Status:** All-Layer-Import + DB-Deployment Strategie ✅
+> **Version:** 6.3 (Stand 14.01.2026 00:30)
+> **Status:** Optimale Parallelisierungs-Architektur 🚀
 
 ## NEU: All-Layer-Import Strategie (13.01.2026 18:00)
 
@@ -105,10 +105,11 @@ git push origin main
 
 | # | Task | Datei | Status |
 |---|------|-------|--------|
-| 1 | Wall-Import in tile_prefetch.py | `tile_prefetch.py` | 📋 TODO |
-| 2 | Tile-Cleanup nach Import | `tile_prefetch.py` | 📋 TODO |
+| 1 | Wall-Import in tile_prefetch.py | `tile_prefetch.py` | ✅ 13.01.2026 |
+| 2 | Tile-Cleanup nach Import | `tile_prefetch.py` | ✅ 13.01.2026 |
 | 3 | import_tiles.py: --all-layers Flag | `scripts/import_tiles.py` | 📋 TODO |
-| 4 | tiles.db: local_path=NULL nach Cleanup | `tile_cache.py` | 📋 TODO |
+| 4 | tiles.db: import_status Spalte | `tile_cache.py` | ✅ 13.01.2026 |
+| 5 | Schema: gebaeudeeinheit als PRIMARY KEY | `building_3d_schema.py` | ✅ 13.01.2026 |
 
 ## DuckDB ist der Default
 
@@ -282,9 +283,19 @@ CREATE TABLE buildings_3d (
     has_3d_layers INTEGER DEFAULT 0
 );
 
+-- Indexes (definiert in building_3d_schema.py)
 CREATE INDEX idx_buildings_3d_coords ON buildings_3d(center_e, center_n);
 CREATE INDEX idx_buildings_3d_tile ON buildings_3d(tile_id);
+CREATE INDEX idx_buildings_3d_objektart ON buildings_3d(objektart);
+CREATE INDEX idx_buildings_3d_gebaeudeeinheit ON buildings_3d(gebaeudeeinheit);
+
+-- Indexes für 3D-Layer Tabellen
+CREATE INDEX idx_roofs_egid ON building_roofs(egid);
+CREATE INDEX idx_walls_egid ON building_walls(egid);
+CREATE INDEX idx_floors_egid ON building_floors(egid);
 ```
+
+> **WICHTIG 14.01.2026:** Es gibt 7 Indexes insgesamt. Siehe `building_3d_schema.py:114-122`.
 
 **DuckDB-Vorteile:**
 - Multi-Threading für parallele Queries
@@ -520,9 +531,12 @@ fiona (jetzt - SCHNELL):
 |---|------|--------------------------|---------|---------|--------|
 | 1 | Aggressive PRAGMAs | `building_3d_service.py` | 15 min | ~1.5x | ✅ |
 | 2 | Batch-Size erhöhen (5000) | `building_3d_service.py` | 5 min | ~1.2x | ✅ |
-| 3 | Index nachträglich | `import_tiles.py`        | 30 min | ~1.5x | ✅ |
+| 3 | Index nachträglich | `import_tiles.py`        | 30 min | ~1.5x | ✅ C.8 |
 | 4 | Prepared Statements | aktualisrvice.py`        | 30 min | ~1.1x | ✅ |
 | 5 | Connection Pooling | `building_3d_service.py` | 1h | ~1.2x | ✅ |
+
+> **✅ Task 3 GEFIXT (14.01.2026 00:30):** `drop_indexes()` und `create_indexes()` behandeln
+> jetzt **ALLE 7 Indexes**. Implementiert in C.8. Keine partielle Implementierung mehr!
 
 **Gesamter erwarteter Speedup:** ~2.5-3x
 
@@ -1073,10 +1087,440 @@ python -m uvicorn app.main:app --reload --port 8000
 
 ---
 
+---
+
+# ANHANG C: Optimale Parallelisierungs-Architektur (NEU)
+
+> **Status:** 📋 Geplant (Stand 13.01.2026 20:00)
+> **Ziel:** Maximale Performance durch 3-Ebenen-Parallelisierung + Parquet-Pipeline
+> **Erwarteter Speedup:** 10-15x gegenüber aktuellem Stand
+
+## C.1 Parallelisierungs-Ebenen
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    PARALLELISIERUNGS-EBENEN                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  EBENE 1: Layer-Parallelisierung (innerhalb eines Tiles)                │
+│  ════════════════════════════════════════════════════════               │
+│  Pro Tile werden 3 Layer GLEICHZEITIG geparst:                          │
+│                                                                         │
+│  ┌────────────────────┐                                                 │
+│  │      Tile A        │                                                 │
+│  │  ┌──────────────┐  │                                                 │
+│  │  │ Building     │──┼──► parquet/buildings/tile_a.parquet             │
+│  │  │ (40-70s)     │  │                                                 │
+│  │  └──────────────┘  │                                                 │
+│  │  ┌──────────────┐  │    ⎫                                            │
+│  │  │ Roof_solid   │──┼──► parquet/roofs/tile_a.parquet                 │
+│  │  │ (10-20s)     │  │    ⎬ parallel (ThreadPool)                      │
+│  │  └──────────────┘  │    ⎭                                            │
+│  │  ┌──────────────┐  │                                                 │
+│  │  │ Wall         │──┼──► parquet/walls/tile_a.parquet                 │
+│  │  │ (20-30s)     │  │                                                 │
+│  │  └──────────────┘  │                                                 │
+│  └────────────────────┘                                                 │
+│                                                                         │
+│  Speedup Ebene 1: ~1.5-1.7x (begrenzt durch längsten Layer)             │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  EBENE 2: Tile-Parallelisierung (mehrere Tiles gleichzeitig)            │
+│  ════════════════════════════════════════════════════════════           │
+│                                                                         │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                       │
+│  │ Tile A  │ │ Tile B  │ │ Tile C  │ │ Tile D  │   ... (N Workers)     │
+│  │ Worker1 │ │ Worker2 │ │ Worker3 │ │ Worker4 │                       │
+│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘                       │
+│       │          │          │          │                               │
+│       └──────────┴────┬─────┴──────────┘                               │
+│                       ▼                                                 │
+│              parquet/*.parquet (kein DB-Lock!)                          │
+│                                                                         │
+│  Speedup Ebene 2: ~3-4x (bei 4 Workern)                                 │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  EBENE 3: Parquet-Pipeline (eliminiert DB-Bottleneck)                   │
+│  ══════════════════════════════════════════════════════                 │
+│                                                                         │
+│  PHASE 1: Parse → Parquet (parallel, KEIN DB-Lock!)                     │
+│                                                                         │
+│  Worker 1 ──► parquet/buildings/tile_a.parquet                          │
+│  Worker 2 ──► parquet/buildings/tile_b.parquet                          │
+│  Worker 3 ──► parquet/buildings/tile_c.parquet                          │
+│  Worker 4 ──► parquet/buildings/tile_d.parquet                          │
+│                                                                         │
+│  PHASE 2: Parquet → DuckDB (ein Befehl, ~5-10s!)                        │
+│                                                                         │
+│  DuckDB: INSERT INTO buildings_3d                                       │
+│          SELECT * FROM read_parquet('parquet/buildings/*.parquet')      │
+│                                                                         │
+│  Speedup Ebene 3: ~2-3x (eliminiert Write-Contention)                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## C.2 Kombinierter Speedup
+
+| Optimierung | Einzeln | Kumulativ | Status |
+|-------------|---------|-----------|--------|
+| **Baseline (aktuell)** | 1x | 1x | ✅ |
+| + Layer-Parallel | 1.5x | 1.5x | 📋 TODO |
+| + Tile-Parallel (4 Worker) | 3.5x | 5x | ✅ Teilweise |
+| + Parquet-Pipeline | 2x | **10x** | 📋 TODO |
+| + Download-Parallel | 1.5x | **15x** | 📋 TODO |
+
+## C.3 Das DB-Contention Problem
+
+```
+AKTUELL (ohne Parquet-Pipeline):
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Worker 1: Parse ████████████ → DB Write ▓▓▓▓ (WARTET auf Lock)         │
+│  Worker 2: Parse ████████████ → DB Write ▓▓▓▓ (WARTET auf Lock)         │
+│  Worker 3: Parse ████████████ → DB Write ████ (HAT Lock)                │
+│  Worker 4: Parse ████████████ → DB Write ▓▓▓▓ (WARTET auf Lock)         │
+│                                                                         │
+│  → Alle wollen gleichzeitig in DuckDB schreiben = BOTTLENECK!           │
+│  → Speedup begrenzt auf ~3-4x egal wie viele Worker                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+MIT PARQUET-PIPELINE:
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  PHASE 1: Parallel Parsing → Parquet (KEIN Lock, KEIN Warten!)          │
+│                                                                         │
+│  Worker 1: Parse ████ → parquet/tile_a.parquet ✓                        │
+│  Worker 2: Parse ████ → parquet/tile_b.parquet ✓                        │
+│  Worker 3: Parse ████ → parquet/tile_c.parquet ✓                        │
+│  Worker 4: Parse ████ → parquet/tile_d.parquet ✓                        │
+│  Worker 5: Parse ████ → parquet/tile_e.parquet ✓                        │
+│  Worker 6: Parse ████ → parquet/tile_f.parquet ✓                        │
+│  ...                                                                    │
+│                                                                         │
+│  PHASE 2: Bulk Load (EIN Befehl, ~5-10s für 100'000 Gebäude!)           │
+│                                                                         │
+│  DuckDB: INSERT INTO ... SELECT * FROM 'parquet/*.parquet'              │
+│          ████████████████ FERTIG                                        │
+│                                                                         │
+│  → Perfekte Skalierung: Mehr Worker = Linear schneller                  │
+│  → Speedup: 8-15x je nach Worker-Anzahl                                 │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## C.4 Optimale Architektur (Ziel)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              OPTIMALE BATCH-IMPORT ARCHITEKTUR                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  PHASE 1: Paralleler Download (asyncio, 5 Connections)                  │
+│  ═══════════════════════════════════════════════════                    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  asyncio.gather() mit Semaphore(5)                          │       │
+│  │                                                              │       │
+│  │  Download Tile A ──┐                                         │       │
+│  │  Download Tile B ──┤                                         │       │
+│  │  Download Tile C ──┼──► tiles/{tile_id}.gdb.zip             │       │
+│  │  Download Tile D ──┤    ~30s für 20 Tiles (statt 10 min)    │       │
+│  │  Download Tile E ──┘                                         │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+│  PHASE 2: Paralleles Layer-Parsing → Parquet                            │
+│  ═══════════════════════════════════════════════                        │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  ProcessPoolExecutor(max_workers=CPU_COUNT)                  │       │
+│  │                                                              │       │
+│  │  ┌─────────────────────────────────────────────────────┐    │       │
+│  │  │ Worker 1: Tile A                                    │    │       │
+│  │  │   ThreadPool(3):                                    │    │       │
+│  │  │     Building ──► parquet/buildings/tile_a.pq        │    │       │
+│  │  │     Roof     ──► parquet/roofs/tile_a.pq            │    │       │
+│  │  │     Wall     ──► parquet/walls/tile_a.pq            │    │       │
+│  │  └─────────────────────────────────────────────────────┘    │       │
+│  │  ┌─────────────────────────────────────────────────────┐    │       │
+│  │  │ Worker 2: Tile B                                    │    │       │
+│  │  │   ThreadPool(3): [Building | Roof | Wall]           │    │       │
+│  │  └─────────────────────────────────────────────────────┘    │       │
+│  │  ...                                                        │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+│  PHASE 3: DuckDB Bulk Load (ein Befehl pro Tabelle)                     │
+│  ═════════════════════════════════════════════════                      │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  DuckDB (multi-threaded, SIMD-optimiert):                    │       │
+│  │                                                              │       │
+│  │  INSERT INTO buildings_3d                                    │       │
+│  │    SELECT * FROM read_parquet('parquet/buildings/*.pq')      │       │
+│  │    → ~5s für 50'000 Gebäude                                  │       │
+│  │                                                              │       │
+│  │  INSERT INTO building_roofs                                  │       │
+│  │    SELECT * FROM read_parquet('parquet/roofs/*.pq')          │       │
+│  │    → ~2s für 50'000 Dächer                                   │       │
+│  │                                                              │       │
+│  │  INSERT INTO building_walls                                  │       │
+│  │    SELECT * FROM read_parquet('parquet/walls/*.pq')          │       │
+│  │    → ~3s für 50'000 Wände                                    │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+│  PHASE 4: Cleanup                                                       │
+│  ═════════════════                                                      │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  rm -rf tiles/          # GDB-Dateien (nicht mehr benötigt)  │       │
+│  │  rm -rf parquet/        # Parquet-Cache (in DB geladen)      │       │
+│  │  UPDATE tiles SET local_path = NULL WHERE imported = 1       │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## C.5 Performance-Schätzungen
+
+### Pro Tile (Vergleich)
+
+| Phase | Aktuell | Mit Optimierung | Speedup |
+|-------|---------|-----------------|---------|
+| Download | ~30s | ~30s | 1x |
+| Parse Building | ~50s | ~50s | 1x |
+| Parse Roof | ~15s | parallel | - |
+| Parse Wall | ~25s | parallel | - |
+| **Parse Total** | **~90s** | **~50s** | **1.8x** |
+| DB Write | ~10s | ~0s (Parquet) | ∞ |
+| **Tile Total** | **~130s** | **~80s** | **1.6x** |
+
+### Batch (20 Tiles, ~3000 Gebäude)
+
+| Szenario | Zeit | Speedup |
+|----------|------|---------|
+| Aktuell (sequentiell) | ~45 min | 1x |
+| + Tile-Parallel (4 Worker) | ~12 min | 3.8x |
+| + Layer-Parallel | ~8 min | 5.6x |
+| + Parquet-Pipeline | **~3 min** | **15x** |
+
+### Grosser Batch (200 Tiles, Kanton Bern)
+
+| Szenario | Zeit | Speedup |
+|----------|------|---------|
+| Aktuell | ~7 Stunden | 1x |
+| Optimal (8 Worker) | **~25-30 min** | **14-17x** |
+
+## C.6 Implementierungs-TODO
+
+| # | Task | Datei | Aufwand | Priorität |
+|---|------|-------|---------|-----------|
+| **C.1** | Layer-Parallel Parser | `tile_prefetch.py` | 1h | 🔴 Hoch |
+| **C.2** | Parquet-Writer pro Layer | `parquet_writer.py` (NEU) | 2h | 🔴 Hoch |
+| **C.3** | DuckDB Bulk-Load Funktion | `building_3d_service.py` | 1h | 🔴 Hoch |
+| **C.4** | Import-Script anpassen | `import_tiles.py` | 2h | 🔴 Hoch |
+| **C.5** | Paralleler Download | `import_tiles.py` | 1h | 🟡 Mittel |
+| **C.6** | Progress-Tracking | `import_tiles.py` | 30min | 🟢 Nice-to-have |
+| **C.7** | Cleanup-Integration | `tile_prefetch.py` | 30min | 🟢 Nice-to-have |
+| **C.8** | **Alle 7 Indexes deferred** | `building_3d_service.py` | 30min | ✅ 14.01.2026 |
+
+> **C.8 IMPLEMENTIERT (14.01.2026 00:30):** `drop_indexes()` und `create_indexes()` behandeln
+> jetzt ALLE 7 Indexes (vorher nur 2). Beide Funktionen iterieren durch die Index-Liste
+> mit Error-Handling und Logging.
+
+**Geschätzter Gesamtaufwand:** 9-11 Stunden
+
+## C.7 Neue Dateien
+
+```
+backend/
+├── app/
+│   └── services/
+│       └── parquet_writer.py      # NEU: Parquet-Export pro Layer
+└── scripts/
+    └── batch/
+        ├── import_tiles.py        # Angepasst: Parquet-Pipeline
+        └── parallel_parser.py     # NEU: Layer-Parallelisierung
+```
+
+## C.8 Parquet-Schema (für DuckDB Bulk-Load)
+
+### buildings.parquet
+
+```python
+schema = pa.schema([
+    ('egid', pa.int64()),
+    ('polygon', pa.string()),           # JSON-String
+    ('traufhoehe_m', pa.float64()),
+    ('firsthoehe_m', pa.float64()),
+    ('gebaeudehoehe_m', pa.float64()),
+    ('area_m2', pa.float64()),
+    ('perimeter_m', pa.float64()),
+    ('center_e', pa.float64()),
+    ('center_n', pa.float64()),
+    ('tile_id', pa.string()),
+    ('objektart', pa.string()),
+    ('name_komplett', pa.string()),
+    ('gebaeude_nutzung', pa.string()),
+    ('gebaeudeeinheit', pa.string()),
+    ('roof_form', pa.string()),
+    ('roof_form_confidence', pa.float64()),
+    ('roof_orientation', pa.string()),
+])
+```
+
+### roofs.parquet
+
+```python
+schema = pa.schema([
+    ('gebaeudeeinheit', pa.string()),
+    ('egid', pa.string()),
+    ('dach_min', pa.float64()),
+    ('dach_max', pa.float64()),
+    ('roof_form', pa.string()),
+    ('roof_angle_deg', pa.float64()),
+    ('roof_orientation', pa.string()),
+    ('roof_form_confidence', pa.float64()),
+    ('z_levels', pa.string()),          # JSON-String
+    ('calculation_method', pa.string()),
+])
+```
+
+### walls.parquet
+
+```python
+schema = pa.schema([
+    ('gebaeudeeinheit', pa.string()),
+    ('egid', pa.string()),
+    ('z_min', pa.float64()),
+    ('z_max', pa.float64()),
+    ('geometry_wkb', pa.binary()),      # WKB als Bytes
+])
+```
+
+## C.9 Beispiel-Code: Optimaler Import
+
+```python
+# scripts/batch/import_tiles_optimized.py
+
+import asyncio
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+import pyarrow as pa
+import pyarrow.parquet as pq
+import duckdb
+
+async def import_region_optimized(region: str, workers: int = 4):
+    """
+    Optimierter Batch-Import mit 3-Ebenen-Parallelisierung.
+    """
+
+    # 1. Tile-Liste für Region ermitteln
+    tiles = get_tiles_for_region(region)
+
+    # 2. PHASE 1: Paralleler Download
+    print(f"[PHASE 1] Downloading {len(tiles)} tiles...")
+    await download_tiles_parallel(tiles, max_concurrent=5)
+
+    # 3. PHASE 2: Paralleles Parsing → Parquet
+    print(f"[PHASE 2] Parsing with {workers} workers...")
+    parquet_dir = Path("parquet")
+    parquet_dir.mkdir(exist_ok=True)
+
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(parse_tile_all_layers, tile_id, gdb_path, parquet_dir)
+            for tile_id, gdb_path in tiles
+        ]
+        for future in as_completed(futures):
+            tile_id, counts = future.result()
+            print(f"  ✓ {tile_id}: {counts}")
+
+    # 4. PHASE 3: DuckDB Bulk-Load
+    print("[PHASE 3] Loading into DuckDB...")
+    load_parquets_to_duckdb(parquet_dir)
+
+    # 5. PHASE 4: Cleanup
+    print("[PHASE 4] Cleanup...")
+    cleanup_after_import(tiles, parquet_dir)
+
+    print("[DONE] Import complete!")
+
+
+def parse_tile_all_layers(tile_id: str, gdb_path: Path, parquet_dir: Path):
+    """
+    Parst alle 3 Layer PARALLEL und schreibt Parquet-Dateien.
+    """
+
+    # ThreadPool für Layer-Parallelisierung
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_buildings = executor.submit(
+            parse_and_write_parquet,
+            gdb_path, "Building_solid", parquet_dir / "buildings" / f"{tile_id}.pq"
+        )
+        future_roofs = executor.submit(
+            parse_and_write_parquet,
+            gdb_path, "Roof_solid", parquet_dir / "roofs" / f"{tile_id}.pq"
+        )
+        future_walls = executor.submit(
+            parse_and_write_parquet,
+            gdb_path, "Wall", parquet_dir / "walls" / f"{tile_id}.pq"
+        )
+
+        # Auf alle warten
+        b_count = future_buildings.result()
+        r_count = future_roofs.result()
+        w_count = future_walls.result()
+
+    return tile_id, {"buildings": b_count, "roofs": r_count, "walls": w_count}
+
+
+def load_parquets_to_duckdb(parquet_dir: Path):
+    """
+    Lädt alle Parquet-Dateien in DuckDB (ein Befehl pro Tabelle).
+    """
+
+    conn = duckdb.connect("app/data/building_3d.duckdb")
+
+    # Buildings
+    conn.execute(f"""
+        INSERT INTO buildings_3d
+        SELECT * FROM read_parquet('{parquet_dir}/buildings/*.pq')
+    """)
+
+    # Roofs
+    conn.execute(f"""
+        INSERT INTO building_roofs
+        SELECT * FROM read_parquet('{parquet_dir}/roofs/*.pq')
+    """)
+
+    # Walls
+    conn.execute(f"""
+        INSERT INTO building_walls
+        SELECT * FROM read_parquet('{parquet_dir}/walls/*.pq')
+    """)
+
+    # has_3d_layers Flag setzen
+    conn.execute("""
+        UPDATE buildings_3d SET has_3d_layers = 1
+        WHERE egid IN (SELECT DISTINCT egid FROM building_walls)
+    """)
+
+    conn.close()
+```
+
+---
+
 ## Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 00:30 | 6.3 | **C.8 IMPLEMENTIERT:** `drop_indexes()` und `create_indexes()` behandeln jetzt ALLE 7 Indexes. Anhang A Task 3 auf ✅ gesetzt. |
+| 14.01.2026 00:15 | 6.2 | **Index-Dokumentation:** Alle 7 Indexes dokumentiert (vorher nur 2). Warnung bei Anhang A Task 3 hinzugefügt. Neuer Task C.8 für vollständige Index-Implementierung. |
+| 13.01.2026 21:30 | 6.1 | **Schema-Konsolidierung:** 3D-Layer-Tabellen verwenden jetzt `gebaeudeeinheit` als PRIMARY KEY (statt `id INTEGER`). DuckDB hat keine AUTOINCREMENT. Implementierungs-TODO aktualisiert. |
+| 13.01.2026 20:00 | 6.0 | **ANHANG C: Optimale Parallelisierungs-Architektur:** 3-Ebenen-Parallelisierung (Layer, Tile, Parquet-Pipeline) dokumentiert. Performance-Schätzungen und Implementierungs-TODO erstellt. |
 | 13.01.2026 18:00 | 5.0 | **All-Layer-Import Strategie:** Wall-Layer wird jetzt IMMER importiert (nicht on-demand). Tiles werden nach Import gelöscht. DB-Deployment Workflow für Railway dokumentiert. |
 | 13.01.2026 17:45 | 4.1 | **DuckDB ist Default:** Kein `USE_DUCKDB=true` mehr nötig, SQLite-Fallback mit `USE_DUCKDB=false` |
 | 13.01.2026 16:30 | 4.0 | **DuckDB-Migration abgeschlossen:** `building_3d.db` → `building_3d.duckdb` |

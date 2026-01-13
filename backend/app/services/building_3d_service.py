@@ -151,223 +151,21 @@ class Building3DService:
         """
         Erstellt Datenbank-Schema falls nicht vorhanden.
 
-        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
+        NEU 13.01.2026 19:10: Verwendet zentrales Schema aus building_3d_schema.py
         """
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        if self._use_duckdb:
-            self._init_duckdb_schema()
-        else:
-            self._init_sqlite_schema()
+        # Zentrales Schema verwenden (eine Quelle der Wahrheit)
+        from app.services.building_3d_schema import init_schema
+        init_schema()
 
-    def _init_sqlite_schema(self):
-        """SQLite-spezifische Schema-Initialisierung."""
-        with sqlite3.connect(BUILDING_3D_SQLITE_PATH) as conn:
-            cursor = conn.cursor()
-
-            # Haupttabelle für Gebäudedaten (erweitert 11.01.2026)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS buildings_3d (
-                    egid INTEGER PRIMARY KEY,
-                    polygon TEXT,
-                    traufhoehe_m REAL,
-                    firsthoehe_m REAL,
-                    gebaeudehoehe_m REAL,
-                    area_m2 REAL,
-                    perimeter_m REAL,
-                    center_e REAL,
-                    center_n REAL,
-                    tile_id TEXT,
-                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    source TEXT DEFAULT 'swissBUILDINGS3D_3.0',
-                    objektart TEXT,
-                    name_komplett TEXT,
-                    gebaeude_nutzung TEXT,
-                    gebaeudeeinheit TEXT,
-                    roof_form TEXT,
-                    roof_form_confidence REAL,
-                    roof_orientation TEXT,
-                    has_3d_layers INTEGER DEFAULT 0
-                )
-            """)
-
-            # building_roofs Tabelle
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS building_roofs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    gebaeudeeinheit TEXT NOT NULL,
-                    egid TEXT,
-                    dach_min REAL,
-                    dach_max REAL,
-                    roof_form TEXT,
-                    roof_angle_deg REAL,
-                    roof_orientation TEXT,
-                    z_levels TEXT,
-                    geometry_wkb BLOB,
-                    has_full_geometry INTEGER DEFAULT 0,
-                    calculated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    calculation_method TEXT
-                )
-            """)
-
-            # building_walls Tabelle
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS building_walls (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    gebaeudeeinheit TEXT NOT NULL,
-                    egid TEXT,
-                    z_min REAL,
-                    z_max REAL,
-                    geometry_wkb BLOB,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # building_floors Tabelle
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS building_floors (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    gebaeudeeinheit TEXT NOT NULL,
-                    egid TEXT,
-                    gelaendepunkt REAL,
-                    geometry_wkb BLOB,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Indizes
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
-                ON buildings_3d(center_e, center_n)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
-                ON buildings_3d(tile_id)
-            """)
-
-            # Import-Log für Batch-Tracking
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS import_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tile_id TEXT,
-                    buildings_count INTEGER,
-                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    duration_seconds REAL,
-                    source TEXT
-                )
-            """)
-
-            conn.commit()
-
-        logger.info(f"[SQLite] Schema initialisiert: {BUILDING_3D_SQLITE_PATH}")
-
-    def _init_duckdb_schema(self):
-        """DuckDB-spezifische Schema-Initialisierung."""
-        # FIX 13.01.2026 18:45: Zentrale Connection-Factory verwenden
-        conn = get_building_3d_connection()
-        try:
-            # Haupttabelle - DuckDB nutzt JSON nativ!
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS buildings_3d (
-                    egid INTEGER PRIMARY KEY,
-                    polygon JSON,
-                    traufhoehe_m DOUBLE,
-                    firsthoehe_m DOUBLE,
-                    gebaeudehoehe_m DOUBLE,
-                    area_m2 DOUBLE,
-                    perimeter_m DOUBLE,
-                    center_e DOUBLE,
-                    center_n DOUBLE,
-                    tile_id VARCHAR,
-                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    source VARCHAR DEFAULT 'swissBUILDINGS3D_3.0',
-                    objektart VARCHAR,
-                    name_komplett VARCHAR,
-                    gebaeude_nutzung VARCHAR,
-                    gebaeudeeinheit VARCHAR,
-                    roof_form VARCHAR,
-                    roof_form_confidence DOUBLE,
-                    roof_orientation VARCHAR,
-                    has_3d_layers INTEGER DEFAULT 0
-                )
-            """)
-
-            # building_roofs Tabelle
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS building_roofs (
-                    id INTEGER PRIMARY KEY,
-                    gebaeudeeinheit VARCHAR NOT NULL,
-                    egid VARCHAR,
-                    dach_min DOUBLE,
-                    dach_max DOUBLE,
-                    roof_form VARCHAR,
-                    roof_angle_deg DOUBLE,
-                    roof_orientation VARCHAR,
-                    z_levels VARCHAR,
-                    geometry_wkb BLOB,
-                    has_full_geometry INTEGER DEFAULT 0,
-                    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    calculation_method VARCHAR
-                )
-            """)
-
-            # building_walls Tabelle
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS building_walls (
-                    id INTEGER PRIMARY KEY,
-                    gebaeudeeinheit VARCHAR NOT NULL,
-                    egid VARCHAR,
-                    z_min DOUBLE,
-                    z_max DOUBLE,
-                    geometry_wkb BLOB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # building_floors Tabelle
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS building_floors (
-                    id INTEGER PRIMARY KEY,
-                    gebaeudeeinheit VARCHAR NOT NULL,
-                    egid VARCHAR,
-                    gelaendepunkt DOUBLE,
-                    geometry_wkb BLOB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Indizes
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
-                ON buildings_3d(center_e, center_n)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
-                ON buildings_3d(tile_id)
-            """)
-
-            # Import-Log für Batch-Tracking
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS import_log (
-                    id INTEGER PRIMARY KEY,
-                    tile_id VARCHAR,
-                    buildings_count INTEGER,
-                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    duration_seconds DOUBLE,
-                    source VARCHAR
-                )
-            """)
-
-            # DuckDB: Sequence für auto-increment IDs
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_roofs_id START 1")
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_walls_id START 1")
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_floors_id START 1")
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_log_id START 1")
-
-        finally:
-            conn.close()
-
-        logger.info(f"[DuckDB] Schema initialisiert: {BUILDING_3D_DUCKDB_PATH}")
+    # =============================================================================
+    # SCHEMA-DEFINITIONEN ENTFERNT (13.01.2026 19:10)
+    # =============================================================================
+    # Die Schema-Definitionen wurden nach building_3d_schema.py verschoben.
+    # EINE Quelle der Wahrheit für alle Tabellen-Definitionen.
+    # Siehe: app/services/building_3d_schema.py
+    # =============================================================================
 
     def _setup_sqlite_connection(self, conn: sqlite3.Connection):
         """
@@ -474,7 +272,7 @@ class Building3DService:
         else:
             # Neue Connection (read_only oder nicht gepoolt)
             # FIX 13.01.2026 18:45: Zentrale Connection-Factory verwenden
-            conn = get_building_3d_connection(read_only=read_only)
+            conn = get_building_3d_connection()
             try:
                 yield conn
             finally:
@@ -765,53 +563,84 @@ class Building3DService:
 
     def drop_indexes(self):
         """
-        Task 3: Indexes vor Bulk-Import droppen.
+        Task 3 + C.8: Indexes vor Bulk-Import droppen.
 
         Beschleunigt den Import erheblich.
         NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
+        FIX 14.01.2026: Alle 7 Indexes droppen (vorher nur 2!)
         """
+        # All index names from building_3d_schema.py INDEXES
+        all_indexes = [
+            "idx_buildings_3d_coords",
+            "idx_buildings_3d_tile",
+            "idx_buildings_3d_objektart",
+            "idx_buildings_3d_gebaeudeeinheit",
+            "idx_roofs_egid",
+            "idx_walls_egid",
+            "idx_floors_egid",
+        ]
+
         with self._get_connection() as conn:
+            dropped = 0
             if self._use_duckdb:
-                conn.execute("DROP INDEX IF EXISTS idx_buildings_3d_coords")
-                conn.execute("DROP INDEX IF EXISTS idx_buildings_3d_tile")
+                for idx_name in all_indexes:
+                    try:
+                        conn.execute(f"DROP INDEX IF EXISTS {idx_name}")
+                        dropped += 1
+                    except Exception as e:
+                        logger.debug(f"[OPTIMIZE] Index {idx_name} skip: {e}")
             else:
                 cursor = conn.cursor()
-                cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_coords")
-                cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_tile")
+                for idx_name in all_indexes:
+                    try:
+                        cursor.execute(f"DROP INDEX IF EXISTS {idx_name}")
+                        dropped += 1
+                    except Exception as e:
+                        logger.debug(f"[OPTIMIZE] Index {idx_name} skip: {e}")
                 conn.commit()
-            logger.info(f"[OPTIMIZE] Indexes dropped ({get_db_engine_name()})")
+            logger.info(f"[OPTIMIZE] {dropped}/{len(all_indexes)} indexes dropped ({get_db_engine_name()})")
 
     def create_indexes(self):
         """
-        Task 3: Indexes nach Bulk-Import erstellen.
+        Task 3 + C.8: Indexes nach Bulk-Import erstellen.
 
         NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
+        FIX 14.01.2026: Alle 7 Indexes erstellen (vorher nur 2!)
         """
+        # All index definitions from building_3d_schema.py INDEXES
+        all_index_sql = [
+            "CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords ON buildings_3d(center_e, center_n)",
+            "CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile ON buildings_3d(tile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_buildings_3d_objektart ON buildings_3d(objektart)",
+            "CREATE INDEX IF NOT EXISTS idx_buildings_3d_gebaeudeeinheit ON buildings_3d(gebaeudeeinheit)",
+            "CREATE INDEX IF NOT EXISTS idx_roofs_egid ON building_roofs(egid)",
+            "CREATE INDEX IF NOT EXISTS idx_walls_egid ON building_walls(egid)",
+            "CREATE INDEX IF NOT EXISTS idx_floors_egid ON building_floors(egid)",
+        ]
+
         start = datetime.now()
+        created = 0
+
         with self._get_connection() as conn:
             if self._use_duckdb:
-                conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
-                    ON buildings_3d(center_e, center_n)
-                """)
-                conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
-                    ON buildings_3d(tile_id)
-                """)
+                for idx_sql in all_index_sql:
+                    try:
+                        conn.execute(idx_sql)
+                        created += 1
+                    except Exception as e:
+                        logger.debug(f"[OPTIMIZE] Index skip: {e}")
             else:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
-                    ON buildings_3d(center_e, center_n)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
-                    ON buildings_3d(tile_id)
-                """)
+                for idx_sql in all_index_sql:
+                    try:
+                        cursor.execute(idx_sql)
+                        created += 1
+                    except Exception as e:
+                        logger.debug(f"[OPTIMIZE] Index skip: {e}")
                 conn.commit()
 
         duration = (datetime.now() - start).total_seconds()
-        logger.info(f"[OPTIMIZE] Indexes created in {duration:.2f}s ({get_db_engine_name()})")
+        logger.info(f"[OPTIMIZE] {created}/{len(all_index_sql)} indexes created in {duration:.2f}s ({get_db_engine_name()})")
 
     def bulk_save(
         self,

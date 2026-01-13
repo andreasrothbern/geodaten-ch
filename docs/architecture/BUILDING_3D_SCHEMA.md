@@ -1,6 +1,6 @@
 # Building 3D Schema - Konzept
 
-> **Version:** 2.1 (Stand 13.01.2026 17:45)
+> **Version:** 2.4 (Stand 14.01.2026 00:15)
 > **Status:** DuckDB-Migration abgeschlossen ✅
 > **Basis:** SWISSBUILDINGS3D_ANALYSE.md + BATCH_IMPORT.md
 
@@ -20,10 +20,17 @@
 
 | Task | Priorität | Beschreibung |
 |------|-----------|--------------|
+| **Index-Deferred ALLE** | P1 | `drop_indexes()` nur 2 von 7! Siehe BATCH_IMPORT.md C.8 |
 | 3D-Layer Integration | P2 | Floor/Wall/Roof Layer aus swissBUILDINGS3D extrahieren |
 | Parquet-Pipeline | P3 | Optional für Batch-Import (aktuell nicht nötig) |
 | Railway Deployment | P1 | DuckDB auf Railway.app testen |
 | Legacy-Code entfernen | P3 | SQLite-spezifischen Code nach Testphase entfernen |
+
+> **⚠️ Index-Inkonsistenz (14.01.2026):**
+> - Schema (`building_3d_schema.py`): **7 Indexes** definiert
+> - Service (`building_3d_service.py`): `drop_indexes()` und `create_indexes()` behandeln nur **2 Indexes**
+> - **Impact:** Bei Batch-Import werden 5 Indexes nicht gedroppt → langsamerer Import
+> - **Fix:** Siehe BATCH_IMPORT.md Anhang C Task C.8
 
 ### 📋 Geplant
 
@@ -179,34 +186,31 @@ DuckDB 3D-Import Pipeline:
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                    building_floors                           │   │
 │  │  ───────────────────────────────────────────────────────────│   │
+│  │  gebaeudeeinheit   VARCHAR PRIMARY KEY ← NEU 13.01.2026     │   │
 │  │  egid              INTEGER                                   │   │
-│  │  gebaeudeeinheit   VARCHAR                                   │   │
-│  │  geometry          JSON           ← 3D Polygon-Koordinaten   │   │
-│  │  z_terrain         DOUBLE         (Terrain-Höhe)             │   │
-│  │  point_count       INTEGER        (Anzahl Punkte)            │   │
+│  │  gelaendepunkt     DOUBLE         (Terrain m ü.M.)           │   │
+│  │  geometry_wkb      BLOB           ← WKB 3D-Geometrie         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                    building_walls                            │   │
 │  │  ───────────────────────────────────────────────────────────│   │
+│  │  gebaeudeeinheit   VARCHAR PRIMARY KEY ← NEU 13.01.2026     │   │
 │  │  egid              INTEGER                                   │   │
-│  │  gebaeudeeinheit   VARCHAR                                   │   │
-│  │  geometry          JSON           ← 3D MultiPolygon          │   │
-│  │  z_min             DOUBLE         (Terrain)                  │   │
-│  │  z_max             DOUBLE         (Traufe)                   │   │
-│  │  point_count       INTEGER                                   │   │
+│  │  z_min             DOUBLE         (Terrain m ü.M.)           │   │
+│  │  z_max             DOUBLE         (Traufe m ü.M.)            │   │
+│  │  geometry_wkb      BLOB           ← WKB 3D-MultiPolygon      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                    building_roofs                            │   │
 │  │  ───────────────────────────────────────────────────────────│   │
+│  │  gebaeudeeinheit   VARCHAR PRIMARY KEY ← NEU 13.01.2026     │   │
 │  │  egid              INTEGER                                   │   │
-│  │  gebaeudeeinheit   VARCHAR                                   │   │
-│  │  geometry          JSON           ← 3D Dach-Körper           │   │
-│  │  z_min             DOUBLE         (Traufe)                   │   │
-│  │  z_max             DOUBLE         (First)                    │   │
-│  │  roof_angle_deg    DOUBLE         ← NEU! Berechnet aus 3D    │   │
-│  │  point_count       INTEGER                                   │   │
+│  │  dach_min          DOUBLE         (Traufe m ü.M.)            │   │
+│  │  dach_max          DOUBLE         (First m ü.M.)             │   │
+│  │  roof_angle_deg    DOUBLE         ← Berechnet aus 3D         │   │
+│  │  geometry_wkb      BLOB           ← WKB 3D-Geometrie         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -248,93 +252,71 @@ CREATE TABLE buildings (
     imported_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_buildings_coords ON buildings(center_e, center_n);
-CREATE INDEX idx_buildings_objektart ON buildings(objektart);
-CREATE INDEX idx_buildings_gebaeudeeinheit ON buildings(gebaeudeeinheit);
+-- ============================================================
+-- INDEXES (vollständige Liste aus building_3d_schema.py:114-122)
+-- ============================================================
+CREATE INDEX idx_buildings_3d_coords ON buildings_3d(center_e, center_n);
+CREATE INDEX idx_buildings_3d_tile ON buildings_3d(tile_id);
+CREATE INDEX idx_buildings_3d_objektart ON buildings_3d(objektart);
+CREATE INDEX idx_buildings_3d_gebaeudeeinheit ON buildings_3d(gebaeudeeinheit);
+CREATE INDEX idx_roofs_egid ON building_roofs(egid);
+CREATE INDEX idx_walls_egid ON building_walls(egid);
+CREATE INDEX idx_floors_egid ON building_floors(egid);
 
 -- ============================================================
 -- FLOOR LAYER: Gebäude-Grundriss mit Terrain
+-- NEU 13.01.2026 21:30: gebaeudeeinheit als PRIMARY KEY
 -- ============================================================
 
 CREATE TABLE building_floors (
-    id                  INTEGER PRIMARY KEY,
-    egid                INTEGER NOT NULL,
-    gebaeudeeinheit     VARCHAR,
-
-    -- 3D Geometrie als JSON Array
-    -- Format: [[x, y, z], [x, y, z], ...]
-    geometry            JSON NOT NULL,
-
-    -- Terrain-Statistik
-    z_min               DOUBLE,             -- Tiefster Punkt
-    z_max               DOUBLE,             -- Höchster Punkt
-    z_terrain_diff      DOUBLE,             -- Terrain-Variation
-
-    -- Statistik
-    point_count         INTEGER,
-    area_m2             DOUBLE,
-    perimeter_m         DOUBLE,
-
-    FOREIGN KEY (egid) REFERENCES buildings(egid)
+    gebaeudeeinheit     VARCHAR PRIMARY KEY,  -- NEU: Natürlicher Schlüssel
+    egid                INTEGER,
+    gelaendepunkt       DOUBLE,               -- Terrain-Höhe (m ü.M.)
+    geometry_wkb        BLOB,                 -- WKB 3D-Geometrie
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Index auf egid für Abfragen nach Gebäude-ID
 CREATE INDEX idx_floors_egid ON building_floors(egid);
 
 -- ============================================================
 -- WALL LAYER: Fassaden als 3D-Flächen
+-- NEU 13.01.2026 21:30: gebaeudeeinheit als PRIMARY KEY
 -- ============================================================
 
 CREATE TABLE building_walls (
-    id                  INTEGER PRIMARY KEY,
-    egid                INTEGER NOT NULL,
-    gebaeudeeinheit     VARCHAR,
-
-    -- 3D Geometrie (MultiPolygon)
-    -- Jede Fassade als separate Fläche
-    geometry            JSON NOT NULL,
-
-    -- Höhen
-    z_min               DOUBLE,             -- Terrain
-    z_max               DOUBLE,             -- Traufe
-    wall_height         DOUBLE,             -- z_max - z_min
-
-    -- Statistik
-    point_count         INTEGER,
-    surface_area_m2     DOUBLE,             -- Gesamte Wandfläche
-
-    FOREIGN KEY (egid) REFERENCES buildings(egid)
+    gebaeudeeinheit     VARCHAR PRIMARY KEY,  -- NEU: Natürlicher Schlüssel
+    egid                INTEGER,
+    z_min               DOUBLE,               -- Terrain (m ü.M.)
+    z_max               DOUBLE,               -- Traufe (m ü.M.)
+    geometry_wkb        BLOB,                 -- WKB 3D-MultiPolygon
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Index auf egid für Abfragen nach Gebäude-ID
 CREATE INDEX idx_walls_egid ON building_walls(egid);
 
 -- ============================================================
 -- ROOF LAYER: Dach als 3D-Körper
+-- NEU 13.01.2026 21:30: gebaeudeeinheit als PRIMARY KEY
 -- ============================================================
 
 CREATE TABLE building_roofs (
-    id                  INTEGER PRIMARY KEY,
-    egid                INTEGER NOT NULL,
-    gebaeudeeinheit     VARCHAR,
-
-    -- 3D Geometrie
-    geometry            JSON NOT NULL,
-
-    -- Höhen
-    z_min               DOUBLE,             -- Traufe
-    z_max               DOUBLE,             -- First
-    roof_height         DOUBLE,             -- z_max - z_min
-
-    -- BERECHNET aus 3D-Geometrie (nicht mehr geschätzt!)
-    roof_angle_deg      DOUBLE,             -- Echter Dachwinkel
-    roof_azimuth_deg    DOUBLE,             -- First-Ausrichtung
-
-    -- Statistik
-    point_count         INTEGER,
-    roof_area_m2        DOUBLE,
-
-    FOREIGN KEY (egid) REFERENCES buildings(egid)
+    gebaeudeeinheit     VARCHAR PRIMARY KEY,  -- NEU: Natürlicher Schlüssel
+    egid                INTEGER,
+    dach_min            DOUBLE,               -- Traufe (m ü.M.)
+    dach_max            DOUBLE,               -- First (m ü.M.)
+    roof_form           VARCHAR,              -- Satteldach, Flachdach, etc.
+    roof_angle_deg      DOUBLE,               -- Dachneigung in Grad
+    roof_orientation    VARCHAR,              -- N-S, O-W, etc.
+    z_levels            VARCHAR,              -- JSON: Z-Ebenen für Analyse
+    geometry_wkb        BLOB,                 -- WKB 3D-Geometrie
+    has_full_geometry   INTEGER DEFAULT 0,    -- Flag: Vollständige Geometrie
+    calculated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    calculation_method  VARCHAR               -- Quelle: '3d_geometry', 'heuristic'
 );
 
+-- Index auf egid für Abfragen nach Gebäude-ID
 CREATE INDEX idx_roofs_egid ON building_roofs(egid);
 
 -- ============================================================

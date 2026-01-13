@@ -21,6 +21,9 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
+# NEU 13.01.2026 17:30: DuckDB-kompatible Connection für building_3d
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
+
 # Pfade
 DATA_DIR = Path(__file__).parent.parent / "data"
 TILES_DIR = DATA_DIR / "tiles"
@@ -97,10 +100,11 @@ class TileCacheService:
             cursor = conn.cursor()
 
             # Tiles-Tabelle
+            # NEU 13.01.2026 18:40: import_status Spalte für All-Layer-Import
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS tiles (
                     tile_id TEXT PRIMARY KEY,
-                    local_path TEXT NOT NULL,
+                    local_path TEXT,
                     download_url TEXT,
                     downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     file_size_mb REAL,
@@ -108,9 +112,16 @@ class TileCacheService:
                     bbox_west REAL,
                     bbox_south REAL,
                     bbox_east REAL,
-                    bbox_north REAL
+                    bbox_north REAL,
+                    import_status TEXT DEFAULT 'pending'
                 )
             """)
+
+            # Migration: import_status Spalte hinzufügen falls nicht vorhanden
+            try:
+                cursor.execute("ALTER TABLE tiles ADD COLUMN import_status TEXT DEFAULT 'pending'")
+            except sqlite3.OperationalError:
+                pass  # Spalte existiert bereits
 
             # HINWEIS: egid_tile_index wurde entfernt (08.01.2026)
             # EGID-Lookups erfolgen jetzt über building_3d.db
@@ -220,11 +231,84 @@ class TileCacheService:
 
         return target_path
 
+    def mark_tile_cleaned(self, tile_id: str) -> bool:
+        """
+        Markiert ein Tile als "cleaned" (GDB gelöscht, Daten in DB).
+
+        NEU 13.01.2026 18:40: Nach All-Layer-Import wird das Tile-Verzeichnis
+        gelöscht. Der DB-Eintrag bleibt erhalten mit local_path=NULL und
+        import_status='cleaned'.
+
+        Args:
+            tile_id: Tile-Referenz (z.B. "1088-22")
+
+        Returns:
+            True wenn erfolgreich, False wenn Tile nicht existiert
+        """
+        with sqlite3.connect(TILE_CACHE_DB) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE tiles
+                SET local_path = NULL,
+                    import_status = 'cleaned'
+                WHERE tile_id = ?
+            """, (tile_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def mark_tile_imported(self, tile_id: str, building_count: int = 0) -> bool:
+        """
+        Markiert ein Tile als "imported" (Daten in DB, GDB noch vorhanden).
+
+        NEU 13.01.2026 18:40: Wird nach erfolgreichem Prefetch aufgerufen.
+
+        Args:
+            tile_id: Tile-Referenz
+            building_count: Anzahl importierter Gebäude
+
+        Returns:
+            True wenn erfolgreich
+        """
+        with sqlite3.connect(TILE_CACHE_DB) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE tiles
+                SET import_status = 'imported',
+                    building_count = ?
+                WHERE tile_id = ?
+            """, (building_count, tile_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_tile_import_status(self, tile_id: str) -> Optional[str]:
+        """
+        Gibt den Import-Status eines Tiles zurück.
+
+        NEU 13.01.2026 18:40: Status-Tracking für All-Layer-Import.
+
+        Status-Werte:
+            - 'pending': Tile heruntergeladen, noch nicht importiert
+            - 'imported': Daten in DB, GDB noch vorhanden
+            - 'cleaned': Daten in DB, GDB gelöscht
+
+        Returns:
+            Status-String oder None wenn Tile nicht existiert
+        """
+        with sqlite3.connect(TILE_CACHE_DB) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT import_status FROM tiles WHERE tile_id = ?",
+                (tile_id,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else None
+
     def get_tile_for_egid(self, egid: int) -> Optional[str]:
         """
         Findet das Tile für eine EGID.
 
         OPTIMIERT 07.01.2026: Nutzt jetzt building_3d.db statt egid_tile_index.
+        NEU 13.01.2026 17:30: DuckDB-kompatibel via get_building_3d_connection().
 
         Args:
             egid: Eidgenössischer Gebäudeidentifikator
@@ -232,20 +316,20 @@ class TileCacheService:
         Returns:
             Tile-ID oder None
         """
-        # Nutze building_3d.db statt egid_tile_index
-        building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
-        if not building_3d_db.exists():
+        # NEU 13.01.2026: DuckDB-kompatible Connection
+        if not BUILDING_3D_DB_PATH.exists():
             return None
 
         try:
-            with sqlite3.connect(building_3d_db) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT tile_id FROM buildings_3d WHERE egid = ?",
-                    (egid,)
-                )
-                result = cursor.fetchone()
-                return result[0] if result else None
+            conn = get_building_3d_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT tile_id FROM buildings_3d WHERE egid = ?",
+                (egid,)
+            )
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else None
         except Exception:
             return None
 
@@ -279,15 +363,16 @@ class TileCacheService:
                 for row in cursor.fetchall()
             ]
 
-        # EGID-Anzahl aus building_3d.db (OPTIMIERT 07.01.2026)
+        # EGID-Anzahl aus building_3d (OPTIMIERT 07.01.2026)
+        # NEU 13.01.2026 17:30: DuckDB-kompatibel via get_building_3d_connection()
         egid_count = 0
-        building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
-        if building_3d_db.exists():
+        if BUILDING_3D_DB_PATH.exists():
             try:
-                with sqlite3.connect(building_3d_db) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM buildings_3d")
-                    egid_count = cursor.fetchone()[0]
+                conn = get_building_3d_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM buildings_3d")
+                egid_count = cursor.fetchone()[0]
+                conn.close()
             except Exception:
                 pass
 
@@ -357,3 +442,19 @@ def get_tile_cache() -> TileCacheService:
     if _tile_cache is None:
         _tile_cache = TileCacheService()
     return _tile_cache
+
+
+def get_gdb_path_for_tile(tile_id: str) -> Optional[Path]:
+    """
+    Gibt den GDB-Pfad für ein Tile zurück.
+
+    NEU 12.01.2026: Helper-Funktion für on-demand Geometrie-Fetch.
+
+    Args:
+        tile_id: Tile-Referenz (z.B. "1088-22")
+
+    Returns:
+        Path zum GDB-Verzeichnis oder None
+    """
+    cache = get_tile_cache()
+    return cache.get_tile_path(tile_id)

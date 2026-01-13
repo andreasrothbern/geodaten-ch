@@ -16,11 +16,13 @@ Unterstützte Formate:
 import re
 import json
 import logging
-import sqlite3
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 from enum import Enum
+
+# NEU 13.01.2026 17:00: DuckDB-kompatible Connection
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +67,13 @@ def _point_in_polygon(px: float, py: float, polygon: List) -> bool:
 
 def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -> Optional[int]:
     """
-    Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in building_3d.db.
+    Sucht die swissBUILDINGS3D EGID per Koordinaten-Lookup in building_3d.duckdb.
 
     BUG-015 FIX 11.01.2026: Verwendet jetzt Point-in-Polygon Check statt nur
     nächstes Zentrum. Bei Reihenhäusern liegt der Hauseingang (Geocoding-Koordinate)
     oft näher am Nachbar-Zentrum als am eigenen Gebäude-Zentrum.
+
+    NEU 13.01.2026 17:00: Nutzt jetzt get_building_3d_connection() (DuckDB/SQLite).
 
     WICHTIG: Diese Funktion setzt voraus, dass das Tile bereits geladen ist!
     Siehe _ensure_tile_loaded() für den Tile-Preload.
@@ -88,14 +92,12 @@ def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -
     Returns:
         EGID als int oder None wenn nicht gefunden
     """
-    building_3d_db = Path(__file__).parent.parent / 'data' / 'building_3d.db'
-
-    if not building_3d_db.exists():
-        logger.debug(f'building_3d.db nicht gefunden: {building_3d_db}')
+    if not BUILDING_3D_DB_PATH.exists():
+        logger.debug(f'building_3d DB nicht gefunden: {BUILDING_3D_DB_PATH}')
         return None
 
     try:
-        conn = sqlite3.connect(building_3d_db)
+        conn = get_building_3d_connection()
         cursor = conn.cursor()
 
         # FIX BUG-015: Alle Kandidaten im Radius laden (nicht nur nächstes)
@@ -133,17 +135,20 @@ def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -
                 logger.info(f'[BUG-015 FIX] Point-in-Polygon Match: ({e:.1f}, {n:.1f}) → EGID {egid} (center_dist={dist:.1f}m)')
                 return egid
 
-        # Schritt 2: Fallback auf nächstes Zentrum (wie bisher, aber mit Warnung)
+        # Schritt 2: Kein Polygon-Match gefunden
+        # FIX 12.01.2026 BUG-018: KEIN Fallback auf nächstes Zentrum!
+        # Bei Multi-Adress-Lookup führt Fallback zu falschen EGIDs.
+        # Stattdessen None zurückgeben → fetch_building_polygon_for_coordinates wird aufgerufen.
         first = candidates[0]
-        egid = first[0]
         dist = first[4] ** 0.5
 
         logger.warning(
-            f'[BUG-015] Kein Polygon-Match für ({e:.1f}, {n:.1f}). '
-            f'Fallback auf nächstes Zentrum: EGID {egid} (dist={dist:.1f}m). '
+            f'[BUG-018] Kein Polygon-Match für ({e:.1f}, {n:.1f}). '
+            f'Kein Fallback - fetch_building_polygon_for_coordinates wird aufgerufen. '
+            f'Nächstes Zentrum wäre EGID {first[0]} (dist={dist:.1f}m). '
             f'Geprüft: {len(candidates)} Kandidaten.'
         )
-        return egid
+        return None
 
     except Exception as ex:
         logger.error(f'building_3d.db Lookup-Fehler: {ex}')
