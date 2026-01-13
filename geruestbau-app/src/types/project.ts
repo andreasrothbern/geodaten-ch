@@ -68,6 +68,10 @@ export interface Geodata {
   roof_type?: string  // flachdach, satteldach, walmdach, etc.
   roof_orientation?: string  // 'N-S' oder 'O-W' (First-Verlauf)
   roof_angle_deg?: number  // Dachneigung in Grad
+  // NEU 14.01.2026 (T4) - Fassaden-Höhen aus Wall-Layer
+  facade_z_min?: Record<string, number>  // {"N": 541.0, "E": 543.5, ...}
+  facade_z_max?: Record<string, number>  // {"N": 550.0, "E": 552.0, ...}
+  facade_heights_source?: 'wall_layer' | 'terrain_sampled' | 'global'
 }
 
 // Zone eines Gebäudes (aus building_contexts.db)

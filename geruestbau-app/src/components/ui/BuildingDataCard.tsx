@@ -96,6 +96,71 @@ function getPositionLabel(position?: string) {
   }
 }
 
+// NEU 14.01.2026 (T4) - Fassaden-Höhen Anzeige
+// Zeigt Fassaden-Höhen aus Wall-Layer wenn verfügbar
+function FacadeHeightsInfo({
+  facadeZMin,
+  facadeZMax,
+  source
+}: {
+  facadeZMin?: Record<string, number>
+  facadeZMax?: Record<string, number>
+  source?: string
+}) {
+  if (!facadeZMin || Object.keys(facadeZMin).length === 0) return null
+
+  const sourceLabel = {
+    'wall_layer': '3D-Layer',
+    'terrain_sampled': 'Terrain',
+    'global': 'Global'
+  }[source || 'global'] || 'Global'
+
+  const sourceColor = {
+    'wall_layer': 'text-green-600 bg-green-50',
+    'terrain_sampled': 'text-blue-600 bg-blue-50',
+    'global': 'text-gray-600 bg-gray-50'
+  }[source || 'global'] || 'text-gray-600 bg-gray-50'
+
+  // Sortiere Richtungen: N, NE, E, SE, S, SW, W, NW
+  const directionOrder = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  const sortedDirections = Object.keys(facadeZMin).sort(
+    (a, b) => directionOrder.indexOf(a) - directionOrder.indexOf(b)
+  )
+
+  return (
+    <div className="col-span-2 mt-2 pt-2 border-t border-green-200">
+      <div className="flex items-center gap-2 mb-2">
+        <Mountain className="w-4 h-4 text-green-600" />
+        <span className="text-green-700 font-medium">
+          Fassaden-Höhen
+        </span>
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${sourceColor}`}>
+          {sourceLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1 text-xs">
+        {sortedDirections.map((dir) => {
+          const zMin = facadeZMin[dir]
+          const zMax = facadeZMax?.[dir]
+          const height = zMax && zMin ? (zMax - zMin).toFixed(1) : '–'
+
+          return (
+            <div
+              key={dir}
+              className="flex flex-col items-center p-1.5 bg-white rounded border border-green-100"
+            >
+              <span className="font-medium text-green-700">{dir}</span>
+              <span className="text-gray-500">
+                {height !== '–' ? `${height}m` : '–'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // Zonen-Liste Komponente
 function ZonesList({ zones }: { zones: ZoneInfo[] }) {
   if (!zones || zones.length <= 1) return null
@@ -255,6 +320,13 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
             </div>
           </div>
         )}
+
+        {/* Fassaden-Höhen (NEU 14.01.2026 T4) */}
+        <FacadeHeightsInfo
+          facadeZMin={geodata.facade_z_min}
+          facadeZMax={geodata.facade_z_max}
+          source={geodata.facade_heights_source}
+        />
 
         {/* Zonen */}
         {geodata.zones && <ZonesList zones={geodata.zones} />}

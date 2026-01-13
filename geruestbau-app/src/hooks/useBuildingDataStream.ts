@@ -112,6 +112,10 @@ export interface TerrainData {
   max_terrain_m?: number;
   slope_m?: number;
   slope_class?: 'eben' | 'leicht' | 'mittel' | 'stark';
+  // NEU 14.01.2026 (T3/T4) - Fassaden-Höhen aus Wall-Layer
+  facade_z_min?: Record<string, number>;
+  facade_z_max?: Record<string, number>;
+  facade_heights_source?: 'wall_layer' | 'terrain_sampled' | 'global';
   duration_ms: number;
   error?: string;
 }
@@ -199,6 +203,10 @@ export interface BuildingDataBundle {
     max_height_m: number;
     slope_m: number;
     slope_class: 'eben' | 'leicht' | 'mittel' | 'stark';
+    // NEU 14.01.2026 (T3/T4) - Fassaden-Höhen aus Wall-Layer
+    facade_z_min?: Record<string, number>;
+    facade_z_max?: Record<string, number>;
+    facade_heights_source?: 'wall_layer' | 'terrain_sampled' | 'global';
   } | null;
   // Zonen
   zones: ZoneData[] | null;

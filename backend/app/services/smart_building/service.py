@@ -263,6 +263,10 @@ class SmartBuildingService:
                 "is_sloped": bundle.terrain.is_sloped,
                 "requires_level_compensation": bundle.terrain.requires_level_compensation,
                 "facade_heights": bundle.terrain.facade_heights,
+                # NEU 14.01.2026 (T2): Fassaden-Höhen aus Wall-Layer
+                "facade_z_min": bundle.terrain.facade_z_min,
+                "facade_z_max": bundle.terrain.facade_z_max,
+                "facade_heights_source": bundle.terrain.facade_heights_source,
             } if bundle.terrain else None,
             "roof_type": bundle.roof_type,
             "roof_angle_deg": bundle.roof_angle_deg,
@@ -359,6 +363,10 @@ class SmartBuildingService:
                 is_sloped=t.get("is_sloped", False),
                 requires_level_compensation=t.get("requires_level_compensation", False),
                 facade_heights=t.get("facade_heights", {}),
+                # NEU 14.01.2026 (T2): Fassaden-Höhen aus Wall-Layer
+                facade_z_min=t.get("facade_z_min", {}),
+                facade_z_max=t.get("facade_z_max", {}),
+                facade_heights_source=t.get("facade_heights_source", "global"),
             )
 
         # Zonen
@@ -882,6 +890,10 @@ class SmartBuildingService:
                                 f"Hanglage erkannt: {slope_m:.1f}m ({bundle.terrain.slope_class})"
                             )
 
+                # NEU 14.01.2026: Fassaden-Höhen aus Wall-Layer (T2)
+                # Fallback-Kette: 1. Wall-Layer → 2. Terrain-Sampling → 3. Global
+                await self._collect_facade_heights(bundle)
+
                 # Terrain in building_environment speichern (persistenter Cache pro EGID)
                 if bundle.egid:
                     self._save_terrain_to_environment(bundle)
@@ -909,6 +921,10 @@ class SmartBuildingService:
                         slope_class=t.get("slope_class", "eben"),
                         is_sloped=t.get("slope_m", 0) > 1.0 if t.get("slope_m") else False,
                         requires_level_compensation=t.get("requires_level_compensation", False),
+                        # NEU 14.01.2026 (T2): Fassaden-Höhen aus Wall-Layer
+                        facade_z_min=t.get("facade_z_min", {}),
+                        facade_z_max=t.get("facade_z_max", {}),
+                        facade_heights_source=t.get("facade_heights_source", "global"),
                     )
                     return terrain
             return None
@@ -929,6 +945,10 @@ class SmartBuildingService:
                 "slope_m": bundle.terrain.slope_m if bundle.terrain else None,
                 "slope_class": bundle.terrain.slope_class if bundle.terrain else "eben",
                 "requires_level_compensation": bundle.terrain.requires_level_compensation if bundle.terrain else False,
+                # NEU 14.01.2026 (T2): Fassaden-Höhen aus Wall-Layer
+                "facade_z_min": bundle.terrain.facade_z_min if bundle.terrain else {},
+                "facade_z_max": bundle.terrain.facade_z_max if bundle.terrain else {},
+                "facade_heights_source": bundle.terrain.facade_heights_source if bundle.terrain else "global",
             }
 
             db_service.set_building_environment(
@@ -940,6 +960,96 @@ class SmartBuildingService:
             logger.info(f"Terrain saved for EGID {bundle.egid}: {bundle.terrain.slope_class}")
         except Exception as e:
             logger.warning(f"Could not save terrain to environment: {e}")
+
+    async def _collect_facade_heights(self, bundle: BuildingDataBundle):
+        """NEU 14.01.2026 (T2): Sammelt Fassaden-Höhen aus Wall-Layer.
+
+        Fallback-Kette:
+        1. Wall-Layer (höchste Präzision) - wenn has_3d_layers=True
+        2. Terrain-Sampling (gute Präzision) - swissALTI3D pro Fassade
+        3. Global (Fallback) - Referenz-Höhe für alle Fassaden
+
+        Die Daten werden in TerrainProfile.facade_z_min/facade_z_max gespeichert.
+        """
+        if not bundle.terrain:
+            return
+
+        if not bundle.sides:
+            # Keine Fassaden bekannt → Global-Fallback
+            bundle.terrain.facade_heights_source = "global"
+            return
+
+        # STUFE 1: Wall-Layer Matching (wenn 3D-Daten verfügbar)
+        if bundle.has_3d_layers and bundle.egid:
+            try:
+                from .wall_facade_matcher import get_wall_facade_matcher
+                matcher = get_wall_facade_matcher()
+
+                # Prüfen ob Wall-Daten vorhanden
+                if matcher.has_wall_data(bundle.egid):
+                    facade_heights = matcher.get_facade_heights(bundle.egid, bundle.sides)
+
+                    if facade_heights:
+                        # Übertragen in TerrainProfile
+                        for direction, fh in facade_heights.items():
+                            bundle.terrain.facade_z_min[direction] = fh.z_min
+                            bundle.terrain.facade_z_max[direction] = fh.z_max
+
+                        bundle.terrain.facade_heights_source = "wall_layer"
+                        logger.info(
+                            f"[FACADE-HEIGHTS] Wall-Layer: {len(facade_heights)} Fassaden "
+                            f"für EGID {bundle.egid}"
+                        )
+                        return
+
+            except Exception as e:
+                logger.warning(f"[FACADE-HEIGHTS] Wall-Layer Fehler: {e}")
+
+        # STUFE 2: Terrain-Sampling (swissALTI3D pro Fassaden-Startpunkt)
+        try:
+            from app.services.terrain import get_terrain_service
+            terrain_service = get_terrain_service()
+
+            sampled_count = 0
+            for side in bundle.sides:
+                direction = side.get("direction", "?")
+                start_point = side.get("start_point") or side.get("start", {})
+
+                if isinstance(start_point, dict):
+                    e = start_point.get("x") or start_point.get("e")
+                    n = start_point.get("y") or start_point.get("n")
+                elif isinstance(start_point, (list, tuple)) and len(start_point) >= 2:
+                    e, n = start_point[0], start_point[1]
+                else:
+                    continue
+
+                if e and n:
+                    terrain_height = await terrain_service.get_height(e, n)
+                    if terrain_height is not None:
+                        bundle.terrain.facade_z_min[direction] = terrain_height
+                        # z_max = terrain + traufhöhe
+                        if bundle.traufhoehe_m:
+                            bundle.terrain.facade_z_max[direction] = terrain_height + bundle.traufhoehe_m
+                        sampled_count += 1
+
+            if sampled_count > 0:
+                bundle.terrain.facade_heights_source = "terrain_sampled"
+                logger.info(f"[FACADE-HEIGHTS] Terrain-Sampling: {sampled_count} Fassaden")
+                return
+
+        except Exception as e:
+            logger.warning(f"[FACADE-HEIGHTS] Terrain-Sampling Fehler: {e}")
+
+        # STUFE 3: Global-Fallback
+        bundle.terrain.facade_heights_source = "global"
+        ref_height = bundle.terrain.reference_height_m
+        for side in bundle.sides:
+            direction = side.get("direction", "?")
+            bundle.terrain.facade_z_min[direction] = ref_height
+            if bundle.traufhoehe_m:
+                bundle.terrain.facade_z_max[direction] = ref_height + bundle.traufhoehe_m
+
+        logger.info(f"[FACADE-HEIGHTS] Global-Fallback für {len(bundle.sides)} Fassaden")
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):
         """Schritt 6: Dach-Analyse (berechnet) - NUR ALS FALLBACK!

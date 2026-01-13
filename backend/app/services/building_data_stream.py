@@ -256,6 +256,10 @@ class BuildingDataStreamService:
                         "max_terrain_m": bundle.terrain.max_height_m,
                         "slope_m": bundle.terrain.slope_m,
                         "slope_class": bundle.terrain.slope_class,
+                        # NEU 14.01.2026 (T3): Fassaden-Höhen aus Wall-Layer
+                        "facade_z_min": bundle.terrain.facade_z_min,
+                        "facade_z_max": bundle.terrain.facade_z_max,
+                        "facade_heights_source": bundle.terrain.facade_heights_source,
                     })
 
                 yield SSEEvent(
@@ -376,6 +380,10 @@ class BuildingDataStreamService:
                 "max_height_m": bundle.terrain.max_height_m,
                 "slope_m": bundle.terrain.slope_m,
                 "slope_class": bundle.terrain.slope_class,
+                # NEU 14.01.2026 (T3): Fassaden-Höhen aus Wall-Layer
+                "facade_z_min": bundle.terrain.facade_z_min,
+                "facade_z_max": bundle.terrain.facade_z_max,
+                "facade_heights_source": bundle.terrain.facade_heights_source,
             }
 
         return {

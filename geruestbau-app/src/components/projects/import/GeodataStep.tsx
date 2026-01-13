@@ -115,6 +115,10 @@ export default function GeodataStep({
         gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
         terrain_height_m: bundle.terrain?.reference_height_m,
         slope_class: bundle.terrain?.slope_class,
+        // NEU 14.01.2026 (T4): Fassaden-Höhen aus Wall-Layer
+        facade_z_min: bundle.terrain?.facade_z_min,
+        facade_z_max: bundle.terrain?.facade_z_max,
+        facade_heights_source: bundle.terrain?.facade_heights_source,
         polygon: bundle.polygon ?? undefined,
         sides: bundle.sides ?? undefined,
         perimeter_m: bundle.perimeter_m ?? undefined,
@@ -138,6 +142,8 @@ export default function GeodataStep({
           lv95_e: bundle.lv95_e,
           lv95_n: bundle.lv95_n,
         } : undefined,
+        // FIX 14.01.2026: has_3d_layers übertragen für 3D-Qualitäts-Badge
+        has_3d_layers: bundle.has_3d_layers ?? false,
       }
       setGeodata(newGeodata)
       setResearchStatus('done')

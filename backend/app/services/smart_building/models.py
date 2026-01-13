@@ -93,9 +93,18 @@ class TerrainProfile:
     max_height_m: Optional[float] = None
     slope_m: Optional[float] = None  # Differenz min-max
 
-    # Detaillierte Höhen pro Fassade
+    # Detaillierte Höhen pro Fassade (Terrain am Fassaden-Startpunkt)
     facade_heights: Dict[str, float] = field(default_factory=dict)
     # {"N": 543.1, "E": 544.2, "S": 545.0, "W": 543.5}
+
+    # NEU 14.01.2026: Fassaden-Höhen aus Wall-Layer (z_min/z_max pro Fassade)
+    # Quelle: WallFacadeMatcher → swissBUILDINGS3D Wall-Layer
+    facade_z_min: Dict[str, float] = field(default_factory=dict)
+    # {"N": 541.0, "E": 543.5, ...} - Terrain-Höhe (m ü.M.) an der Fassade
+    facade_z_max: Dict[str, float] = field(default_factory=dict)
+    # {"N": 550.0, "E": 552.0, ...} - Wandoberkante (m ü.M.) an der Fassade
+    facade_heights_source: str = "global"
+    # "wall_layer" | "terrain_sampled" | "global"
 
     # Klassifikation
     is_sloped: bool = False  # > 1m Differenz
