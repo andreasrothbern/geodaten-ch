@@ -41,31 +41,52 @@ asyncio.create_task(_import_region_background(region_name))
 _is_valid_tile_id(tile_id)  # Regex: ^\d{4}-\d{1,2}$
 ```
 
-### Baseline-Messung (14.01.2026)
+### Baseline-Messung (14.01.2026 19:30)
 
 **Test-Tile:** Basel 1047-34 (14236 Gebäude, 2024er Version)
 
-#### Gemessene Werte
+#### Gemessene Werte (API-Test 14.01.2026)
 
-| Phase | Zeit | Pro Gebäude | Bemerkung |
-|-------|------|-------------|-----------|
-| **1. Download** | ~5-10s | - | STAC API → ZIP (~30MB) |
-| **2. Entpacken** | ~2-3s | - | ZIP → GDB Verzeichnis |
-| **3. Parse Building_solid** | **143.6s** | **10.1ms** | fiona direct streaming |
-| **4. Parse Roof_solid** | ~20-30s | ~2ms | Weniger Geometrie |
-| **5. Parse Wall** | ~30-40s | ~2-3ms | 3D-Geometrie (WKB) |
-| **6. DB-Write (DuckDB)** | ~5-10s | ~0.7ms | Bulk-INSERT |
-| **GESAMT (geschätzt)** | **~220-250s** | **~16ms** | ~4 min pro Tile |
+| Phase | Zeit | Pro Gebäude | Status |
+|-------|------|-------------|--------|
+| **1. Download** | aus Cache | - | ✅ (Tile war gecacht) |
+| **2. Entpacken** | aus Cache | - | ✅ (Tile war gecacht) |
+| **3. Parse Building_solid** | **128.0s** | **8.99ms** | ✅ **Gemessen** |
+| **4. Parse Roof_solid** | ~20-30s | ~2ms | ⚠️ Geschätzt |
+| **5. Parse Wall** | ~30-40s | ~2-3ms | ⚠️ Geschätzt |
+| **6. DB-Write (DuckDB)** | ~5-10s | ~0.7ms | ⚠️ Geschätzt |
+| **GESAMT** | **~200-220s** | **~15ms** | ~3.5 min pro Tile |
+
+> **Verbesserung:** 8.99ms/Gebäude (NEU) vs. 10.1ms/Gebäude (ALT) = **11% schneller**
+
+#### Metriken via API
+
+```bash
+curl -s "http://localhost:8000/api/v1/batch/import/metrics"
+```
+
+**Gemessen am 14.01.2026 19:10:**
+```json
+{
+  "parse_building_solid_ms": 128028.2,
+  "parse_building_solid_count": 14236,
+  "ms_per_building": 8.99,
+  "total_ms": 128028.2
+}
+```
 
 #### Was wurde gemessen vs. geschätzt
 
 | Metrik | Status | Quelle |
 |--------|--------|--------|
-| Parse Building_solid | ✅ **Gemessen** | `tile_prefetch.py` Performance-Logging |
-| Parse Roof_solid | ⚠️ Geschätzt | Extrapoliert aus Layer-Grösse |
-| Parse Wall | ⚠️ Geschätzt | Extrapoliert aus Layer-Grösse |
-| Download | ⚠️ Geschätzt | Variiert nach Netzwerk |
-| DB-Write | ⚠️ Geschätzt | Nicht separat gemessen |
+| Parse Building_solid | ✅ **Gemessen** | `/api/v1/batch/import/metrics` |
+| Parse Roof_solid | ⚠️ Noch nicht | batch_import.py nutzt nicht prefetch |
+| Parse Wall | ⚠️ Noch nicht | batch_import.py nutzt nicht prefetch |
+| Download/Unzip | ⚠️ Noch nicht | Tile war gecacht |
+| DB-Write | ⚠️ Noch nicht | Läuft noch |
+
+> **TODO:** batch_import.py anpassen, um `prefetch_tile_buildings()` zu verwenden
+> statt nur `_parse_all_buildings_from_gdb()`. Dann werden alle Layer + DB-Write gemessen.
 
 #### Performance-Logging aktivieren
 
