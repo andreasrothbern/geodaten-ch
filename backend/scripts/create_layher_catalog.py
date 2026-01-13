@@ -263,6 +263,11 @@ def insert_blitz70_materials(conn: sqlite3.Connection):
         ("2620.060", "blitz70", "base", "Fussspindel 0.60m", "Vérin 0.60m", None, 0.60, None, 4.0, None, "verzinkt", "Verstellbar 0-60cm"),
         ("2620.080", "blitz70", "base", "Fussspindel 0.80m", "Vérin 0.80m", None, 0.80, None, 5.0, None, "verzinkt", "Verstellbar 0-80cm"),
 
+        # NEU 15.01.2026: Ausgleichsrahmen für Hanglage (>0.8m)
+        ("2621.100", "blitz70", "base", "Ausgleichsrahmen 1.00m", "Cadre de nivellement 1.00m", None, 1.00, 0.73, 12.0, 6, "verzinkt", "Für Hanglage 0.8-1.0m"),
+        ("2621.150", "blitz70", "base", "Ausgleichsrahmen 1.50m", "Cadre de nivellement 1.50m", None, 1.50, 0.73, 15.0, 6, "verzinkt", "Für Hanglage 1.0-1.5m"),
+        ("2621.200", "blitz70", "base", "Ausgleichsrahmen 2.00m", "Cadre de nivellement 2.00m", None, 2.00, 0.73, 18.5, 6, "verzinkt", "Für Hanglage 1.5-2.0m"),
+
         # Verankerung
         ("2630.050", "blitz70", "anchor", "Gerüsthalter kurz", "Fixation courte", 0.50, None, None, 1.5, None, "verzinkt", "Für Mauerwerk"),
         ("2630.080", "blitz70", "anchor", "Gerüsthalter lang", "Fixation longue", 0.80, None, None, 2.0, None, "verzinkt", "Grösserer Abstand"),

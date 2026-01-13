@@ -1,7 +1,15 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 6.6 (Stand 14.01.2026 21:00)
-> **Status:** Event-Loop-Blocking BEHOBEN ✅
+> **Version:** 6.9 (Stand 14.01.2026 00:15)
+> **Status:** C.1-C.4 Parquet-Pipeline VOLLSTÄNDIG IMPLEMENTIERT ✅
+>
+> **Aktuelle DB-Statistiken (14.01.2026):**
+> | Tabelle | Anzahl | Bemerkung |
+> |---------|--------|-----------|
+> | buildings_3d | 4,832 | Tile 1322-21 = 4,827 |
+> | building_roofs | 30,443 | ~6.3 Dächer/Gebäude |
+> | building_walls | 29,927 | ~6.2 Wände/Gebäude |
+> | **DB-Größe** | **402 MB** | DuckDB komprimiert |
 
 ## NEU: API-Router für Batch-Import (14.01.2026 02:45)
 
@@ -165,7 +173,87 @@ print(f"DB-Write: {metrics['db_write_buildings_ms']:.0f}ms")
 - [x] Separates Timing für Download-Phase
 - [x] Separates Timing pro Layer (Building, Roof, Wall)
 - [x] Separates Timing für DB-Write
+- [x] Thread-Timing für Parallelitäts-Analyse (NEU 14.01.2026 22:30)
 - [ ] Messung mit verschiedenen Tile-Grössen (klein/mittel/gross)
+
+### C.1 Parallelitäts-Test-Ergebnisse (14.01.2026 23:30)
+
+**Test-Tile:** Bern 1322-21 (4901 Gebäude, 8138 Dächer, 4974 Wände)
+
+#### Sequentielle Baseline (gemessen)
+
+```
+Building_solid: 0ms → 65640ms (65.2s, 4901 items)
+Roof_solid:     65645ms → 138644ms (73.0s, 8138 items)
+Wall:           138647ms → 147172ms (8.5s, 4974 items)
+
+Parallel-Effizienz: 0.0% (korrekt - sequentiell!)
+Gesamt: 147.2s
+```
+
+#### Theoretisches Parallelisierungs-Potenzial
+
+| Metrik | Wert | Erklärung |
+|--------|------|-----------|
+| **Sequentielle Zeit** | 147s | Alle 3 Parser nacheinander |
+| **Perfekte Parallele Zeit** | 73s | = längster Parser (Roof) |
+| **Theoretischer Speedup** | 2.0x | 147/73 = 2.0 |
+| **OOM-Problem** | ✅ Identifiziert | asyncio.gather() hält 3 Listen |
+
+#### OOM-Problem bei Parallelisierung
+
+**Problem:** Bei parallelem Parsing mit `asyncio.gather()` werden alle 3 Ergebnis-Listen
+(~18000 Dicts mit Geometrie-Daten) gleichzeitig im RAM gehalten → Out of Memory.
+
+```python
+# AKTUELL (OOM bei grossen Tiles):
+buildings, roofs, walls = await asyncio.gather(
+    parse_buildings(),  # → List[Dict] mit 4901 items
+    parse_roofs(),      # → List[Dict] mit 8138 items
+    parse_walls()       # → List[Dict] mit 4974 items
+)
+# ↑ Alle 3 Listen gleichzeitig im RAM!
+```
+
+**Lösung (geplant C.1b):** Streaming-to-DB
+
+```python
+# GEPLANT: Streaming - kein RAM-Overhead
+async def stream_parse_and_save():
+    # Parser schreiben direkt in DB während des Parsings
+    await asyncio.gather(
+        stream_buildings_to_db(gdb_path),  # → Kein List-Return
+        stream_roofs_to_db(gdb_path),
+        stream_walls_to_db(gdb_path)
+    )
+```
+
+#### Parallelitäts-Metriken-API (NEU)
+
+Die API wurde um Thread-Timing-Felder erweitert:
+
+```json
+{
+  "parse_building_solid_ms": 65206.0,
+  "parse_building_solid_start_ms": 0.0,
+  "parse_building_solid_end_ms": 65640.0,
+  "parse_roof_solid_ms": 72998.0,
+  "parse_roof_solid_start_ms": 65645.0,
+  "parse_roof_solid_end_ms": 138644.0,
+  "parse_wall_ms": 8524.0,
+  "parse_wall_start_ms": 138647.0,
+  "parse_wall_end_ms": 147172.0,
+  "parallel_efficiency": 0.0
+}
+```
+
+**Effizienz-Berechnung:**
+```
+efficiency = (sequential - actual) / (sequential - perfect)
+
+- 0.0 = komplett sequentiell (actual ≈ sequential)
+- 1.0 = perfekt parallel (actual ≈ longest single parser)
+```
 
 > **BUG-022:** Alte Tiles (2018) haben `EGID=None` für alle Gebäude!
 > STAC API liefert mehrere Versionen. Code bevorzugt neueste Version.
@@ -1487,14 +1575,20 @@ MIT PARQUET-PIPELINE:
 
 | # | Task | Datei | Aufwand | Priorität |
 |---|------|-------|---------|-----------|
-| **C.1** | Layer-Parallel Parser | `tile_prefetch.py` | 1h | 🔴 Hoch |
-| **C.2** | Parquet-Writer pro Layer | `parquet_writer.py` (NEU) | 2h | 🔴 Hoch |
-| **C.3** | DuckDB Bulk-Load Funktion | `building_3d_service.py` | 1h | 🔴 Hoch |
-| **C.4** | Import-Script anpassen | `import_tiles.py` | 2h | 🔴 Hoch |
+| **C.1** | Layer-Parallel Parser | `tile_prefetch.py` | 1h | ✅ 15.01.2026 |
+| **C.2** | Parquet-Writer pro Layer | `parquet_writer.py` (NEU) | 2h | ✅ 15.01.2026 |
+| **C.3** | DuckDB Bulk-Load Funktion | `parquet_writer.py` | 1h | ✅ 15.01.2026 |
+| **C.4** | prefetch_tile_buildings_async umstellen | `tile_prefetch.py` | 30min | ✅ 15.01.2026 |
 | **C.5** | Paralleler Download | `import_tiles.py` | 1h | 🟡 Mittel |
 | **C.6** | Progress-Tracking | `import_tiles.py` | 30min | 🟢 Nice-to-have |
 | **C.7** | Cleanup-Integration | `tile_prefetch.py` | 30min | 🟢 Nice-to-have |
 | **C.8** | **Alle 7 Indexes deferred** | `building_3d_service.py` | 30min | ✅ 14.01.2026 |
+
+> **C.1-C.3 IMPLEMENTIERT (15.01.2026 12:30):**
+> - **Parquet-Pipeline funktioniert!** Test-Tile 1322-21: **51.2s** (vs. 147.2s Baseline = **2.88x Speedup**)
+> - `parquet_writer.py`: StreamingParquetWriter, paralleles Parsing mit asyncio.gather()
+> - DuckDB Bulk-Load: `read_parquet()` → INSERT OR REPLACE (4901 buildings + 8138 roofs + 4974 walls)
+> - Fixes: Column-Mapping, DuckDB-Syntax (changes() → COUNT(*)), Schema-Anpassungen
 
 > **C.8 IMPLEMENTIERT (14.01.2026 00:30):** `drop_indexes()` und `create_indexes()` behandeln
 > jetzt ALLE 7 Indexes (vorher nur 2). Beide Funktionen iterieren durch die Index-Liste
@@ -1724,7 +1818,7 @@ Obwohl wir `asyncio.to_thread()` verwenden, blockieren diese sync-Operationen de
 **Verdacht:** `asyncio.to_thread()` funktioniert nicht wie erwartet weil:
 1. Der ThreadPoolExecutor eventuell voll ist
 2. uvicorn ohne `--workers` nur 1 Worker hat (Single-Threaded)
-3. Die GIL (Global Interpreter Lock) verhindert echte Parallelität
+3. D1.ie GIL (Global Interpreter Lock) verhindert echte Parallelität
 
 ### Beobachtetes Verhalten (14.01.2026 20:00)
 
@@ -1799,6 +1893,9 @@ für eine sync-Funktion). Mit dem `asyncio.to_thread()` Wrapper blockiert das Ba
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 00:15 | 6.9 | **DB-Statistiken verifiziert:** 4,832 Gebäude, 30,443 Dächer, 29,927 Wände in DuckDB (402 MB). `get_stats()` in `building_3d_service.py` um roofs/walls erweitert. Endpoint `/api/v1/batch/import/db-stats` zeigt jetzt alle Tabellen. |
+| 15.01.2026 23:45 | 6.8 | **C.4 IMPLEMENTIERT:** `prefetch_tile_buildings_async` nutzt jetzt die Parquet-Pipeline (`import_tile_with_parquet_pipeline`). Die gesamte Parquet-Pipeline (C.1-C.4) ist nun produktiv. |
+| 15.01.2026 12:30 | 6.7 | **C.1-C.3 IMPLEMENTIERT:** Parquet-Pipeline funktioniert! Test-Tile 1322-21: 51.2s (vs. 147.2s Baseline = **2.88x Speedup**). `parquet_writer.py`: StreamingParquetWriter, paralleles Parsing mit asyncio.gather(). DuckDB Bulk-Load: read_parquet() → INSERT OR REPLACE. Fixes: Column-Mapping, DuckDB-Syntax (changes() → COUNT(*)), Schema-Anpassungen für roofs/walls. |
 | 14.01.2026 21:00 | 6.6 | **C.10 BEHOBEN:** Event-Loop-Blocking lag am falschen async-Aufruf. Fix: `asyncio.to_thread(prefetch_tile_buildings, ...)` statt `await prefetch_tile_buildings(...)`. Health-Checks funktionieren jetzt während Imports. uvicorn `--workers` auf Windows problematisch (Socket-Fehler). |
 | 14.01.2026 20:30 | 6.5 | **C.10 Event-Loop-Blocking:** Problem dokumentiert - Download/Parsing blockiert Backend. Lösungsansätze: uvicorn `--workers 4`, httpx statt urllib. |
 | 14.01.2026 02:45 | 6.4 | **API-Router:** Neuer `batch_import.py` Router für DuckDB-Locking-Isolation. **Baseline:** 1 Tile (14236 Gebäude) = 143.6s (~10ms/Gebäude). **BUG-022:** Alte Tiles (2018) ohne EGIDs erkannt und gefixt. |

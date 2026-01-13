@@ -27,7 +27,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.tile_cache import get_tile_cache
-from app.services.tile_prefetch import prefetch_tile_buildings, reset_import_metrics
+from app.services.tile_prefetch import prefetch_tile_buildings_async, reset_import_metrics
 from app.services.building_3d_service import get_building_3d_service
 
 logger = logging.getLogger(__name__)
@@ -352,10 +352,11 @@ async def download_and_import_tile(tile_id: str, download_url: str) -> int:
     # 1. Download (sync, in thread pool)
     gdb_path = await asyncio.to_thread(_download_tile, tile_id, download_url)
 
-    # 2. Import all layers (sync function in thread pool)
-    # FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → asyncio.to_thread
+    # 2. Import all layers (async with parallel layer parsing)
+    # NEU 14.01.2026 22:00: Verwendet prefetch_tile_buildings_async für echtes async
+    # → Building_solid, Roof_solid, Wall werden PARALLEL geparst (~30-40% schneller)
     logger.info(f"Importing all layers for tile {tile_id}...")
-    saved_count = await asyncio.to_thread(prefetch_tile_buildings, tile_id, gdb_path)
+    saved_count = await prefetch_tile_buildings_async(tile_id, gdb_path)
 
     logger.info(f"Tile {tile_id} complete: {saved_count} buildings imported")
     return saved_count

@@ -827,11 +827,22 @@ class Building3DService:
         Gibt Statistiken zur Datenbank zurück.
 
         NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
+        NEU 14.01.2026: Roofs und Walls Statistiken hinzugefügt
         """
         with self._get_connection() as conn:
             if self._use_duckdb:
                 total_buildings = conn.execute("SELECT COUNT(*) FROM buildings_3d").fetchone()[0]
                 total_tiles = conn.execute("SELECT COUNT(DISTINCT tile_id) FROM buildings_3d").fetchone()[0]
+
+                # NEU 14.01.2026: Roofs und Walls zählen
+                try:
+                    total_roofs = conn.execute("SELECT COUNT(*) FROM building_roofs").fetchone()[0]
+                except:
+                    total_roofs = 0
+                try:
+                    total_walls = conn.execute("SELECT COUNT(*) FROM building_walls").fetchone()[0]
+                except:
+                    total_walls = 0
 
                 result = conn.execute("""
                     SELECT tile_id, COUNT(*) as count
@@ -851,6 +862,18 @@ class Building3DService:
                 cursor.execute("SELECT COUNT(DISTINCT tile_id) FROM buildings_3d")
                 total_tiles = cursor.fetchone()[0]
 
+                # NEU 14.01.2026: Roofs und Walls zählen
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM building_roofs")
+                    total_roofs = cursor.fetchone()[0]
+                except:
+                    total_roofs = 0
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM building_walls")
+                    total_walls = cursor.fetchone()[0]
+                except:
+                    total_walls = 0
+
                 cursor.execute("""
                     SELECT tile_id, COUNT(*) as count
                     FROM buildings_3d
@@ -862,6 +885,8 @@ class Building3DService:
 
             return {
                 "total_buildings": total_buildings,
+                "total_roofs": total_roofs,
+                "total_walls": total_walls,
                 "total_tiles": total_tiles,
                 "top_tiles": top_tiles,
                 "db_path": str(BUILDING_3D_DB_PATH),

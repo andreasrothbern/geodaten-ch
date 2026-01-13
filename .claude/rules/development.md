@@ -1,6 +1,6 @@
 # Entwicklungsumgebung
 
-**Stand 13.01.2026 18:30**
+**Stand 14.01.2026 21:45**
 
 ## Projekt-Pfade
 
@@ -42,8 +42,13 @@ echo "Caches gelöscht"
 
 ### 3. START - Backend starten
 
+**WICHTIG 14.01.2026:** `--workers 4` statt `--reload` verwenden!
+- `--reload` verursacht Datei-Konflikte beim Editieren
+- `--workers 4` ermöglicht parallele Requests
+- Bei Code-Änderungen: Backend stoppen + neu starten
+
 ```bash
-cd C:/Users/vonro/projects/lawil/geodaten-ch/backend && "C:/Users/vonro/projects/lawil/geodaten-ch/backend/venv/Scripts/python.exe" -m uvicorn app.main:app --reload --port 8000
+cd C:/Users/vonro/projects/lawil/geodaten-ch/backend && "C:/Users/vonro/projects/lawil/geodaten-ch/backend/venv/Scripts/python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 ```
 
 ### 4. TEST - Prüfen ob Backend läuft
@@ -59,17 +64,23 @@ powershell -Command "(Invoke-WebRequest -Uri 'http://localhost:8000/health' -Use
 
 ### Backend starten
 
-**Stand 13.01.2026 17:30:** DuckDB ist jetzt der Default - kein `USE_DUCKDB=true` mehr nötig!
+**Stand 14.01.2026 21:45:**
+- DuckDB ist der Default - kein `USE_DUCKDB=true` mehr nötig!
+- **`--workers 4` statt `--reload`** für bessere Performance und keine Datei-Konflikte
 
 ```bash
 cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
 
 # Windows CMD/PowerShell (Standard - verwendet DuckDB):
-".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 
 # Nur falls SQLite benötigt wird (Legacy):
-set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 ```
+
+**Warum kein `--reload`?**
+- `--reload` überwacht Dateien → Konflikte beim Editieren mit Claude
+- Bei Code-Änderungen: Backend stoppen + neu starten
 
 ### geruestbau-app starten (primäres Frontend)
 
@@ -89,7 +100,7 @@ Das Frontend MUSS auf Port 3001 laufen (nicht 3002, 3003, etc.)!
 
 ## Stop-Befehle (Windows)
 
-**Stand 13.01.2026 17:55**
+**Stand 14.01.2026 21:45**
 
 **ACHTUNG für Claude:** NIEMALS `taskkill /F /IM node.exe` oder `taskkill /F /IM python.exe` verwenden!
 Das würde auch den Claude Code Prozess selbst beenden.
@@ -102,23 +113,23 @@ Das würde auch den Claude Code Prozess selbst beenden.
 # SCHRITT 1: Alle uvicorn-Prozesse auflisten
 wmic process where "name='python.exe'" get ProcessId,CommandLine 2>nul
 
-# Beispiel-Ausgabe:
+# Beispiel-Ausgabe (mit --workers 4):
 # CommandLine                                                                    ProcessId
-# ...venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000       13712
-# ...venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000       1848
+# ...venv\Scripts\python.exe -m uvicorn app.main:app --workers 4 --port 8000    13712
+# ...python.exe -c "from multiprocessing.spawn import spawn_main..."            1848
 # ...python.exe -c "from multiprocessing.spawn import spawn_main..."            21400
+# ...python.exe -c "from multiprocessing.spawn import spawn_main..."            5432
 
 # SCHRITT 2: ALLE gefundenen PIDs auf einmal beenden (Git Bash kompatibel!)
-cmd //c "taskkill /PID 13712 /PID 1848 /PID 21400 /F"
+cmd //c "taskkill /PID 13712 /PID 1848 /PID 21400 /PID 5432 /F"
 
 # SCHRITT 3: Prüfen ob Port frei ist
 netstat -ano | findstr :8000 || echo "Port 8000 ist frei"
 ```
 
 **Warum mehrere Prozesse?**
-- uvicorn mit `--reload` startet einen **Reloader-Prozess** + **Worker-Prozess**
-- Manchmal bleiben **Zombie-Prozesse** nach Ctrl+C übrig
-- **multiprocessing.spawn** sind Child-Prozesse die auch beendet werden müssen
+- uvicorn mit `--workers 4` startet **1 Master + 4 Worker-Prozesse**
+- **multiprocessing.spawn** sind die Worker-Prozesse die auch beendet werden müssen
 
 **Falls taskkill fehlschlägt:**
 ```bash
@@ -186,7 +197,7 @@ echo "Alle Caches gelöscht"
 
 # 3. Backend neu starten
 cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
-"C:/Users/vonro/projects/lawil/geodaten-ch/backend/venv/Scripts/python.exe" -m uvicorn app.main:app --reload --port 8000
+"C:/Users/vonro/projects/lawil/geodaten-ch/backend/venv/Scripts/python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 ```
 
 ### Partieller Reset (nur bestimmte Caches)

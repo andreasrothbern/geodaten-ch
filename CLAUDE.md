@@ -88,17 +88,24 @@ Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert aut
 
 ### Backend starten
 
-**Stand 13.01.2026 17:30:** DuckDB ist jetzt der Default - kein Flag mehr nötig!
+**Stand 14.01.2026 21:45:**
+- DuckDB ist jetzt der Default - kein Flag mehr nötig!
+- **WICHTIG:** `--workers 4` statt `--reload` verwenden!
 
 ```bash
 cd backend
 
 # Windows CMD/PowerShell (Standard - verwendet DuckDB):
-".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 
 # Nur falls SQLite benötigt wird (Legacy):
-set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
 ```
+
+**Warum `--workers 4` statt `--reload`?**
+- `--reload` überwacht Dateien → Konflikte beim Editieren mit Claude
+- `--workers 4` ermöglicht parallele Request-Verarbeitung
+- Bei Code-Änderungen: Backend stoppen + neu starten
 
 **Warum DuckDB (Default)?**
 - Bessere Performance bei Bulk-Operationen
@@ -125,7 +132,7 @@ del /F /Q backend\app\data\building_3d.db* backend\app\data\tiles.db* 2>nul & rm
 
 # 3. Backend neu starten
 cd backend
-python -m uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --workers 4 --port 8000
 ```
 
 **Was wird gelöscht:**
@@ -1974,13 +1981,15 @@ cd backend
 python -m venv venv
 venv\Scripts\activate  # Windows
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --workers 4 --port 8000
 
 # Frontend (Terminal 2)
 cd frontend
 npm install
 npm run dev
 ```
+
+**Hinweis:** `--workers 4` statt `--reload` verwenden! Bei Code-Änderungen Backend stoppen + neu starten.
 
 - API Docs: http://localhost:8000/docs
 - Frontend: http://localhost:3000
