@@ -55,20 +55,42 @@ function ResearchSourceBadge({ source }: { source?: string }) {
   }
 }
 
-// NEU 12.01.2026 23:00 - 3D-Layer Qualitäts-Badge
-// Zeigt ob echte 3D-Daten (swissBUILDINGS3D Roof/Wall) verfügbar sind
-function Data3DQualityBadge({ has3DLayers }: { has3DLayers?: boolean }) {
-  if (has3DLayers === true) {
+// NEU 14.01.2026 17:45 - Höhen-Qualitäts-Badge (verbessert)
+// Zeigt die Qualität der Höhendaten basierend auf der Quelle
+function Data3DQualityBadge({
+  has3DLayers,
+  facadeHeightsSource
+}: {
+  has3DLayers?: boolean
+  facadeHeightsSource?: string
+}) {
+  // Stufe 1: Echte 3D-Layer (höchste Präzision ±0.1m)
+  if (has3DLayers === true || facadeHeightsSource === 'wall_layer') {
     return (
       <span
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-        title="Echte 3D-Daten aus swissBUILDINGS3D (Roof/Wall Layer)"
+        title="Echte 3D-Daten aus swissBUILDINGS3D (±0.1m Genauigkeit)"
       >
         <Cuboid className="w-3 h-3" />
         3D-Daten ✓
       </span>
     )
   }
+
+  // Stufe 2: Terrain-Sampling (gute Präzision ±0.5m)
+  if (facadeHeightsSource === 'terrain_sampled') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+        title="Höhen aus swissALTI3D Terrain-Modell (±0.5m Genauigkeit)"
+      >
+        <Mountain className="w-3 h-3" />
+        Terrain ✓
+      </span>
+    )
+  }
+
+  // Stufe 3: Global/Fallback (geschätzt)
   return (
     <span
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700"
@@ -242,7 +264,7 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
         </div>
         {/* NEU 12.01.2026 23:00 - Badges nebeneinander */}
         <div className="flex items-center gap-2">
-          <Data3DQualityBadge has3DLayers={geodata.has_3d_layers} />
+          <Data3DQualityBadge has3DLayers={geodata.has_3d_layers} facadeHeightsSource={geodata.facade_heights_source} />
           <ResearchSourceBadge source={geodata.research_source} />
         </div>
       </div>
