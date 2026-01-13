@@ -32,7 +32,7 @@ from app.models.schemas import (
     HealthResponse,
     ErrorResponse
 )
-from app.routers import geruestbau
+from app.routers import geruestbau, batch_import
 
 # Services initialisieren
 swisstopo = SwisstopoService()
@@ -96,6 +96,9 @@ app.add_middleware(
 
 # Gerüstbau-App Router einbinden
 app.include_router(geruestbau.router)
+
+# Batch-Import Router einbinden (NEU 13.01.2026)
+app.include_router(batch_import.router)
 
 
 # ============================================================================
@@ -3806,6 +3809,10 @@ async def get_smart_building_data(
                 "is_sloped": bundle.terrain.is_sloped,
                 "slope_direction": bundle.terrain.slope_direction,
                 "requires_level_compensation": bundle.terrain.requires_level_compensation,
+                # NEU 14.01.2026 (T2-T4): Fassaden-Höhen aus Wall-Layer
+                "facade_z_min": bundle.terrain.facade_z_min,
+                "facade_z_max": bundle.terrain.facade_z_max,
+                "facade_heights_source": bundle.terrain.facade_heights_source,
             } if bundle.terrain else None,
 
             # Dach (Basis)

@@ -829,8 +829,10 @@ class SmartBuildingService:
         - stark: > 3.0m (Spezielle Fundamentierung)
         """
         if not bundle.lv95_e or not bundle.lv95_n:
+            logger.info(f"[TERRAIN] Skipping - no coordinates for {bundle.egid}")
             return
 
+        logger.info(f"[TERRAIN] Starting collection for EGID {bundle.egid}")
         # Check cache first (building_environment)
         if bundle.egid:
             cached_terrain = self._load_terrain_from_environment(str(bundle.egid))
@@ -838,6 +840,16 @@ class SmartBuildingService:
                 bundle.terrain = cached_terrain
                 bundle.add_source(DataSource.CACHE)
                 logger.info(f"Terrain loaded from cache for EGID {bundle.egid}")
+
+                # FIX 14.01.2026 17:10: Fassaden-Höhen auch bei gecachtem Terrain sammeln
+                # Cache wurde vor T2-T4 erstellt → keine Fassaden-Höhen vorhanden
+                if not cached_terrain.facade_z_min or cached_terrain.facade_heights_source == "global":
+                    logger.info(f"[FACADE_HEIGHTS] Collecting for cached terrain, EGID {bundle.egid}")
+                    await self._collect_facade_heights(bundle)
+                    # Cache aktualisieren mit neuen Fassaden-Höhen
+                    if bundle.terrain.facade_heights_source != "global":
+                        self._save_terrain_to_environment(bundle)
+                        logger.info(f"[FACADE_HEIGHTS] Cache updated for EGID {bundle.egid}")
                 return
 
         try:
