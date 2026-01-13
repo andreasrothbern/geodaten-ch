@@ -169,9 +169,14 @@ async def download_tiles_parallel(
     Returns:
         Dict[tile_id, gdb_path] für erfolgreiche Downloads
     """
-    from app.services.swissbuildings3d_fetcher import get_fetcher
+    from app.services.tile_cache import get_tile_cache
+    from app.services.swissbuildings3d_fetcher import (
+        find_tile_for_coordinates,
+        download_and_extract_tile,
+    )
+    import tempfile
 
-    fetcher = get_fetcher()
+    tile_cache = get_tile_cache()
     results: Dict[str, Path] = {}
     semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -188,21 +193,58 @@ async def download_tiles_parallel(
                 logger.info(f"[DOWNLOAD] Starte {tile_id}")
                 start = time.time()
 
-                # swissbuildings3d_fetcher.fetch_tile() ist sync → to_thread
-                gdb_path = await asyncio.to_thread(fetcher.fetch_tile, tile_id)
+                # 1. Prüfe ob Tile bereits im Cache ist
+                cached_path = tile_cache.get_tile_path(tile_id)
+                if cached_path and cached_path.exists():
+                    logger.info(f"[DOWNLOAD] {tile_id} aus Cache: {cached_path}")
+                    return (tile_id, cached_path)
 
-                if gdb_path and gdb_path.exists():
-                    elapsed = time.time() - start
-                    logger.info(f"[DOWNLOAD] {tile_id} fertig in {elapsed:.1f}s")
-                    return (tile_id, gdb_path)
-                else:
-                    logger.warning(f"[DOWNLOAD] {tile_id} fehlgeschlagen (kein Pfad)")
-                    if progress:
-                        with _imports_lock:
-                            if tile_id in progress.tile_progress:
-                                progress.tile_progress[tile_id].status = "failed"
-                                progress.tile_progress[tile_id].error = "Download failed"
+                # 2. Tile-ID → Koordinaten → STAC-API
+                # Tile-ID "1332-21" → wir brauchen Koordinaten für STAC-API
+                # Berechne Mitte des Tiles aus der ID
+                coords = _tile_id_to_coordinates(tile_id)
+                if not coords:
+                    logger.warning(f"[DOWNLOAD] {tile_id}: Kann Koordinaten nicht berechnen")
                     return None
+
+                e, n = coords
+
+                # 3. STAC-API aufrufen (async)
+                tile_info = await find_tile_for_coordinates(e, n)
+                if not tile_info:
+                    logger.warning(f"[DOWNLOAD] {tile_id}: Kein Tile in STAC-API gefunden")
+                    return None
+
+                # 4. Download in temp-Verzeichnis
+                temp_dir = Path(tempfile.mkdtemp())
+                try:
+                    gdb_path = await asyncio.to_thread(
+                        download_and_extract_tile,
+                        tile_info["download_url"],
+                        temp_dir,
+                        tile_id
+                    )
+
+                    if not gdb_path or not gdb_path.exists():
+                        logger.warning(f"[DOWNLOAD] {tile_id}: Download fehlgeschlagen")
+                        return None
+
+                    # 5. Im Cache speichern
+                    bbox = tile_info.get("bbox")
+                    cached_path = tile_cache.store_tile(
+                        tile_id=tile_id,
+                        gdb_path=gdb_path,
+                        download_url=tile_info["download_url"],
+                        bbox=tuple(bbox) if bbox and len(bbox) >= 4 else None
+                    )
+
+                    elapsed = time.time() - start
+                    logger.info(f"[DOWNLOAD] {tile_id} fertig in {elapsed:.1f}s → {cached_path}")
+                    return (tile_id, cached_path)
+
+                finally:
+                    # Temp-Verzeichnis aufräumen
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
             except Exception as e:
                 logger.error(f"[DOWNLOAD] {tile_id} Fehler: {e}")
@@ -225,6 +267,48 @@ async def download_tiles_parallel(
 
     logger.info(f"[DOWNLOAD] {len(results)}/{len(tile_ids)} Tiles erfolgreich")
     return results
+
+
+def _tile_id_to_coordinates(tile_id: str) -> Optional[tuple[float, float]]:
+    """
+    Konvertiert eine Tile-ID zurück zu LV95-Koordinaten (Tile-Mitte).
+
+    Tile-ID Format: "MAIN-SUB" (z.B. "1332-21")
+    - MAIN = 1000 + (E_km - 2480) // 4 * 10 + (N_km - 1070) // 4
+    - SUB = ((N_km - 1070) % 4 + 1) * 10 + ((E_km - 2480) % 4 + 1)
+    """
+    try:
+        parts = tile_id.split("-")
+        if len(parts) != 2:
+            return None
+
+        main = int(parts[0])
+        sub = int(parts[1])
+
+        # Reverse-Engineering der Koordinaten
+        # main = 1000 + main_e * 10 + main_n
+        main_adjusted = main - 1000
+        main_e = main_adjusted // 10
+        main_n = main_adjusted % 10
+
+        # sub = sub_n * 10 + sub_e
+        sub_n = sub // 10
+        sub_e = sub % 10
+
+        # Koordinaten zurückberechnen
+        # E_km = 2480 + main_e * 4 + (sub_e - 1)
+        # N_km = 1070 + main_n * 4 + (sub_n - 1)
+        e_km = 2480 + main_e * 4 + (sub_e - 1)
+        n_km = 1070 + main_n * 4 + (sub_n - 1)
+
+        # Mitte des km-Quadrats
+        e = e_km * 1000 + 500
+        n = n_km * 1000 + 500
+
+        return (e, n)
+
+    except (ValueError, IndexError):
+        return None
 
 
 # =============================================================================
@@ -468,14 +552,15 @@ def get_tiles_for_region(region: str) -> List[str]:
     Gibt alle Tile-IDs für eine Region zurück.
 
     Regionen:
-    - "bern": Bern Stadt (~20 Tiles)
+    - "bern": Bern Stadt (~20-30 Tiles)
     - "zurich": Zürich Stadt (~30 Tiles)
     - "basel": Basel Stadt (~15 Tiles)
-    - "all": Alle verfügbaren Tiles (WARNUNG: sehr viele!)
 
     Returns:
-        Liste von Tile-IDs
+        Liste von eindeutigen Tile-IDs
     """
+    from app.services.tile_cache import lv95_to_tile_id
+
     # Vordefinierte Regionen (Bounding Boxes in LV95)
     REGIONS = {
         "bern": {
@@ -503,13 +588,18 @@ def get_tiles_for_region(region: str) -> List[str]:
 
     bbox = REGIONS[region]
 
-    # Tiles generieren (1km Grid)
-    tiles = []
-    for e in range(bbox["min_e"] // 1000, bbox["max_e"] // 1000 + 1):
-        for n in range(bbox["min_n"] // 1000, bbox["max_n"] // 1000 + 1):
-            tile_id = f"{e}-{n % 1000}"
-            tiles.append(tile_id)
+    # Tiles generieren mit der korrekten lv95_to_tile_id Funktion
+    # (1km Grid → Tile-ID mit main/sub-tile Schema)
+    tiles_set: Set[str] = set()  # Set für Deduplikation
+    for e_km in range(bbox["min_e"] // 1000, bbox["max_e"] // 1000 + 1):
+        for n_km in range(bbox["min_n"] // 1000, bbox["max_n"] // 1000 + 1):
+            # Koordinaten in km → lv95_to_tile_id erwartet volle Koordinaten
+            e = e_km * 1000 + 500  # Mitte des km-Quadrats
+            n = n_km * 1000 + 500
+            tile_id = lv95_to_tile_id(e, n)
+            tiles_set.add(tile_id)
 
+    tiles = sorted(list(tiles_set))
     logger.info(f"[REGION] {region}: {len(tiles)} Tiles generiert")
     return tiles
 
