@@ -11,6 +11,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
+import BuildingDataCard from '../components/ui/BuildingDataCard';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
@@ -806,15 +807,18 @@ export default function ConfiguratorPage() {
         </header>
 
         <div className="max-w-lg mx-auto p-4 space-y-6">
-          {/* Project info if loaded */}
-          {project && (
+          {/* Project info if loaded - NEU 14.01.2026: BuildingDataCard verwenden */}
+          {project && project.geodata && (
+            <BuildingDataCard geodata={project.geodata} egid={project.egid} />
+          )}
+          {project && !project.geodata && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <h3 className="font-medium text-green-800">Projekt: {project.name}</h3>
               <p className="text-sm text-green-600">{project.address}</p>
               {loadingState === 'loading' && (
                 <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Lade Gebaeudedaten...
+                  Lade Gebäudedaten...
                 </p>
               )}
             </div>
