@@ -1,7 +1,7 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 6.5 (Stand 14.01.2026 20:30)
-> **Status:** Event-Loop-Blocking dokumentiert 🔴
+> **Version:** 6.6 (Stand 14.01.2026 21:00)
+> **Status:** Event-Loop-Blocking BEHOBEN ✅
 
 ## NEU: API-Router für Batch-Import (14.01.2026 02:45)
 
@@ -1762,13 +1762,36 @@ async def _download_tile_async(tile_id: str, url: str) -> Path:
         ...
 ```
 
+### Test-Ergebnisse (14.01.2026 21:00)
+
+**1. `asyncio.to_thread()` Wrapper:**
+```
+✅ FUNKTIONIERT!
+```
+- Health-Checks (5×) während Import: Alle 200 OK
+- Adress-Auflösung während Import: Funktioniert
+- Der Fix in `batch_import.py:358` (`await asyncio.to_thread(prefetch_tile_buildings, ...)`) wirkt
+
+**2. uvicorn `--workers` auf Windows:**
+```
+⚠️ TEILWEISE FUNKTIONIERT
+```
+- Fehler: `OSError: [WinError 10022]` - Socket-Sharing zwischen Prozessen
+- Trotzdem startet 1 Worker erfolgreich
+- Für Produktion: Linux/Docker verwenden oder Gunicorn (nicht Windows)
+
+**3. Fazit:**
+Das ursprüngliche Blocking-Problem war ein **falscher async-Aufruf** (`await prefetch_tile_buildings(...)`
+für eine sync-Funktion). Mit dem `asyncio.to_thread()` Wrapper blockiert das Backend nicht mehr.
+
 ### Implementierungs-TODO (C.10)
 
-| # | Task | Aufwand | Priorität |
-|---|------|---------|-----------|
-| C.10.1 | uvicorn mit `--workers 4` testen | 10min | 🔴 Sofort |
-| C.10.2 | httpx für Downloads einführen | 1h | 🔴 Hoch |
-| C.10.3 | ThreadPool-Grösse erhöhen | 15min | 🟡 Mittel |
+| # | Task | Aufwand | Status |
+|---|------|---------|--------|
+| C.10.1 | uvicorn mit `--workers 4` testen | 10min | ⚠️ Windows-Problem |
+| C.10.2 | httpx für Downloads einführen | 1h | ⏸️ Nicht mehr nötig |
+| C.10.3 | ThreadPool-Grösse erhöhen | 15min | ⏸️ Nicht mehr nötig |
+| C.10.4 | `asyncio.to_thread()` für sync-Funktionen | 15min | ✅ Erledigt |
 
 ---
 
@@ -1776,6 +1799,7 @@ async def _download_tile_async(tile_id: str, url: str) -> Path:
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 14.01.2026 21:00 | 6.6 | **C.10 BEHOBEN:** Event-Loop-Blocking lag am falschen async-Aufruf. Fix: `asyncio.to_thread(prefetch_tile_buildings, ...)` statt `await prefetch_tile_buildings(...)`. Health-Checks funktionieren jetzt während Imports. uvicorn `--workers` auf Windows problematisch (Socket-Fehler). |
 | 14.01.2026 20:30 | 6.5 | **C.10 Event-Loop-Blocking:** Problem dokumentiert - Download/Parsing blockiert Backend. Lösungsansätze: uvicorn `--workers 4`, httpx statt urllib. |
 | 14.01.2026 02:45 | 6.4 | **API-Router:** Neuer `batch_import.py` Router für DuckDB-Locking-Isolation. **Baseline:** 1 Tile (14236 Gebäude) = 143.6s (~10ms/Gebäude). **BUG-022:** Alte Tiles (2018) ohne EGIDs erkannt und gefixt. |
 | 14.01.2026 00:30 | 6.3 | **C.8 IMPLEMENTIERT:** `drop_indexes()` und `create_indexes()` behandeln jetzt ALLE 7 Indexes. Anhang A Task 3 auf ✅ gesetzt. |
