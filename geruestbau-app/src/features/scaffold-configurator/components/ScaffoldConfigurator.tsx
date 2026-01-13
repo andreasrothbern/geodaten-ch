@@ -33,6 +33,9 @@ interface ScaffoldConfiguratorProps {
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
   researchSource?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown';
+  // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
+  facadeZMin?: Record<string, number>;  // Terrain-Höhen (m ü.M.)
+  facadeZMax?: Record<string, number>;  // Wandoberkanten (m ü.M.)
   onBack?: () => void;
   onComplete?: () => void; // Will be used when completing configuration
 }
@@ -51,6 +54,8 @@ export default function ScaffoldConfigurator({
   zones = [],
   complexity = 'simple',
   researchSource,
+  facadeZMin,
+  facadeZMax,
   onBack,
   onComplete: _onComplete, // Will be used when completing configuration
 }: ScaffoldConfiguratorProps) {
@@ -153,7 +158,7 @@ export default function ScaffoldConfigurator({
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4">
-        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} additionalBuildings={additionalBuildings} />}
+        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} additionalBuildings={additionalBuildings} facadeZMin={facadeZMin} facadeZMax={facadeZMax} />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
         {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} zones={zones} complexity={complexity} />}

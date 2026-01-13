@@ -21,9 +21,19 @@ interface FacadePanelProps {
   blockedFacadesData?: BlockedFacadesData | null;
   // NEU 10.01.2026 22:35 - Zusätzliche Projekt-Gebäude (Multi-Building)
   additionalBuildings?: MultiBuildingData[];
+  // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
+  facadeZMin?: Record<string, number>;  // Terrain-Höhen (m ü.M.)
+  facadeZMax?: Record<string, number>;  // Wandoberkanten (m ü.M.)
 }
 
-export default function FacadePanel({ neighbors = [], blockedSides = [], blockedFacadesData, additionalBuildings = [] }: FacadePanelProps) {
+export default function FacadePanel({
+  neighbors = [],
+  blockedSides = [],
+  blockedFacadesData,
+  additionalBuildings = [],
+  facadeZMin,
+  facadeZMax,
+}: FacadePanelProps) {
   const {
     buildingName,
     buildingAddress,
@@ -192,6 +202,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
   }, [facades]);
 
   // Handle polygon simplification
+  // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage übergeben
   const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
     if (!polygon || polygon.length < 3) return;
 
@@ -199,11 +210,12 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
 
     // Simplify polygon and calculate new facades
     const result = simplifyPolygon(polygon, { epsilon: newEpsilon });
-    const newFacades: SelectedFacade[] = sidesToFacades(result.sides, defaultHeight);
+    // NEU: Fassaden-spezifische Höhen für Hanglage-Gebäude übergeben
+    const newFacades: SelectedFacade[] = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax);
 
     // Apply to store
     applySimplification(newFacades);
-  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification]);
+  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification, facadeZMin, facadeZMax]);
 
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {

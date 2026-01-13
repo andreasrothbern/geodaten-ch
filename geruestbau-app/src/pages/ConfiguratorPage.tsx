@@ -277,6 +277,10 @@ function convertGeodataToConfiguratorFormat(
     // Calculate ALL facades from polygon (fallback)
     facades = [];
     let calculatedPerimeter = 0;
+    // NEU 14.01.2026 21:45 - Fassaden-Höhen für Hanglage verwenden
+    const facadeZMin = geodata.facade_z_min;
+    const facadeZMax = geodata.facade_z_max;
+
     for (let i = 0; i < polygon.length - 1; i++) {
       const start = polygon[i];
       const end = polygon[i + 1];
@@ -287,11 +291,23 @@ function convertGeodataToConfiguratorFormat(
 
       calculatedPerimeter += length;
 
+      const direction = calculateDirection(start, end);
+
+      // NEU: Fassaden-spezifische Höhe wenn verfügbar (Hanglage)
+      let facadeHeight = traufHeight;
+      if (facadeZMin && facadeZMax) {
+        const zMin = facadeZMin[direction];
+        const zMax = facadeZMax[direction];
+        if (zMin !== undefined && zMax !== undefined && zMax > zMin) {
+          facadeHeight = zMax - zMin;
+        }
+      }
+
       facades.push({
         id: `facade-${i + 1}`,
-        direction: calculateDirection(start, end),
+        direction,
         length_m: Math.round(length * 100) / 100,
-        height_m: traufHeight,
+        height_m: facadeHeight,
         slope_percent: 0,
         start_point: start,
         end_point: end,
@@ -1120,6 +1136,9 @@ export default function ConfiguratorPage() {
         zones={buildingData.zones}
         complexity={buildingData.complexity}
         researchSource={buildingData.research_source}
+        // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
+        facadeZMin={project?.geodata?.facade_z_min}
+        facadeZMax={project?.geodata?.facade_z_max}
         onBack={() => {
           setBuildingData(null);
           setLoadingState('idle');

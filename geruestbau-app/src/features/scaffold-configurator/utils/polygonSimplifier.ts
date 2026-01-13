@@ -320,10 +320,21 @@ export function simplifyPolygon(
 
 /**
  * Konvertiert vereinfachte Seiten zum Frontend-Format
+ *
+ * NEU 14.01.2026 21:15: Fassaden-spezifische Höhen für Hanglage-Gebäude
+ * Bei Gebäuden am Hang haben verschiedene Fassaden unterschiedliche Höhen.
+ * facadeZMin/facadeZMax enthalten die Terrain- und Wandhöhen pro Richtung.
+ *
+ * @param sides - Vereinfachte Polygon-Seiten
+ * @param defaultHeight - Globale Traufhöhe (Fallback)
+ * @param facadeZMin - Terrain-Höhen pro Richtung (m ü.M.), z.B. {"N": 543.0, "S": 540.0}
+ * @param facadeZMax - Wandoberkanten pro Richtung (m ü.M.), z.B. {"N": 555.0, "S": 555.0}
  */
 export function sidesToFacades(
   sides: Side[],
-  defaultHeight: number
+  defaultHeight: number,
+  facadeZMin?: Record<string, number>,
+  facadeZMax?: Record<string, number>
 ): Array<{
   id: string;
   direction: FacadeDirection;
@@ -332,14 +343,43 @@ export function sidesToFacades(
   slope_percent: number;
   start_point: [number, number];
   end_point: [number, number];
+  // NEU: Fassaden-spezifische Höhen-Metadaten
+  facade_z_min?: number;
+  facade_z_max?: number;
+  height_source?: 'wall_layer' | 'terrain_sampled' | 'global';
 }> {
-  return sides.map((side, idx) => ({
-    id: `facade-${idx + 1}`,
-    direction: side.direction as FacadeDirection,
-    length_m: side.length_m,
-    height_m: defaultHeight,
-    slope_percent: 0,
-    start_point: [side.start.x, side.start.y],
-    end_point: [side.end.x, side.end.y],
-  }));
+  return sides.map((side, idx) => {
+    // Fassaden-spezifische Höhe wenn verfügbar
+    let height = defaultHeight;
+    let zMin: number | undefined;
+    let zMax: number | undefined;
+    let heightSource: 'wall_layer' | 'terrain_sampled' | 'global' = 'global';
+
+    if (facadeZMin && facadeZMax) {
+      const dirZMin = facadeZMin[side.direction];
+      const dirZMax = facadeZMax[side.direction];
+
+      if (dirZMin !== undefined && dirZMax !== undefined && dirZMax > dirZMin) {
+        height = dirZMax - dirZMin;
+        zMin = dirZMin;
+        zMax = dirZMax;
+        // Quelle bestimmen (vereinfacht: wenn Daten da sind, dann aus 3D-Layer)
+        heightSource = 'terrain_sampled';
+      }
+    }
+
+    return {
+      id: `facade-${idx + 1}`,
+      direction: side.direction as FacadeDirection,
+      length_m: side.length_m,
+      height_m: height,
+      slope_percent: 0,
+      start_point: [side.start.x, side.start.y],
+      end_point: [side.end.x, side.end.y],
+      // NEU: Metadaten für UI-Anzeige
+      facade_z_min: zMin,
+      facade_z_max: zMax,
+      height_source: heightSource,
+    };
+  });
 }

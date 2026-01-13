@@ -29,6 +29,10 @@ export interface SelectedFacade {
   // Coordinates for 3D positioning (LV95)
   start_point?: [number, number];
   end_point?: [number, number];
+  // NEU 14.01.2026 21:15: Fassaden-spezifische Höhen für Hanglage-Gebäude
+  facade_z_min?: number;      // Terrain-Höhe an dieser Fassade (m ü.M.)
+  facade_z_max?: number;      // Wandoberkante an dieser Fassade (m ü.M.)
+  height_source?: 'wall_layer' | 'terrain_sampled' | 'global';
 }
 
 export type FacadeDirection = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';

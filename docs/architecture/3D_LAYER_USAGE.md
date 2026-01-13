@@ -1,8 +1,9 @@
 # 3D-Layer Datenverwendung
 
-> **Datum:** 14.01.2026 20:00
-> **Status:** P1 + P2 + P3 (T1-T4) ✅ ALLE IMPLEMENTIERT + Cache-Refresh
+> **Datum:** 14.01.2026 22:00
+> **Status:** P1 + P2 + P3 (T1-T4) + P4 ✅ ALLE IMPLEMENTIERT
 > **Basis:** BUILDING_3D_SCHEMA.md, SWISSBUILDINGS3D_ANALYSE.md, 3D_LAYER_ANALYSIS.md
+> **Siehe auch:** [`3D_LAYER_USAGE_SCAFFOLDING.md`](3D_LAYER_USAGE_SCAFFOLDING.md) - Gerüst-Kalkulation Details
 
 ---
 
@@ -680,12 +681,23 @@ function detectComplexity(building: BuildingDataBundle): 'simple' | 'moderate' |
 | **T3:** facade_heights in API | `main.py`, `project_service.py` | ✅ 14.01.2026 | Serialisierung komplett |
 | **T4:** Frontend: Fassaden-Höhen anzeigen | `BuildingDataCard.tsx` | ✅ 14.01.2026 | Badge + Höhen-Grid |
 
-### P4: Weitere 3D-Layer Erweiterungen (Geplant)
+### P4: Fassaden-Höhen in Gerüst-Kalkulation - ✅ IMPLEMENTIERT 14.01.2026
+
+| Task | Datei | Status | Beschreibung |
+|------|-------|--------|--------------|
+| Fassaden-Höhen bei Hanglage nutzen | `polygonSimplifier.ts` | ✅ | `sidesToFacades()` mit `facadeZMin`/`facadeZMax` |
+| Types erweitern | `scaffold.types.ts` | ✅ | `SelectedFacade` mit `facade_z_min`, `facade_z_max`, `height_source` |
+| FacadePanel Props | `FacadePanel.tsx` | ✅ | Props für Fassaden-Höhen |
+| ScaffoldConfigurator Props | `ScaffoldConfigurator.tsx` | ✅ | Props-Durchreichung |
+| ConfiguratorPage Integration | `ConfiguratorPage.tsx` | ✅ | `geodata.facade_z_min`/`facade_z_max` |
+
+**Details:** Siehe [`3D_LAYER_USAGE_SCAFFOLDING.md`](3D_LAYER_USAGE_SCAFFOLDING.md)
+
+### P5: Weitere 3D-Layer Erweiterungen (Geplant)
 
 | Task | Datei | Status | Aufwand |
 |------|-------|--------|---------|
 | Alpha-Shape für komplexe Gebäude | `wall_facade_matcher.py` | 📋 Geplant | 2-3h |
-| Fassaden-Höhen bei Hanglage nutzen | `scaffoldCalculator.ts` | 📋 Geplant | 2-3h |
 | Komplexitäts-Erkennung verbessern | `complexityDetector.ts` | 📋 Geplant | 1h |
 
 ### T1 Details: WallFacadeMatcher (Implementiert)
@@ -820,8 +832,8 @@ facade_heights = matcher.get_facade_heights(egid="2245881", sides=polygon_sides)
 
 | Priorität | Task | Beschreibung |
 |-----------|------|--------------|
-| P4 | Fassaden-Höhen in Gerüst-Kalkulation | Unterschiedliche Gerüsthöhen pro Fassade bei Hanglage |
-| P4 | Alpha-Shape für komplexe Polygone | Besseres Wall-Matching für U-Form, L-Form |
+| ~~P4~~ | ~~Fassaden-Höhen in Gerüst-Kalkulation~~ | ✅ ERLEDIGT 14.01.2026 |
+| P5 | Alpha-Shape für komplexe Polygone | Besseres Wall-Matching für U-Form, L-Form |
 | P5 | 3D-Terrain im Viewer | Gelände-Mesh statt flache Ebene |
 | P5 | Echte Wall-Geometrie rendern | 3D-Wände aus WKB |
 
