@@ -437,3 +437,207 @@ Ohne Polygone:    ~2ms (nur Koordinaten)
 | `geruestbau-app/src/api/geruestbau.ts` | API-Funktionen | ✅ |
 | `geruestbau-app/src/pages/ConfiguratorPage.tsx` | State + Effects | ✅ |
 | `geruestbau-app/src/features/.../ScaffoldScene.tsx` | 3D-Rendering | ✅ |
+
+---
+
+## Analyse: Neue Möglichkeiten mit 3D-Layer-Daten (13.01.2026)
+
+### Verfügbare Datenquellen
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         VERFÜGBARE 3D-DATEN                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐ │
+│  │ WALL-LAYER      │  │ ROOF-LAYER      │  │ TERRAIN (swissALTI3D)       │ │
+│  │ (building_walls)│  │ (building_roofs)│  │                             │ │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────────────────┤ │
+│  │ z_min pro Wand  │  │ dach_min/max    │  │ facade_z_min pro Richtung   │ │
+│  │ z_max pro Wand  │  │ Dach-Geometrie  │  │ slope_m (Gefälle)           │ │
+│  │ Azimut          │  │ Roof_solid 3D   │  │ Höhe an jedem Punkt         │ │
+│  │ Wand-Polygon    │  │ Dachform        │  │ Hanglage-Erkennung          │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘ │
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐ │
+│  │ NACHBARN        │  │ BLOCKED FACADES │  │ POLYGON (vereinfacht)       │ │
+│  │ (neighbors_svc) │  │ (blocked_svc)   │  │ (Douglas-Peucker)           │ │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────────────────┤ │
+│  │ Distanz (m)     │  │ Index blockiert │  │ Fassaden-Längen             │ │
+│  │ Richtung        │  │ Blocker-EGID    │  │ Himmelsrichtung             │ │
+│  │ Polygon + Höhen │  │ Min-Distanz     │  │ Start/End Koordinaten       │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Bereits Implementiert ✅
+
+| Feature | Datenquelle | Datei |
+|---------|-------------|-------|
+| Fassaden-Höhen pro Richtung | Terrain-Sampling | `service.py` |
+| Hanglage-Erkennung | facade_z_min Differenz | `useScaffoldConfig.ts` |
+| Stellspindel-Berechnung | terrain_diff_m | `layher_catalog.py` |
+| Ausnivellierung in Materialliste | calculate_leveling_materials() | `layher_catalog.py` |
+| 2D-Editor Visualisierung | terrain_diff_m | `ScaffoldGrid.tsx` |
+| Nachbarn in 3D-View | neighbors_service | `ScaffoldScene.tsx` |
+| Blockierte Fassaden | blocked_facades_service | `ConfiguratorPage.tsx` |
+
+### Feature-Roadmap
+
+#### P1: Wall-Layer Fassaden-Höhen (HÖCHSTE PRIORITÄT)
+
+**Problem:** Aktuell wird Terrain-Sampling (swissALTI3D an Polygon-Ecken) verwendet.
+Das ist eine Approximation mit ±0.5m Genauigkeit.
+
+**Lösung:** Wall-Layer direkt nutzen (building_walls.z_min/z_max).
+Exakte Höhe PRO WAND-SEGMENT mit ±0.1m Genauigkeit aus Laser-Scan.
+
+```python
+# Aktuell (Terrain-Sampling):
+z_min["N"] = terrain_height_at_north_corner  # Approximation
+
+# Neu (Wall-Layer):
+z_min["N"] = building_walls.z_min WHERE azimuth ~ 0°  # Exakt
+z_max["N"] = building_walls.z_max WHERE azimuth ~ 0°
+```
+
+**Vorteil:** Bei komplexen Gebäuden (L-Form, Staffelung) liefert der Wall-Layer
+die ECHTE Wandhöhe, nicht interpolierte Terrain-Höhe.
+
+**Dateien:**
+- `backend/app/services/smart_building/service.py` - `_get_facade_heights()`
+- `backend/app/services/smart_building/wall_facade_matcher.py` - Wall-zu-Fassade Mapping
+
+**Aufwand:** 1-2h
+
+---
+
+#### P2a: Automatische Dachform-Erkennung
+
+**Konzept:** Roof-Layer Geometrie analysieren um Dachform zu erkennen.
+
+```
+Erkennungs-Logik:
+  - Satteldach: 2 Dachflächen, First in Mitte
+  - Walmdach: 4 Dachflächen, alle zur Mitte geneigt
+  - Pultdach: 1 Dachfläche, Neigung einseitig
+  - Flachdach: dach_max - dach_min < 1m
+  - Mansarddach: Gebrochene Dachflächen (>60°)
+```
+
+**Nutzen:**
+- Dachgerüst-Planung (Dachschutz vs. Fassadengerüst)
+- First-Position für Arbeitsbühnen
+- Dachneigung für Sicherheitsausrüstung (PSA)
+- Automatische Empfehlung: "Dachfanggerüst empfohlen (Neigung >45°)"
+
+**Dateien:**
+- `backend/app/services/roof_analyzer.py` (NEU)
+- `backend/app/services/smart_building/models.py` - RoofAnalysis Dataclass
+
+**Aufwand:** 2-3h
+
+---
+
+#### P2b: Exakte 3D-Dachform im Viewer
+
+**Problem:** Aktuell wird ein einfaches Satteldach heuristisch gerendert.
+
+**Lösung:** Roof_solid Geometrie direkt aus building_roofs laden und rendern.
+
+```typescript
+// Aktuell:
+createRoofFromPolygon(polygon, traufhoehe, firsthoehe)  // Heuristik
+
+// Neu:
+createRoofFromGeometry(roof_solid_geometry)  // Echte 3D-Form
+```
+
+**Vorteile:**
+- Gauben, Kamine, Dachfenster sichtbar
+- Echte Dachüberstände
+- Korrekte Dachform für Export
+
+**Dateien:**
+- `geruestbau-app/src/features/.../ScaffoldScene.tsx` - `createRoofMesh()`
+- `backend/app/services/roof_3d_service.py` - `get_roof_geometry()`
+
+**Aufwand:** 3-4h
+
+---
+
+#### P3a: Intelligente Zugangs-Vorschläge
+
+**Konzept:** Kombiniere alle Datenquellen um optimalen Gerüst-Zugang zu empfehlen.
+
+```
+Analyse-Faktoren:
+  ┌─────────────────────────────────────────────────────────┐
+  │  Blockierte Fassaden  → Wo KEIN Gerüst möglich         │
+  │  Nachbar-Distanzen    → Wo es ENG ist                  │
+  │  Terrain-Höhen        → Wo es STEIL ist                │
+  │  Strassenanbindung    → Wo ZUFAHRT für Material        │
+  │  Gebäude-Eingänge     → Wo Durchgang bleiben muss      │
+  └─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+  "Empfohlener Zugang: Westseite (frei, eben, Strassennähe)"
+```
+
+**UI:**
+- Grüne Markierung: Empfohlener Zugang
+- Gelbe Markierung: Alternativ-Zugänge
+- Rote Markierung: Nicht empfohlen (blockiert, steil, eng)
+
+**Dateien:**
+- `backend/app/services/access_analyzer.py` (NEU)
+- `geruestbau-app/src/features/.../AccessSuggestions.tsx` (NEU)
+
+**Aufwand:** 2-3h
+
+---
+
+#### P3b: Gefährdungszonen-Analyse
+
+**Konzept:** Automatische Erkennung von Bereichen die besondere Massnahmen erfordern.
+
+```
+Gefährdungszonen:
+  ┌───────────────────────────────────────────────────────────────┐
+  │  Öffentlicher Gehweg < 2m  → Schutzgerüst/Schutzdach nötig   │
+  │  Strasse < 5m              → Absperrung, Signalisation       │
+  │  Nachbar-Fenster < 3m      → Sichtschutz/Staubschutz         │
+  │  Einfahrt < 3m             → Durchfahrtshöhe beachten        │
+  │  Spielplatz in Nähe        → Erhöhte Sicherheit              │
+  └───────────────────────────────────────────────────────────────┘
+```
+
+**Output:** Automatische SUVA-Checkliste mit erkannten Gefährdungen.
+
+**Dateien:**
+- `backend/app/services/hazard_analyzer.py` (NEU)
+- `backend/app/models/suva_checklist.py` (NEU)
+
+**Aufwand:** 4-6h
+
+---
+
+#### P4: Weitere Ideen (Backlog)
+
+| Feature | Beschreibung | Aufwand |
+|---------|--------------|---------|
+| Material-Transport-Optimierung | Kürzester Weg LKW → Gerüst, Kranposition | 6-8h |
+| Schatten-Analyse | Nordseite = Moos, Südseite = schnell trocknend | 2-3h |
+| Wetter-Exposition | Windrichtung, offene Seiten markieren | 2-3h |
+| Kollisions-Erkennung | Gerüst vs. Balkon, Vordach, Leitungen | 4-6h |
+| Export für LayPLAN | IFC/DXF mit 3D-Gerüstdaten | 8-12h |
+
+### Priorisierte Umsetzung
+
+| Phase | Features | Status |
+|-------|----------|--------|
+| **Phase 1** | P1: Wall-Layer Höhen | 🔄 In Arbeit |
+| **Phase 2** | P2a: Dachform-Erkennung, P2b: 3D-Dachform | ⏳ Geplant |
+| **Phase 3** | P3a: Zugangs-Vorschläge, P3b: Gefährdungszonen | ⏳ Geplant |
+| **Phase 4** | Transport, Schatten, Export | 📋 Backlog |

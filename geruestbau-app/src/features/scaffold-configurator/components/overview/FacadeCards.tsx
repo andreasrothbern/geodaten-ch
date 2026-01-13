@@ -106,6 +106,12 @@ export default function FacadeCards({
               {currentFacade.target_height_m.toFixed(2)}m
             </p>
             <p className="text-xs text-gray-500">Höhe</p>
+            {/* NEU 13.01.2026 - Terrain-Höhe bei Hanglage anzeigen */}
+            {currentFacade.terrain_z_min !== undefined && (
+              <p className="text-xs text-blue-500 mt-0.5">
+                Terrain: {currentFacade.terrain_z_min.toFixed(1)}m ü.M.
+              </p>
+            )}
           </div>
           <div className="bg-gray-50 rounded-lg p-3 text-center">
             <Percent className="w-4 h-4 mx-auto text-gray-400 mb-1" />
@@ -115,6 +121,13 @@ export default function FacadeCards({
             <p className="text-xs text-gray-500">Gefälle</p>
           </div>
         </div>
+
+        {/* NEU 13.01.2026 - Hanglage-Hinweis wenn Terrain-Differenz > 0.5m */}
+        {currentFacade.terrain_diff_m !== undefined && currentFacade.terrain_diff_m > 0.5 && (
+          <div className="mt-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+            ⚠️ Hanglage: {currentFacade.terrain_diff_m.toFixed(1)}m Höhendifferenz → Ausnivellierung erforderlich
+          </div>
+        )}
 
         {/* Equipment Badges */}
         {(currentFacade.modifications.lift_position !== null ||

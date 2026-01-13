@@ -897,13 +897,20 @@ class SmartBuildingService:
 
                 # FIX 14.01.2026 17:10: Fassaden-Höhen auch bei gecachtem Terrain sammeln
                 # Cache wurde vor T2-T4 erstellt → keine Fassaden-Höhen vorhanden
-                if not cached_terrain.facade_z_min or cached_terrain.facade_heights_source == "global":
-                    logger.info(f"[FACADE_HEIGHTS] Collecting for cached terrain, EGID {bundle.egid}")
+                # FIX 13.01.2026 23:50: Auch terrain_sampled→wall_layer Upgrade versuchen
+                # wall_layer ist präziser als terrain_sampled, daher Upgrade-Versuch
+                should_collect = (
+                    not cached_terrain.facade_z_min or  # Keine Daten
+                    cached_terrain.facade_heights_source == "global" or  # Nur Fallback
+                    (cached_terrain.facade_heights_source == "terrain_sampled" and bundle.has_3d_layers)  # Upgrade möglich
+                )
+                if should_collect:
+                    logger.info(f"[FACADE_HEIGHTS] Collecting for cached terrain, EGID {bundle.egid}, source={cached_terrain.facade_heights_source}, has_3d={bundle.has_3d_layers}")
                     await self._collect_facade_heights(bundle)
-                    # Cache aktualisieren mit neuen Fassaden-Höhen
-                    if bundle.terrain.facade_heights_source != "global":
+                    # Cache aktualisieren mit neuen Fassaden-Höhen (nur wenn besser)
+                    if bundle.terrain.facade_heights_source == "wall_layer":
                         self._save_terrain_to_environment(bundle)
-                        logger.info(f"[FACADE_HEIGHTS] Cache updated for EGID {bundle.egid}")
+                        logger.info(f"[FACADE_HEIGHTS] Cache upgraded to wall_layer for EGID {bundle.egid}")
                 return
 
         try:
@@ -1046,11 +1053,13 @@ class SmartBuildingService:
             return
 
         # STUFE 1: Wall-Layer Matching (wenn 3D-Daten verfügbar)
+        logger.info(f"[FACADE-HEIGHTS] Check: has_3d_layers={bundle.has_3d_layers}, egid={bundle.egid}")
         if bundle.has_3d_layers and bundle.egid:
             try:
                 from .wall_facade_matcher import get_wall_facade_matcher
                 matcher = get_wall_facade_matcher()
 
+                logger.info(f"[FACADE-HEIGHTS] Calling has_wall_data({bundle.egid})...")
                 # Prüfen ob Wall-Daten vorhanden
                 if matcher.has_wall_data(bundle.egid):
                     facade_heights = matcher.get_facade_heights(bundle.egid, bundle.sides)

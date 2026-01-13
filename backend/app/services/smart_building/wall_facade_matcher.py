@@ -17,16 +17,13 @@ Version: 1.0 (13.01.2026)
 
 import math
 import logging
-import sqlite3
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+# NEU 13.01.2026: DuckDB-Support via zentrale Config
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, USE_DUCKDB
 
-# Pfad zur Datenbank
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
-BUILDING_3D_DB = DATA_DIR / "building_3d.db"
+logger = logging.getLogger(__name__)
 
 # Matching-Parameter
 AZIMUTH_TOLERANCE_DEG = 30.0  # Toleranz für Richtungsvergleich
@@ -170,27 +167,50 @@ class WallFacadeMatcher:
         }
 
     def _load_wall_segments(self, egid: str) -> List[WallSegment]:
-        """Lädt Wall-Segmente aus DB und extrahiert 2D-Linien."""
-        if not BUILDING_3D_DB.exists():
-            return []
+        """
+        Lädt Wall-Segmente aus DB und extrahiert 2D-Linien.
 
-        conn = sqlite3.connect(BUILDING_3D_DB)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        NEU 13.01.2026: Unterstützt DuckDB und SQLite via get_building_3d_connection().
+        """
+        if not BUILDING_3D_DB_PATH.exists():
+            return []
 
         segments = []
 
         try:
+            conn = get_building_3d_connection(read_only=True)
+            cursor = conn.cursor()
+
+            # FIX 14.01.2026: egid ist INTEGER in der Tabelle, nicht STRING
+            # Konvertiere egid zu Integer für die Query
+            try:
+                egid_int = int(egid)
+            except (ValueError, TypeError):
+                logger.warning(f"[WALL-MATCH] Ungültige EGID: {egid}")
+                conn.close()
+                return []
+
             cursor.execute("""
-                SELECT id, gebaeudeeinheit, egid, z_min, z_max, geometry_wkb
+                SELECT gebaeudeeinheit, egid, z_min, z_max, geometry_wkb
                 FROM building_walls
                 WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
 
-            for row in cursor.fetchall():
-                geometry_wkb = row['geometry_wkb']
+            rows = cursor.fetchall()
 
-                if not geometry_wkb or not row['z_min'] or not row['z_max']:
+            # DuckDB gibt Tuples zurück, SQLite mit row_factory gibt Row-Objekte zurück
+            # Spalten-Indizes: 0=gebaeudeeinheit, 1=egid, 2=z_min, 3=z_max, 4=geometry_wkb
+            for row in rows:
+                if USE_DUCKDB:
+                    gebaeudeeinheit, row_egid, z_min, z_max, geometry_wkb = row
+                else:
+                    gebaeudeeinheit = row['gebaeudeeinheit']
+                    row_egid = row['egid']
+                    z_min = row['z_min']
+                    z_max = row['z_max']
+                    geometry_wkb = row['geometry_wkb']
+
+                if not geometry_wkb or not z_min or not z_max:
                     continue
 
                 # WKB → Alle Basis-Linien extrahieren (mehrere pro MultiPolygon)
@@ -215,12 +235,12 @@ class WallFacadeMatcher:
                     normal_azimuth = (azimuth + 90) % 360
 
                     segments.append(WallSegment(
-                        id=row['id'],
-                        gebaeudeeinheit=row['gebaeudeeinheit'],
-                        egid=row['egid'],
-                        z_min=row['z_min'],
-                        z_max=row['z_max'],
-                        height_m=row['z_max'] - row['z_min'],
+                        id=hash(gebaeudeeinheit) % 1000000,  # Pseudo-ID aus gebaeudeeinheit
+                        gebaeudeeinheit=gebaeudeeinheit,
+                        egid=str(row_egid),
+                        z_min=z_min,
+                        z_max=z_max,
+                        height_m=z_max - z_min,
                         start_e=start_e,
                         start_n=start_n,
                         end_e=end_e,
@@ -230,11 +250,10 @@ class WallFacadeMatcher:
                         normal_azimuth_deg=normal_azimuth
                     ))
 
+            conn.close()
+
         except Exception as e:
             logger.error(f"[WALL-MATCH] DB-Fehler: {e}")
-
-        finally:
-            conn.close()
 
         return segments
 
@@ -428,23 +447,49 @@ class WallFacadeMatcher:
         return None
 
     def has_wall_data(self, egid: str) -> bool:
-        """Prüft ob Wall-Daten für EGID verfügbar sind."""
-        if not BUILDING_3D_DB.exists():
+        """
+        Prüft ob Wall-Daten für EGID verfügbar sind.
+
+        NEU 13.01.2026: Unterstützt DuckDB und SQLite.
+        """
+        if not BUILDING_3D_DB_PATH.exists():
+            logger.debug(f"[WALL-MATCH] DB nicht gefunden: {BUILDING_3D_DB_PATH}")
             return False
 
-        conn = sqlite3.connect(BUILDING_3D_DB)
-        cursor = conn.cursor()
-
         try:
+            conn = get_building_3d_connection(read_only=True)
+            cursor = conn.cursor()
+
+            # DEBUG: Alle EGIDs in building_walls anzeigen (erste 5)
+            try:
+                cursor.execute("SELECT DISTINCT egid FROM building_walls LIMIT 5")
+                sample_egids = [row[0] for row in cursor.fetchall()]
+                logger.info(f"[WALL-MATCH] Sample EGIDs in building_walls: {sample_egids}")
+            except Exception as e:
+                logger.warning(f"[WALL-MATCH] Tabelle building_walls fehlt oder leer: {e}")
+                conn.close()
+                return False
+
+            # FIX 14.01.2026: egid ist INTEGER in der Tabelle
+            try:
+                egid_int = int(egid)
+            except (ValueError, TypeError):
+                conn.close()
+                return False
+
             cursor.execute(
                 "SELECT COUNT(*) FROM building_walls WHERE egid = ?",
-                (egid,)
+                (egid_int,)
             )
             count = cursor.fetchone()[0]
+            conn.close()
+
+            logger.info(f"[WALL-MATCH] has_wall_data({egid}): count={count}")
             return count > 0
 
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.warning(f"[WALL-MATCH] has_wall_data Fehler: {e}")
+            return False
 
 
 # Singleton-Accessor

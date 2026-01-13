@@ -1,7 +1,15 @@
 # 3D-Layer Verwendung: Gerüst-Kalkulation
 
-> **Stand 13.01.2026 23:45**
+> **Stand 14.01.2026 00:20**
 > **Status:** ✅ KOMPLETT IMPLEMENTIERT (inkl. Materialliste mit Stellspindeln)
+>
+> **Aktuelle DB-Statistiken (14.01.2026 00:15):**
+> | Tabelle | Anzahl | Bemerkung |
+> |---------|--------|-----------|
+> | buildings_3d | 4,832 | Tile 1322-21 = 4,827 |
+> | building_roofs | 30,443 | ~6.3 Dächer/Gebäude |
+> | building_walls | 29,927 | ~6.2 Wände/Gebäude |
+> | **DB-Größe** | **402 MB** | DuckDB komprimiert |
 
 ## Übersicht
 
@@ -800,3 +808,189 @@ Ergebnis:
 | `backend/app/services/layher_catalog.py` | `calculate_leveling_materials()` | ✅ |
 | `geruestbau-app/src/api/geruestbau.ts` | `estimateMaterials()` API-Funktion | ✅ |
 | `geruestbau-app/src/features/scaffold-configurator/components/ThreeDPanel.tsx` | Button + Modal inline | ✅ |
+
+---
+
+## Parquet-Pipeline (C.1-C.4) ✅ IMPLEMENTIERT (14.01.2026)
+
+### Übersicht
+
+Die Parquet-Pipeline ersetzt das sequentielle GDB-Parsing durch eine effiziente
+Streaming-Architektur mit paralleler Parquet-Konvertierung und DuckDB Bulk-Load.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PARQUET-PIPELINE ARCHITEKTUR                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
+│  │ GDB-Datei    │    │ Parquet-Writer   │    │ DuckDB                   │  │
+│  │ (swissB3D)   │───▶│ (Parallel I/O)   │───▶│ (Bulk COPY)              │  │
+│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
+│        │                    │                         │                     │
+│        │                    │                         │                     │
+│        ▼                    ▼                         ▼                     │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ C.1: Feature-Generatoren        C.2: ParquetWriter                  │  │
+│  │ C.3: Parallele Schreiber        C.4: Bulk-Load Integration          │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Performance-Vergleich
+
+| Methode | Zeit (7197 Gebäude) | pro Gebäude | Speedup |
+|---------|---------------------|-------------|---------|
+| **Baseline** (INSERT) | 147.2s | 20.5ms | 1.0× |
+| **Parquet-Pipeline** | 51.2s | 7.1ms | **2.88×** |
+
+### Komponenten
+
+#### C.1: Feature-Generatoren (`tile_prefetch.py`)
+
+Streaming-Generatoren für Buildings, Roofs, Walls:
+
+```python
+def _generate_building_features(gdb_path: str) -> Iterator[Dict]:
+    """Generiert Building-Features ohne Speicherallokation."""
+    with fiona.open(gdb_path, layer="Building_solid") as src:
+        for feature in src:
+            yield _parse_building_feature(feature)
+
+def _generate_roof_features(gdb_path: str) -> Iterator[Dict]:
+    """Generiert Roof-Features (Roof + Roof_solid kombiniert)."""
+    ...
+
+def _generate_wall_features(gdb_path: str) -> Iterator[Dict]:
+    """Generiert Wall-Features mit z_min/z_max."""
+    ...
+```
+
+#### C.2: ParquetWriter (`parquet_writer.py`)
+
+Buffered Writer mit PyArrow für effiziente Parquet-Erstellung:
+
+```python
+class ParquetWriter:
+    """Schreibt Features gepuffert in Parquet-Dateien."""
+
+    def __init__(self, output_path: str, schema: pa.Schema, buffer_size: int = 1000):
+        self.buffer: List[Dict] = []
+        self.buffer_size = buffer_size
+
+    def write(self, feature: Dict) -> None:
+        """Puffert Feature, schreibt bei Überlauf."""
+        self.buffer.append(feature)
+        if len(self.buffer) >= self.buffer_size:
+            self._flush()
+
+    def _flush(self) -> None:
+        """Schreibt Buffer als Parquet Row-Group."""
+        table = pa.Table.from_pylist(self.buffer, schema=self.schema)
+        pq.write_to_dataset(table, self.output_path, ...)
+```
+
+#### C.3: Parallele Schreiber
+
+ThreadPoolExecutor für paralleles Schreiben von Buildings/Roofs/Walls:
+
+```python
+with ThreadPoolExecutor(max_workers=3) as executor:
+    futures = [
+        executor.submit(write_buildings_parquet, gdb_path, buildings_path),
+        executor.submit(write_roofs_parquet, gdb_path, roofs_path),
+        executor.submit(write_walls_parquet, gdb_path, walls_path),
+    ]
+    for future in as_completed(futures):
+        future.result()  # Propagiert Exceptions
+```
+
+#### C.4: DuckDB Bulk-Load
+
+COPY-Befehl für direkten Parquet-Import:
+
+```python
+def bulk_load_from_parquet(parquet_dir: str, tile_id: str) -> Dict[str, int]:
+    """Lädt alle Parquet-Dateien in DuckDB."""
+    conn = get_building_3d_connection()
+
+    # Buildings
+    conn.execute(f"""
+        INSERT INTO buildings_3d
+        SELECT * FROM read_parquet('{parquet_dir}/buildings/*.parquet')
+    """)
+
+    # Roofs (mit tile_id ergänzt)
+    conn.execute(f"""
+        INSERT INTO building_roofs
+        SELECT *, '{tile_id}' as tile_id
+        FROM read_parquet('{parquet_dir}/roofs/*.parquet')
+    """)
+
+    # Walls
+    conn.execute(f"""
+        INSERT INTO building_walls
+        SELECT *, '{tile_id}' as tile_id
+        FROM read_parquet('{parquet_dir}/walls/*.parquet')
+    """)
+
+    return {"buildings": ..., "roofs": ..., "walls": ...}
+```
+
+### Dateien
+
+| Datei | Funktion |
+|-------|----------|
+| `tile_prefetch.py` | Feature-Generatoren, Pipeline-Orchestrierung |
+| `parquet_writer.py` | ParquetWriter-Klasse mit Buffering |
+| `building_3d_service.py` | `bulk_load_from_parquet()` Integration |
+| `building_3d_schema.py` | DuckDB/SQLite Schema-Definitionen |
+
+### Konfiguration
+
+```python
+# tile_prefetch.py
+PARQUET_BUFFER_SIZE = 1000    # Features pro Flush
+MAX_PARALLEL_WRITERS = 3      # Buildings, Roofs, Walls parallel
+```
+
+### Test-Ergebnisse (14.01.2026 00:15)
+
+```
+Tile: 1322-21 (Bern Zentrum)
+════════════════════════════
+GDB-Parsing:     12.3s
+Parquet-Write:   18.7s (parallel)
+DuckDB-Load:     20.2s
+
+Gesamt:          51.2s (vs. 147.2s Baseline)
+Speedup:         2.88×
+
+Ergebnis:
+  buildings_3d:    4,827 Gebäude
+  building_roofs: 30,443 Dächer (~6.3/Gebäude)
+  building_walls: 29,927 Wände (~6.2/Gebäude)
+  DB-Größe:       402 MB (DuckDB komprimiert)
+```
+
+### Nächste Schritte
+
+| Task | Status | Beschreibung |
+|------|--------|--------------|
+| C.5: Parallel Download | ⏳ Pending | Mehrere Tiles gleichzeitig |
+| C.6: Progress-Tracking | ⏳ Pending | Fortschrittsanzeige für User |
+| C.7: Cleanup-Integration | ⏳ Pending | Temp-Dateien aufräumen |
+| Multi-Tile-Test | ⏳ Pending | Stadt Bern (~20 Tiles) |
+
+---
+
+## Changelog
+
+| Version | Datum | Änderungen |
+|---------|-------|------------|
+| 6.9 | 14.01.2026 00:20 | Parquet-Pipeline (C.1-C.4) dokumentiert, DB-Statistiken aktualisiert |
+| 6.8 | 13.01.2026 23:45 | Materialliste mit Stellspindeln KOMPLETT |
+| 6.7 | 13.01.2026 22:00 | Editor-Visualisierung implementiert |
+| 6.6 | 14.01.2026 00:00 | Hanglage z_max Fix |
+| 6.5 | 14.01.2026 22:30 | Implementation Status aktualisiert |
