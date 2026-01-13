@@ -323,7 +323,14 @@ function createRoofFromPolygon(
     return group;
   }
 
-  // Calculate bounding box center (must match building centering)
+  // FIX 11.01.2026 19:20 - Dach-Alignment: Nur BBox-Drift durch Skalierung korrigieren
+  // Problem: Die radiale Skalierung für den Dachüberstand ist NICHT uniform.
+  // Das verschiebt die BBox-Mitte, obwohl die Punkte ursprünglich zentriert waren.
+  //
+  // Lösung: Die Verschiebung der BBox-Mitte durch Skalierung berechnen und mit
+  // group.position kompensieren. Die Punkt-Transformation bleibt wie im Original.
+
+  // Step 1: Calculate bounding box center of original polygon
   const minX = Math.min(...normalized.map(p => p[0]));
   const maxX = Math.max(...normalized.map(p => p[0]));
   const minY = Math.min(...normalized.map(p => p[1]));
@@ -331,20 +338,31 @@ function createRoofFromPolygon(
   const bboxCenterX = (minX + maxX) / 2;
   const bboxCenterY = (minY + maxY) / 2;
 
-  // Transform polygon points to be centered at origin (matching building)
-  // Polygon coords: X stays X, Y becomes -Z in THREE.js
-  // Apply roof overhang by scaling points outward from center
+  // Step 2: Transform points (wie Original) - zentriert zur BBox-Mitte + Überhang
   const centeredPoints = normalized.map(p => {
     const dx = p[0] - bboxCenterX;
     const dy = p[1] - bboxCenterY;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    // Scale outward by adding overhang along the radial direction
     const scale = dist > 0 ? (dist + roofOverhang) / dist : 1;
     return {
       x: dx * scale,
       z: -(dy * scale),  // Negate for THREE.js coordinate system
     };
   });
+
+  // Step 3: Calculate how much the BBox center shifted due to non-uniform scaling
+  // Original BBox center (vor Skalierung): (0, 0) da wir zur BBox-Mitte zentriert haben
+  // Neue BBox center (nach Skalierung): muss neu berechnet werden
+  const scaledMinX = Math.min(...centeredPoints.map(p => p.x));
+  const scaledMaxX = Math.max(...centeredPoints.map(p => p.x));
+  const scaledMinZ = Math.min(...centeredPoints.map(p => p.z));
+  const scaledMaxZ = Math.max(...centeredPoints.map(p => p.z));
+  const scaledBboxCenterX = (scaledMinX + scaledMaxX) / 2;
+  const scaledBboxCenterZ = (scaledMinZ + scaledMaxZ) / 2;
+
+  // Step 4: Kompensiere die BBox-Drift mit group.position
+  // Das Dach soll bei (0, 0, 0) zentriert bleiben wie das Gebäude
+  group.position.set(-scaledBboxCenterX, 0, -scaledBboxCenterZ);
 
   // Y positions in THREE.js (Y is up)
   const yEaves = buildingHeight;  // Traufe

@@ -215,6 +215,8 @@ class BuildingDataStreamService:
             if not bundle.traufhoehe_m and not bundle.firsthoehe_m:
                 height_source = "default"
 
+            # NEU 12.01.2026 22:15 - 3D-Layer Felder hinzufügen
+            # NEU 12.01.2026 22:45 - roof_type, roof_orientation, roof_angle_deg für 3D-Viewer
             yield SSEEvent(
                 event=StreamStep.HEIGHTS,
                 data={
@@ -222,7 +224,17 @@ class BuildingDataStreamService:
                     "firsthoehe_m": bundle.firsthoehe_m,
                     "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
                     "source": height_source,
-                    "duration_ms": 0  # Bereits in polygon gemessen
+                    "duration_ms": 0,  # Bereits in polygon gemessen
+                    # 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
+                    "has_3d_layers": bundle.has_3d_layers,
+                    "has_roof_geometry": bundle.has_roof_geometry,
+                    "roof_dach_min_m": bundle.roof_dach_min_m,
+                    "roof_dach_max_m": bundle.roof_dach_max_m,
+                    "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
+                    # Dach-Analyse Daten (für 3D-Viewer)
+                    "roof_type": bundle.roof_type,
+                    "roof_orientation": bundle.roof_orientation,
+                    "roof_angle_deg": bundle.roof_angle_deg,
                 }
             )
 
@@ -390,6 +402,16 @@ class BuildingDataStreamService:
             "building_type": bundle.building_type,
             "architectural_style": bundle.architectural_style,
             "research_source": bundle.research_source,
+            # NEU 12.01.2026 22:15 - 3D-Layer Daten
+            "has_3d_layers": bundle.has_3d_layers,
+            "has_roof_geometry": bundle.has_roof_geometry,
+            "roof_dach_min_m": bundle.roof_dach_min_m,
+            "roof_dach_max_m": bundle.roof_dach_max_m,
+            "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
+            # NEU 12.01.2026 22:45 - Dach-Analyse Daten
+            "roof_type": bundle.roof_type,
+            "roof_orientation": bundle.roof_orientation,
+            "roof_angle_deg": bundle.roof_angle_deg,
         }
 
 

@@ -24,17 +24,7 @@ import json
 
 import httpx
 
-from app.services.height_db import (
-    init_database,
-    get_building_height,
-    get_building_heights_detailed,
-    get_building_height_by_coordinates,
-    bulk_insert_heights,
-    bulk_insert_heights_detailed,
-    bulk_insert_heights_by_coord,
-    log_import,
-    get_db_path
-)
+from app.services.building_3d_service import get_building_3d_service
 # Polygon simplification is now handled by polygon_simplifier.py
 # Imported where needed (on-the-fly)
 from app.services.tile_cache import (
@@ -513,12 +503,10 @@ async def fetch_height_for_coordinates(
     # Convert LV03 to LV95 if needed
     e, n = ensure_lv95(e, n)
 
-    # Initialize database (creates tables if they don't exist)
-    init_database()
-
-    # Check if we already have COMPLETE detailed heights
+    # Check if we already have COMPLETE detailed heights in building_3d.db
+    b3d_service = get_building_3d_service()
     if egid:
-        existing_detailed = get_building_heights_detailed(egid)
+        existing_detailed = b3d_service.get_by_egid(egid)
         if existing_detailed:
             # Check if heights are complete (has trauf or first, not just gebaeudehoehe)
             has_trauf_first = (existing_detailed.get("traufhoehe_m") is not None or
@@ -604,22 +592,9 @@ async def fetch_height_for_coordinates(
             "cache_hit": cache_hit
         }
 
-    # Import into database (legacy, detailed, and coordinate-based)
+    # Heights are now stored in building_3d.db via tile_prefetch.py
+    # No separate bulk insert needed - schedule_prefetch handles this
     source = f"swissBUILDINGS3D_3.0_ondemand_{tile_id}"
-    if heights_legacy:
-        bulk_insert_heights(heights_legacy, source)
-    if heights_detailed:
-        bulk_insert_heights_detailed(heights_detailed, source)
-    if heights_by_coord:
-        bulk_insert_heights_by_coord(heights_by_coord, source)
-
-    # Log the import
-    log_import(
-        source_file=f"ondemand_{tile_id}",
-        canton="ondemand",
-        records=len(heights_legacy),
-        version="3.0"
-    )
 
     # Look up the requested EGID
     result = {
@@ -634,35 +609,28 @@ async def fetch_height_for_coordinates(
     }
 
     if egid:
-        # Try detailed heights first
-        heights_detail = get_building_heights_detailed(egid)
-        if heights_detail:
+        # Try to get building data from building_3d.db
+        building_data = b3d_service.get_by_egid(egid)
+        if building_data:
             result["egid"] = egid
-            result["height_m"] = heights_detail.get("gebaeudehoehe_m") or heights_detail.get("firsthoehe_m")
-            result["heights"] = heights_detail
-            result["height_source"] = heights_detail.get("source")
+            result["height_m"] = building_data.get("gebaeudehoehe_m") or building_data.get("firsthoehe_m")
+            result["heights"] = building_data
+            result["height_source"] = building_data.get("source")
         else:
-            # Fallback to legacy
-            height = get_building_height(egid)
-            if height:
+            # EGID nicht gefunden - versuche Koordinaten-Lookup
+            coord_data = b3d_service.get_by_coordinates(e, n, tolerance_m=30.0)
+            if coord_data:
                 result["egid"] = egid
-                result["height_m"] = height[0]
-                result["height_source"] = height[1]
+                result["height_m"] = coord_data.get("gebaeudehoehe_m") or coord_data.get("firsthoehe_m")
+                result["heights"] = coord_data
+                result["height_source"] = coord_data.get("source")
+                result["lookup_method"] = "coordinate_fallback"
+                result["coord_match_distance_m"] = coord_data.get("distance_m")
             else:
-                # EGID nicht gefunden - versuche Koordinaten-Lookup
-                coord_height = get_building_height_by_coordinates(e, n, tolerance_m=30.0)
-                if coord_height:
-                    result["egid"] = egid
-                    result["height_m"] = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
-                    result["heights"] = coord_height
-                    result["height_source"] = coord_height.get("source")
-                    result["lookup_method"] = "coordinate_fallback"
-                    result["coord_match_distance_m"] = coord_height.get("distance_m")
-                else:
-                    result["egid"] = egid
-                    result["height_found"] = False
-                    result["message"] = f"EGID {egid} not found in imported tile (coord lookup also failed)"
-                    result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
+                result["egid"] = egid
+                result["height_found"] = False
+                result["message"] = f"EGID {egid} not found in building_3d.db (coord lookup also failed)"
+                result["sample_egids_in_tile"] = debug_info.get("sample_egids", [])
 
     return result
 
@@ -832,6 +800,12 @@ async def fetch_building_polygon_for_coordinates(
             result["source"] = "swissBUILDINGS3D_3.0"
             result["cache_hit"] = False
 
+            # FIX 12.01.2026 BUG-018: Gebäude in building_3d.db speichern auch bei Stufe 3!
+            # Vorher fehlte dieser Aufruf, was dazu führte dass bei Tile-Download
+            # das erste Gebäude nicht in der DB landete und nachfolgende Lookups
+            # auf falsche EGIDs fallbackten.
+            _save_to_building_3d(result, tile_id)
+
             # 🔄 NEUE ARCHITEKTUR (10.01.2026): MINIMAL + ON-DEMAND
             # 1. SOFORT: Direkte Nachbarn (5m) laden für blocked_facades
             # 2. ASYNC: Restliche Gebäude im Hintergrund prefetchen
@@ -992,10 +966,16 @@ def parse_gdb_for_building_polygon(
         best_match = point_in_polygon_match or best_distance_match
 
         if best_match and not point_in_polygon_match and best_distance_match:
-            egid = best_distance_match["row"].get('EGID', 'unknown')
+            import math
+            egid_raw = best_distance_match["row"].get('EGID')
+            # FIX 12.01.2026: NaN-Check für Log-Ausgabe
+            if egid_raw is None or (isinstance(egid_raw, float) and math.isnan(egid_raw)):
+                egid_log = 'keine EGID'
+            else:
+                egid_log = str(int(egid_raw)) if isinstance(egid_raw, (int, float)) else str(egid_raw)
             logger.warning(
                 f"[BUG-015] Kein Polygon-Match für ({target_e:.1f}, {target_n:.1f}). "
-                f"Fallback auf nächstes Zentrum: EGID {egid} (dist={best_distance:.1f}m)"
+                f"Fallback auf nächstes Zentrum: EGID {egid_log} (dist={best_distance:.1f}m)"
             )
 
         if not best_match:
@@ -1039,6 +1019,10 @@ def parse_gdb_for_building_polygon(
         gelaendepunkt = row.get('GELAENDEPUNKT')
         gesamthoehe = row.get('GESAMTHOEHE')
         egid = row.get('EGID')
+        # FIX 12.01.2026: NaN-Check für EGID (GDB kann float NaN haben)
+        import math
+        if egid is not None and isinstance(egid, float) and math.isnan(egid):
+            egid = None
 
         # Calculate heights
         terrain_f = float(gelaendepunkt) if gelaendepunkt is not None else None
@@ -1070,7 +1054,12 @@ def parse_gdb_for_building_polygon(
             "firsthoehe_m": firsthoehe,
             "gebaeudehoehe_m": round(gesamt_f, 2) if gesamt_f else (firsthoehe or traufhoehe),
             "terrain_m": round(terrain_f, 2) if terrain_f else None,
-            "match_distance_m": round(best_distance, 2)
+            "match_distance_m": round(best_distance, 2),
+            # FIX 12.01.2026: Erweiterte Attribute für 3D-Layer Verknüpfung
+            "gebaeudeeinheit": row.get('GEBAEUDEEINHEIT'),
+            "objektart": row.get('OBJEKTART'),
+            "name_komplett": row.get('NAME_KOMPLETT'),
+            "gebaeude_nutzung": row.get('GEBAEUDE_NUTZUNG'),
         }
 
     except Exception as e:
@@ -1140,7 +1129,12 @@ def _save_to_building_3d(result: Dict[str, Any], tile_id: str = None):
             'center_e': center_e,
             'center_n': center_n,
             'tile_id': tile_id,
-            'source': 'swissBUILDINGS3D_3.0'
+            'source': 'swissBUILDINGS3D_3.0',
+            # FIX 12.01.2026: Erweiterte Attribute für 3D-Layer Verknüpfung
+            'gebaeudeeinheit': result.get('gebaeudeeinheit'),
+            'objektart': result.get('objektart'),
+            'name_komplett': result.get('name_komplett'),
+            'gebaeude_nutzung': result.get('gebaeude_nutzung'),
         })
 
         logger.debug(f"EGID {egid} in building_3d.db gespeichert")

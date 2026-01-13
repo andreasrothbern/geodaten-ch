@@ -1,5 +1,8 @@
 # Bekannte Bugs
 
+> **NEU 13.01.2026:** `building_3d.db` wurde auf DuckDB migriert → `building_3d.duckdb`
+> Historische Bug-Referenzen auf `building_3d.db` beziehen sich auf die neue DuckDB-Datei.
+
 ## Offene Bugs
 
 ### BUG-017: Fassaden bei Knospenweg 1 falsch dargestellt

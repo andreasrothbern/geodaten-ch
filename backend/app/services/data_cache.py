@@ -188,8 +188,9 @@ async def fetch_and_cache_complete_data(
     gebaeudehoehe_m = None
 
     if building and building.egid:
-        from app.services.height_db import get_building_heights_detailed
-        heights = get_building_heights_detailed(building.egid)
+        from app.services.building_3d_service import get_building_3d_service
+        b3d_service = get_building_3d_service()
+        heights = b3d_service.get_by_egid(building.egid)
         if heights:
             traufhoehe_m = heights.get("traufhoehe_m")
             firsthoehe_m = heights.get("firsthoehe_m")

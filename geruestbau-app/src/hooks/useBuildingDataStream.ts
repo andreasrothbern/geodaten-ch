@@ -94,6 +94,16 @@ export interface HeightsData {
   gebaeudehoehe_m: number | null;
   source: string;
   duration_ms: number;
+  // NEU 12.01.2026 22:15 - 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
+  has_3d_layers?: boolean;
+  has_roof_geometry?: boolean;
+  roof_dach_min_m?: number | null;  // Traufhöhe absolut (m ü.M.)
+  roof_dach_max_m?: number | null;  // Firsthöhe absolut (m ü.M.)
+  roof_gebaeudeeinheit?: string | null;
+  // NEU 12.01.2026 22:45 - Dach-Analyse Daten (für 3D-Viewer)
+  roof_type?: string | null;  // flachdach, satteldach, walmdach, etc.
+  roof_orientation?: string | null;  // 'N-S' oder 'O-W' (First-Verlauf)
+  roof_angle_deg?: number | null;  // Dachneigung in Grad
 }
 
 export interface TerrainData {
@@ -198,6 +208,16 @@ export interface BuildingDataBundle {
   building_type: string | null;
   architectural_style: string | null;
   research_source: string | null;
+  // NEU 12.01.2026 22:15 - 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
+  has_3d_layers?: boolean;
+  has_roof_geometry?: boolean;
+  roof_dach_min_m?: number | null;  // Traufhöhe absolut (m ü.M.)
+  roof_dach_max_m?: number | null;  // Firsthöhe absolut (m ü.M.)
+  roof_gebaeudeeinheit?: string | null;
+  // NEU 12.01.2026 22:45 - Dach-Analyse Daten (für 3D-Viewer)
+  roof_type?: string | null;  // flachdach, satteldach, walmdach, etc.
+  roof_orientation?: string | null;  // 'N-S' oder 'O-W' (First-Verlauf)
+  roof_angle_deg?: number | null;  // Dachneigung in Grad
 }
 
 export interface ErrorData {

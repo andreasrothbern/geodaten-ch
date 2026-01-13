@@ -1254,10 +1254,11 @@ async def get_height_database_stats():
     Zeigt an, wie viele Gebäudehöhen aus swissBUILDINGS3D importiert wurden.
     """
     try:
-        from app.services.height_db import get_database_stats
-        return get_database_stats()
-    except ImportError:
-        return {"exists": False, "message": "Height database module not available"}
+        from app.services.building_3d_service import get_building_3d_service
+        service = get_building_3d_service()
+        return service.get_stats()
+    except Exception as e:
+        return {"exists": False, "message": f"Building 3D database not available: {e}"}
 
 
 @app.post("/api/v1/heights/fetch-on-demand",
@@ -1376,13 +1377,14 @@ async def get_height_for_egid(egid: int):
     da {egid} sonst Pfade wie "3d-tiles" matchen würde.
     """
     try:
-        from app.services.height_db import get_building_height
-        result = get_building_height(egid)
-        if result:
+        from app.services.building_3d_service import get_building_3d_service
+        service = get_building_3d_service()
+        result = service.get_by_egid(egid)
+        if result and result.get('gebaeudehoehe_m'):
             return {
                 "egid": egid,
-                "height_m": result[0],
-                "source": result[1],
+                "height_m": result['gebaeudehoehe_m'],
+                "source": f"building_3d:{result.get('source', 'unknown')}",
                 "found": True
             }
         return {
@@ -1390,8 +1392,8 @@ async def get_height_for_egid(egid: int):
             "found": False,
             "message": "Keine Höhendaten für dieses Gebäude"
         }
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Height database not available")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Building 3D database not available: {e}")
 
 
 # ============================================================================
@@ -2234,17 +2236,18 @@ async def visualize_cross_section(
         ridge_height_m = eave_height_m + 3.5  # Default für Satteldach
         heights_data = {}
 
-        # Gemessene Höhe aus swissBUILDINGS3D DB - zuerst per EGID, dann per Koordinaten
-        from app.services.height_db import get_building_heights_detailed, get_building_height_by_coordinates
+        # Gemessene Höhe aus building_3d.db - zuerst per EGID, dann per Koordinaten
+        from app.services.building_3d_service import get_building_3d_service
+        b3d_service = get_building_3d_service()
         heights = None
 
         # 1. EGID-basierter Lookup
         if building and building.egid:
-            heights = get_building_heights_detailed(building.egid)
+            heights = b3d_service.get_by_egid(building.egid)
 
         # 2. Fallback: Koordinaten-basierter Lookup (für Gebäude ohne EGID wie Bundeshaus)
         if not heights and geo:
-            heights = get_building_height_by_coordinates(
+            heights = b3d_service.get_by_coordinates(
                 e=geo.coordinates.lv95_e,
                 n=geo.coordinates.lv95_n,
                 tolerance_m=50.0
@@ -2520,17 +2523,18 @@ async def visualize_elevation(
         ridge_height_m = eave_height_m + 3.5
         heights_data = {}
 
-        # Gemessene Höhe aus swissBUILDINGS3D DB - zuerst per EGID, dann per Koordinaten
-        from app.services.height_db import get_building_heights_detailed, get_building_height_by_coordinates
+        # Gemessene Höhe aus building_3d.db - zuerst per EGID, dann per Koordinaten
+        from app.services.building_3d_service import get_building_3d_service
+        b3d_service = get_building_3d_service()
         heights = None
 
         # 1. EGID-basierter Lookup
         if building and building.egid:
-            heights = get_building_heights_detailed(building.egid)
+            heights = b3d_service.get_by_egid(building.egid)
 
         # 2. Fallback: Koordinaten-basierter Lookup (für Gebäude ohne EGID wie Bundeshaus)
         if not heights and geo:
-            heights = get_building_height_by_coordinates(
+            heights = b3d_service.get_by_coordinates(
                 e=geo.coordinates.lv95_e,
                 n=geo.coordinates.lv95_n,
                 tolerance_m=50.0
@@ -2950,8 +2954,9 @@ async def visualize_floor_plan_get(
         ridge_height_m = None
 
         if building and building.egid:
-            from app.services.height_db import get_building_heights_detailed
-            heights = get_building_heights_detailed(building.egid)
+            from app.services.building_3d_service import get_building_3d_service
+            b3d_service = get_building_3d_service()
+            heights = b3d_service.get_by_egid(building.egid)
             if heights:
                 if heights.get("traufhoehe_m"):
                     eave_height_m = heights["traufhoehe_m"]
@@ -3814,6 +3819,8 @@ async def get_smart_building_data(
             "roof_dach_max_m": bundle.roof_dach_max_m,
             "has_roof_geometry": bundle.has_roof_geometry,
             "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
+            # FIX 12.01.2026 21:30 - has_3d_layers fehlte in API-Response
+            "has_3d_layers": bundle.has_3d_layers,
 
             # Zonen
             "zones": [

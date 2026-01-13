@@ -1,3 +1,4 @@
+
 # Entwicklungsumgebung - Schnellstart
 
 > **Für Claude Code:** Dieses Dokument enthält alle Befehle zum Starten/Stoppen der Entwicklungsumgebung.
@@ -20,12 +21,21 @@ geodaten-ch/
 
 ## Schnellstart-Befehle
 
-### Backend starten (Port 8000)
+### Backend starten (Port 8000) - WICHTIG: DuckDB-Modus
+
+**NEU 13.01.2026:** Das Backend MUSS mit `USE_DUCKDB=true` gestartet werden!
 
 ```bash
 cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
-"C:/Users/vonro/projects/lawil/geodaten-ch/backend/venv/Scripts/python.exe" -m uvicorn app.main:app --reload --port 8000
+
+# Windows CMD:
+set USE_DUCKDB=true && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+
+# PowerShell:
+$env:USE_DUCKDB="true"; .\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
+
+> **Ohne `USE_DUCKDB=true`** wird SQLite verwendet (Legacy-Modus).
 
 ### geruestbau-app starten (Port 3001)
 
@@ -95,9 +105,9 @@ npm install
 ## Typische Entwicklungs-Session
 
 ```bash
-# 1. Backend starten (neues Terminal)
+# 1. Backend starten MIT DuckDB (neues Terminal)
 cd C:/Users/vonro/projects/lawil/geodaten-ch/backend
-venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+set USE_DUCKDB=true && venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 
 # 2. Frontend starten (neues Terminal)
 cd C:/Users/vonro/projects/lawil/geodaten-ch/geruestbau-app

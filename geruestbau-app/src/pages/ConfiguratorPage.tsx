@@ -619,18 +619,33 @@ export default function ConfiguratorPage() {
           const trauf = loadedProject.geodata.traufhoehe_m ?? 10;
           const first = loadedProject.geodata.firsthoehe_m ?? trauf + 3;
           const roofHeight = first - trauf;
-          const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
 
-          // FIX 10.01.2026 22:45 - Dynamische Dach-Orientierung aus Polygon
-          const roofOrientation = calculateRoofOrientation(loadedProject.geodata.polygon as [number, number][]);
+          // NEU 12.01.2026 22:45 - Echte Dach-Daten verwenden wenn has_3d_layers=true
+          const has3DLayers = loadedProject.geodata.has_3d_layers === true;
+          const realRoofType = loadedProject.geodata.roof_type;
+          const realRoofOrientation = loadedProject.geodata.roof_orientation;
+          const realRoofAngle = loadedProject.geodata.roof_angle_deg;
+
+          // Fallback-Berechnung nur wenn keine echten Daten
+          const fallbackAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
+          const fallbackOrientation = calculateRoofOrientation(loadedProject.geodata.polygon as [number, number][]);
+
+          // Priorität: Echte Daten > Fallback
+          const roofAngle = realRoofAngle ?? fallbackAngle;
+          const roofOrientation = realRoofOrientation ?? fallbackOrientation;
+          const roofType = realRoofType ?? (roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil');
+
+          if (has3DLayers) {
+            console.log(`Using REAL 3D-Layer roof data: type=${roofType}, orientation=${roofOrientation}, angle=${roofAngle}°`);
+          }
 
           configData.roof = {
-            roof_type: roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil',
+            roof_type: roofType,
             roof_angle_deg: roofAngle,
             roof_orientation: roofOrientation,
             trauf_to_first_m: roofHeight,
             scaffolding_height_m: first + 1,
-            confidence: 0.7,
+            confidence: has3DLayers ? 0.95 : 0.7,  // Höhere Konfidenz bei echten Daten
             traufhoehe_m: trauf,
           };
         }
@@ -1079,16 +1094,7 @@ export default function ConfiguratorPage() {
               )}
             </div>
           </div>
-          {/* Show blocked sides warning */}
-          {blockedSides.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>
-                Blockierte Fassaden: <strong>{blockedSides.join(', ')}</strong>
-                {' '}({neighbors.length} Nachbar{neighbors.length !== 1 ? 'n' : ''})
-              </span>
-            </div>
-          )}
+          {/* ENTFERNT 11.01.2026 17:15 - Gelber Banner redundant, blockierte Fassaden werden im 2D/3D-View angezeigt */}
         </div>
       </div>
 

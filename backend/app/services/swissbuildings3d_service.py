@@ -22,11 +22,7 @@ from .swissbuildings3d_fetcher import (
     fetch_building_polygon_for_coordinates,
     fetch_height_for_coordinates,
 )
-from .height_db import (
-    get_building_height,
-    get_building_heights_detailed,
-    get_building_height_by_coordinates,
-)
+from .building_3d_service import get_building_3d_service
 from .sonnendach_service import get_sonnendach_service, RoofAnalysis
 
 logger = logging.getLogger(__name__)
@@ -165,10 +161,11 @@ class SwissBuildings3DService:
             height_source = "none"
 
             # Per EGID
+            b3d_service = get_building_3d_service()
             if building.egid:
                 try:
                     egid_int = int(building.egid)
-                    height_data = get_building_heights_detailed(egid_int)
+                    height_data = b3d_service.get_by_egid(egid_int)
                     if height_data:
                         height_source = "database_egid"
                 except (ValueError, TypeError):
@@ -176,7 +173,7 @@ class SwissBuildings3DService:
 
             # Per Koordinaten
             if not height_data:
-                height_data = get_building_height_by_coordinates(e, n, tolerance)
+                height_data = b3d_service.get_by_coordinates(e, n, tolerance)
                 if height_data:
                     height_source = "database_coord"
 
@@ -244,7 +241,8 @@ class SwissBuildings3DService:
         # Erst Höhendaten aus lokaler DB prüfen
         try:
             egid_int = int(egid)
-            height_data = get_building_heights_detailed(egid_int)
+            b3d_service = get_building_3d_service()
+            height_data = b3d_service.get_by_egid(egid_int)
 
             if height_data:
                 building = Building3D(egid=egid)

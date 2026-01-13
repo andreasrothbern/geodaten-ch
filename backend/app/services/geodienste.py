@@ -632,15 +632,16 @@ def estimate_building_height(
     if manual_height and manual_height > 0:
         return (manual_height, "manual")
 
-    # 2. Datenbank-Lookup (swissBUILDINGS3D)
+    # 2. Datenbank-Lookup (building_3d.db)
     if egid:
         try:
-            from app.services.height_db import get_building_height
-            db_result = get_building_height(egid)
-            if db_result:
-                return db_result
-        except ImportError:
-            pass  # height_db nicht verfügbar
+            from app.services.building_3d_service import get_building_3d_service
+            b3d_service = get_building_3d_service()
+            db_result = b3d_service.get_by_egid(egid)
+            if db_result and db_result.get('gebaeudehoehe_m'):
+                return (db_result['gebaeudehoehe_m'], f"building_3d:{db_result.get('source', 'unknown')}")
+        except Exception:
+            pass  # building_3d nicht verfügbar
 
     # Falls Geschosse bekannt
     if floors and floors > 0:
@@ -764,11 +765,12 @@ def get_height_details(
 
     if egid:
         try:
-            from app.services.height_db import get_building_height, get_building_heights_detailed, get_building_height_by_coordinates
+            from app.services.building_3d_service import get_building_3d_service
+            b3d_service = get_building_3d_service()
 
             # Zuerst detaillierte Höhen versuchen
             try:
-                detailed = get_building_heights_detailed(egid)
+                detailed = b3d_service.get_by_egid(egid)
             except Exception:
                 pass
 
@@ -790,7 +792,7 @@ def get_height_details(
                 main_height = detailed.get("gebaeudehoehe_m") or detailed.get("firsthoehe_m")
                 if main_height and main_height >= 2.0:
                     result["measured_height_m"] = main_height
-                    result["measured_source"] = detailed.get("source", "database:swissBUILDINGS3D")
+                    result["measured_source"] = f"building_3d:{detailed.get('source', 'swissBUILDINGS3D')}"
                     height_found_in_db = True
 
                 # Prüfen ob Daten unvollständig sind (nur gebaeudehoehe, keine Trauf/First)
@@ -804,24 +806,10 @@ def get_height_details(
                     result["traufhoehe_m"] = round(gebaeudehoehe * 0.85, 1)
                     result["firsthoehe_m"] = round(gebaeudehoehe, 1)
                     result["heights_estimated"] = True
-            else:
-                # Fallback 1: Legacy-Höhe (detailed war leer oder hatte nur NULL-Werte)
-                db_result = get_building_height(egid)
-                if db_result and db_result[0] >= 2.0:
-                    legacy_height = db_result[0]
-                    result["measured_height_m"] = legacy_height
-                    result["measured_source"] = db_result[1]
-                    result["gebaeudehoehe_m"] = legacy_height
-                    # Schätze Trauf/First aus Legacy-Höhe (85% Traufe, 100% First)
-                    result["traufhoehe_m"] = round(legacy_height * 0.85, 1)
-                    result["firsthoehe_m"] = round(legacy_height, 1)
-                    result["heights_estimated"] = True
-                    result["legacy_height_used"] = legacy_height
-                    height_found_in_db = True
 
-            # Fallback 2: Koordinaten-basierter Lookup (für Gebäude ohne EGID in swissBUILDINGS3D)
+            # Fallback: Koordinaten-basierter Lookup (für Gebäude ohne EGID in building_3d.db)
             if not height_found_in_db and lv95_e and lv95_n:
-                coord_height = get_building_height_by_coordinates(lv95_e, lv95_n, tolerance_m=25.0)
+                coord_height = b3d_service.get_by_coordinates(lv95_e, lv95_n, tolerance_m=25.0)
                 if coord_height:
                     result["traufhoehe_m"] = coord_height.get("traufhoehe_m")
                     result["firsthoehe_m"] = coord_height.get("firsthoehe_m")
@@ -829,7 +817,7 @@ def get_height_details(
                     main_height = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
                     if main_height and main_height >= 2.0:
                         result["measured_height_m"] = main_height
-                        result["measured_source"] = coord_height.get("source", "database_coord:swissBUILDINGS3D")
+                        result["measured_source"] = f"building_3d_coord:{coord_height.get('source', 'swissBUILDINGS3D')}"
                         result["coord_lookup_used"] = True
                         result["coord_match_distance_m"] = coord_height.get("distance_m")
                         height_found_in_db = True
@@ -926,10 +914,11 @@ def get_height_details(
     # Diese Fallbacks funktionieren nur wenn Koordinaten vorhanden sind
     if not height_found_in_db and lv95_e and lv95_n:
         try:
-            from app.services.height_db import get_building_height_by_coordinates
-            
+            from app.services.building_3d_service import get_building_3d_service
+            b3d_service = get_building_3d_service()
+
             # Koordinaten-basierter Lookup
-            coord_height = get_building_height_by_coordinates(lv95_e, lv95_n, tolerance_m=50.0)
+            coord_height = b3d_service.get_by_coordinates(lv95_e, lv95_n, tolerance_m=50.0)
             if coord_height:
                 result["traufhoehe_m"] = coord_height.get("traufhoehe_m")
                 result["firsthoehe_m"] = coord_height.get("firsthoehe_m")
@@ -937,7 +926,7 @@ def get_height_details(
                 main_height = coord_height.get("gebaeudehoehe_m") or coord_height.get("firsthoehe_m")
                 if main_height and main_height >= 2.0:
                     result["measured_height_m"] = main_height
-                    result["measured_source"] = coord_height.get("source", "database_coord:swissBUILDINGS3D")
+                    result["measured_source"] = f"building_3d_coord:{coord_height.get('source', 'swissBUILDINGS3D')}"
                     result["coord_lookup_used"] = True
                     result["coord_match_distance_m"] = coord_height.get("distance_m")
                     height_found_in_db = True

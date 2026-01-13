@@ -200,6 +200,62 @@ def _point_line_distance(point: Tuple, line_p1: Tuple, line_p2: Tuple) -> float:
     return abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1) / line_len
 
 
+def _calculate_point_span(points: List[Tuple]) -> float:
+    """
+    Berechnet die maximale Spannweite einer Punktliste (2D).
+
+    NEU 12.01.2026: Für korrekte Neigungsberechnung bei symmetrischen Dächern.
+
+    Returns:
+        Maximale Distanz zwischen zwei Punkten in der Liste
+    """
+    if len(points) < 2:
+        return 0.0
+
+    max_dist = 0.0
+    for i, p1 in enumerate(points):
+        for p2 in points[i + 1:]:
+            dist = math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+            max_dist = max(max_dist, dist)
+
+    return max_dist
+
+
+def _calculate_ridge_orientation(ridge_points: List[Tuple], eave_points: List[Tuple]) -> Optional[str]:
+    """
+    Berechnet First-Orientierung aus der längsten Achse der First-Punkte.
+
+    NEU 12.01.2026: Ersetzt Zentroid-basierte Berechnung für konsistente Ergebnisse
+    bei Reihenhäusern.
+
+    Bei einem Satteldach verläuft der First entlang der längsten Achse
+    der höchsten Punkte.
+
+    Args:
+        ridge_points: Punkte am First (höchste Z-Werte)
+        eave_points: Punkte an der Traufe (niedrigste Z-Werte)
+
+    Returns:
+        Orientierung wie 'N-S', 'O-W', etc.
+    """
+    if len(ridge_points) < 2:
+        return None
+
+    # Finde die zwei am weitesten entfernten First-Punkte
+    max_dist = 0.0
+    p1_best, p2_best = ridge_points[0], ridge_points[-1]
+
+    for i, p1 in enumerate(ridge_points):
+        for p2 in ridge_points[i + 1:]:
+            dist = math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+            if dist > max_dist:
+                max_dist = dist
+                p1_best, p2_best = p1, p2
+
+    # Orientierung aus diesen zwei Punkten
+    return calculate_orientation(p1_best, p2_best)
+
+
 def is_pyramid_roof(geometry, high_points: List[Tuple]) -> bool:
     """
     Prüft ob das Dach pyramidenförmig ist (Zeltdach).
@@ -313,11 +369,17 @@ def calculate_roof_form(
     min_center = centroid_2d(min_z_points)
     max_center = centroid_2d(max_z_points)
 
-    # Horizontale Distanz
-    horiz_dist = math.sqrt(
-        (max_center[0] - min_center[0])**2 +
-        (max_center[1] - min_center[1])**2
-    )
+    # FIX 12.01.2026: Horizontale Distanz aus SPANNWEITE der Trauf-Punkte berechnen
+    # Bei symmetrischen Satteldächern liegen die Zentroide übereinander,
+    # was zu falschen (zu steilen) Winkelberechnungen führte.
+    #
+    # Stattdessen: Halbe Gebäudebreite = Distanz von Traufe zu First
+    eave_span = _calculate_point_span(min_z_points)
+    ridge_span = _calculate_point_span(max_z_points)
+
+    # Für Satteldach: horiz_dist = halbe Gebäudebreite (Traufe zu First)
+    # Die Spannweite der Trauf-Punkte entspricht der Gebäudebreite
+    horiz_dist = eave_span / 2 if eave_span > 0.5 else 1.0
 
     # Dachneigung berechnen
     if horiz_dist > 0.1:
@@ -325,8 +387,9 @@ def calculate_roof_form(
     else:
         angle_deg = 90.0  # Spitzer Turm
 
-    # First-Orientierung
-    orientation = calculate_orientation(min_center, max_center)
+    # First-Orientierung: Aus der LÄNGSTEN Achse der First-Punkte berechnen
+    # FIX 12.01.2026: Nicht aus Zentroid-Abstand (bei symmetrischen Dächern unzuverlässig)
+    orientation = _calculate_ridge_orientation(max_z_points, min_z_points)
 
     # 3. Dachform erkennen
 

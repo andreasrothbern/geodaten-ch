@@ -13,6 +13,7 @@ Vereint:
 - Dach-Analyse
 - Claude-Recherche (Gebäude-Identifikation)
 - Zonen-Analyse (komplexe Gebäude)
+- Wall→Facade Matching (NEU 13.01.2026)
 - Nachbargebäude (TODO)
 - Umgebungsdaten (TODO)
 
@@ -20,7 +21,7 @@ Generiert einheitliche Prompts für:
 - SVG-Export (Claude.ai)
 - Automatische SVG-Generierung (Claude API)
 
-Stand: 29.12.2025
+Stand: 13.01.2026
 """
 
 from .models import (
@@ -41,6 +42,12 @@ from .prompt_generator import (
     get_prompt_generator,
     SVGType,
 )
+from .wall_facade_matcher import (
+    WallFacadeMatcher,
+    get_wall_facade_matcher,
+    WallSegment,
+    FacadeHeight,
+)
 
 __all__ = [
     # Models
@@ -58,4 +65,9 @@ __all__ = [
     "UnifiedPromptGenerator",
     "get_prompt_generator",
     "SVGType",
+    # Wall-Facade Matcher (NEU 13.01.2026)
+    "WallFacadeMatcher",
+    "get_wall_facade_matcher",
+    "WallSegment",
+    "FacadeHeight",
 ]

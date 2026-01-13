@@ -53,9 +53,22 @@
 - Komponenten: `PascalCase`
 - Interfaces: `PascalCase` mit `I`-Prefix optional
 
-## Änderungs-Kommentare im Code
+## Änderungs-Dokumentation (WICHTIG!)
 
-Bei wichtigen Änderungen (FIX, NEU, TODO) im Code **Datum UND Uhrzeit** angeben:
+Bei **ALLEN** Änderungen (Code, Dokumentation, Konfiguration) **IMMER Datum UND Uhrzeit** angeben!
+
+### Format
+
+```
+DD.MM.YYYY HH:MM
+```
+
+**Beispiele:**
+- `NEU 13.01.2026 14:30:` DuckDB-Migration
+- `FIX 12.01.2026 03:15:` Point-in-Polygon Check
+- `Stand 13.01.2026 15:45` (in Überschriften)
+
+### In Code-Kommentaren
 
 **Format:** `TAG DD.MM.YYYY HH:MM - Kurzbeschreibung`
 
@@ -65,21 +78,32 @@ Bei wichtigen Änderungen (FIX, NEU, TODO) im Code **Datum UND Uhrzeit** angeben
 - `TODO` - Noch zu erledigen
 - `WICHTIG` - Kritische Stelle
 
-**Beispiele:**
 ```python
 # FIX 10.01.2026 18:30 - Math.max(5, radius) für blocked-facades
 const effectiveRadius = Math.max(5, neighborsRadius);
 
 # NEU 05.01.2026 14:15 - Zonen-Daten für komplexe Gebäude
 zones?: BuildingZone[];
-
-# TODO 10.01.2026 19:00 - getBlockedFacades() wird nicht genutzt, entfernen?
 ```
 
-**Warum Uhrzeit?**
-- Bei mehreren Änderungen am gleichen Tag ist die Reihenfolge erkennbar
+### In Dokumentation (Markdown)
+
+**Format:** `**NEU DD.MM.YYYY HH:MM:**` oder `(Stand DD.MM.YYYY HH:MM)`
+
+```markdown
+## Übersicht (Stand 13.01.2026 14:30)
+
+**NEU 13.01.2026 14:30:** Das Backend MUSS mit `USE_DUCKDB=true` gestartet werden!
+
+> **Änderung 12.01.2026 03:15:** Point-in-Polygon Check implementiert.
+```
+
+### Warum Uhrzeit?
+
+- Bei mehreren Änderungen am gleichen Tag ist die **Reihenfolge erkennbar**
 - Erleichtert Debugging und Code-Review
 - Korreliert mit Git-Commits (`git log --format="%h %ci %s"`)
+- Zeigt **wie aktuell** eine Information ist
 
 ---
 

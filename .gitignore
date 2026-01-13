@@ -44,3 +44,13 @@ htmlcov/
 # Tile cache data
 backend/app/data/tiles/
 backend/tests/data/
+
+# DuckDB database files (generated)
+*.duckdb
+*.duckdb.wal
+
+# Dev server pid
+.dev_server.pid
+
+# Test output
+test_output.json

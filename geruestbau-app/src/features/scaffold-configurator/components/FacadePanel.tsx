@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useCallback } from 'react';
-import { Check, ArrowRight, Compass, AlertTriangle, SlidersHorizontal } from 'lucide-react';
+import { Check, ArrowRight, Compass, SlidersHorizontal } from 'lucide-react';
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade, SelectedFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
@@ -287,54 +287,67 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
     // Create facade segments - thicker lines for better visibility
     const lineWidth = width * 0.06; // Dickere Linien für bessere Farbsichtbarkeit
 
-    const facadeElements = facades.map((facade, index) => {
-      if (!facade.start_point || !facade.end_point) return null;
-
-      const isBlocked = isFacadeBlocked(facade, index);
-      const isEnabled = facade.enabled && !isBlocked;
-      const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
-
-      return (
-        <g
-          key={facade.id}
-          onClick={() => !isBlocked && toggleFacadeEnabled(facade.id)}
-          style={{ cursor: isBlocked ? 'not-allowed' : 'pointer' }}
-        >
-          {/* Invisible hit area for easier clicking */}
+    // FIX 11.01.2026 17:50 - Blockierte Fassaden dezenter: heller, durchgehend, im Hintergrund
+    // Separiere blockierte und wählbare Fassaden für korrektes Z-Order
+    const blockedFacadeElements = facades
+      .map((facade, index) => ({ facade, index, isBlocked: isFacadeBlocked(facade, index) }))
+      .filter(({ isBlocked }) => isBlocked)
+      .map(({ facade }) => {
+        if (!facade.start_point || !facade.end_point) return null;
+        return (
           <line
+            key={`blocked-${facade.id}`}
             x1={facade.start_point[0]}
             y1={facade.start_point[1]}
             x2={facade.end_point[0]}
             y2={facade.end_point[1]}
-            stroke="transparent"
-            strokeWidth={width * 0.08}
+            stroke="#e5e7eb"
+            strokeWidth={lineWidth * 0.8}
             strokeLinecap="round"
           />
-          {/* Visible facade line - uniform width */}
-          <line
-            x1={facade.start_point[0]}
-            y1={facade.start_point[1]}
-            x2={facade.end_point[0]}
-            y2={facade.end_point[1]}
-            stroke={isEnabled ? color : isBlocked ? '#9ca3af' : '#ccc'}
-            strokeWidth={lineWidth}
-            strokeLinecap="round"
-            strokeDasharray={isBlocked ? `${lineWidth * 2} ${lineWidth}` : undefined}
-          />
-          {/* Blocked indicator */}
-          {isBlocked && (
-            <circle
-              cx={(facade.start_point[0] + facade.end_point[0]) / 2}
-              cy={(facade.start_point[1] + facade.end_point[1]) / 2}
-              r={width * 0.02}
-              fill="#ef4444"
-              stroke="white"
-              strokeWidth={width * 0.005}
+        );
+      });
+
+    const selectableFacadeElements = facades
+      .map((facade, index) => ({ facade, index, isBlocked: isFacadeBlocked(facade, index) }))
+      .filter(({ isBlocked }) => !isBlocked)
+      .map(({ facade }) => {
+        if (!facade.start_point || !facade.end_point) return null;
+        const isEnabled = facade.enabled;
+        const color = getFacadeColor(facade.direction);
+
+        return (
+          <g
+            key={facade.id}
+            onClick={() => toggleFacadeEnabled(facade.id)}
+            style={{ cursor: 'pointer' }}
+          >
+            {/* Invisible hit area for easier clicking */}
+            <line
+              x1={facade.start_point[0]}
+              y1={facade.start_point[1]}
+              x2={facade.end_point[0]}
+              y2={facade.end_point[1]}
+              stroke="transparent"
+              strokeWidth={width * 0.08}
+              strokeLinecap="round"
             />
-          )}
-        </g>
-      );
-    });
+            {/* Visible facade line - uniform width */}
+            <line
+              x1={facade.start_point[0]}
+              y1={facade.start_point[1]}
+              x2={facade.end_point[0]}
+              y2={facade.end_point[1]}
+              stroke={isEnabled ? color : '#ccc'}
+              strokeWidth={lineWidth}
+              strokeLinecap="round"
+            />
+          </g>
+        );
+      });
+
+    // Kombiniere: Blockierte zuerst (Hintergrund), dann wählbare (Vordergrund)
+    const facadeElements = [...blockedFacadeElements, ...selectableFacadeElements];
 
     return (
       <svg viewBox={viewBox} className="w-full h-64 bg-gray-50 rounded-lg">
@@ -458,10 +471,11 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
       <div className="bg-white rounded-xl p-4 shadow-sm">
         <h3 className="font-semibold text-gray-700 mb-3">Fassaden ({facades.length})</h3>
         <div className="space-y-2">
+          {/* FIX 11.01.2026 17:50 - Blockierte Fassaden dezenter darstellen */}
           {facades.map((facade, index) => {
             const isBlocked = isFacadeBlocked(facade, index);
             const isEnabled = facade.enabled && !isBlocked;
-            const color = isBlocked ? '#9ca3af' : getFacadeColor(facade.direction);
+            const color = isBlocked ? '#e5e7eb' : getFacadeColor(facade.direction);
 
             return (
               <button
@@ -470,7 +484,7 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
                 disabled={isBlocked}
                 className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${
                   isBlocked
-                    ? 'border-gray-300 bg-gray-100 cursor-not-allowed opacity-60'
+                    ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
                     : isEnabled
                     ? 'border-green-300 bg-green-50'
                     : 'border-gray-200 bg-white hover:bg-gray-50'
@@ -482,26 +496,16 @@ export default function FacadePanel({ neighbors = [], blockedSides = [], blocked
                     style={{ backgroundColor: color }}
                   />
                   <div className="text-left">
-                    <p className="font-medium flex items-center gap-2">
+                    <p className={`font-medium ${isBlocked ? 'text-gray-400' : ''}`}>
                       {facade.name}
-                      {isBlocked && (
-                        <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                          <AlertTriangle className="w-3 h-3" />
-                          Blockiert
-                        </span>
-                      )}
                     </p>
-                    <p className="text-sm text-gray-500">{facade.length_m.toFixed(1)} m</p>
+                    <p className="text-sm text-gray-400">{facade.length_m.toFixed(1)} m</p>
                   </div>
                 </div>
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                  isBlocked ? 'bg-red-200' : isEnabled ? 'bg-green-500 text-white' : 'bg-gray-200'
+                  isBlocked ? 'bg-gray-200' : isEnabled ? 'bg-green-500 text-white' : 'bg-gray-200'
                 }`}>
-                  {isBlocked ? (
-                    <AlertTriangle className="w-3 h-3 text-red-600" />
-                  ) : isEnabled ? (
-                    <Check className="w-4 h-4" />
-                  ) : null}
+                  {!isBlocked && isEnabled && <Check className="w-4 h-4" />}
                 </div>
               </button>
             );

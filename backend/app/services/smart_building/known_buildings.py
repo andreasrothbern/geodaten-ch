@@ -598,8 +598,11 @@ def get_known_building(
         Dict mit Gebäudedaten oder None
     """
     # 1. Direkte EGID-Suche
-    if egid and egid in KNOWN_BUILDINGS:
-        return KNOWN_BUILDINGS[egid]
+    # FIX 12.01.2026: EGID zu String konvertieren (Keys sind Strings!)
+    if egid:
+        egid_str = str(egid)
+        if egid_str in KNOWN_BUILDINGS:
+            return KNOWN_BUILDINGS[egid_str]
 
     # 2. Adress-Suche (mit verbessertem Matching)
     if address:

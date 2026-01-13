@@ -10,6 +10,7 @@ import {
   Bot,
   Database,
   Settings,
+  Cuboid,  // NEU 12.01.2026 23:00 - Icon für 3D-Daten
 } from 'lucide-react'
 import type { Geodata, ZoneInfo } from '../../types/project'
 
@@ -52,6 +53,31 @@ function ResearchSourceBadge({ source }: { source?: string }) {
     default:
       return null
   }
+}
+
+// NEU 12.01.2026 23:00 - 3D-Layer Qualitäts-Badge
+// Zeigt ob echte 3D-Daten (swissBUILDINGS3D Roof/Wall) verfügbar sind
+function Data3DQualityBadge({ has3DLayers }: { has3DLayers?: boolean }) {
+  if (has3DLayers === true) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+        title="Echte 3D-Daten aus swissBUILDINGS3D (Roof/Wall Layer)"
+      >
+        <Cuboid className="w-3 h-3" />
+        3D-Daten ✓
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700"
+      title="Höhen geschätzt aus GWR-Daten oder Heuristik"
+    >
+      <Cuboid className="w-3 h-3" />
+      Geschätzt
+    </span>
+  )
 }
 
 // Position Label für Zonen
@@ -129,7 +155,7 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
 
   return (
     <div className="card border-green-200 bg-green-50">
-      {/* Header mit Gebäudename und Research-Source Badge */}
+      {/* Header mit Gebäudename und Badges */}
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="font-medium text-green-800 flex items-center gap-2">
@@ -149,7 +175,11 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
             <span className="text-xs text-green-600 mt-0.5">Komplexes Gebäude</span>
           )}
         </div>
-        <ResearchSourceBadge source={geodata.research_source} />
+        {/* NEU 12.01.2026 23:00 - Badges nebeneinander */}
+        <div className="flex items-center gap-2">
+          <Data3DQualityBadge has3DLayers={geodata.has_3d_layers} />
+          <ResearchSourceBadge source={geodata.research_source} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">

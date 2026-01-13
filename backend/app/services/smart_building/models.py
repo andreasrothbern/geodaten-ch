@@ -204,6 +204,7 @@ class BuildingDataBundle:
     # Echte 3D-Dachgeometrie aus Roof_solid Layer
     roof_geometry_wkb: Optional[bytes] = None  # 3D-Geometrie als WKB (für Frontend)
     has_roof_geometry: bool = False  # Echte Geometrie verfügbar?
+    has_3d_layers: bool = False  # Wall/Roof/Floor 3D-Layer vorhanden? (FIX 12.01.2026)
     roof_z_levels: Optional[List[float]] = None  # Z-Level Verteilung für Analyse
     roof_dach_min_m: Optional[float] = None  # Traufhöhe (m ü.M.) aus Roof_solid
     roof_dach_max_m: Optional[float] = None  # Firsthöhe (m ü.M.) aus Roof_solid

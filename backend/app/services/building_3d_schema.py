@@ -57,10 +57,11 @@ CREATE TABLE IF NOT EXISTS buildings_3d (
 """
 
 # 3D-Layer Tabellen
+# NEU 13.01.2026 19:00: gebaeudeeinheit als PRIMARY KEY (statt auto-increment id)
+# DuckDB hat keine AUTOINCREMENT, und die gebaeudeeinheit ist eindeutig.
 BUILDING_ROOFS_TABLE = """
 CREATE TABLE IF NOT EXISTS building_roofs (
-    id INTEGER PRIMARY KEY,
-    gebaeudeeinheit {text_type},
+    gebaeudeeinheit {text_type} PRIMARY KEY,
     egid INTEGER,
     dach_min {float_type},
     dach_max {float_type},
@@ -77,8 +78,7 @@ CREATE TABLE IF NOT EXISTS building_roofs (
 
 BUILDING_WALLS_TABLE = """
 CREATE TABLE IF NOT EXISTS building_walls (
-    id INTEGER PRIMARY KEY,
-    gebaeudeeinheit {text_type},
+    gebaeudeeinheit {text_type} PRIMARY KEY,
     egid INTEGER,
     z_min {float_type},
     z_max {float_type},
@@ -89,8 +89,7 @@ CREATE TABLE IF NOT EXISTS building_walls (
 
 BUILDING_FLOORS_TABLE = """
 CREATE TABLE IF NOT EXISTS building_floors (
-    id INTEGER PRIMARY KEY,
-    gebaeudeeinheit {text_type},
+    gebaeudeeinheit {text_type} PRIMARY KEY,
     egid INTEGER,
     gelaendepunkt {float_type},
     geometry_wkb {blob_type},
@@ -98,14 +97,26 @@ CREATE TABLE IF NOT EXISTS building_floors (
 )
 """
 
+# Import-Log für Batch-Tracking
+# NEU 13.01.2026 19:15: Aus building_3d_service.py hierher verschoben
+IMPORT_LOG_TABLE = """
+CREATE TABLE IF NOT EXISTS import_log (
+    tile_id {text_type} PRIMARY KEY,
+    buildings_count INTEGER,
+    imported_at {timestamp_type},
+    duration_seconds {float_type},
+    source {text_type}
+)
+"""
+
 # Indizes
+# NEU 13.01.2026 19:15: gebaeudeeinheit ist jetzt PRIMARY KEY, kein Index nötig
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords ON buildings_3d(center_e, center_n)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile ON buildings_3d(tile_id)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_objektart ON buildings_3d(objektart)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_gebaeudeeinheit ON buildings_3d(gebaeudeeinheit)",
     "CREATE INDEX IF NOT EXISTS idx_roofs_egid ON building_roofs(egid)",
-    "CREATE INDEX IF NOT EXISTS idx_roofs_gebaeudeeinheit ON building_roofs(gebaeudeeinheit)",
     "CREATE INDEX IF NOT EXISTS idx_walls_egid ON building_walls(egid)",
     "CREATE INDEX IF NOT EXISTS idx_floors_egid ON building_floors(egid)",
 ]
@@ -152,7 +163,8 @@ def init_sqlite_schema() -> None:
 
         # Tabellen erstellen
         for table_sql in [BUILDINGS_3D_TABLE, BUILDING_ROOFS_TABLE,
-                          BUILDING_WALLS_TABLE, BUILDING_FLOORS_TABLE]:
+                          BUILDING_WALLS_TABLE, BUILDING_FLOORS_TABLE,
+                          IMPORT_LOG_TABLE]:
             sql = _get_formatted_sql(table_sql, use_duckdb=False)
             cursor.execute(sql)
 
@@ -173,7 +185,8 @@ def init_duckdb_schema() -> None:
     with get_building_3d_connection() as conn:
         # Tabellen erstellen
         for table_sql in [BUILDINGS_3D_TABLE, BUILDING_ROOFS_TABLE,
-                          BUILDING_WALLS_TABLE, BUILDING_FLOORS_TABLE]:
+                          BUILDING_WALLS_TABLE, BUILDING_FLOORS_TABLE,
+                          IMPORT_LOG_TABLE]:
             sql = _get_formatted_sql(table_sql, use_duckdb=True)
             conn.execute(sql)
 

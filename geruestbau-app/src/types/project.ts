@@ -58,6 +58,16 @@ export interface Geodata {
   research_source?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown'
   building_name?: string
   complexity?: 'simple' | 'moderate' | 'complex'
+  // NEU 12.01.2026 22:45 - 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
+  has_3d_layers?: boolean
+  has_roof_geometry?: boolean
+  roof_dach_min_m?: number  // Traufhöhe absolut (m ü.M.)
+  roof_dach_max_m?: number  // Firsthöhe absolut (m ü.M.)
+  roof_gebaeudeeinheit?: string
+  // Dach-Analyse Daten
+  roof_type?: string  // flachdach, satteldach, walmdach, etc.
+  roof_orientation?: string  // 'N-S' oder 'O-W' (First-Verlauf)
+  roof_angle_deg?: number  // Dachneigung in Grad
 }
 
 // Zone eines Gebäudes (aus building_contexts.db)

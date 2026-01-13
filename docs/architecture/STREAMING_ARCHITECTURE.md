@@ -2032,10 +2032,283 @@ Für komplexe Gebäude können Wall und Floor Layer nachgeladen werden:
 
 ---
 
+## G.8 3D-Layer Daten im SSE-Stream (12.01.2026)
+
+> **Status:** ✅ IMPLEMENTIERT 12.01.2026 22:15
+> **Referenz:** [`BUILDING_3D_SCHEMA.md`](BUILDING_3D_SCHEMA.md) - Neues Schema (ohne Floor)
+> **Details:** [`3D_LAYER_USAGE.md`](3D_LAYER_USAGE.md) - Vollständige Analyse
+
+### Das Problem
+
+Die 3D-Layer-Daten werden im Backend **korrekt geladen**, aber **NICHT durch den SSE-Stream ans Frontend übertragen**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   3D-LAYER DATENFLUSS - STATUS                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  SmartBuildingService._collect_building_3d_data()               │
+│       │                                                          │
+│       └─► bundle.has_3d_layers = True       ✅ Backend OK        │
+│       └─► bundle.has_roof_geometry = True   ✅ Backend OK        │
+│       └─► bundle.roof_dach_min_m = 569.75   ✅ Backend OK        │
+│       └─► bundle.roof_dach_max_m = 571.05   ✅ Backend OK        │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  REST /api/v1/smart-building/data                               │
+│       │                                                          │
+│       └─► "has_3d_layers": true             ✅ FIX 12.01.2026    │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  SSE /api/v1/geruestbau/building/data/stream                    │
+│       │                                                          │
+│       └─► building_data_stream.py:_bundle_to_dict()             │
+│           │                                                      │
+│           ├─ "has_3d_layers"        ✅ FIX 12.01.2026 22:15      │
+│           ├─ "has_roof_geometry"    ✅ FIX 12.01.2026 22:15      │
+│           ├─ "roof_dach_min_m"      ✅ FIX 12.01.2026 22:15      │
+│           └─ "roof_dach_max_m"      ✅ FIX 12.01.2026 22:15      │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Frontend useBuildingDataStream.ts                              │
+│       │                                                          │
+│       └─► BuildingDataBundle Interface                           │
+│           │                                                      │
+│           ├─ has_3d_layers?         ✅ FIX 12.01.2026 22:15      │
+│           ├─ has_roof_geometry?     ✅ FIX 12.01.2026 22:15      │
+│           ├─ roof_dach_min_m?       ✅ FIX 12.01.2026 22:15      │
+│           └─ roof_dach_max_m?       ✅ FIX 12.01.2026 22:15      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Verfügbare 3D-Layer Daten (aus building_3d.db)
+
+| Feld | Tabelle | Beschreibung | Nutzen für Frontend |
+|------|---------|--------------|---------------------|
+| `has_3d_layers` | buildings_3d | Flag: Erweiterte 3D-Daten vorhanden | UI Badge, Qualitätsindikator |
+| `roof_form` | building_roofs | flachdach, satteldach, walmdach, etc. | 3D-Dach rendern |
+| `roof_orientation` | building_roofs | First-Verlauf (N-S, O-W, etc.) | 3D-Dach korrekt ausrichten |
+| `dach_min` | building_roofs | Traufhöhe (m ü.M.) | 3D: Echte Dachposition |
+| `dach_max` | building_roofs | Firsthöhe (m ü.M.) | 3D: Echte Dachposition |
+| `z_min`, `z_max` | building_walls | Wand-Höhenbereich | 3D: Fassaden-Geometrie |
+| `geometry_wkb` | building_roofs/walls | 3D-Geometrie (WKB) | Echte 3D-Visualisierung |
+
+> **Hinweis:** Floor-Layer ist redundant (≈ Building_solid Polygon) und wird **nicht** importiert.
+> Siehe [`BUILDING_3D_SCHEMA.md`](BUILDING_3D_SCHEMA.md) für das neue Schema.
+
+### Implementation: Backend
+
+**Datei:** `backend/app/services/building_data_stream.py`
+
+#### 1. HEIGHTS Event erweitern (Zeile 218-227)
+
+```python
+# AKTUELL:
+yield SSEEvent(
+    event=StreamStep.HEIGHTS,
+    data={
+        "traufhoehe_m": bundle.traufhoehe_m,
+        "firsthoehe_m": bundle.firsthoehe_m,
+        "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+        "source": height_source,
+        "duration_ms": 0
+    }
+)
+
+# NEU: 3D-Layer Felder hinzufügen
+yield SSEEvent(
+    event=StreamStep.HEIGHTS,
+    data={
+        "traufhoehe_m": bundle.traufhoehe_m,
+        "firsthoehe_m": bundle.firsthoehe_m,
+        "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
+        "source": height_source,
+        "duration_ms": 0,
+        # NEU: 3D-Layer Daten
+        "has_3d_layers": bundle.has_3d_layers,
+        "has_roof_geometry": bundle.has_roof_geometry,
+        "roof_dach_min_m": bundle.roof_dach_min_m,  # m ü.M.
+        "roof_dach_max_m": bundle.roof_dach_max_m,  # m ü.M.
+    }
+)
+```
+
+#### 2. _bundle_to_dict() erweitern (Zeile 369-393)
+
+```python
+# Am Ende von _bundle_to_dict() hinzufügen:
+return {
+    # ... bestehende Felder ...
+
+    # NEU: 3D-Layer Felder (12.01.2026)
+    "has_3d_layers": bundle.has_3d_layers,
+    "has_roof_geometry": bundle.has_roof_geometry,
+    "roof_dach_min_m": bundle.roof_dach_min_m,
+    "roof_dach_max_m": bundle.roof_dach_max_m,
+    "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
+}
+```
+
+### Implementation: Frontend
+
+**Datei:** `geruestbau-app/src/hooks/useBuildingDataStream.ts`
+
+#### 1. BuildingDataBundle Interface erweitern (Zeile 152-201)
+
+```typescript
+export interface BuildingDataBundle {
+  // ... bestehende Felder ...
+
+  // NEU: 3D-Layer Felder (12.01.2026)
+  has_3d_layers?: boolean;           // Erweiterte 3D-Daten vorhanden?
+  has_roof_geometry?: boolean;       // Echte Dach-Geometrie?
+  roof_dach_min_m?: number | null;   // Traufhöhe absolut (m ü.M.)
+  roof_dach_max_m?: number | null;   // Firsthöhe absolut (m ü.M.)
+  roof_gebaeudeeinheit?: string | null;  // Verknüpfung zu Roof-Layer
+}
+```
+
+#### 2. HeightsData Interface erweitern
+
+```typescript
+export interface HeightsData {
+  traufhoehe_m: number | null;
+  firsthoehe_m: number | null;
+  gebaeudehoehe_m: number | null;
+  source: string;
+  duration_ms: number;
+  // NEU: 3D-Layer Felder
+  has_3d_layers?: boolean;
+  has_roof_geometry?: boolean;
+  roof_dach_min_m?: number | null;
+  roof_dach_max_m?: number | null;
+}
+```
+
+### Zukünftige Verwendung im 3D-Viewer
+
+**Datei:** `geruestbau-app/src/features/scaffold-configurator/components/threeDView/ScaffoldScene.tsx`
+
+```typescript
+// AKTUELL: Heuristik für Dach-Orientierung (Zeile 17-47)
+function calculatePolygonRoofOrientation(polygon: number[][]): string {
+  // Schätzt Dach-Orientierung aus längster Polygon-Seite
+  // ...
+}
+
+// ZUKÜNFTIG: Echte Daten aus DB verwenden
+function getRoofOrientation(buildingData: BuildingDataBundle): string {
+  // 1. Echte 3D-Daten verfügbar?
+  if (buildingData.has_roof_geometry && buildingData.roof_orientation) {
+    return buildingData.roof_orientation;  // "N-S", "O-W", etc.
+  }
+
+  // 2. Fallback: Polygon-Heuristik
+  return calculatePolygonRoofOrientation(buildingData.polygon);
+}
+```
+
+### Test-Befehle
+
+```bash
+# Backend: Prüfen ob Daten im Bundle sind
+curl "http://localhost:8000/api/v1/smart-building/data?address=Bundesplatz%203,%20Bern&force_refresh=true" \
+  | jq '{has_3d_layers, has_roof_geometry, roof_dach_min_m, roof_dach_max_m}'
+
+# SSE: Prüfen ob Daten im Stream sind (nach Implementation)
+curl -N "http://localhost:8000/api/v1/geruestbau/building/data/stream?address=Bundesplatz%203,%20Bern" \
+  | grep -o '"has_3d_layers":[^,}]*'
+
+# DB: Direkter Check
+sqlite3 backend/app/data/building_3d.db \
+  "SELECT has_3d_layers FROM buildings_3d WHERE egid=2242547"
+```
+
+### Priorität
+
+| Task | Aufwand | Nutzen | Priorität |
+|------|---------|--------|-----------|
+| SSE Stream erweitern | 15 Min | Daten ans Frontend | **P1** |
+| Frontend Interface | 10 Min | TypeScript-Typen | **P1** |
+| 3D-Viewer nutzt echte Daten | 1-2h | Bessere Visualisierung | P2 |
+| Wall-Layer im Stream | 30 Min | Fassaden-Geometrie | P3 |
+
+---
+
+# Teil H: Terrain/Hanglage & 3D-Layer Architecture
+
+> **Status:** ⚠️ Analyse abgeschlossen, Implementation ausstehend
+> **Datum:** 13.01.2026 00:30
+> **Vollständige Dokumentation:** [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md)
+
+## H.1 Kurzübersicht
+
+### Aktueller Status
+
+| Bereich | Status | Details |
+|---------|--------|---------|
+| 2D-Anzeige | ✅ OK | `terrain_height_m`, `slope_class` in BuildingDataCard |
+| SSE-Stream | ✅ OK | Terrain-Event mit slope_m, slope_class |
+| 3D-Viewer | ⚠️ Teilweise | Flacher Boden, kein geneigtes Terrain |
+| Scaffold-Berechnung | ❌ Fehlt | `slope_class` wird ignoriert, alle Fassaden gleiche Höhe |
+
+### Das Problem
+
+Bei Hanglage hat jede Fassade eine **andere effektive Höhe**, aber aktuell
+bekommen alle Fassaden die gleiche `traufhoehe_m`.
+
+### Die Lösung
+
+**Zwei Ansätze** (siehe vollständige Analyse):
+
+1. **Wall-Layer Daten** (präziser)
+   - swissBUILDINGS3D Wall-Layer hat z_min/z_max **pro Wand-Segment**
+   - On-demand laden via `layer_fetcher.py`
+   - Mapping Wall → Fassade implementieren
+
+2. **Terrain-Berechnung** (Fallback)
+   - swissALTI3D Höhen an Polygon-Ecken
+   - `facade_heights` aus corner_heights berechnen
+   - Funktioniert auch ohne Wall-Layer
+
+### TODOs
+
+Siehe [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) Teil 6 für vollständige TODO-Liste.
+
+**Kurzfristig (P3):**
+- T1: Wall→Facade Mapping Prototyp (4h)
+- T2: facade_heights in TerrainProfile (2h)
+- T3: facade_heights im SSE-Stream (30min)
+- T4: Frontend nutzt facade_heights (2h)
+
+### Offene Fragen
+
+| # | Frage | Status |
+|---|-------|--------|
+| D2 | Entspricht 1 Wall-Eintrag = 1 Fassade? | ❓ Unklar |
+| D3 | Wie matchen wir Wall → unsere Sides? | ❓ Geometrie-Overlap |
+| A1 | Wall-Layer immer oder on-demand laden? | ❓ Empfehlung: On-demand |
+
+---
+
+## Referenzen
+
+- [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) - **Vollständige Analyse mit Use Cases und TODOs**
+- [`3D_LAYER_USAGE.md`](3D_LAYER_USAGE.md) - Aktuelle 3D-Layer Verwendung
+- [`BUILDING_3D_SCHEMA.md`](BUILDING_3D_SCHEMA.md) - DB-Schema Konzept
+
+---
+
 # Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 12.01.2026 | 3.9 | Teil H: Terrain/Hanglage Architecture mit TODOs |
+| 12.01.2026 | 3.8 | Teil G.8: TODO 3D-Layer Daten im SSE-Stream |
 | 11.01.2026 | 3.7 | Teil G: 3D Layer Architecture (Roof_solid Integration) |
 | 11.01.2026 | 3.6 | Teil E.6: Multi-Building SmartBuildingService (collect_all_data mit List) |
 | 10.01.2026 | 3.5 | Teil F: Frontend Service-Aufrufe Analyse (ConfiguratorPage) |
