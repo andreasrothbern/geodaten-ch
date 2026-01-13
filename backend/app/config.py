@@ -116,7 +116,8 @@ def get_building_3d_connection(read_only: bool = False):
         # Wenn eine write-Connection existiert und jemand read_only=True anfordert,
         # gibt es einen "different configuration" Fehler.
         # Lösung: Immer write-Modus verwenden (DuckDB kann trotzdem lesen).
-        return duckdb.connect(str(BUILDING_3D_DUCKDB_PATH))
+        # FIX 14.01.2026: DUCKDB_CONFIG übergeben für Multi-Threading!
+        return duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), config=DUCKDB_CONFIG)
     else:
         import sqlite3
         conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))

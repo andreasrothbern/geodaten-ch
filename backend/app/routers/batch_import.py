@@ -27,7 +27,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.tile_cache import get_tile_cache
-from app.services.tile_prefetch import _parse_all_buildings_from_gdb
+from app.services.tile_prefetch import prefetch_tile_buildings, reset_import_metrics
 from app.services.building_3d_service import get_building_3d_service
 
 logger = logging.getLogger(__name__)
@@ -269,81 +269,96 @@ async def get_stac_tiles_for_region(region_name: str) -> List[Tuple[str, str]]:
     return tiles
 
 
-def _sync_download_and_import_tile(tile_id: str, download_url: str) -> int:
+def _download_tile(tile_id: str, download_url: str) -> Path:
     """
-    Synchronous tile import - runs in thread pool.
-    FIX 13.01.2026: Extracted from async function to avoid blocking event loop.
+    Download and cache a tile (synchronous). Returns path to GDB.
+
+    REFACTORED 14.01.2026: Separated from import to allow async prefetch_tile_buildings().
     """
     import urllib.request
 
     tile_cache = get_tile_cache()
-    building_service = get_building_3d_service()
 
     # Check cache first
     cached_path = tile_cache.get_tile_path(tile_id)
     if cached_path and cached_path.exists():
-        gdb_path = cached_path
-        logger.info(f"Tile {tile_id} from cache")
-    else:
-        # Download
-        logger.info(f"Downloading tile {tile_id}...")
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            zip_path = temp_dir / "tile.zip"
-            urllib.request.urlretrieve(download_url, zip_path)
+        logger.info(f"Tile {tile_id} from cache: {cached_path}")
+        return cached_path
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(temp_dir)
+    # Download
+    logger.info(f"Downloading tile {tile_id}...")
+    download_start = time.time()
+    temp_dir = Path(tempfile.mkdtemp())
+    try:
+        zip_path = temp_dir / "tile.zip"
+        urllib.request.urlretrieve(download_url, zip_path)
+        download_ms = (time.time() - download_start) * 1000
+        file_size_mb = zip_path.stat().st_size / (1024 * 1024)
 
-            gdb_path = None
-            for item in temp_dir.iterdir():
-                if item.is_dir() and item.suffix.lower() == '.gdb':
-                    gdb_path = item
-                    break
+        # Update metrics for download
+        from app.services.tile_prefetch import update_import_metrics
+        update_import_metrics(
+            tile_id=tile_id,
+            download_ms=download_ms,
+            file_size_mb=file_size_mb
+        )
+        logger.info(f"  Downloaded: {file_size_mb:.1f}MB in {download_ms:.0f}ms")
 
-            if not gdb_path:
-                raise FileNotFoundError(f"No GDB found in {tile_id}")
+        # Unzip
+        unzip_start = time.time()
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            zf.extractall(temp_dir)
+        unzip_ms = (time.time() - unzip_start) * 1000
+        update_import_metrics(unzip_ms=unzip_ms)
+        logger.info(f"  Unzipped in {unzip_ms:.0f}ms")
 
-            # Cache the tile
-            cached_path = tile_cache.store_tile(
-                tile_id=tile_id,
-                gdb_path=gdb_path,
-                download_url=download_url
-            )
-            gdb_path = cached_path
+        gdb_path = None
+        for item in temp_dir.iterdir():
+            if item.is_dir() and item.suffix.lower() == '.gdb':
+                gdb_path = item
+                break
 
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        if not gdb_path:
+            raise FileNotFoundError(f"No GDB found in {tile_id}")
 
-    # Parse GDB
-    logger.info(f"Parsing tile {tile_id}...")
-    start = time.time()
-    buildings = _parse_all_buildings_from_gdb(gdb_path)
-    parse_time = time.time() - start
-    logger.info(f"  Parsed: {len(buildings)} buildings in {parse_time:.1f}s")
+        # Cache the tile
+        cached_path = tile_cache.store_tile(
+            tile_id=tile_id,
+            gdb_path=gdb_path,
+            download_url=download_url
+        )
+        return cached_path
 
-    if not buildings:
-        return 0
-
-    # Set tile_id
-    for b in buildings:
-        b["tile_id"] = tile_id
-
-    # Bulk save
-    start = time.time()
-    saved = building_service.bulk_save(buildings, tile_id)
-    save_time = time.time() - start
-    logger.info(f"  Saved: {saved} buildings in {save_time:.1f}s")
-
-    return saved
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def download_and_import_tile(tile_id: str, download_url: str) -> int:
     """
-    Download and import a single tile. Returns number of buildings imported.
-    Runs synchronous I/O in thread pool to avoid blocking event loop.
+    Download and import a single tile with ALL layers.
+
+    REFACTORED 14.01.2026: Uses prefetch_tile_buildings() for complete import:
+    - Building_solid → buildings_3d
+    - Roof_solid → building_roofs
+    - Wall → building_walls (if IMPORT_ALL_LAYERS=True)
+    - Sets has_3d_layers flag
+    - Captures all timing metrics
+
+    Returns number of buildings imported.
     """
-    return await asyncio.to_thread(_sync_download_and_import_tile, tile_id, download_url)
+    # Reset metrics for this tile
+    reset_import_metrics()
+
+    # 1. Download (sync, in thread pool)
+    gdb_path = await asyncio.to_thread(_download_tile, tile_id, download_url)
+
+    # 2. Import all layers (sync function in thread pool)
+    # FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → asyncio.to_thread
+    logger.info(f"Importing all layers for tile {tile_id}...")
+    saved_count = await asyncio.to_thread(prefetch_tile_buildings, tile_id, gdb_path)
+
+    logger.info(f"Tile {tile_id} complete: {saved_count} buildings imported")
+    return saved_count
 
 
 async def run_region_import(region_name: str):

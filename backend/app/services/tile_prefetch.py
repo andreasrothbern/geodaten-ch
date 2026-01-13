@@ -83,7 +83,7 @@ _prefetch_in_progress: Set[str] = set()
 _prefetch_lock = Lock()
 
 
-async def prefetch_tile_buildings(
+def prefetch_tile_buildings(
     tile_id: str,
     gdb_path: Path,
     exclude_egids: Optional[Set[int]] = None
@@ -94,6 +94,11 @@ async def prefetch_tile_buildings(
     REFACTORED 11.01.2026: exclude_egid → exclude_egids (Set)
     - Vereint prefetch_tile_buildings + prefetch_tile_buildings_excluding
     - Macht IMMER Roof_solid Parsing
+
+    FIX 14.01.2026: async → sync!
+    - War "fake async" (alle internen Operationen sind sync)
+    - Jetzt ehrlich sync, Aufruf mit asyncio.to_thread() wenn nötig
+    - TODO: Wirklich async machen mit asyncio.to_thread() pro I/O-Operation
 
     Args:
         tile_id: Tile-Referenz (z.B. "1088-22")
@@ -741,8 +746,9 @@ def schedule_prefetch(tile_id: str, gdb_path: Path, exclude_egid: Optional[str] 
     """
     Plant einen Prefetch-Job im Hintergrund.
 
-    Fire-and-forget: Kehrt sofort zurück, Job läuft async.
+    Fire-and-forget: Kehrt sofort zurück, Job läuft in ThreadPool.
     REFACTORED 11.01.2026: Konvertiert exclude_egid zu exclude_egids Set.
+    FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → ThreadPool statt asyncio.
 
     Args:
         tile_id: Tile-Referenz
@@ -751,17 +757,16 @@ def schedule_prefetch(tile_id: str, gdb_path: Path, exclude_egid: Optional[str] 
     """
     # Konvertiere zu Set für neue API
     exclude_egids = {int(exclude_egid)} if exclude_egid else None
-    
+
+    # FIX 14.01.2026: prefetch_tile_buildings ist sync → in ThreadPool ausführen
+    def _run_prefetch():
+        prefetch_tile_buildings(tile_id, gdb_path, exclude_egids)
+
     try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(
-            prefetch_tile_buildings(tile_id, gdb_path, exclude_egids)
-        )
+        _background_executor.submit(_run_prefetch)
         logger.debug(f"Prefetch-Task geplant für {tile_id}")
-    except RuntimeError:
-        # Kein laufender Event-Loop - synchron starten
-        logger.debug(f"Kein Event-Loop, starte Prefetch synchron für {tile_id}")
-        asyncio.run(prefetch_tile_buildings(tile_id, gdb_path, exclude_egids))
+    except Exception as e:
+        logger.error(f"Konnte Prefetch nicht starten: {e}")
 
 
 def get_prefetch_status() -> dict:
@@ -1047,14 +1052,15 @@ def schedule_prefetch_with_neighbors(
 
     # 2. ASYNC: Background-Prefetch für ALLE Gebäude (keine Ausschlüsse mehr)
     # REFACTORED 11.01.2026 21:50: Nutzt jetzt prefetch_tile_buildings (vereint)
+    # FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → direkter Aufruf
     def _background_prefetch():
         """Läuft in separatem Thread."""
         try:
-            asyncio.run(prefetch_tile_buildings(
+            prefetch_tile_buildings(
                 tile_id=tile_id,
                 gdb_path=gdb_path,
                 exclude_egids=None  # FIX 12.01.2026: Keine Ausschlüsse mehr
-            ))
+            )
         except Exception as e:
             logger.error(f"Background-Prefetch-Fehler: {e}")
 
