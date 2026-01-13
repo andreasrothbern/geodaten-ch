@@ -1,6 +1,10 @@
 # Datenfluss-Architektur
 
-## Übersicht (Stand 08.01.2026)
+## Übersicht (Stand 13.01.2026 17:30)
+
+> **NEU:** `building_3d.db` wurde auf DuckDB migriert → `building_3d.duckdb`
+> DuckDB ist jetzt der **DEFAULT** - kein `USE_DUCKDB=true` mehr nötig!
+> Falls SQLite benötigt wird: `USE_DUCKDB=false` setzen.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -322,9 +326,11 @@ GET /api/v1/geruestbau/building/{egid}/neighbors?radius_m=10
 
 ## Datenbank-Übersicht
 
-| Datenbank | Inhalt | Gefüllt von |
-|-----------|--------|-------------|
-| `tiles.db` | Tile-Metadaten | tile_cache.py |
-| `building_3d.db` | Gebäude (Polygon, Höhen) | tile_prefetch.py |
-| `building_contexts.db` | Enrichment (Zonen, Terrain) | SmartBuildingService |
-| `geruestbau.db` | Projekte | Gerüstbau-App |
+| Datenbank | Inhalt | Gefüllt von | Engine |
+|-----------|--------|-------------|--------|
+| `tiles.db` | Tile-Metadaten | tile_cache.py | SQLite |
+| `building_3d.duckdb` | Gebäude (Polygon, Höhen) | tile_prefetch.py | **DuckDB** (NEU) |
+| `building_contexts.db` | Enrichment (Zonen, Terrain) | SmartBuildingService | SQLite |
+| `geruestbau.db` | Projekte | Gerüstbau-App | SQLite |
+
+> **Stand 13.01.2026 17:30:** DuckDB ist der Default. SQLite-Fallback mit `USE_DUCKDB=false`.

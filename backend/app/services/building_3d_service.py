@@ -10,6 +10,11 @@ WICHTIG: Diese Datenbank ist UNABHÄNGIG von anderen Caches!
 - Wird vom tile_prefetch.py befüllt
 - Ermöglicht O(1) Lookups statt GDB-Parsing
 
+NEU 12.01.2026: DuckDB-Migration
+- Feature-Flag USE_DUCKDB in config.py
+- Dual-Mode: SQLite (default) oder DuckDB
+- Parquet-Pipeline für schnelleren Bulk-Import
+
 Schema:
     buildings_3d (
         egid INTEGER PRIMARY KEY,
@@ -58,25 +63,40 @@ Verwendung:
         traufhoehe = building['traufhoehe_m']
 """
 
-import sqlite3
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from contextlib import contextmanager
 from threading import local
+
+# NEU 12.01.2026: Zentrale Konfiguration
+from app.config import (
+    USE_DUCKDB,
+    BUILDING_3D_DB_PATH,
+    BUILDING_3D_SQLITE_PATH,
+    BUILDING_3D_DUCKDB_PATH,
+    DATA_DIR,
+    get_db_engine_name,
+    get_building_3d_connection,  # FIX 13.01.2026 18:45: Zentrale Connection-Factory
+)
+
+# Conditional imports basierend auf Engine
+import sqlite3
+if USE_DUCKDB:
+    import duckdb
 
 logger = logging.getLogger(__name__)
 
 # Optimierungs-Konstanten (BATCH_IMPORT.md Anhang A)
 BATCH_SIZE = 5000  # Task 2: Erhöht von 1000 auf 5000
-PRAGMA_CACHE_SIZE = -64000  # 64MB Cache
-PRAGMA_MMAP_SIZE = 268435456  # 256MB Memory-Mapped I/O
+PRAGMA_CACHE_SIZE = -64000  # 64MB Cache (nur SQLite)
+PRAGMA_MMAP_SIZE = 268435456  # 256MB Memory-Mapped I/O (nur SQLite)
 
-# Pfad zur Datenbank - UNABHÄNGIG von anderen DBs
-DATA_DIR = Path(__file__).parent.parent / "data"
-BUILDING_3D_DB = DATA_DIR / "building_3d.db"
+# DEPRECATED: Verwende BUILDING_3D_DB_PATH aus config.py
+# Bleibt für Rückwärtskompatibilität
+BUILDING_3D_DB = BUILDING_3D_DB_PATH
 
 
 class Building3DService:
@@ -93,8 +113,13 @@ class Building3DService:
     - Höhen (Trauf, First, Gesamt)
     - Geometrie-Daten (Fläche, Umfang, Zentroid)
 
+    NEU 12.01.2026: DuckDB-Migration
+    - Unterstützt SQLite (default) und DuckDB
+    - Feature-Flag USE_DUCKDB steuert die Engine
+    - DuckDB: Bessere Parallelität, schnellerer Bulk-Import
+
     OPTIMIERUNGEN (BATCH_IMPORT.md Anhang A):
-    - Task 1: Aggressive PRAGMAs (WAL, synchronous, cache_size, mmap)
+    - Task 1: Aggressive PRAGMAs (WAL, synchronous, cache_size, mmap) - nur SQLite
     - Task 2: Batch-Size 5000 (statt 1000)
     - Task 3: Deferred Index für Batch-Import
     - Task 4: Prepared Statements (wiederverwendet)
@@ -116,14 +141,28 @@ class Building3DService:
         self._local = local()
         # Task 4: Prepared Statement Cache
         self._prepared_insert = None
+        # NEU 12.01.2026: Engine-Info speichern
+        self._use_duckdb = USE_DUCKDB
         self._init_database()
         self._initialized = True
+        logger.info(f"[Building3DService] Initialisiert mit {get_db_engine_name()}: {BUILDING_3D_DB_PATH}")
 
     def _init_database(self):
-        """Erstellt Datenbank-Schema falls nicht vorhanden."""
+        """
+        Erstellt Datenbank-Schema falls nicht vorhanden.
+
+        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
+        """
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(BUILDING_3D_DB) as conn:
+        if self._use_duckdb:
+            self._init_duckdb_schema()
+        else:
+            self._init_sqlite_schema()
+
+    def _init_sqlite_schema(self):
+        """SQLite-spezifische Schema-Initialisierung."""
+        with sqlite3.connect(BUILDING_3D_SQLITE_PATH) as conn:
             cursor = conn.cursor()
 
             # Haupttabelle für Gebäudedaten (erweitert 11.01.2026)
@@ -141,7 +180,6 @@ class Building3DService:
                     tile_id TEXT,
                     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     source TEXT DEFAULT 'swissBUILDINGS3D_3.0',
-                    -- NEU 11.01.2026: Erweiterte Attribute
                     objektart TEXT,
                     name_komplett TEXT,
                     gebaeude_nutzung TEXT,
@@ -153,7 +191,7 @@ class Building3DService:
                 )
             """)
 
-            # NEU 11.01.2026: building_roofs Tabelle
+            # building_roofs Tabelle
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS building_roofs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,7 +210,7 @@ class Building3DService:
                 )
             """)
 
-            # NEU 11.01.2026: building_walls Tabelle
+            # building_walls Tabelle
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS building_walls (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,7 +223,7 @@ class Building3DService:
                 )
             """)
 
-            # NEU 11.01.2026: building_floors Tabelle
+            # building_floors Tabelle
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS building_floors (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,13 +235,11 @@ class Building3DService:
                 )
             """)
 
-            # Index für Koordinaten-Suche (Nachbargebäude)
+            # Indizes
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
                 ON buildings_3d(center_e, center_n)
             """)
-
-            # Index für Tile-Zuordnung (Batch-Operationen)
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
                 ON buildings_3d(tile_id)
@@ -223,20 +259,127 @@ class Building3DService:
 
             conn.commit()
 
-        logger.info(f"Building 3D database initialized: {BUILDING_3D_DB}")
+        logger.info(f"[SQLite] Schema initialisiert: {BUILDING_3D_SQLITE_PATH}")
 
-    def _setup_connection(self, conn: sqlite3.Connection):
+    def _init_duckdb_schema(self):
+        """DuckDB-spezifische Schema-Initialisierung."""
+        # FIX 13.01.2026 18:45: Zentrale Connection-Factory verwenden
+        conn = get_building_3d_connection()
+        try:
+            # Haupttabelle - DuckDB nutzt JSON nativ!
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS buildings_3d (
+                    egid INTEGER PRIMARY KEY,
+                    polygon JSON,
+                    traufhoehe_m DOUBLE,
+                    firsthoehe_m DOUBLE,
+                    gebaeudehoehe_m DOUBLE,
+                    area_m2 DOUBLE,
+                    perimeter_m DOUBLE,
+                    center_e DOUBLE,
+                    center_n DOUBLE,
+                    tile_id VARCHAR,
+                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    source VARCHAR DEFAULT 'swissBUILDINGS3D_3.0',
+                    objektart VARCHAR,
+                    name_komplett VARCHAR,
+                    gebaeude_nutzung VARCHAR,
+                    gebaeudeeinheit VARCHAR,
+                    roof_form VARCHAR,
+                    roof_form_confidence DOUBLE,
+                    roof_orientation VARCHAR,
+                    has_3d_layers INTEGER DEFAULT 0
+                )
+            """)
+
+            # building_roofs Tabelle
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS building_roofs (
+                    id INTEGER PRIMARY KEY,
+                    gebaeudeeinheit VARCHAR NOT NULL,
+                    egid VARCHAR,
+                    dach_min DOUBLE,
+                    dach_max DOUBLE,
+                    roof_form VARCHAR,
+                    roof_angle_deg DOUBLE,
+                    roof_orientation VARCHAR,
+                    z_levels VARCHAR,
+                    geometry_wkb BLOB,
+                    has_full_geometry INTEGER DEFAULT 0,
+                    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    calculation_method VARCHAR
+                )
+            """)
+
+            # building_walls Tabelle
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS building_walls (
+                    id INTEGER PRIMARY KEY,
+                    gebaeudeeinheit VARCHAR NOT NULL,
+                    egid VARCHAR,
+                    z_min DOUBLE,
+                    z_max DOUBLE,
+                    geometry_wkb BLOB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # building_floors Tabelle
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS building_floors (
+                    id INTEGER PRIMARY KEY,
+                    gebaeudeeinheit VARCHAR NOT NULL,
+                    egid VARCHAR,
+                    gelaendepunkt DOUBLE,
+                    geometry_wkb BLOB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Indizes
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
+                ON buildings_3d(center_e, center_n)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
+                ON buildings_3d(tile_id)
+            """)
+
+            # Import-Log für Batch-Tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS import_log (
+                    id INTEGER PRIMARY KEY,
+                    tile_id VARCHAR,
+                    buildings_count INTEGER,
+                    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    duration_seconds DOUBLE,
+                    source VARCHAR
+                )
+            """)
+
+            # DuckDB: Sequence für auto-increment IDs
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_roofs_id START 1")
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_walls_id START 1")
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_floors_id START 1")
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_log_id START 1")
+
+        finally:
+            conn.close()
+
+        logger.info(f"[DuckDB] Schema initialisiert: {BUILDING_3D_DUCKDB_PATH}")
+
+    def _setup_sqlite_connection(self, conn: sqlite3.Connection):
         """
-        Task 1: Aggressive PRAGMAs für optimale Performance.
+        Task 1: Aggressive PRAGMAs für optimale SQLite Performance.
 
         Konfiguriert SQLite für maximale Bulk-Import-Geschwindigkeit.
+        NUR für SQLite - DuckDB braucht keine PRAGMAs.
         """
         # WAL-Mode: Bessere Parallelität (Reads während Write)
         conn.execute("PRAGMA journal_mode=WAL")
 
         # NORMAL statt FULL: Weniger fsync, ~30% schneller
-        # Risiko: Bei Crash können letzte Transaktionen verloren gehen
-        # Für Batch-Import OK, da wir bei Fehler sowieso neu starten
         conn.execute("PRAGMA synchronous=NORMAL")
 
         # Grösserer Cache: 64MB statt default 2MB
@@ -248,24 +391,42 @@ class Building3DService:
         # Memory-Mapped I/O: 256MB
         conn.execute(f"PRAGMA mmap_size={PRAGMA_MMAP_SIZE}")
 
+    # Alias für Rückwärtskompatibilität
+    def _setup_connection(self, conn):
+        """Deprecated: Use _setup_sqlite_connection instead."""
+        if not self._use_duckdb:
+            self._setup_sqlite_connection(conn)
+
     @contextmanager
-    def _get_connection(self, pooled: bool = True):
+    def _get_connection(self, pooled: bool = True, read_only: bool = False):
         """
-        Task 5: Thread-lokale Connection für bessere Performance.
+        Thread-lokale Connection für bessere Performance.
+
+        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
 
         Args:
             pooled: True = Thread-lokale wiederverwendete Connection
                    False = Neue Connection (für spezielle Fälle)
+            read_only: Nur Lese-Zugriff (relevant für DuckDB)
         """
+        if self._use_duckdb:
+            # DuckDB Connection
+            yield from self._get_duckdb_connection(pooled, read_only)
+        else:
+            # SQLite Connection (Original-Logik)
+            yield from self._get_sqlite_connection(pooled)
+
+    def _get_sqlite_connection(self, pooled: bool = True):
+        """SQLite-spezifisches Connection-Handling."""
         if pooled:
             # Thread-lokale Connection wiederverwenden
             if not hasattr(self._local, 'conn') or self._local.conn is None:
                 self._local.conn = sqlite3.connect(
-                    BUILDING_3D_DB,
+                    str(BUILDING_3D_SQLITE_PATH),
                     check_same_thread=False
                 )
                 self._local.conn.row_factory = sqlite3.Row
-                self._setup_connection(self._local.conn)
+                self._setup_sqlite_connection(self._local.conn)
 
             try:
                 yield self._local.conn
@@ -279,13 +440,117 @@ class Building3DService:
                 raise
         else:
             # Neue Connection (nicht gepoolt)
-            conn = sqlite3.connect(BUILDING_3D_DB)
+            conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))
             conn.row_factory = sqlite3.Row
-            self._setup_connection(conn)
+            self._setup_sqlite_connection(conn)
             try:
                 yield conn
             finally:
                 conn.close()
+
+    def _get_duckdb_connection(self, pooled: bool = True, read_only: bool = False):
+        """
+        DuckDB-spezifisches Connection-Handling.
+
+        DuckDB ist thread-safe und braucht kein spezielles Pooling.
+        Aber für Konsistenz verwenden wir Thread-lokale Connections.
+        """
+        if pooled and not read_only:
+            # Thread-lokale Connection wiederverwenden (für Writes)
+            # FIX 13.01.2026 18:45: Zentrale Connection-Factory verwenden
+            if not hasattr(self._local, 'duckdb_conn') or self._local.duckdb_conn is None:
+                self._local.duckdb_conn = get_building_3d_connection()
+
+            try:
+                yield self._local.duckdb_conn
+            except Exception:
+                # Bei Fehler: Connection zurücksetzen
+                if hasattr(self._local, 'duckdb_conn') and self._local.duckdb_conn:
+                    try:
+                        self._local.duckdb_conn.rollback()
+                    except Exception:
+                        pass
+                raise
+        else:
+            # Neue Connection (read_only oder nicht gepoolt)
+            # FIX 13.01.2026 18:45: Zentrale Connection-Factory verwenden
+            conn = get_building_3d_connection(read_only=read_only)
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+    def _row_to_dict(self, row, columns: list = None) -> Dict[str, Any]:
+        """
+        Konvertiert eine Datenbankzeile zu einem Dict.
+
+        NEU 12.01.2026: Funktioniert mit SQLite Row und DuckDB Tuple
+        """
+        if row is None:
+            return None
+
+        if self._use_duckdb:
+            # DuckDB gibt Tuples zurück - wir brauchen die Spaltennamen
+            if columns:
+                return dict(zip(columns, row))
+            else:
+                # Fallback: Annahme der Standard-Spalten
+                return dict(row) if hasattr(row, 'keys') else None
+        else:
+            # SQLite Row hat .keys()
+            return dict(row)
+
+    def _fetch_one_as_dict(self, conn, sql: str, params: tuple = None) -> Optional[Dict[str, Any]]:
+        """
+        Führt Query aus und gibt erste Zeile als Dict zurück.
+
+        NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
+        """
+        if self._use_duckdb:
+            result = conn.execute(sql, params or [])
+            row = result.fetchone()
+            if not row:
+                return None
+            # DuckDB: Spaltennamen aus description holen
+            columns = [desc[0] for desc in result.description]
+            return dict(zip(columns, row))
+        else:
+            cursor = conn.cursor()
+            cursor.execute(sql, params or ())
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    def _fetch_all_as_dicts(self, conn, sql: str, params: tuple = None) -> List[Dict[str, Any]]:
+        """
+        Führt Query aus und gibt alle Zeilen als List[Dict] zurück.
+
+        NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
+        """
+        if self._use_duckdb:
+            result = conn.execute(sql, params or [])
+            rows = result.fetchall()
+            if not rows:
+                return []
+            columns = [desc[0] for desc in result.description]
+            return [dict(zip(columns, row)) for row in rows]
+        else:
+            cursor = conn.cursor()
+            cursor.execute(sql, params or ())
+            return [dict(row) for row in cursor.fetchall()]
+
+    def _parse_polygon(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Parst das Polygon-Feld von JSON-String zu Liste."""
+        if result and result.get('polygon'):
+            polygon = result['polygon']
+            if isinstance(polygon, str):
+                try:
+                    result['polygon'] = json.loads(polygon)
+                except json.JSONDecodeError:
+                    result['polygon'] = None
+            # DuckDB kann JSON nativ zurückgeben (als dict/list)
+        return result
 
     def get_by_egid(self, egid: int) -> Optional[Dict[str, Any]]:
         """
@@ -298,25 +563,16 @@ class Building3DService:
             Dict mit Polygon, Höhen, etc. oder None
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM buildings_3d WHERE egid = ?
-            """, (egid,))
+            result = self._fetch_one_as_dict(
+                conn,
+                "SELECT * FROM buildings_3d WHERE egid = ?",
+                (egid,)
+            )
 
-            row = cursor.fetchone()
-            if not row:
+            if not result:
                 return None
 
-            result = dict(row)
-
-            # Polygon von JSON string zu Liste konvertieren
-            if result.get('polygon'):
-                try:
-                    result['polygon'] = json.loads(result['polygon'])
-                except json.JSONDecodeError:
-                    result['polygon'] = None
-
-            return result
+            return self._parse_polygon(result)
 
     def get_by_coordinates(
         self,
@@ -340,10 +596,8 @@ class Building3DService:
             Gebäude dessen Polygon den Punkt enthält, oder None
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # Alle Kandidaten im Radius laden (nicht nur nächstes!)
-            cursor.execute("""
+            # NEU 12.01.2026: Dual-Mode Query
+            sql = """
                 SELECT *,
                        ((center_e - ?) * (center_e - ?) +
                         (center_n - ?) * (center_n - ?)) as dist_sq
@@ -351,13 +605,15 @@ class Building3DService:
                 WHERE center_e BETWEEN ? AND ?
                   AND center_n BETWEEN ? AND ?
                 ORDER BY dist_sq ASC
-            """, (
+            """
+            params = (
                 e, e, n, n,
                 e - tolerance_m, e + tolerance_m,
                 n - tolerance_m, n + tolerance_m
-            ))
+            )
 
-            rows = cursor.fetchall()
+            rows = self._fetch_all_as_dicts(conn, sql, params)
+
             if not rows:
                 logger.debug(f"[get_by_coordinates] Keine Kandidaten im {tolerance_m}m Radius um ({e:.1f}, {n:.1f})")
                 return None
@@ -365,18 +621,13 @@ class Building3DService:
             logger.debug(f"[get_by_coordinates] {len(rows)} Kandidaten im {tolerance_m}m Radius um ({e:.1f}, {n:.1f})")
 
             # Point-in-Polygon Check für alle Kandidaten
-            for row in rows:
-                result = dict(row)
+            for result in rows:
                 egid = result.get('egid')
                 dist = (result['dist_sq'] ** 0.5) if result.get('dist_sq') else 0
 
                 # Polygon parsen
-                polygon = None
-                if result.get('polygon'):
-                    try:
-                        polygon = json.loads(result['polygon']) if isinstance(result['polygon'], str) else result['polygon']
-                    except json.JSONDecodeError:
-                        pass
+                result = self._parse_polygon(result)
+                polygon = result.get('polygon')
 
                 if not polygon:
                     logger.debug(f"[get_by_coordinates] EGID {egid}: Kein Polygon, überspringe")
@@ -386,7 +637,8 @@ class Building3DService:
                 if self._point_in_polygon(e, n, polygon):
                     logger.info(f"[get_by_coordinates] Point-in-Polygon MATCH: ({e:.1f}, {n:.1f}) → EGID {egid} (dist={dist:.1f}m)")
                     result['distance_m'] = dist
-                    del result['dist_sq']
+                    if 'dist_sq' in result:
+                        del result['dist_sq']
                     result['polygon'] = polygon
                     return result
                 else:
@@ -440,6 +692,8 @@ class Building3DService:
         """
         Speichert ein Gebäude in der Datenbank.
 
+        NEU 13.01.2026: Vereinfacht - INSERT OR REPLACE für beide Engines
+
         Args:
             building: Dict mit egid, polygon, höhen, etc.
 
@@ -451,55 +705,54 @@ class Building3DService:
             logger.warning("Cannot save building without EGID")
             return False
 
-        # Polygon zu JSON serialisieren
+        # Polygon zu JSON serialisieren (für beide Engines)
         polygon = building.get('polygon')
         if polygon and not isinstance(polygon, str):
             polygon = json.dumps(polygon)
 
+        params = (
+            egid,
+            polygon,
+            building.get('traufhoehe_m'),
+            building.get('firsthoehe_m'),
+            building.get('gebaeudehoehe_m'),
+            building.get('area_m2'),
+            building.get('perimeter_m'),
+            building.get('center_e') or building.get('coord_e'),
+            building.get('center_n') or building.get('coord_n'),
+            building.get('tile_id'),
+            building.get('source', 'swissBUILDINGS3D_3.0'),
+            building.get('objektart'),
+            building.get('name_komplett'),
+            building.get('gebaeude_nutzung'),
+            building.get('gebaeudeeinheit'),
+            building.get('roof_form'),
+            building.get('roof_form_confidence'),
+            building.get('roof_orientation'),
+            building.get('has_3d_layers', 0)
+        )
+
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            insert_sql = self._get_prepared_insert()
 
-            # NEU 11.01.2026: Erweiterte Spalten
-            cursor.execute("""
-                INSERT OR REPLACE INTO buildings_3d
-                (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
-                 area_m2, perimeter_m, center_e, center_n, tile_id, source,
-                 objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
-                 roof_form, roof_form_confidence, roof_orientation, has_3d_layers)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                egid,
-                polygon,
-                building.get('traufhoehe_m'),
-                building.get('firsthoehe_m'),
-                building.get('gebaeudehoehe_m'),
-                building.get('area_m2'),
-                building.get('perimeter_m'),
-                building.get('center_e') or building.get('coord_e'),
-                building.get('center_n') or building.get('coord_n'),
-                building.get('tile_id'),
-                building.get('source', 'swissBUILDINGS3D_3.0'),
-                building.get('objektart'),
-                building.get('name_komplett'),
-                building.get('gebaeude_nutzung'),
-                building.get('gebaeudeeinheit'),
-                building.get('roof_form'),
-                building.get('roof_form_confidence'),
-                building.get('roof_orientation'),
-                building.get('has_3d_layers', 0)
-            ))
+            if self._use_duckdb:
+                # DuckDB: INSERT OR REPLACE funktioniert seit v0.8
+                conn.execute(insert_sql, params)
+            else:
+                cursor = conn.cursor()
+                cursor.execute(insert_sql, params)
+                conn.commit()
 
-            conn.commit()
             return True
 
     def _get_prepared_insert(self):
         """
         Task 4: Prepared Statement für Bulk-Insert.
 
-        Wiederverwendet das gleiche Statement für alle Inserts.
-        NEU 11.01.2026: Erweiterte Spalten für 3D-Layer.
+        NEU 13.01.2026: INSERT OR REPLACE funktioniert für SQLite UND DuckDB (>=0.8)
         """
         if self._prepared_insert is None:
+            # INSERT OR REPLACE funktioniert für beide Engines!
             self._prepared_insert = """
                 INSERT OR REPLACE INTO buildings_3d
                 (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
@@ -514,41 +767,51 @@ class Building3DService:
         """
         Task 3: Indexes vor Bulk-Import droppen.
 
-        Beschleunigt den Import erheblich, da SQLite keine
-        Index-Updates bei jedem Insert machen muss.
+        Beschleunigt den Import erheblich.
+        NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_coords")
-            cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_tile")
-            conn.commit()
-            logger.info("[OPTIMIZE] Indexes dropped for faster import")
+            if self._use_duckdb:
+                conn.execute("DROP INDEX IF EXISTS idx_buildings_3d_coords")
+                conn.execute("DROP INDEX IF EXISTS idx_buildings_3d_tile")
+            else:
+                cursor = conn.cursor()
+                cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_coords")
+                cursor.execute("DROP INDEX IF EXISTS idx_buildings_3d_tile")
+                conn.commit()
+            logger.info(f"[OPTIMIZE] Indexes dropped ({get_db_engine_name()})")
 
     def create_indexes(self):
         """
         Task 3: Indexes nach Bulk-Import erstellen.
 
-        Einmaliges Index-Erstellen am Ende ist viel schneller
-        als inkrementelle Updates während des Imports.
+        NEU 12.01.2026: Funktioniert mit SQLite und DuckDB
         """
         start = datetime.now()
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
-                ON buildings_3d(center_e, center_n)
-            """)
-
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
-                ON buildings_3d(tile_id)
-            """)
-
-            conn.commit()
+            if self._use_duckdb:
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
+                    ON buildings_3d(center_e, center_n)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
+                    ON buildings_3d(tile_id)
+                """)
+            else:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords
+                    ON buildings_3d(center_e, center_n)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile
+                    ON buildings_3d(tile_id)
+                """)
+                conn.commit()
 
         duration = (datetime.now() - start).total_seconds()
-        logger.info(f"[OPTIMIZE] Indexes created in {duration:.2f}s")
+        logger.info(f"[OPTIMIZE] Indexes created in {duration:.2f}s ({get_db_engine_name()})")
 
     def bulk_save(
         self,
@@ -623,75 +886,151 @@ class Building3DService:
         insert_sql = self._get_prepared_insert()
 
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            if self._use_duckdb:
+                # DuckDB: executemany nicht verfügbar, verwende Batch-Insert
+                saved_count = self._bulk_save_duckdb(conn, prepared_data, insert_sql, tile_id)
+            else:
+                # SQLite: Original-Logik mit cursor.executemany
+                cursor = conn.cursor()
 
-            # Task 2: Batch-Insert mit BATCH_SIZE = 5000
-            for i in range(0, len(prepared_data), BATCH_SIZE):
-                batch = prepared_data[i:i + BATCH_SIZE]
+                # Task 2: Batch-Insert mit BATCH_SIZE = 5000
+                for i in range(0, len(prepared_data), BATCH_SIZE):
+                    batch = prepared_data[i:i + BATCH_SIZE]
 
+                    try:
+                        cursor.executemany(insert_sql, batch)
+                        saved_count += len(batch)
+                    except Exception as e:
+                        logger.warning(f"Batch-Insert Fehler: {e}")
+                        # Fallback: Einzelne Inserts für diesen Batch
+                        for row in batch:
+                            try:
+                                cursor.execute(insert_sql, row)
+                                saved_count += 1
+                            except Exception as e2:
+                                logger.warning(f"Failed to save EGID {row[0]}: {e2}")
+
+                conn.commit()
+
+                # Import loggen
+                duration = (datetime.now() - start_time).total_seconds()
+                if tile_id:
+                    cursor.execute("""
+                        INSERT INTO import_log (tile_id, buildings_count, duration_seconds, source)
+                        VALUES (?, ?, ?, ?)
+                    """, (tile_id, saved_count, duration, 'tile_prefetch'))
+                    conn.commit()
+
+        duration = (datetime.now() - start_time).total_seconds()
+        ms_per_building = (duration * 1000 / saved_count) if saved_count > 0 else 0
+        logger.info(
+            f"[BULK] {saved_count} Gebäude gespeichert | "
+            f"tile: {tile_id} | {duration:.2f}s | {ms_per_building:.2f}ms/Gebäude | "
+            f"Engine: {get_db_engine_name()}"
+        )
+        return saved_count
+
+    def _bulk_save_duckdb(self, conn, prepared_data: list, insert_sql: str, tile_id: str = None) -> int:
+        """
+        DuckDB-spezifischer Bulk-Insert.
+
+        NEU 13.01.2026: Vereinfacht - INSERT OR REPLACE handled Duplikate automatisch.
+        DuckDB hat kein executemany, daher einzelne Inserts in einer Transaction.
+        """
+        saved_count = 0
+        start_time = datetime.now()
+
+        try:
+            # Transaction starten für bessere Performance
+            conn.execute("BEGIN TRANSACTION")
+
+            # INSERT OR REPLACE handled Duplikate automatisch
+            for row in prepared_data:
                 try:
-                    cursor.executemany(insert_sql, batch)
-                    saved_count += len(batch)
+                    conn.execute(insert_sql, row)
+                    saved_count += 1
                 except Exception as e:
-                    logger.warning(f"Batch-Insert Fehler: {e}")
-                    # Fallback: Einzelne Inserts für diesen Batch
-                    for row in batch:
-                        try:
-                            cursor.execute(insert_sql, row)
-                            saved_count += 1
-                        except Exception as e2:
-                            logger.warning(f"Failed to save EGID {row[0]}: {e2}")
+                    logger.warning(f"Failed to save EGID {row[0]}: {e}")
 
-            conn.commit()
+            conn.execute("COMMIT")
 
             # Import loggen
             duration = (datetime.now() - start_time).total_seconds()
             if tile_id:
-                cursor.execute("""
-                    INSERT INTO import_log (tile_id, buildings_count, duration_seconds, source)
-                    VALUES (?, ?, ?, ?)
-                """, (tile_id, saved_count, duration, 'tile_prefetch'))
-                conn.commit()
+                conn.execute("""
+                    INSERT INTO import_log (id, tile_id, buildings_count, duration_seconds, source)
+                    VALUES (nextval('seq_log_id'), ?, ?, ?, ?)
+                """, [tile_id, saved_count, duration, 'tile_prefetch_duckdb'])
 
-        ms_per_building = (duration * 1000 / saved_count) if saved_count > 0 else 0
-        logger.info(
-            f"[BULK] {saved_count} Gebäude gespeichert | "
-            f"tile: {tile_id} | {duration:.2f}s | {ms_per_building:.2f}ms/Gebäude"
-        )
+        except Exception as e:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            logger.error(f"DuckDB bulk_save failed: {e}")
+            raise
+
         return saved_count
 
     def exists(self, egid: int) -> bool:
-        """Prüft ob ein Gebäude in der DB existiert."""
+        """
+        Prüft ob ein Gebäude in der DB existiert.
+
+        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
+        """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM buildings_3d WHERE egid = ?", (egid,))
-            return cursor.fetchone() is not None
+            if self._use_duckdb:
+                result = conn.execute("SELECT 1 FROM buildings_3d WHERE egid = ?", [egid]).fetchone()
+                return result is not None
+            else:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM buildings_3d WHERE egid = ?", (egid,))
+                return cursor.fetchone() is not None
 
     def get_stats(self) -> Dict[str, Any]:
-        """Gibt Statistiken zur Datenbank zurück."""
+        """
+        Gibt Statistiken zur Datenbank zurück.
+
+        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
+        """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            if self._use_duckdb:
+                total_buildings = conn.execute("SELECT COUNT(*) FROM buildings_3d").fetchone()[0]
+                total_tiles = conn.execute("SELECT COUNT(DISTINCT tile_id) FROM buildings_3d").fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM buildings_3d")
-            total_buildings = cursor.fetchone()[0]
+                result = conn.execute("""
+                    SELECT tile_id, COUNT(*) as count
+                    FROM buildings_3d
+                    GROUP BY tile_id
+                    ORDER BY count DESC
+                    LIMIT 5
+                """)
+                columns = [desc[0] for desc in result.description]
+                top_tiles = [dict(zip(columns, row)) for row in result.fetchall()]
+            else:
+                cursor = conn.cursor()
 
-            cursor.execute("SELECT COUNT(DISTINCT tile_id) FROM buildings_3d")
-            total_tiles = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM buildings_3d")
+                total_buildings = cursor.fetchone()[0]
 
-            cursor.execute("""
-                SELECT tile_id, COUNT(*) as count
-                FROM buildings_3d
-                GROUP BY tile_id
-                ORDER BY count DESC
-                LIMIT 5
-            """)
-            top_tiles = [dict(r) for r in cursor.fetchall()]
+                cursor.execute("SELECT COUNT(DISTINCT tile_id) FROM buildings_3d")
+                total_tiles = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT tile_id, COUNT(*) as count
+                    FROM buildings_3d
+                    GROUP BY tile_id
+                    ORDER BY count DESC
+                    LIMIT 5
+                """)
+                top_tiles = [dict(r) for r in cursor.fetchall()]
 
             return {
                 "total_buildings": total_buildings,
                 "total_tiles": total_tiles,
                 "top_tiles": top_tiles,
-                "db_path": str(BUILDING_3D_DB)
+                "db_path": str(BUILDING_3D_DB_PATH),
+                "engine": get_db_engine_name()
             }
 
     def get_neighbors(
@@ -702,6 +1041,8 @@ class Building3DService:
     ) -> List[Dict[str, Any]]:
         """
         Findet Nachbargebäude zu einem EGID.
+
+        NEU 12.01.2026: Dual-Mode für SQLite und DuckDB
 
         Args:
             egid: Zentrales Gebäude
@@ -718,35 +1059,31 @@ class Building3DService:
 
         e, n = building['center_e'], building['center_n']
 
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
+        sql = """
+            SELECT *,
+                   sqrt((center_e - ?) * (center_e - ?) +
+                        (center_n - ?) * (center_n - ?)) as distance_m
+            FROM buildings_3d
+            WHERE egid != ?
+              AND center_e BETWEEN ? AND ?
+              AND center_n BETWEEN ? AND ?
+            ORDER BY distance_m ASC
+            LIMIT ?
+        """
+        params = (
+            e, e, n, n,
+            egid,
+            e - radius_m, e + radius_m,
+            n - radius_m, n + radius_m,
+            limit
+        )
 
-            cursor.execute("""
-                SELECT *,
-                       sqrt((center_e - ?) * (center_e - ?) +
-                            (center_n - ?) * (center_n - ?)) as distance_m
-                FROM buildings_3d
-                WHERE egid != ?
-                  AND center_e BETWEEN ? AND ?
-                  AND center_n BETWEEN ? AND ?
-                ORDER BY distance_m ASC
-                LIMIT ?
-            """, (
-                e, e, n, n,
-                egid,
-                e - radius_m, e + radius_m,
-                n - radius_m, n + radius_m,
-                limit
-            ))
+        with self._get_connection() as conn:
+            rows = self._fetch_all_as_dicts(conn, sql, params)
 
             results = []
-            for row in cursor.fetchall():
-                result = dict(row)
-                if result.get('polygon'):
-                    try:
-                        result['polygon'] = json.loads(result['polygon'])
-                    except json.JSONDecodeError:
-                        result['polygon'] = None
+            for result in rows:
+                result = self._parse_polygon(result)
                 results.append(result)
 
             return results

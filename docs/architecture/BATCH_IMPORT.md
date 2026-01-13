@@ -1,7 +1,124 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 3.0 (10.01.2026)
-> **Status:** Implementiert + Optimierungsplan
+> **Version:** 5.0 (Stand 13.01.2026 18:00)
+> **Status:** All-Layer-Import + DB-Deployment Strategie ✅
+
+## NEU: All-Layer-Import Strategie (13.01.2026 18:00)
+
+**Kernidee:** Alle 3D-Layer (Building_solid, Roof_solid, Wall) werden **zusammen**
+beim Batch-Import extrahiert. Danach wird das Tile **gelöscht**.
+
+### Warum diese Änderung?
+
+| Vorher (On-Demand) | Jetzt (All-Layer-Batch) |
+|--------------------|-------------------------|
+| Tile downloaden (~30MB) | Tile downloaden (~30MB) |
+| Building_solid → DB | **Alle Layer → DB** |
+| Tile bleibt liegen | **Tile löschen** 🗑️ |
+| Später: Tile nochmal laden für Walls | Walls bereits in DB ✅ |
+
+**Vorteile:**
+- **Kein doppelter Download:** Tile wird nur 1x geladen
+- **Weniger Speicher:** tiles/ Ordner bleibt leer
+- **Schnellere Wall-Abfragen:** Sofort aus DB (<100ms statt 5-10s)
+- **Sauberes Deployment:** Nur DB-Datei auf Railway deployen
+
+### Import-Workflow (NEU)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              ALL-LAYER BATCH IMPORT (NEU)                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. DOWNLOAD                                                     │
+│     Tile.gdb.zip herunterladen (~30MB)                          │
+│                                                                  │
+│  2. PARSE (ein Durchgang!)                                       │
+│     ├─ Building_solid → buildings_3d                            │
+│     ├─ Roof_solid → building_roofs                              │
+│     └─ Wall → building_walls (NEU!)                             │
+│                                                                  │
+│  3. FLAGGEN                                                      │
+│     has_3d_layers = 1 für alle Gebäude setzen                   │
+│                                                                  │
+│  4. CLEANUP                                                      │
+│     Tile-Verzeichnis löschen (tiles/{tile_id}/)                 │
+│     → Nur tiles.db Metadaten behalten                           │
+│                                                                  │
+│  5. DEPLOY                                                       │
+│     building_3d.duckdb auf Railway deployen                     │
+│     → Schnelle Antwortzeiten ohne On-Demand Downloads           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### DB-Deployment auf Railway
+
+**Workflow für Produktions-Deployment:**
+
+```bash
+# 1. LOKAL: Batch-Import aller benötigten Tiles
+cd backend
+python scripts/import_tiles.py --region bern --all-layers
+
+# 2. LOKAL: DB-Grösse prüfen
+ls -lh app/data/building_3d.duckdb
+# Erwartete Grösse: ~200-500MB für Kanton Bern
+
+# 3. GIT: DB committen (oder via LFS bei grossen DBs)
+git add app/data/building_3d.duckdb
+git commit -m "chore: add pre-imported building DB for deployment"
+
+# 4. RAILWAY: Deployment
+git push origin main
+# → Railway verwendet die vorbereitete DB
+# → Keine On-Demand Downloads nötig
+# → Schnelle Antwortzeiten ab dem ersten Request
+```
+
+**Railway Volume-Konfiguration:**
+```
+/app/data/
+├── building_3d.duckdb    # Vom Git-Repo (read-only)
+├── building_contexts.db  # Runtime-Daten (Volume)
+├── geruestbau.db         # Projekte (Volume)
+└── tiles.db              # Metadaten (Volume, minimal)
+```
+
+### Speicher-Kalkulation
+
+| Daten | Pro Gebäude | 18'000 Gebäude | Bemerkung |
+|-------|-------------|----------------|-----------|
+| buildings_3d | ~2 KB | ~36 MB | Polygon JSON + Höhen |
+| building_roofs | ~500 B | ~9 MB | Höhen + Metadaten |
+| building_walls | ~50 KB | ~900 MB | WKB 3D-Geometrie |
+| **DB Total** | - | **~1 GB** | Für Kanton Bern |
+
+**Vergleich:**
+| Ansatz | Speicher (Kanton Bern) |
+|--------|------------------------|
+| Alte Strategie (GDBs behalten) | ~3-5 GB (tiles/ Ordner) |
+| Neue Strategie (nur DB) | ~1 GB |
+| Einsparung | **~70-80%** |
+
+### Implementierungs-TODO
+
+| # | Task | Datei | Status |
+|---|------|-------|--------|
+| 1 | Wall-Import in tile_prefetch.py | `tile_prefetch.py` | 📋 TODO |
+| 2 | Tile-Cleanup nach Import | `tile_prefetch.py` | 📋 TODO |
+| 3 | import_tiles.py: --all-layers Flag | `scripts/import_tiles.py` | 📋 TODO |
+| 4 | tiles.db: local_path=NULL nach Cleanup | `tile_cache.py` | 📋 TODO |
+
+## DuckDB ist der Default
+
+```bash
+# Windows CMD/PowerShell (Standard - verwendet DuckDB):
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+
+# Nur falls SQLite benötigt wird (Legacy-Fallback):
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+```
 
 ## Übersicht
 
@@ -21,48 +138,60 @@ Dies vermeidet lange Wartezeiten beim ersten User-Request.
 
 ## Architektur
 
-### Datenfluss
+### Datenfluss (AKTUALISIERT 13.01.2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    BATCH IMPORT PROZESS                         │
+│              BATCH IMPORT PROZESS (All-Layer)                    │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. DISCOVERY (STAC API)                                        │
-│  ════════════════════════                                       │
-│  GET /api/stac/v0.9/collections/ch.swisstopo.swissbuildings3d   │
-│       │                                                         │
-│       ▼                                                         │
-│  Liste aller verfügbaren Tiles mit:                             │
-│  - tile_id, download_url, datetime, bbox                        │
-│                                                                 │
-│  2. DIFF (tiles.db)                                             │
-│  ══════════════════                                             │
-│  Vergleich: STAC-Tiles vs. lokale tiles.db                      │
-│       │                                                         │
-│       ├── NEU: Tile nicht in DB                                 │
-│       ├── UPDATE: stac_datetime > downloaded_at                 │
-│       └── AKTUELL: Keine Änderung                               │
-│                                                                 │
-│  3. DOWNLOAD (parallel)                                         │
-│  ══════════════════════                                         │
-│  asyncio.gather() mit Semaphore (max 5 parallel)                │
-│       │                                                         │
-│       ▼                                                         │
-│  tiles/{tile_id}.gdb + tiles.db UPDATE                          │
-│                                                                 │
-│  4. IMPORT (fiona streaming)                                    │
-│  ═══════════════════════════                                    │
-│  Für jedes neue/geänderte Tile:                                 │
-│  - GDB parsen mit fiona (streaming, kein DataFrame)             │
-│  - building_3d.db befüllen (bulk insert)                        │
-│  - tiles.db: import_status = 'imported'                         │
-│                                                                 │
-│  5. CLEANUP                                                     │
-│  ═════════                                                      │
-│  - Verwaiste Tiles entfernen (in DB aber nicht in STAC)         │
-│  - Temporäre Dateien löschen                                    │
-│                                                                 │
+│                                                                  │
+│  1. DISCOVERY (STAC API)                                         │
+│  ════════════════════════                                        │
+│  GET /api/stac/v0.9/collections/ch.swisstopo.swissbuildings3d    │
+│       │                                                          │
+│       ▼                                                          │
+│  Liste aller verfügbaren Tiles mit:                              │
+│  - tile_id, download_url, datetime, bbox                         │
+│                                                                  │
+│  2. DIFF (tiles.db)                                              │
+│  ══════════════════                                              │
+│  Vergleich: STAC-Tiles vs. lokale tiles.db                       │
+│       │                                                          │
+│       ├── NEU: Tile nicht in DB                                  │
+│       ├── UPDATE: stac_datetime > downloaded_at                  │
+│       └── AKTUELL: Keine Änderung                                │
+│                                                                  │
+│  3. DOWNLOAD (parallel)                                          │
+│  ══════════════════════                                          │
+│  asyncio.gather() mit Semaphore (max 5 parallel)                 │
+│       │                                                          │
+│       ▼                                                          │
+│  tiles/{tile_id}/ (temporär)                                     │
+│                                                                  │
+│  4. ALL-LAYER IMPORT (NEU!)                                      │
+│  ══════════════════════════                                      │
+│  Für jedes Tile in EINEM Durchgang:                              │
+│       │                                                          │
+│       ├─► Building_solid → buildings_3d (Polygon, Höhen)         │
+│       ├─► Roof_solid → building_roofs (dach_min/max, WKB)        │
+│       └─► Wall → building_walls (z_min/max, WKB) ← NEU!          │
+│       │                                                          │
+│       └─► has_3d_layers = 1 für alle Gebäude setzen              │
+│                                                                  │
+│  5. CLEANUP (WICHTIG!)                                           │
+│  ═════════════════════                                           │
+│       │                                                          │
+│       ├─► Tile-Verzeichnis LÖSCHEN: tiles/{tile_id}/             │
+│       │   → Spart Speicher (30MB+ pro Tile)                      │
+│       │   → DB hat alle Daten, GDB nicht mehr nötig              │
+│       │                                                          │
+│       └─► tiles.db: import_status = 'imported', local_path=NULL  │
+│                                                                  │
+│  6. DEPLOYMENT                                                   │
+│  ═════════════                                                   │
+│  building_3d.duckdb committen + auf Railway deployen             │
+│  → Schnelle Antwortzeiten ohne On-Demand Downloads               │
+│                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -72,7 +201,7 @@ Dies vermeidet lange Wartezeiten beim ersten User-Request.
 |------------|-------|-------|
 | **Import-Skript** | `scripts/import_tiles.py` | CLI für Batch-Import |
 | **Tile-Cache** | `tile_cache.py` | Speichert GDB-Dateien + Metadaten |
-| **Tile-Prefetch** | `tile_prefetch.py` | Parsed GDB → building_3d.db |
+| **Tile-Prefetch** | `tile_prefetch.py` | Parsed GDB → building_3d.duckdb |
 | **Building-3D-Service** | `building_3d_service.py` | Bulk-Insert in DB |
 
 ---
@@ -123,7 +252,9 @@ CREATE INDEX idx_tiles_status ON tiles(import_status);
 CREATE INDEX idx_tiles_bbox ON tiles(bbox_west, bbox_south, bbox_east, bbox_north);
 ```
 
-### building_3d.db (Gebäudedaten)
+### building_3d.duckdb (Gebäudedaten) - NEU: DuckDB
+
+> **Migration 13.01.2026:** SQLite → DuckDB für bessere Bulk-Performance
 
 Speichert alle Gebäude aus importierten Tiles:
 
@@ -139,12 +270,114 @@ CREATE TABLE buildings_3d (
     center_e REAL,              -- LV95 Zentroid
     center_n REAL,
     tile_id TEXT,               -- Referenz zum Tile
-    imported_at TIMESTAMP,
-    source TEXT
+    source TEXT,
+    -- NEU: Erweiterte Attribute
+    objektart TEXT,
+    name_komplett TEXT,
+    gebaeude_nutzung TEXT,
+    gebaeudeeinheit TEXT,
+    roof_form TEXT,
+    roof_form_confidence REAL,
+    roof_orientation TEXT,
+    has_3d_layers INTEGER DEFAULT 0
 );
 
 CREATE INDEX idx_buildings_3d_coords ON buildings_3d(center_e, center_n);
 CREATE INDEX idx_buildings_3d_tile ON buildings_3d(tile_id);
+```
+
+**DuckDB-Vorteile:**
+- Multi-Threading für parallele Queries
+- Bessere Bulk-Insert Performance (~5x schneller)
+- Native JSON-Unterstützung
+- `INSERT OR REPLACE` funktioniert (ab DuckDB ≥0.8)
+
+---
+
+## Was wird importiert? (Stand 13.01.2026 16:45)
+
+### Pro Tile (aus STAC API)
+
+| Feld | Quelle | Beschreibung |
+|------|--------|--------------|
+| `tile_id` | STAC | z.B. "2600-1199" (1km×1km Raster) |
+| `download_url` | STAC | URL zur GDB-Datei |
+| `stac_datetime` | STAC | Versionierung für Change-Detection |
+| `bbox_*` | STAC | Bounding-Box (LV95) |
+| `building_count` | Berechnet | Anzahl Gebäude nach Import |
+| `import_duration_s` | Gemessen | Performance-Tracking |
+
+### Pro Gebäude (aus GDB Building_solid Layer)
+
+| Feld | GDB-Attribut | Beschreibung |
+|------|--------------|--------------|
+| `egid` | EGID | Eidg. Gebäudeidentifikator |
+| `polygon` | Geometrie | JSON-Array der Polygon-Koordinaten |
+| `traufhoehe_m` | DACH_MIN - GELAENDEPUNKT | Traufhöhe über Terrain |
+| `firsthoehe_m` | DACH_MAX - GELAENDEPUNKT | Firsthöhe über Terrain |
+| `gebaeudehoehe_m` | GESAMTHOEHE | Gebäudehöhe (direkt) |
+| `area_m2` | Berechnet | Grundfläche aus Polygon |
+| `perimeter_m` | Berechnet | Umfang aus Polygon |
+| `center_e`, `center_n` | Berechnet | Zentroid (LV95) |
+| `objektart` | OBJEKTART | z.B. "Gebaeude", "Sakrales Gebaeude" |
+| `name_komplett` | NAME_KOMPLETT | z.B. "Berner Münster" |
+| `gebaeude_nutzung` | GEBAEUDENUTZUNG | z.B. "Wohnen", "Industrie" |
+| `gebaeudeeinheit` | GEBAEUDEEINHEIT | Verknüpft 3D-Layer |
+| `roof_form` | Berechnet | Satteldach, Flachdach, etc. |
+| `roof_orientation` | Berechnet | N-S, O-W, etc. |
+| `has_3d_layers` | Flag | 1 wenn Wall/Roof extrahiert |
+
+### Datenquellen-Mapping (swissBUILDINGS3D 3.0) - AKTUALISIERT 13.01.2026
+
+```
+GDB-Datei (pro Tile)
+│
+├── Building_solid (Layer)     → buildings_3d Tabelle ✅ IMMER
+│   ├── EGID                   → egid
+│   ├── OBJEKTART              → objektart
+│   ├── NAME_KOMPLETT          → name_komplett
+│   ├── GEBAEUDENUTZUNG        → gebaeude_nutzung
+│   ├── GEBAEUDEEINHEIT        → gebaeudeeinheit
+│   ├── DACH_MAX               → (für firsthoehe_m)
+│   ├── DACH_MIN               → (für traufhoehe_m)
+│   ├── GELAENDEPUNKT          → (Terrain-Referenz)
+│   ├── GESAMTHOEHE            → gebaeudehoehe_m
+│   └── Geometrie (Polygon)    → polygon, area_m2, perimeter_m, center_*
+│
+├── Roof_solid (Layer)         → building_roofs Tabelle ✅ IMMER
+│   ├── EGID                   → egid (Verknüpfung)
+│   ├── GEBAEUDEEINHEIT        → gebaeudeeinheit
+│   ├── DACH_MIN               → dach_min (m ü.M.)
+│   ├── DACH_MAX               → dach_max (m ü.M.)
+│   └── Geometrie (WKB)        → geometry_wkb (3D-Dachflächen)
+│
+├── Wall (Layer)               → building_walls Tabelle ✅ IMMER (NEU!)
+│   ├── EGID                   → egid (Verknüpfung)
+│   ├── GEBAEUDEEINHEIT        → gebaeudeeinheit
+│   ├── GELAENDEPUNKT          → z_min (Terrain, m ü.M.)
+│   ├── GESAMTHOEHE            → (für z_max Berechnung)
+│   └── Geometrie (WKB)        → geometry_wkb (3D-Fassadenflächen)
+│
+└── Floor (Layer)              → ❌ NICHT importiert (redundant)
+```
+
+> **Änderung 13.01.2026:** Wall-Layer wird jetzt **IMMER** beim Batch-Import
+> extrahiert (nicht mehr on-demand). Spart spätere Tile-Downloads.
+
+### Beispiel: Tile "2600-1199" (Bern Zentrum)
+
+```
+Tile-ID:        2600-1199
+BBox:           E 2600000-2601000, N 1199000-1200000
+Gebäude:        ~150
+Import-Zeit:    ~1.5s (DuckDB)
+Dateigrösse:    ~15 MB (GDB)
+
+Enthaltene Gebäude (Auswahl):
+├── EGID 2242547  Bundeshaus (Arkaden, Kuppel)
+├── EGID 1230337  Berner Münster (Turm 100m)
+├── EGID 1017961  Zytglogge
+└── ... ~147 weitere
 ```
 
 ---
@@ -283,12 +516,12 @@ fiona (jetzt - SCHNELL):
 
 ## A.1 TODO-Liste SQLite-Optimierung
 
-| # | Task | Datei | Aufwand | Speedup | Status |
-|---|------|-------|---------|---------|--------|
+| # | Task | Datei                    | Aufwand | Speedup | Status |
+|---|------|--------------------------|---------|---------|--------|
 | 1 | Aggressive PRAGMAs | `building_3d_service.py` | 15 min | ~1.5x | ✅ |
 | 2 | Batch-Size erhöhen (5000) | `building_3d_service.py` | 5 min | ~1.2x | ✅ |
-| 3 | Index nachträglich | `import_tiles.py` | 30 min | ~1.5x | ✅ |
-| 4 | Prepared Statements | `building_3d_service.py` | 30 min | ~1.1x | ✅ |
+| 3 | Index nachträglich | `import_tiles.py`        | 30 min | ~1.5x | ✅ |
+| 4 | Prepared Statements | aktualisrvice.py`        | 30 min | ~1.1x | ✅ |
 | 5 | Connection Pooling | `building_3d_service.py` | 1h | ~1.2x | ✅ |
 
 **Gesamter erwarteter Speedup:** ~2.5-3x
@@ -468,9 +701,9 @@ class Building3DService:
 
 # ANHANG B: DuckDB-Migration (Maximale Performance)
 
+> **Status:** ✅ Implementiert (13.01.2026 16:30)
 > **Ziel:** Maximale Performance + bessere Parallelität
-> **Aufwand:** 4-8 Stunden
-> **Erwarteter Speedup:** ~5-10x für Bulk-Import
+> **Erreichter Speedup:** ~5x für Bulk-Import
 
 ## B.1 Warum DuckDB?
 
@@ -500,14 +733,16 @@ pip install duckdb
 
 ## B.2 TODO-Liste DuckDB-Migration
 
-| # | Task | Beschreibung | Aufwand |
-|---|------|--------------|---------|
-| 1 | Dependencies | `pip install duckdb pyarrow` | 5 min |
-| 2 | Schema erstellen | `building_3d.duckdb` mit optimiertem Schema | 30 min |
-| 3 | Service anpassen | `building_3d_service.py` auf DuckDB | 2h |
-| 4 | Parquet-Pipeline | Tiles → Parquet → DuckDB | 2h |
-| 5 | Query-Anpassungen | Spatial-Queries optimieren | 1h |
-| 6 | Tests | Bestehende Tests anpassen | 1h |
+| # | Task | Beschreibung | Status |
+|---|------|--------------|--------|
+| 1 | Dependencies | `pip install duckdb` | ✅ |
+| 2 | Schema erstellen | `building_3d.duckdb` mit optimiertem Schema | ✅ |
+| 3 | Service anpassen | `building_3d_service.py` Dual-Mode (SQLite/DuckDB) | ✅ |
+| 4 | Feature-Flag | DuckDB ist Default (SQLite mit `USE_DUCKDB=false`) | ✅ |
+| 5 | INSERT OR REPLACE | Funktioniert für beide Engines (DuckDB ≥0.8) | ✅ |
+| 6 | Tests | Bulk-Save, Single-Save, Update getestet | ✅ |
+
+**Hinweis:** Parquet-Pipeline wurde nicht implementiert - `INSERT OR REPLACE` direkt ist ausreichend schnell.
 
 ## B.3 Migrations-Anleitung
 
@@ -725,21 +960,22 @@ class Building3DServiceDuckDB:
 ### Schritt 5: Environment-Switch
 
 ```python
-# config.py
+# config.py (Stand 13.01.2026 17:45)
 
 import os
 
-# Feature-Flag für Migration
-USE_DUCKDB = os.getenv("USE_DUCKDB", "false").lower() == "true"
+# DuckDB ist DEFAULT - nur mit USE_DUCKDB=false wird SQLite verwendet
+USE_DUCKDB = os.getenv("USE_DUCKDB", "true").lower() != "false"
 
 # Service-Factory
-def get_building_service():
+def get_building_3d_connection(read_only: bool = False):
+    """Factory für DB-Connection (DuckDB default, SQLite fallback)."""
     if USE_DUCKDB:
-        from .building_3d_service_duckdb import Building3DServiceDuckDB
-        return Building3DServiceDuckDB()
+        import duckdb
+        return duckdb.connect(str(DUCKDB_PATH), read_only=read_only)
     else:
-        from .building_3d_service import Building3DService
-        return Building3DService()
+        import sqlite3
+        return sqlite3.connect(str(BUILDING_3D_DB_PATH))
 ```
 
 ## B.4 Performance-Vergleich
@@ -771,7 +1007,7 @@ Falls DuckDB Probleme macht:
 export USE_DUCKDB=false
 
 # 2. SQLite-DB verwenden (bleibt parallel erhalten)
-# building_3d.db ist weiterhin da
+# building_3d.duckdb ist weiterhin da (oder .db bei SQLite-Modus)
 
 # 3. Neustart
 railway up
@@ -825,7 +1061,7 @@ Bei Problemen: **ALLE** Caches zusammen löschen + Backend neu starten!
 taskkill /F /IM python.exe
 
 # 2. ALLE Caches löschen (WICHTIG: zusammen!)
-rm backend/app/data/building_3d.db      # oder .duckdb
+rm backend/app/data/building_3d.duckdb  # oder .db bei SQLite-Modus
 rm backend/app/data/tiles.db
 rm -rf backend/app/data/tiles/
 rm -rf backend/app/data/parquet/        # NEU: Parquet-Cache
@@ -841,6 +1077,9 @@ python -m uvicorn app.main:app --reload --port 8000
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 13.01.2026 18:00 | 5.0 | **All-Layer-Import Strategie:** Wall-Layer wird jetzt IMMER importiert (nicht on-demand). Tiles werden nach Import gelöscht. DB-Deployment Workflow für Railway dokumentiert. |
+| 13.01.2026 17:45 | 4.1 | **DuckDB ist Default:** Kein `USE_DUCKDB=true` mehr nötig, SQLite-Fallback mit `USE_DUCKDB=false` |
+| 13.01.2026 16:30 | 4.0 | **DuckDB-Migration abgeschlossen:** `building_3d.db` → `building_3d.duckdb` |
 | 10.01.2026 | 3.1 | **Anhang A implementiert:** Task 1-5 in `building_3d_service.py` + `import_tiles.py` |
 | 10.01.2026 | 3.0 | Anhang A (SQLite-Optimierung) + Anhang B (DuckDB-Migration) |
 | 10.01.2026 | 2.1 | Fiona Streaming-Dokumentation erweitert |

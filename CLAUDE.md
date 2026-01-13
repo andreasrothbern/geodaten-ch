@@ -12,6 +12,7 @@ Detaillierte Regeln sind in `.claude/rules/` aufgeteilt:
 | `.claude/rules/smart-building.md` | 10-Schritte Pipeline, Zonen-Erkennung |
 | `.claude/rules/svg-generation.md` | SVG-Stil, Farben, Zonen-Typen |
 | `.claude/rules/data-flow.md` | Datenfluss building_3d.db, tiles.db |
+| `.claude/rules/duckdb-rules.md` | DuckDB-Regeln: Connection-Factory, Syntax |
 | `.claude/rules/known-bugs.md` | Bugs, Optimierungen, Performance-Logs |
 
 ### Architektur-Dokumentation
@@ -84,6 +85,29 @@ git push -u origin feature/neues-feature
 - `chore/` - Wartung (z.B. `chore/update-deps`)
 
 Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert automatisch, falls du auf `main` bist.
+
+### Backend starten
+
+**Stand 13.01.2026 17:30:** DuckDB ist jetzt der Default - kein Flag mehr nötig!
+
+```bash
+cd backend
+
+# Windows CMD/PowerShell (Standard - verwendet DuckDB):
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+
+# Nur falls SQLite benötigt wird (Legacy):
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+```
+
+**Warum DuckDB (Default)?**
+- Bessere Performance bei Bulk-Operationen
+- Multi-Threading für parallele Queries
+- Native JSON-Unterstützung für Polygon-Daten
+
+**Dateien:**
+- `building_3d.duckdb` - DuckDB-Datei (Default)
+- `building_3d.db` - SQLite-Datei (nur mit `USE_DUCKDB=false`)
 
 ## Wichtige Prozeduren
 

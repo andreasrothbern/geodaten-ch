@@ -26,9 +26,9 @@ Schema:
     )
 
 Version: 1.0 (11.01.2026)
+NEU 13.01.2026 17:00: DuckDB-kompatibel via get_building_3d_connection()
 """
 
-import sqlite3
 import json
 import logging
 from pathlib import Path
@@ -36,11 +36,14 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from contextlib import contextmanager
 
+# NEU 13.01.2026 17:00: DuckDB-kompatible Connection
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, USE_DUCKDB
+
 logger = logging.getLogger(__name__)
 
-# Pfad zur Datenbank (gleiche wie buildings_3d)
+# Pfad zur Datenbank (NEU 13.01.2026: aus config)
 DATA_DIR = Path(__file__).parent.parent / "data"
-BUILDING_3D_DB = DATA_DIR / "building_3d.db"
+BUILDING_3D_DB = BUILDING_3D_DB_PATH
 
 
 class Roof3DService:
@@ -67,12 +70,17 @@ class Roof3DService:
         self._initialized = True
 
     @contextmanager
-    def _get_connection(self):
-        """Erstellt eine Datenbankverbindung."""
-        conn = sqlite3.connect(BUILDING_3D_DB)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+    def _get_connection(self, read_only: bool = False):
+        """
+        Erstellt eine Datenbankverbindung (DuckDB oder SQLite).
+
+        NEU 13.01.2026 17:00: Verwendet get_building_3d_connection() aus config.
+        """
+        conn = get_building_3d_connection(read_only=read_only)
+        # PRAGMA nur für SQLite, nicht für DuckDB
+        if not USE_DUCKDB:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         try:
             yield conn
         finally:
@@ -183,22 +191,37 @@ class Roof3DService:
 
     def get_by_gebaeudeeinheit(self, gebaeudeeinheit: str) -> Optional[Dict[str, Any]]:
         """Holt Dach-Daten per Gebäudeeinheit."""
-        with self._get_connection() as conn:
+        with self._get_connection(read_only=True) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM building_roofs WHERE gebaeudeeinheit = ?
+                SELECT gebaeudeeinheit, egid, dach_min, dach_max,
+                       roof_form, roof_angle_deg, roof_orientation, z_levels,
+                       geometry_wkb, has_full_geometry, calculation_method
+                FROM building_roofs WHERE gebaeudeeinheit = ?
             """, (gebaeudeeinheit,))
 
             row = cursor.fetchone()
             if not row:
                 return None
 
-            result = dict(row)
+            # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+            if isinstance(row, tuple):
+                result = {
+                    'gebaeudeeinheit': row[0], 'egid': row[1],
+                    'dach_min': row[2], 'dach_max': row[3],
+                    'roof_form': row[4], 'roof_angle_deg': row[5],
+                    'roof_orientation': row[6], 'z_levels': row[7],
+                    'geometry_wkb': row[8], 'has_full_geometry': row[9],
+                    'calculation_method': row[10]
+                }
+            else:
+                result = dict(row)
 
             # Z-Levels parsen
             if result.get('z_levels'):
                 try:
-                    result['z_levels'] = json.loads(result['z_levels'])
+                    z_levels_data = result['z_levels']
+                    result['z_levels'] = json.loads(z_levels_data) if isinstance(z_levels_data, str) else z_levels_data
                 except json.JSONDecodeError:
                     result['z_levels'] = None
 
@@ -206,20 +229,37 @@ class Roof3DService:
 
     def get_by_egid(self, egid: str) -> Optional[Dict[str, Any]]:
         """Holt Dach-Daten per EGID."""
-        with self._get_connection() as conn:
+        with self._get_connection(read_only=True) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM building_roofs WHERE egid = ?
+                SELECT gebaeudeeinheit, egid, dach_min, dach_max,
+                       roof_form, roof_angle_deg, roof_orientation, z_levels,
+                       geometry_wkb, has_full_geometry, calculation_method
+                FROM building_roofs WHERE egid = ?
             """, (egid,))
 
             row = cursor.fetchone()
             if not row:
                 return None
 
-            result = dict(row)
+            # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+            if isinstance(row, tuple):
+                result = {
+                    'gebaeudeeinheit': row[0], 'egid': row[1],
+                    'dach_min': row[2], 'dach_max': row[3],
+                    'roof_form': row[4], 'roof_angle_deg': row[5],
+                    'roof_orientation': row[6], 'z_levels': row[7],
+                    'geometry_wkb': row[8], 'has_full_geometry': row[9],
+                    'calculation_method': row[10]
+                }
+            else:
+                result = dict(row)
+
+            # Z-Levels parsen
             if result.get('z_levels'):
                 try:
-                    result['z_levels'] = json.loads(result['z_levels'])
+                    z_levels_data = result['z_levels']
+                    result['z_levels'] = json.loads(z_levels_data) if isinstance(z_levels_data, str) else z_levels_data
                 except json.JSONDecodeError:
                     result['z_levels'] = None
 
@@ -246,7 +286,7 @@ class Roof3DService:
 
     def get_stats(self) -> Dict[str, Any]:
         """Gibt Statistiken zurück."""
-        with self._get_connection() as conn:
+        with self._get_connection(read_only=True) as conn:
             cursor = conn.cursor()
 
             cursor.execute("SELECT COUNT(*) FROM building_roofs")
@@ -262,7 +302,13 @@ class Roof3DService:
                 GROUP BY roof_form
                 ORDER BY count DESC
             """)
-            forms = {row['roof_form']: row['count'] for row in cursor.fetchall()}
+            # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+            forms = {}
+            for row in cursor.fetchall():
+                if isinstance(row, tuple):
+                    forms[row[0]] = row[1]
+                else:
+                    forms[row['roof_form']] = row['count']
 
             return {
                 "total_roofs": total,
@@ -298,8 +344,13 @@ class Roof3DService:
                 logger.warning(f"Gebäude {egid} nicht in building_3d.db gefunden")
                 return None
 
-            tile_id = row['tile_id']
-            gebaeudeeinheit = row['gebaeudeeinheit']
+            # NEU 13.01.2026 17:30: DuckDB gibt Tuple zurück, SQLite Row
+            if isinstance(row, tuple):
+                tile_id = row[0]
+                gebaeudeeinheit = row[1]
+            else:
+                tile_id = row['tile_id']
+                gebaeudeeinheit = row['gebaeudeeinheit']
 
         if not tile_id:
             logger.warning(f"Keine tile_id für EGID {egid}")
@@ -408,8 +459,13 @@ class Roof3DService:
                 logger.warning(f"[ALL_LAYERS] Gebäude {egid} nicht in building_3d.db")
                 return result
 
-            tile_id = row['tile_id']
-            gebaeudeeinheit = row['gebaeudeeinheit']
+            # NEU 13.01.2026 17:30: DuckDB gibt Tuple zurück, SQLite Row
+            if isinstance(row, tuple):
+                tile_id = row[0]
+                gebaeudeeinheit = row[1]
+            else:
+                tile_id = row['tile_id']
+                gebaeudeeinheit = row['gebaeudeeinheit']
 
         if not tile_id:
             logger.warning(f"[ALL_LAYERS] Keine tile_id für EGID {egid}")
@@ -515,7 +571,7 @@ class Roof3DService:
                         INSERT OR REPLACE INTO building_roofs
                         (gebaeudeeinheit, egid, dach_min, dach_max, geometry_wkb, 
                          has_full_geometry, calculated_at, calculation_method)
-                        VALUES (?, ?, ?, ?, ?, 1, datetime('now'), 'on_demand_complex')
+                        VALUES (?, ?, ?, ?, ?, 1, current_timestamp, 'on_demand_complex')
                     """, (
                         gebaeudeeinheit or f"egid_{egid}",
                         egid,
@@ -531,7 +587,7 @@ class Roof3DService:
                     cursor.execute("""
                         INSERT OR REPLACE INTO building_walls
                         (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb, created_at)
-                        VALUES (?, ?, ?, ?, ?, datetime('now'))
+                        VALUES (?, ?, ?, ?, ?, current_timestamp)
                     """, (
                         gebaeudeeinheit or f"egid_{egid}",
                         egid,

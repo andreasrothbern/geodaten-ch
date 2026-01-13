@@ -1,9 +1,39 @@
 # Building 3D Schema - Konzept
 
-> **Version:** 1.0
-> **Datum:** 11.01.2026
-> **Status:** Konzept
+> **Version:** 2.1 (Stand 13.01.2026 17:45)
+> **Status:** DuckDB-Migration abgeschlossen ✅
 > **Basis:** SWISSBUILDINGS3D_ANALYSE.md + BATCH_IMPORT.md
+
+## Aktueller Projektstand
+
+### ✅ Abgeschlossen (13.01.2026)
+
+| Task | Beschreibung |
+|------|--------------|
+| DuckDB-Migration | `building_3d.db` → `building_3d.duckdb` |
+| Feature-Flag | DuckDB ist Default (SQLite mit `USE_DUCKDB=false`) |
+| Dual-Mode Service | `building_3d_service.py` unterstützt beide Engines |
+| INSERT OR REPLACE | Funktioniert für SQLite UND DuckDB (≥0.8) |
+| Schema erweitert | Neue Felder: objektart, name_komplett, roof_form, etc. |
+
+### 🔴 Offene Punkte
+
+| Task | Priorität | Beschreibung |
+|------|-----------|--------------|
+| 3D-Layer Integration | P2 | Floor/Wall/Roof Layer aus swissBUILDINGS3D extrahieren |
+| Parquet-Pipeline | P3 | Optional für Batch-Import (aktuell nicht nötig) |
+| Railway Deployment | P1 | DuckDB auf Railway.app testen |
+| Legacy-Code entfernen | P3 | SQLite-spezifischen Code nach Testphase entfernen |
+
+### 📋 Geplant
+
+| Task | Beschreibung |
+|------|--------------|
+| 3D-Viewer Integration | API-Endpunkte für Floor/Wall/Roof Geometrien |
+| Dachwinkel aus 3D | `calculate_roof_angle_from_3d()` implementieren |
+| Spatial Index | DuckDB Spatial Extension evaluieren |
+
+---
 
 ## Executive Summary
 
@@ -42,7 +72,7 @@ AKTUELL (vereinfacht):                    MIT ALLEN LAYERN (exakt):
 | Layer | Punkte | X × Y | Z-Range | Verwendung |
 |-------|--------|-------|---------|------------|
 | **Floor** | 1'204 | 87.7m × 41.1m | 15.3m Terrain! | Exakter Grundriss |
-| **Wall** | 4'360 | 87.7m × 41.1m | 71.2m | Alle Fassaden 3D |
+| Wall** | 4'360 | 87.7m × 41.1m | 71.2m | Alle Fassaden 3D |
 | **Roof** | 24 | 10.4m × 10.5m | 5.5m | Dach-Umriss |
 | **Roof_solid** | 112 | 10.4m × 10.5m | 5.7m | 3D Dachkörper |
 | **Building_solid** | 8'072 | 87.7m × 41.1m | 104.2m | Komplettes Modell |
@@ -581,49 +611,67 @@ async function loadBuilding3D(egid: number) {
 
 ## Migration von SQLite
 
-### Phase 1: Parallelbetrieb
+### Phase 1: Parallelbetrieb ✅ (Abgeschlossen 13.01.2026 17:45)
 
 ```python
-# config.py
+# config.py - AKTUELL IMPLEMENTIERT (Stand 13.01.2026 17:45)
 
-USE_DUCKDB = os.getenv("USE_DUCKDB", "false").lower() == "true"
-LOAD_3D_LAYERS = os.getenv("LOAD_3D_LAYERS", "false").lower() == "true"
+# DuckDB ist DEFAULT - nur mit USE_DUCKDB=false wird SQLite verwendet
+USE_DUCKDB = os.getenv("USE_DUCKDB", "true").lower() != "false"
 
-def get_building_service():
+def get_building_3d_connection(read_only: bool = False):
+    """Factory für DB-Connection (DuckDB default, SQLite fallback)."""
     if USE_DUCKDB:
-        from .building_3d_duckdb import Building3DServiceDuckDB
-        return Building3DServiceDuckDB(load_3d=LOAD_3D_LAYERS)
+        import duckdb
+        return duckdb.connect(str(DUCKDB_PATH), read_only=read_only)
     else:
-        from .building_3d_service import Building3DService
-        return Building3DService()
+        import sqlite3
+        return sqlite3.connect(str(BUILDING_3D_DB_PATH))
+```
+
+**Backend starten:**
+```bash
+# Standard - DuckDB ist der Default:
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+
+# Nur falls SQLite benötigt wird (Legacy-Fallback):
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
 ```
 
 ### Phase 2: Feature-Flags
 
-| Flag | Beschreibung | Default |
-|------|--------------|---------|
-| `USE_DUCKDB` | DuckDB statt SQLite | false |
-| `LOAD_3D_LAYERS` | Floor/Wall/Roof laden | false |
-| `CALC_ROOF_FROM_3D` | Dachwinkel aus 3D | false |
+| Flag | Beschreibung | Status |
+|------|--------------|--------|
+| `USE_DUCKDB` | DuckDB ist Default, SQLite mit `=false` | ✅ Implementiert (Default: true) |
+| `LOAD_3D_LAYERS` | Floor/Wall/Roof laden | 🔴 Noch nicht implementiert |
+| `CALC_ROOF_FROM_3D` | Dachwinkel aus 3D | 🔴 Noch nicht implementiert |
 
-### Phase 3: Vollständige Migration
+### Phase 3: Vollständige Migration (Geplant)
 
-1. DuckDB produktiv setzen
-2. 3D-Layer aktivieren
-3. SQLite-Code entfernen
-4. Alte DB-Dateien löschen
+1. ✅ DuckDB produktiv setzen
+2. 🔴 3D-Layer aktivieren
+3. ⏸️ SQLite-Code entfernen (nach Testphase)
+4. ⏸️ Alte DB-Dateien löschen
 
 ---
 
-## Nächste Schritte
+## Nächste Schritte (Stand 13.01.2026 17:45)
 
-1. [ ] DuckDB in Requirements aufnehmen
-2. [ ] Schema-Erstellung implementieren
-3. [ ] tile_prefetch.py erweitern (alle Layer parsen)
-4. [ ] Parquet-Export implementieren
-5. [ ] DuckDB bulk-load testen
-6. [ ] API-Endpunkte für 3D-Daten
-7. [ ] 3D-Viewer Prototyp
+### ✅ Erledigt
+1. [x] DuckDB in Requirements aufnehmen
+2. [x] Schema-Erstellung implementieren
+3. [x] `building_3d_service.py` Dual-Mode (SQLite/DuckDB)
+4. [x] DuckDB als Default (Flag invertiert)
+5. [x] INSERT OR REPLACE für beide Engines
+
+### 🔴 Offen
+6. [ ] tile_prefetch.py erweitern (alle Layer parsen)
+7. [ ] API-Endpunkte für 3D-Daten (Floor/Wall/Roof)
+8. [ ] 3D-Viewer Integration mit echten Layer-Daten
+9. [ ] Railway.app Deployment mit DuckDB testen
+
+### ⏸️ Zurückgestellt
+- Parquet-Pipeline: Nicht nötig, INSERT OR REPLACE ist schnell genug
 
 ---
 
