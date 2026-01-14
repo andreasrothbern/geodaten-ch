@@ -31,5 +31,7 @@ ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 
 # Start - verwendet $PORT von Railway
-# --workers 4 für parallele Request-Verarbeitung
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 4
+# WICHTIG: --workers 1 wegen DuckDB Concurrency!
+# DuckDB erlaubt nur EINEN Schreibzugriff gleichzeitig.
+# Mit mehreren Workers kommt es zu Lock-Konflikten.
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
