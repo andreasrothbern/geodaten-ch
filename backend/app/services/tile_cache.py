@@ -147,7 +147,9 @@ class TileCacheService:
             )
             result = cursor.fetchone()
 
-            if result:
+            # FIX 14.01.2026: local_path kann NULL sein ('cleaned' tiles)
+            # result = (None,) ist truthy aber result[0] ist None!
+            if result and result[0]:
                 path = Path(result[0])
                 if path.exists():
                     return path
@@ -495,10 +497,11 @@ class TileCacheService:
             tiles_to_delete = cursor.fetchall()
 
             for tile_id, local_path in tiles_to_delete:
-                # Dateien löschen
-                path = Path(local_path)
-                if path.exists():
-                    shutil.rmtree(path, ignore_errors=True)
+                # FIX 14.01.2026: local_path kann NULL sein ('cleaned' tiles)
+                if local_path:
+                    path = Path(local_path)
+                    if path.exists():
+                        shutil.rmtree(path, ignore_errors=True)
 
                 # DB-Eintrag löschen
                 cursor.execute(
