@@ -376,6 +376,9 @@ export default function ConfiguratorPage() {
   // Get projectId from URL if present
   const projectId = searchParams.get('projectId');
 
+  // NEU 14.01.2026: force_refresh aus URL lesen für Cache-Bypass
+  const forceRefreshParam = searchParams.get('force_refresh') === 'true';
+
   // Get project from Router State (passed from ProjectDetailPage)
   const passedProject = location.state?.project as ProjectWithGeodata | undefined;
 
@@ -712,6 +715,11 @@ export default function ConfiguratorPage() {
         address: selectedAddress,
         include_roof: 'true',
       });
+
+      // NEU 14.01.2026: force_refresh aus URL-Parameter übernehmen
+      if (forceRefreshParam) {
+        params.set('force_refresh', 'true');
+      }
 
       // Add simplify_epsilon if set (null/undefined = dynamic)
       if (epsilon !== null && epsilon !== undefined) {
