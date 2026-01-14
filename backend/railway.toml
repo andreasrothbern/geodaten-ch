@@ -9,6 +9,16 @@ healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
-# Volume for persistent data (building heights database)
-# Note: Volumes must also be created in Railway Dashboard:
-# Service Settings -> Volumes -> Add Volume -> Mount Path: /app/data
+# Volume for persistent data (DuckDB, SQLite databases)
+# WICHTIG: Volume muss im Railway Dashboard erstellt werden!
+#
+# Railway Dashboard -> Service -> Settings -> Volumes:
+#   Mount Path: /app/data
+#
+# Dateien die persistent gespeichert werden:
+#   - building_3d.duckdb (Gebäude-Grunddaten)
+#   - tiles.db (Tile-Cache Metadaten)
+#   - building_contexts.db (Zonen, Terrain-Cache)
+#   - geruestbau.db (Projekte)
+#
+# ACHTUNG: Ohne Volume gehen alle importierten Gebäude bei Redeploy verloren!

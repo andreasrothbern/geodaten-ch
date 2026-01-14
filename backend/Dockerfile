@@ -26,5 +26,10 @@ COPY app ./app/
 # Port (Railway setzt PORT dynamisch)
 ENV PORT=8000
 
+# Data directory (Railway Volume mount)
+ENV DATA_DIR=/app/data
+RUN mkdir -p /app/data
+
 # Start - verwendet $PORT von Railway
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
+# --workers 4 für parallele Request-Verarbeitung
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 4
