@@ -170,6 +170,43 @@ async def debug_libraries():
     return result
 
 
+@app.get("/debug/paths", tags=["System"])
+async def debug_paths():
+    """Debug: Zeigt Datenpfade und Volume-Status"""
+    import os
+    from pathlib import Path
+    from app.config import DATA_DIR, BUILDING_3D_DB_PATH, USE_DUCKDB
+
+    result = {
+        "env": {
+            "RAILWAY_VOLUME_MOUNT_PATH": os.getenv("RAILWAY_VOLUME_MOUNT_PATH"),
+            "DATA_DIR_ENV": os.getenv("DATA_DIR"),
+            "USE_DUCKDB": USE_DUCKDB,
+        },
+        "paths": {
+            "DATA_DIR": str(DATA_DIR),
+            "DATA_DIR_exists": DATA_DIR.exists(),
+            "BUILDING_3D_DB_PATH": str(BUILDING_3D_DB_PATH),
+            "BUILDING_3D_DB_exists": BUILDING_3D_DB_PATH.exists(),
+        },
+        "files_in_data_dir": [],
+    }
+
+    if DATA_DIR.exists():
+        try:
+            for f in DATA_DIR.iterdir():
+                stat = f.stat()
+                result["files_in_data_dir"].append({
+                    "name": f.name,
+                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                    "is_dir": f.is_dir(),
+                })
+        except Exception as e:
+            result["files_in_data_dir"] = [{"error": str(e)}]
+
+    return result
+
+
 # ============================================================================
 # Cache Management
 # ============================================================================
