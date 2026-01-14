@@ -6,7 +6,7 @@ API-Endpunkte für den Batch-Import von swissBUILDINGS3D Tiles.
 NEU 13.01.2026: Ersetzt direkten Script-Aufruf um DuckDB-Locking zu vermeiden.
 
 Verwendung:
-    POST /api/v1/batch/import/region/basel_test  - Region importieren
+    POST /api/v1/batch/import/region/solothurn   - Region importieren
     POST /api/v1/batch/import/tile/1047-34       - Einzelnes Tile importieren
     GET  /api/v1/batch/import/status             - Import-Status abrufen
     GET  /api/v1/batch/import/regions            - Verfügbare Regionen
@@ -27,8 +27,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.tile_cache import get_tile_cache
-from app.services.tile_prefetch import prefetch_tile_buildings_async, reset_import_metrics
+from app.services.tile_prefetch import reset_import_metrics
 from app.services.building_3d_service import get_building_3d_service
+from app.services.parquet_writer import import_tile_with_parquet_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,41 @@ router = APIRouter(prefix="/api/v1/batch", tags=["Batch Import"])
 # ============================================================================
 # Regionen-Definitionen (identisch mit import_tiles.py)
 # ============================================================================
+#
+# NEU 15.01.2026 02:15 - OVERLAP-WARNUNG:
+# Die Regionen sind hierarchisch - größere enthalten kleinere!
+#
+# KEINE Überlappung:
+#   - solothurn, basel_klein, zurich, basel
+#
+# MIT Überlappung (Vorsicht bei Statistiken!):
+#   - bern_region > bern (bern ist Teilmenge von bern_region)
+#
+# Warum INSERT OR REPLACE?
+#   Bei erneutem Import eines Tiles werden Gebäude NICHT dupliziert,
+#   sondern überschrieben. Deshalb: Nach "bern" + "bern_region" sind
+#   es NICHT doppelt so viele Gebäude!
 
 REGIONS = {
+    # ============================================
+    # PRODUKTIONS-REGIONEN (mit Überlappung)
+    # ============================================
     "bern": {
         "name": "Stadt Bern",
         "bbox": (2596000, 1197000, 2604000, 1203000),
-        "expected_tiles": 20
+        "expected_tiles": 11,
+        "description": "Stadtzentrum Bern. ACHTUNG: Ist Teilmenge von bern_region!"
     },
     "bern_region": {
         "name": "Region Bern",
         "bbox": (2590000, 1190000, 2610000, 1210000),
-        "expected_tiles": 100
+        "expected_tiles": 100,
+        "description": "Großraum Bern. ENTHÄLT: bern (Stadt)"
     },
+
+    # ============================================
+    # PRODUKTIONS-REGIONEN (ohne Überlappung)
+    # ============================================
     "zurich": {
         "name": "Stadt Zürich",
         "bbox": (2676000, 1243000, 2690000, 1255000),
@@ -59,17 +83,21 @@ REGIONS = {
         "bbox": (2608000, 1264000, 2616000, 1272000),
         "expected_tiles": 16
     },
-    "test": {
-        "name": "Test (1 Tile Bern)",
-        "bbox": (2600000, 1199000, 2601000, 1200000),
-        "expected_tiles": 1,
-        "description": "ACHTUNG: Bern - kollidiert mit geruestbau-app Tests!"
+
+    # ============================================
+    # KLEINE REGIONEN (ohne Überlappung, ideal für schnelle Imports)
+    # ============================================
+    "solothurn": {
+        "name": "Solothurn Zentrum",
+        "bbox": (2607000, 1228000, 2609000, 1230000),
+        "expected_tiles": 2,
+        "description": "Stadtzentrum Solothurn. KEINE Überlappung mit anderen Regionen."
     },
-    "basel_test": {
-        "name": "Basel Test (1 Tile)",
+    "basel_klein": {
+        "name": "Basel Klein (1 Tile)",
         "bbox": (2610000, 1266000, 2611000, 1267000),
         "expected_tiles": 1,
-        "description": "Separates Testgebiet für Batch-Import Tests"
+        "description": "Kleiner Ausschnitt Basel. KEINE Überlappung mit anderen Regionen."
     }
 }
 
@@ -333,18 +361,18 @@ def _download_tile(tile_id: str, download_url: str) -> Path:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-async def download_and_import_tile(tile_id: str, download_url: str) -> int:
+async def download_and_import_tile(tile_id: str, download_url: str) -> dict:
     """
-    Download and import a single tile with ALL layers.
+    Download and import a single tile with ALL layers via Parquet-Pipeline.
 
-    REFACTORED 14.01.2026: Uses prefetch_tile_buildings() for complete import:
+    REFACTORED 15.01.2026: Uses Parquet-Pipeline for 2.88x speedup:
+    - GDB → Parquet (streaming, parallel)
+    - Parquet → DuckDB (bulk-load, SIMD-optimiert)
     - Building_solid → buildings_3d
     - Roof_solid → building_roofs
-    - Wall → building_walls (if IMPORT_ALL_LAYERS=True)
-    - Sets has_3d_layers flag
-    - Captures all timing metrics
+    - Wall → building_walls
 
-    Returns number of buildings imported.
+    Returns dict with counts: {buildings_count, roofs_count, walls_count}
     """
     # Reset metrics for this tile
     reset_import_metrics()
@@ -352,18 +380,32 @@ async def download_and_import_tile(tile_id: str, download_url: str) -> int:
     # 1. Download (sync, in thread pool)
     gdb_path = await asyncio.to_thread(_download_tile, tile_id, download_url)
 
-    # 2. Import all layers (async with parallel layer parsing)
-    # NEU 14.01.2026 22:00: Verwendet prefetch_tile_buildings_async für echtes async
-    # → Building_solid, Roof_solid, Wall werden PARALLEL geparst (~30-40% schneller)
-    logger.info(f"Importing all layers for tile {tile_id}...")
-    saved_count = await prefetch_tile_buildings_async(tile_id, gdb_path)
+    # 2. Import via Parquet-Pipeline (2.88x faster than direct inserts)
+    # NEU 15.01.2026: Streaming Parquet + DuckDB Bulk-Load
+    logger.info(f"Importing tile {tile_id} via Parquet-Pipeline...")
+    result = await import_tile_with_parquet_pipeline(gdb_path, tile_id, cleanup_after=True)
 
-    logger.info(f"Tile {tile_id} complete: {saved_count} buildings imported")
-    return saved_count
+    logger.info(
+        f"Tile {tile_id} complete: {result['buildings_count']} buildings, "
+        f"{result['roofs_count']} roofs, {result['walls_count']} walls "
+        f"({result['total_ms']:.0f}ms)"
+    )
+    return result
 
 
-async def run_region_import(region_name: str):
-    """Background task to import a region."""
+async def run_region_import(region_name: str, max_concurrent: int = 3):
+    """
+    Background task to import a region with PARALLEL tile downloads.
+
+    NEU 15.01.2026: C.5 Parallel Download implementiert.
+    - Downloads laufen parallel (max_concurrent=3)
+    - Parquet-Parsing pro Tile läuft parallel (3 Layer gleichzeitig)
+    - DuckDB Bulk-Load sequentiell (wegen File-Locking)
+
+    Args:
+        region_name: Name der Region (aus REGIONS dict)
+        max_concurrent: Max. parallele Downloads (default: 3)
+    """
     global _import_status
 
     try:
@@ -384,19 +426,32 @@ async def run_region_import(region_name: str):
             logger.info("Dropping indexes for faster import...")
             building_service.drop_indexes()
 
-        # Import each tile
-        for tile_id, download_url in tiles:
-            try:
-                # Set current_tile for status tracking (don't increment processed yet)
+        # NEU 15.01.2026: Semaphore für parallelen Download
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def import_single_tile(tile_id: str, download_url: str) -> dict:
+            """Import a single tile with semaphore control."""
+            async with semaphore:
                 _import_status.progress["current_tile"] = tile_id
-                buildings = await download_and_import_tile(tile_id, download_url)
-                # Now increment processed and add buildings count
+                logger.info(f"[PARALLEL] Starting tile {tile_id}")
+                return await download_and_import_tile(tile_id, download_url)
+
+        # Create tasks for all tiles
+        tasks = [
+            import_single_tile(tile_id, download_url)
+            for tile_id, download_url in tiles
+        ]
+
+        # Execute all tasks, collect results as they complete
+        for completed_task in asyncio.as_completed(tasks):
+            try:
+                result = await completed_task
                 _import_status.progress["tiles_processed"] += 1
-                _import_status.progress["buildings_imported"] += buildings
+                _import_status.progress["buildings_imported"] += result.get("buildings_count", 0)
             except Exception as e:
-                logger.error(f"Error importing tile {tile_id}: {e}")
+                logger.error(f"Error importing tile: {e}")
                 _import_status.progress["tiles_failed"] += 1
-                _import_status.progress["errors"].append({"tile": tile_id, "error": str(e)})
+                _import_status.progress["errors"].append({"tile": "unknown", "error": str(e)})
 
         # Recreate indexes
         if len(tiles) > 5:
@@ -424,9 +479,11 @@ async def run_tile_import(tile_id: str, download_url: Optional[str] = None):
             # This is a fallback - ideally URL should be provided
             raise ValueError("download_url required for single tile import")
 
-        _import_status.update(tile_id)
-        buildings = await download_and_import_tile(tile_id, download_url)
-        _import_status.update(tile_id, buildings=buildings)
+        _import_status.progress["current_tile"] = tile_id
+        result = await download_and_import_tile(tile_id, download_url)
+        # NEU 15.01.2026: result ist jetzt ein Dict
+        _import_status.progress["tiles_processed"] += 1
+        _import_status.progress["buildings_imported"] += result.get("buildings_count", 0)
 
     except Exception as e:
         logger.error(f"Tile import failed: {e}")

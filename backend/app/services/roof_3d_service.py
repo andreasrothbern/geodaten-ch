@@ -584,18 +584,49 @@ class Roof3DService:
 
                 # Roof_solid → building_roofs
                 # FIX 12.01.2026: dach_min/dach_max aus roof_props hinzufügen
+                # FIX 14.01.2026 00:30: Auch roof_form analysieren bei on-demand!
                 if data.get('roof_solid'):
                     roof_props = data.get('roof_props', {})
+
+                    # NEU 14.01.2026: Dachform aus Geometrie berechnen
+                    roof_form = None
+                    roof_angle_deg = None
+                    roof_orientation = None
+                    z_levels_json = None
+
+                    try:
+                        from shapely import wkb
+                        from app.services.roof_form_detector import analyze_roof
+
+                        geom = wkb.loads(data['roof_solid'])
+                        roof_analysis = analyze_roof(geom)
+
+                        roof_form = roof_analysis.get('roof_form')
+                        roof_angle_deg = roof_analysis.get('angle_deg')
+                        roof_orientation = roof_analysis.get('orientation')
+                        z_levels = roof_analysis.get('z_levels')
+                        if z_levels:
+                            z_levels_json = json.dumps(z_levels)
+
+                        logger.info(f"[ALL_LAYERS] Roof analysis: form={roof_form}, angle={roof_angle_deg}, orient={roof_orientation}")
+                    except Exception as e:
+                        logger.warning(f"[ALL_LAYERS] Roof analysis failed: {e}")
+
                     cursor.execute("""
                         INSERT OR REPLACE INTO building_roofs
-                        (gebaeudeeinheit, egid, dach_min, dach_max, geometry_wkb, 
-                         has_full_geometry, calculated_at, calculation_method)
-                        VALUES (?, ?, ?, ?, ?, 1, current_timestamp, 'on_demand_complex')
+                        (gebaeudeeinheit, egid, dach_min, dach_max,
+                         roof_form, roof_angle_deg, roof_orientation, z_levels,
+                         geometry_wkb, has_full_geometry, calculated_at, calculation_method)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, current_timestamp, 'on_demand_complex')
                     """, (
                         gebaeudeeinheit or f"egid_{egid}",
                         egid,
                         roof_props.get('dach_min'),
                         roof_props.get('dach_max'),
+                        roof_form,
+                        roof_angle_deg,
+                        roof_orientation,
+                        z_levels_json,
                         data['roof_solid']
                     ))
 

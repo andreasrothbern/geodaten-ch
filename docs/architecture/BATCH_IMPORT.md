@@ -1,15 +1,95 @@
 # Batch-Import für swissBUILDINGS3D Tiles
 
-> **Version:** 6.9 (Stand 14.01.2026 00:15)
-> **Status:** C.1-C.4 Parquet-Pipeline VOLLSTÄNDIG IMPLEMENTIERT ✅
+> **Version:** 7.0 (Stand 15.01.2026 01:15)
+> **Status:** C.1-C.7 VOLLSTÄNDIG IMPLEMENTIERT ✅
 >
-> **Aktuelle DB-Statistiken (14.01.2026):**
+> **Aktuelle DB-Statistiken (15.01.2026):**
 > | Tabelle | Anzahl | Bemerkung |
 > |---------|--------|-----------|
-> | buildings_3d | 4,832 | Tile 1322-21 = 4,827 |
-> | building_roofs | 30,443 | ~6.3 Dächer/Gebäude |
-> | building_walls | 29,927 | ~6.2 Wände/Gebäude |
-> | **DB-Größe** | **402 MB** | DuckDB komprimiert |
+> | buildings_3d | 42,333 | Stadt Bern + Tests |
+> | building_roofs | 57,700 | ~1.4 Dächer/Gebäude |
+> | building_walls | 56,679 | ~1.3 Wände/Gebäude |
+> | **DB-Größe** | **~500 MB** | DuckDB komprimiert |
+
+## NEU: C.5-C.7 in API integriert (15.01.2026 01:15)
+
+**Implementiert:**
+- **C.5 Parallel Download:** `asyncio.Semaphore(max_concurrent=3)` für parallele Downloads
+- **C.6 Progress-Tracking:** `ImportStatus` Klasse mit Tiles/Buildings/Elapsed
+- **C.7 Cleanup:** `cleanup_after=True` löscht Parquet-Dateien nach DB-Load
+
+### Performance-Test Stadt Bern (15.01.2026)
+
+| Metrik | Wert |
+|--------|------|
+| **Tiles** | 11 |
+| **Gebäude** | 42,997 |
+| **Dächer** | 57,700 |
+| **Wände** | 56,679 |
+| **Gesamtzeit** | 442s (7.4 min) |
+| **Zeit/Tile** | ~40s |
+| **Zeit/Gebäude** | ~10.3ms |
+| **Fehler** | 0 |
+
+**Parallelisierung:**
+- 3 Tiles werden gleichzeitig heruntergeladen (Semaphore)
+- Pro Tile: 3 Layer (Building, Roof, Wall) parallel zu Parquet geparst
+- DuckDB Bulk-Load sequentiell (wegen File-Locking)
+
+### API-Aufruf
+
+```bash
+# Region starten
+curl -X POST "http://localhost:8000/api/v1/batch/import/region/bern"
+
+# Status prüfen
+curl "http://localhost:8000/api/v1/batch/import/status"
+
+# DB-Statistiken
+curl "http://localhost:8000/api/v1/batch/import/db-stats"
+```
+
+## WICHTIG: Regionen-Überlappung (15.01.2026 02:00)
+
+> **Problem erkannt:** Bei Tests wurden 2 Tiles (test region) mit 23,020 Gebäuden importiert,
+> dann 11 Tiles (bern region) mit nur 42,333 Gebäuden final. Die Zahlen addieren sich NICHT!
+
+### Warum keine Addition?
+
+1. **Tile-Überlappung:** Die alte "test" Region lag INNERHALB der "bern" Region
+2. **INSERT OR REPLACE:** Bei erneutem Import werden Gebäude überschrieben, nicht dupliziert
+3. **Bebauungsdichte:** Stadtzentrum hat ~5x mehr Gebäude/Tile als Stadtrand
+
+### Verfügbare Regionen
+
+| Region | Tiles | Überlappung | Verwendung |
+|--------|-------|-------------|------------|
+| **bern** | ~11 | ⚠️ Teilmenge von bern_region | Produktion |
+| **bern_region** | ~100 | ⚠️ Enthält bern | Produktion |
+| **zurich** | ~50 | ✅ Keine | Produktion |
+| **basel** | ~16 | ✅ Keine | Produktion |
+| **solothurn** | 2 | ✅ Keine | Schneller Import |
+| **basel_klein** | 1 | ✅ Keine | Schneller Import |
+
+### Empfehlung für schnelle Imports
+
+**Für schnelle Imports ohne Überlappung: `solothurn` oder `basel_klein`**
+
+Diese Regionen überlappen mit KEINER anderen Region:
+
+```bash
+# Schneller Import ohne Überlappung
+curl -X POST "http://localhost:8000/api/v1/batch/import/region/solothurn"
+
+# NICHT: "bern" und dann "bern_region" - das zählt Gebäude doppelt!
+```
+
+### Statistik-Interpretation
+
+Bei Überlappung:
+- `buildings_imported` im Status zeigt **verarbeitete** Gebäude (inkl. Updates)
+- `db-stats` zeigt **eindeutige** Gebäude in der Datenbank
+- Differenz = überschriebene Duplikate
 
 ## NEU: API-Router für Batch-Import (14.01.2026 02:45)
 

@@ -583,6 +583,11 @@ class SmartBuildingService:
                 self._create_default_zone(bundle)
             # 3D-Geometrie für komplexe Gebäude laden
             self._fetch_roof_geometry_for_complex(bundle)
+            # FIX 14.01.2026: Nach dem Speichern der 3D-Daten NOCHMAL laden!
+            # _fetch_roof_geometry_for_complex() speichert in DB, aber die Daten
+            # wurden VOR dem Speichern gelesen (in _collect_building_3d_data).
+            # TODO: Konsolidieren - fetch sollte Daten direkt ins Bundle schreiben
+            self._load_roof_data_from_db(bundle)
             self._calculate_access_points(bundle)
             self._assess_data_quality(bundle)
 
@@ -864,6 +869,28 @@ class SmartBuildingService:
                 bundle.roof_geometry_wkb = roof_data['geometry_wkb']
                 bundle.has_roof_geometry = True
                 logger.info(f"[ROOF_3D] Echte 3D-Geometrie geladen für EGID {bundle.egid}")
+
+                # FIX 14.01.2026 00:35: Falls roof_form fehlt aber Geometrie da ist → nachträglich analysieren
+                if not roof_data.get('roof_form') and roof_data.get('geometry_wkb'):
+                    try:
+                        from shapely import wkb
+                        from app.services.roof_form_detector import analyze_roof
+
+                        geom = wkb.loads(roof_data['geometry_wkb'])
+                        roof_analysis = analyze_roof(geom)
+
+                        bundle.roof_type = roof_analysis.get('roof_form')
+                        bundle.roof_angle_deg = roof_analysis.get('angle_deg')
+                        bundle.roof_orientation = roof_analysis.get('orientation')
+                        bundle.roof_confidence = roof_analysis.get('confidence', 0.8)
+                        bundle.roof_z_levels = roof_analysis.get('z_levels')
+
+                        logger.info(
+                            f"[ROOF_3D] Nachträgliche Analyse für EGID {bundle.egid}: "
+                            f"Form={bundle.roof_type}, Winkel={bundle.roof_angle_deg}°"
+                        )
+                    except Exception as e:
+                        logger.warning(f"[ROOF_3D] Nachträgliche Analyse fehlgeschlagen: {e}")
             else:
                 bundle.has_roof_geometry = False
 
