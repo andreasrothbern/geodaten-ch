@@ -562,8 +562,19 @@ def load_parquets_to_duckdb(
             count_result = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{buildings_glob}')").fetchone()
             parquet_count = count_result[0] if count_result else 0
 
+            # FIX 14.01.2026: Gebäude mit has_3d_layers=1 NICHT überschreiben!
+            # Diese haben detaillierte 3D-Geometrie die erhalten bleiben muss.
+            protected_result = conn.execute(
+                "SELECT egid FROM buildings_3d WHERE has_3d_layers = 1"
+            ).fetchall()
+            protected_count = len(protected_result) if protected_result else 0
+
+            if protected_count > 0:
+                logger.info(f"[DUCKDB] Schütze {protected_count} Gebäude mit 3D-Layern vor Überschreiben")
+
             # INSERT OR REPLACE mit expliziter Spaltenangabe
             # WICHTIG: Spaltenreihenfolge muss mit buildings_3d Schema übereinstimmen
+            # FIX 14.01.2026: WHERE-Klausel filtert geschützte Gebäude aus
             conn.execute(f"""
                 INSERT OR REPLACE INTO buildings_3d (
                     egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
@@ -581,9 +592,17 @@ def load_parquets_to_duckdb(
                     current_timestamp as imported_at,
                     source
                 FROM read_parquet('{buildings_glob}')
+                WHERE egid NOT IN (
+                    SELECT egid FROM buildings_3d WHERE has_3d_layers = 1
+                )
             """)
+
+            # Log mit Info über geschützte Gebäude
             results['buildings'] = parquet_count
-            logger.info(f"[DUCKDB] buildings_3d: {results['buildings']} rows loaded")
+            if protected_count > 0:
+                logger.info(f"[DUCKDB] buildings_3d: ~{parquet_count - protected_count} rows loaded (von {parquet_count}, {protected_count} geschützt)")
+            else:
+                logger.info(f"[DUCKDB] buildings_3d: {parquet_count} rows loaded")
 
         # 2. ROOFS
         # Schema building_roofs: gebaeudeeinheit, egid(INT), dach_min, dach_max,
