@@ -106,9 +106,15 @@ CACHE_DB_PATH = Path(os.getenv("CACHE_DB_PATH", "cache.db"))
 # DUCKDB-SPEZIFISCHE KONFIGURATION
 # =============================================================================
 
+# DuckDB Temp-Verzeichnis auf Ephemeral Storage (nicht Volume!)
+# NEU 15.01.2026: Temp-Dateien können 300+ MB werden und füllten das Volume
+DUCKDB_TEMP_DIR = EPHEMERAL_DIR / "duckdb_temp"
+DUCKDB_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
 DUCKDB_CONFIG = {
     "threads": int(os.getenv("DUCKDB_THREADS", "4")),
     "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "512MB"),
+    "temp_directory": str(DUCKDB_TEMP_DIR),  # NEU: Temp auf Ephemeral statt Volume!
 }
 
 # =============================================================================

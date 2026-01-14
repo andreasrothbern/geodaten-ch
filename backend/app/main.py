@@ -116,6 +116,26 @@ def cleanup_orphaned_tiles():
             print(f"[CLEANUP] Fehler beim Aktualisieren von tiles.db: {e}")
 
 
+def cleanup_duckdb_temp():
+    """
+    NEU 15.01.2026: Startup-Cleanup für DuckDB Temp-Dateien auf Volume.
+
+    Problem: DuckDB legte Temp-Dateien neben der DB ab (~300 MB auf Volume).
+    Lösung: temp_directory zeigt jetzt auf Ephemeral, alte Temp-Dateien löschen.
+    """
+    import shutil
+    from app.config import DATA_DIR
+
+    temp_dir = DATA_DIR / "building_3d.duckdb.tmp"
+    if temp_dir.exists():
+        try:
+            size_mb = sum(f.stat().st_size for f in temp_dir.rglob("*") if f.is_file()) / (1024 * 1024)
+            shutil.rmtree(temp_dir)
+            print(f"[CLEANUP] DuckDB Temp-Verzeichnis gelöscht: {size_mb:.1f} MB freigegeben")
+        except Exception as e:
+            print(f"[CLEANUP] Fehler beim Löschen von DuckDB Temp: {e}")
+
+
 def cleanup_wall_geometry():
     """
     NEU 15.01.2026: Startup-Cleanup für Wall-Geometrie in DuckDB.
@@ -181,7 +201,8 @@ async def lifespan(app: FastAPI):
     """Startup und Shutdown Events"""
     # Startup
     cleanup_orphaned_tiles()  # NEU 14.01.2026: Tiles aufräumen
-    cleanup_wall_geometry()   # NEU 15.01.2026: Wall-Geometrie bereinigen
+    cleanup_duckdb_temp()     # NEU 15.01.2026: DuckDB Temp vom Volume entfernen
+    cleanup_wall_geometry()   # NEU 15.01.2026: Wall-Geometrie bereinigen (wenn Flag gesetzt)
     cache.initialize()
     print("[OK] Geodaten API gestartet")
     yield
