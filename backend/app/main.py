@@ -40,10 +40,62 @@ geodienste = GeodiensteService()
 cache = CacheService()
 
 
+def cleanup_orphaned_tiles():
+    """
+    NEU 14.01.2026: Startup-Cleanup für verwaiste Tile-Dateien.
+
+    Löscht alle GDB-Verzeichnisse und aktualisiert tiles.db:
+    - local_path = NULL
+    - import_status = 'cleaned'
+
+    Wird beim Server-Start ausgeführt um Speicher zu sparen
+    (besonders wichtig auf Railway mit begrenztem Volume).
+    """
+    import shutil
+    import sqlite3
+    from pathlib import Path
+    from app.config import DATA_DIR, TILES_DB_PATH
+
+    tiles_dir = DATA_DIR / "tiles"
+
+    # 1. GDB-Verzeichnisse löschen
+    deleted_count = 0
+    if tiles_dir.exists():
+        for item in tiles_dir.iterdir():
+            if item.is_dir():
+                try:
+                    shutil.rmtree(item)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"[CLEANUP] Fehler beim Löschen von {item}: {e}")
+
+    if deleted_count > 0:
+        print(f"[CLEANUP] {deleted_count} Tile-Verzeichnisse gelöscht")
+
+    # 2. tiles.db aktualisieren
+    if TILES_DB_PATH.exists():
+        try:
+            with sqlite3.connect(TILES_DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE tiles
+                    SET local_path = NULL, import_status = 'cleaned'
+                    WHERE local_path IS NOT NULL
+                """)
+                updated = cursor.rowcount
+                conn.commit()
+
+                if updated > 0:
+                    print(f"[CLEANUP] {updated} Tile-Einträge in tiles.db auf 'cleaned' gesetzt")
+        except Exception as e:
+            print(f"[CLEANUP] Fehler beim Aktualisieren von tiles.db: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown Events"""
     # Startup
+    cleanup_orphaned_tiles()  # NEU 14.01.2026: Tiles aufräumen
     cache.initialize()
     print("[OK] Geodaten API gestartet")
     yield

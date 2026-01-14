@@ -490,12 +490,12 @@ class Roof3DService:
             logger.warning(f"[ALL_LAYERS] Keine tile_id für EGID {egid}")
             return result
 
-        # 2. GDB-Pfad holen
-        from app.services.tile_cache import get_gdb_path_for_tile
-        gdb_path = get_gdb_path_for_tile(tile_id)
+        # 2. GDB-Pfad holen (NEU 14.01.2026: Mit Auto-Reload für 'cleaned' Tiles)
+        from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
+        gdb_path = get_or_redownload_gdb_path_for_tile(tile_id)
 
         if not gdb_path or not gdb_path.exists():
-            logger.warning(f"[ALL_LAYERS] GDB für Tile {tile_id} nicht gefunden")
+            logger.warning(f"[ALL_LAYERS] GDB für Tile {tile_id} nicht gefunden (auch nach Reload-Versuch)")
             return result
 
         # 3. Alle Layer laden
@@ -564,6 +564,17 @@ class Roof3DService:
 
             # 4. In DB speichern (auch bei EGID-basiertem Lookup!)
             self._save_all_layers_to_db(egid, gebaeudeeinheit, result)
+
+            # 5. Tile wieder löschen (Speicher sparen - NEU 14.01.2026)
+            from app.config import CLEANUP_TILES_AFTER_IMPORT
+            if CLEANUP_TILES_AFTER_IMPORT and result['loaded_layers']:
+                from app.services.tile_cache import get_tile_cache
+                import shutil
+                cache = get_tile_cache()
+                cache.mark_tile_cleaned(tile_id)
+                if gdb_path.exists():
+                    shutil.rmtree(gdb_path)
+                    logger.info(f"[ALL_LAYERS] Tile {tile_id} nach On-Demand-Import gelöscht")
 
             elapsed_ms = (time.time() - start) * 1000
             logger.info(

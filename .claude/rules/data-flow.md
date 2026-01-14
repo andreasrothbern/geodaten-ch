@@ -1,10 +1,13 @@
 # Datenfluss-Architektur
 
-## Übersicht (Stand 13.01.2026 17:30)
+## Übersicht (Stand 14.01.2026 19:30)
 
 > **NEU:** `building_3d.db` wurde auf DuckDB migriert → `building_3d.duckdb`
 > DuckDB ist jetzt der **DEFAULT** - kein `USE_DUCKDB=true` mehr nötig!
 > Falls SQLite benötigt wird: `USE_DUCKDB=false` setzen.
+
+> **NEU 14.01.2026:** Tile-Lifecycle-Strategie für Speicheroptimierung auf Railway.
+> GDB-Dateien werden nach Import gelöscht und bei Bedarf neu geladen.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -50,6 +53,70 @@
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## Tile-Lifecycle (NEU 14.01.2026)
+
+GDB-Dateien (~50-500MB pro Tile) werden für Speicheroptimierung nach dem Import gelöscht.
+Die Gebäudedaten (Building, Roof, Wall) bleiben in der DB (~250KB-1.5MB pro Tile).
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   TILE-LIFECYCLE                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  STUFE 1: Prefetch (automatisch)                               │
+│  ══════════════════════════════                                 │
+│  1. User fragt Gebäude an → Tile wird heruntergeladen          │
+│  2. Building + Roof + Wall Layer werden geparst                │
+│  3. Daten in building_3d.duckdb gespeichert                    │
+│  4. GDB-Verzeichnis wird GELÖSCHT (CLEANUP_TILES_AFTER_IMPORT) │
+│  5. tiles.db: import_status='cleaned', local_path=NULL         │
+│                                                                 │
+│  STUFE 2: On-Demand Reload (bei Bedarf)                        │
+│  ═══════════════════════════════════════                        │
+│  1. 3D-Visualisierung braucht komplexe Geometrie               │
+│  2. get_or_redownload_tile_for_coordinates() prüft DB          │
+│  3. local_path=NULL aber download_url vorhanden → NEU LADEN    │
+│  4. Tile wird temporär heruntergeladen                         │
+│  5. Nur benötigte Layer geparst (z.B. Wall für Fassade)        │
+│  6. Daten in DB ergänzt                                        │
+│  7. GDB wieder GELÖSCHT → tiles.db: import_status='cleaned'    │
+│                                                                 │
+│  SPEICHER-ERSPARNIS: ~98%                                      │
+│  ═══════════════════════                                        │
+│  Tile-Grösse (GDB): ~50-500 MB                                 │
+│  DB-Grösse pro Tile: ~250KB-1.5MB                              │
+│  Railway Volume: 500MB statt 10+ GB möglich                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### tiles.db Status-Werte
+
+| Status | local_path | Bedeutung |
+|--------|------------|-----------|
+| `pending` | Pfad | Tile heruntergeladen, noch nicht importiert |
+| `imported` | Pfad | Daten in DB, GDB noch vorhanden |
+| `cleaned` | NULL | Daten in DB, GDB gelöscht |
+| `reloaded` | Pfad | Tile wurde für On-Demand neu geladen |
+
+### Relevante Funktionen
+
+| Funktion | Datei | Beschreibung |
+|----------|-------|--------------|
+| `_cleanup_tile_after_import()` | tile_prefetch.py | Löscht GDB nach Prefetch |
+| `get_or_redownload_tile_for_coordinates()` | tile_cache.py | Async: Lädt 'cleaned' Tiles neu |
+| `get_or_redownload_gdb_path_for_tile()` | tile_cache.py | Sync: Lädt 'cleaned' Tiles neu |
+| `mark_tile_cleaned()` | tile_cache.py | Setzt local_path=NULL, status='cleaned' |
+
+### Config-Flag
+
+```python
+# config.py
+CLEANUP_TILES_AFTER_IMPORT = True  # Default: aktiv
+```
+
+Setze `CLEANUP_TILES_AFTER_IMPORT=false` um GDB-Dateien zu behalten (z.B. für Debugging).
 
 ## 1. Grunddaten (aus swissBUILDINGS3D Tiles)
 

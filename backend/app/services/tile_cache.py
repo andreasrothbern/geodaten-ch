@@ -173,6 +173,90 @@ class TileCacheService:
         tile_id = lv95_to_tile_id(e, n)
         return self.get_tile_path(tile_id)
 
+    async def get_or_redownload_tile_for_coordinates(
+        self, e: float, n: float
+    ) -> Tuple[Optional[Path], str]:
+        """
+        NEU 14.01.2026: Gibt Tile-Pfad zurück, lädt bei Bedarf neu herunter.
+
+        Für On-Demand 3D-Layer: Kann gelöschte Tiles wiederherstellen.
+        Nach CLEANUP_TILES_AFTER_IMPORT ist local_path=NULL, aber download_url
+        ist noch vorhanden. Diese Funktion lädt das Tile dann erneut.
+
+        Args:
+            e: LV95 Easting
+            n: LV95 Northing
+
+        Returns:
+            Tuple (Path zum GDB-Verzeichnis, Tile-ID) oder (None, tile_id) bei Fehler
+        """
+        import tempfile
+        import logging
+
+        logger = logging.getLogger(__name__)
+        tile_id = lv95_to_tile_id(e, n)
+
+        # 1. Prüfen ob Tile lokal vorhanden ist
+        existing_path = self.get_tile_path(tile_id)
+        if existing_path and existing_path.exists():
+            return existing_path, tile_id
+
+        # 2. Tile nicht vorhanden - download_url aus DB holen
+        download_url = None
+        with sqlite3.connect(TILE_CACHE_DB) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT download_url FROM tiles WHERE tile_id = ?",
+                (tile_id,)
+            )
+            result = cursor.fetchone()
+            if result:
+                download_url = result[0]
+
+        if not download_url:
+            # Tile wurde noch nie geladen - normaler Weg über STAC API nötig
+            logger.warning(f"[TILE-RELOAD] Keine download_url für {tile_id} - muss via STAC neu ermittelt werden")
+            return None, tile_id
+
+        # 3. Tile neu herunterladen
+        logger.info(f"[TILE-RELOAD] Lade Tile {tile_id} neu (war 'cleaned')")
+
+        try:
+            from app.services.swissbuildings3d_fetcher import download_and_extract_tile
+
+            temp_dir = Path(tempfile.mkdtemp())
+
+            try:
+                # Download & Extract
+                data_path = download_and_extract_tile(download_url, temp_dir, tile_id)
+
+                # Im Cache speichern (aktualisiert local_path in DB)
+                cached_path = self.store_tile(
+                    tile_id=tile_id,
+                    gdb_path=data_path,
+                    download_url=download_url
+                )
+
+                # import_status auf 'reloaded' setzen (für Tracking)
+                with sqlite3.connect(TILE_CACHE_DB) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE tiles SET import_status = 'reloaded' WHERE tile_id = ?",
+                        (tile_id,)
+                    )
+                    conn.commit()
+
+                logger.info(f"[TILE-RELOAD] Tile {tile_id} erfolgreich neu geladen: {cached_path}")
+                return cached_path, tile_id
+
+            finally:
+                # Temporäres Verzeichnis löschen
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        except Exception as e:
+            logger.error(f"[TILE-RELOAD] Fehler beim Neu-Download von {tile_id}: {e}")
+            return None, tile_id
+
     def store_tile(
         self,
         tile_id: str,
@@ -458,3 +542,83 @@ def get_gdb_path_for_tile(tile_id: str) -> Optional[Path]:
     """
     cache = get_tile_cache()
     return cache.get_tile_path(tile_id)
+
+
+def get_or_redownload_gdb_path_for_tile(tile_id: str) -> Optional[Path]:
+    """
+    NEU 14.01.2026: Gibt GDB-Pfad zurück, lädt bei Bedarf neu (SYNC-Version).
+
+    Für On-Demand 3D-Layer wenn Tile bereits 'cleaned' wurde:
+    - Prüft ob Tile lokal existiert
+    - Wenn nicht: Lädt Tile neu über gespeicherte download_url
+
+    Args:
+        tile_id: Tile-Referenz (z.B. "1088-22")
+
+    Returns:
+        Path zum GDB-Verzeichnis oder None bei Fehler
+    """
+    import tempfile
+    import logging
+
+    logger = logging.getLogger(__name__)
+    cache = get_tile_cache()
+
+    # 1. Prüfen ob Tile lokal vorhanden ist
+    existing_path = cache.get_tile_path(tile_id)
+    if existing_path and existing_path.exists():
+        return existing_path
+
+    # 2. Tile nicht vorhanden - download_url aus DB holen
+    download_url = None
+    with sqlite3.connect(TILE_CACHE_DB) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT download_url FROM tiles WHERE tile_id = ?",
+            (tile_id,)
+        )
+        result = cursor.fetchone()
+        if result:
+            download_url = result[0]
+
+    if not download_url:
+        logger.warning(f"[TILE-RELOAD-SYNC] Keine download_url für {tile_id}")
+        return None
+
+    # 3. Tile neu herunterladen (SYNC!)
+    logger.info(f"[TILE-RELOAD-SYNC] Lade Tile {tile_id} neu (war 'cleaned')")
+
+    try:
+        from app.services.swissbuildings3d_fetcher import download_and_extract_tile
+
+        temp_dir = Path(tempfile.mkdtemp())
+
+        try:
+            # Download & Extract (blocking)
+            data_path = download_and_extract_tile(download_url, temp_dir, tile_id)
+
+            # Im Cache speichern
+            cached_path = cache.store_tile(
+                tile_id=tile_id,
+                gdb_path=data_path,
+                download_url=download_url
+            )
+
+            # import_status auf 'reloaded' setzen
+            with sqlite3.connect(TILE_CACHE_DB) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE tiles SET import_status = 'reloaded' WHERE tile_id = ?",
+                    (tile_id,)
+                )
+                conn.commit()
+
+            logger.info(f"[TILE-RELOAD-SYNC] Tile {tile_id} erfolgreich neu geladen")
+            return cached_path
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    except Exception as e:
+        logger.error(f"[TILE-RELOAD-SYNC] Fehler beim Neu-Download von {tile_id}: {e}")
+        return None

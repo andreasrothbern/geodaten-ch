@@ -122,19 +122,21 @@ class LayerFetcherService:
                 "floors_count": 0
             }
 
-        # 3. Tile downloaden
+        # 3. Tile downloaden (NEU 14.01.2026: Mit Auto-Reload für 'cleaned' Tiles)
         from app.services.tile_cache import get_tile_cache
         tile_cache = get_tile_cache()
 
         try:
-            tile_path, tile_id = await tile_cache.get_tile_for_coordinates(
+            # NEU 14.01.2026: Nutzt get_or_redownload_tile_for_coordinates
+            # Diese Funktion lädt 'cleaned' Tiles automatisch neu!
+            tile_path, tile_id = await tile_cache.get_or_redownload_tile_for_coordinates(
                 center_e, center_n
             )
 
             if not tile_path:
                 return {
                     "success": False,
-                    "error": "Tile konnte nicht geladen werden",
+                    "error": "Tile konnte nicht geladen werden (download_url nicht vorhanden)",
                     "walls_count": 0,
                     "floors_count": 0
                 }
@@ -153,6 +155,15 @@ class LayerFetcherService:
             # 6. has_3d_layers Flag setzen
             if walls_saved > 0 or floors_saved > 0:
                 self._update_has_3d_layers(egid)
+
+            # 7. Tile wieder löschen (Speicher sparen - NEU 14.01.2026)
+            from app.config import CLEANUP_TILES_AFTER_IMPORT
+            if CLEANUP_TILES_AFTER_IMPORT:
+                tile_cache.mark_tile_cleaned(tile_id)
+                import shutil
+                if tile_path.exists():
+                    shutil.rmtree(tile_path)
+                    logger.info(f"[3D-LAYER] Tile {tile_id} nach On-Demand-Import gelöscht")
 
             return {
                 "success": True,
