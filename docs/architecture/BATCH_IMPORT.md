@@ -91,6 +91,53 @@ Bei Überlappung:
 - `db-stats` zeigt **eindeutige** Gebäude in der Datenbank
 - Differenz = überschriebene Duplikate
 
+## WICHTIG: Schutz von 3D-Layer-Daten (14.01.2026)
+
+> **Problem:** Wenn ein User ein Gebäude anfragt, werden detaillierte 3D-Layer (Wall, Roof)
+> on-demand geladen und `has_3d_layers = 1` gesetzt. Ein späterer Batch-Import oder Prefetch
+> darf diese Daten NICHT überschreiben!
+
+### UPSERT-Logik
+
+Die Parquet-Pipeline verwendet einen echten UPSERT mit `ON CONFLICT`:
+
+```sql
+INSERT INTO buildings_3d (...)
+SELECT ... FROM read_parquet(...)
+ON CONFLICT (egid) DO UPDATE SET
+    polygon = excluded.polygon,
+    traufhoehe_m = excluded.traufhoehe_m,
+    ...
+WHERE buildings_3d.has_3d_layers = 0 OR buildings_3d.has_3d_layers IS NULL
+```
+
+### Verhalten
+
+| Szenario | Aktion |
+|----------|--------|
+| Neues Gebäude (egid nicht in DB) | **INSERT** - immer |
+| Bestehendes Gebäude, `has_3d_layers = 0` | **UPDATE** - mit neuen Daten |
+| Bestehendes Gebäude, `has_3d_layers = 1` | **SKIP** - behält detaillierte Geometrie |
+
+### Betroffene Dateien
+
+| Datei | UPSERT-Implementierung |
+|-------|------------------------|
+| `parquet_writer.py` | `ON CONFLICT (egid) DO UPDATE ... WHERE has_3d_layers = 0` |
+| `building_3d_service.py` | `ON CONFLICT (egid) DO UPDATE ... WHERE has_3d_layers = 0` |
+| `tile_prefetch.py` | Prüft `get_egids_with_3d_layers()` vor dem Speichern |
+
+### Warum nicht WHERE NOT IN?
+
+Die ursprüngliche Implementierung mit `WHERE egid NOT IN (SELECT ...)` hatte ein Problem:
+- Gebäude mit `has_3d_layers = 1` wurden **komplett übersprungen**
+- Bei zukünftigen swisstopo-Updates würden diese Gebäude **nie aktualisiert**
+
+Der echte UPSERT ermöglicht:
+- Neue Gebäude werden immer eingefügt
+- Bestehende Gebäude ohne 3D-Layer werden aktualisiert
+- Gebäude mit 3D-Layern behalten ihre detaillierten Daten
+
 ## NEU: API-Router für Batch-Import (14.01.2026 02:45)
 
 **Problem:** Wenn das Backend läuft (mit DuckDB), können Import-Scripts nicht gleichzeitig

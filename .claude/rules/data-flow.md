@@ -118,6 +118,43 @@ CLEANUP_TILES_AFTER_IMPORT = True  # Default: aktiv
 
 Setze `CLEANUP_TILES_AFTER_IMPORT=false` um GDB-Dateien zu behalten (z.B. für Debugging).
 
+### UPSERT-Logik für 3D-Layer-Schutz (NEU 14.01.2026)
+
+Gebäude mit detaillierten 3D-Layer-Daten (`has_3d_layers=1`) werden bei Prefetch und Batch-Import **nicht überschrieben**.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   UPSERT-VERHALTEN                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  hat_3d_layers | Aktion                                         │
+│  ─────────────────────────────────────────────────              │
+│  NULL / 0      | UPDATE alle Felder (normale Aktualisierung)   │
+│  1             | SKIP - Gebäude bleibt unverändert             │
+│                                                                 │
+│  SQL-Pattern:                                                   │
+│  ═════════════                                                  │
+│  INSERT INTO buildings_3d (...) VALUES (...)                   │
+│  ON CONFLICT (egid) DO UPDATE SET                              │
+│      polygon = excluded.polygon,                                │
+│      traufhoehe_m = excluded.traufhoehe_m,                     │
+│      ...                                                        │
+│  WHERE buildings_3d.has_3d_layers = 0                          │
+│     OR buildings_3d.has_3d_layers IS NULL                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Warum nicht `WHERE NOT IN`?**
+- `WHERE egid NOT IN (...)` würde Gebäude komplett überspringen
+- Mit `ON CONFLICT ... WHERE` können **neue Gebäude eingefügt** werden
+- Bestehende Gebäude mit `has_3d_layers=1` bleiben geschützt
+
+**Betroffene Dateien:**
+- `tile_prefetch.py:_save_buildings_to_db()` - Prefetch bei User-Requests
+- `building_3d_service.py:upsert_building()` - Einzelne Gebäude
+- `parquet_writer.py:import_from_parquet()` - Batch-Import
+
 ## 1. Grunddaten (aus swissBUILDINGS3D Tiles)
 
 Direkt aus Tiles gemappt, in `building_3d.db` gespeichert (via tile_prefetch).

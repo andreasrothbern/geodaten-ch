@@ -43,8 +43,13 @@ cache = CacheService()
 def cleanup_orphaned_tiles():
     """
     NEU 14.01.2026: Startup-Cleanup für verwaiste Tile-Dateien.
+    FIX 14.01.2026 19:40: Auch Parquet-Dateien löschen (redundant nach DB-Import).
 
-    Löscht alle GDB-Verzeichnisse und aktualisiert tiles.db:
+    Löscht:
+    - Alle GDB-Verzeichnisse in tiles/
+    - Alle Parquet-Dateien in parquet/ (buildings/, roofs/, walls/)
+
+    Aktualisiert tiles.db:
     - local_path = NULL
     - import_status = 'cleaned'
 
@@ -57,6 +62,7 @@ def cleanup_orphaned_tiles():
     from app.config import DATA_DIR, TILES_DB_PATH
 
     tiles_dir = DATA_DIR / "tiles"
+    parquet_dir = DATA_DIR / "parquet"
 
     # 1. GDB-Verzeichnisse löschen
     deleted_count = 0
@@ -72,7 +78,25 @@ def cleanup_orphaned_tiles():
     if deleted_count > 0:
         print(f"[CLEANUP] {deleted_count} Tile-Verzeichnisse gelöscht")
 
-    # 2. tiles.db aktualisieren
+    # 2. Parquet-Dateien löschen (redundant - Daten sind in DuckDB)
+    parquet_deleted = 0
+    parquet_size_mb = 0
+    if parquet_dir.exists():
+        for subdir in ["buildings", "roofs", "walls"]:
+            subdir_path = parquet_dir / subdir
+            if subdir_path.exists():
+                for pq_file in subdir_path.glob("*.parquet"):
+                    try:
+                        parquet_size_mb += pq_file.stat().st_size / (1024 * 1024)
+                        pq_file.unlink()
+                        parquet_deleted += 1
+                    except Exception as e:
+                        print(f"[CLEANUP] Fehler beim Löschen von {pq_file}: {e}")
+
+    if parquet_deleted > 0:
+        print(f"[CLEANUP] {parquet_deleted} Parquet-Dateien gelöscht ({parquet_size_mb:.1f} MB freigegeben)")
+
+    # 3. tiles.db aktualisieren
     if TILES_DB_PATH.exists():
         try:
             with sqlite3.connect(TILES_DB_PATH) as conn:

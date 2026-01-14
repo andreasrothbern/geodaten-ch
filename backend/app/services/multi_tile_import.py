@@ -487,9 +487,10 @@ async def import_tiles_async(
                     f"{tile_prog.roofs_count} roofs, {tile_prog.walls_count} walls"
                 )
 
-                # C.7: GDB-Cleanup nach erfolgreichem Import
+                # C.7: GDB + Parquet Cleanup nach erfolgreichem Import
+                # FIX 14.01.2026 19:35 - Parquet-Dateien AUCH löschen (redundant nach DB-Import)
                 if cleanup_after:
-                    cleanup_tile_files(tile_id, gdb_path, cleanup_gdb=True, cleanup_parquet=False)
+                    cleanup_tile_files(tile_id, gdb_path, cleanup_gdb=True, cleanup_parquet=True)
 
             except Exception as e:
                 logger.error(f"[IMPORT] {tile_id} fehlgeschlagen: {e}")

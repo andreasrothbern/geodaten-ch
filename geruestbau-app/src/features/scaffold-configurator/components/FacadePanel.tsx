@@ -156,40 +156,39 @@ export default function FacadePanel({
     return directions;
   }, [blockedFacadesData]);
 
-  // Check if a facade is blocked by neighbors (direction-based or geometry-based)
-  // FIX 11.01.2026 00:45 - facadeIndex no longer used (direction-based matching)
+  // Check if a facade is blocked by neighbors (geometry-based)
+  // FIX 14.01.2026 19:20 - IMMER Geometrie-basiert prüfen!
+  // Direction-basiert war falsch: Alle Fassaden einer Richtung wurden blockiert.
+  // Geometrie-basiert: Prüft tatsächliche Distanz Fassade → Nachbar-Polygon
   const isFacadeBlocked = useCallback((facade: ScaffoldFacade, _facadeIndex: number): boolean => {
-    // FIX 11.01.2026 00:45 - Priority 1: Check by DIRECTION (not index!)
-    // This works correctly even after polygon simplification
+    // Geometry-based calculation: Check distance to each neighbor polygon
+    if (facade.start_point && facade.end_point && neighbors.length > 0) {
+      for (const neighbor of neighbors) {
+        if (!neighbor.polygon || neighbor.polygon.length < 3) {
+          continue;
+        }
+        const dist = facadeToPolygonDistance(
+          facade.start_point as [number, number],
+          facade.end_point as [number, number],
+          neighbor.polygon as [number, number][]
+        );
+        if (dist < BLOCKING_THRESHOLD_M) {
+          return true;
+        }
+      }
+      // Geometrie-Check hat keine Blockierung gefunden
+      return false;
+    }
+
+    // Fallback wenn keine Geometrie-Daten: Direction-based check
     if (blockedDirectionsFromSSE.size > 0) {
       const facadeDirection = facade.direction;
       if (facadeDirection && blockedDirectionsFromSSE.has(facadeDirection)) {
         return true;
       }
-      return false;
     }
 
-    // Fallback: Geometry-based calculation (for address-search or when SSE not available)
-    if (!facade.start_point || !facade.end_point) {
-      return false;
-    }
-
-    // Check distance to each neighbor polygon
-    for (const neighbor of neighbors) {
-      if (!neighbor.polygon || neighbor.polygon.length < 3) {
-        continue;
-      }
-      const dist = facadeToPolygonDistance(
-        facade.start_point as [number, number],
-        facade.end_point as [number, number],
-        neighbor.polygon as [number, number][]
-      );
-      if (dist < BLOCKING_THRESHOLD_M) {
-        return true;
-      }
-    }
-
-    // Fallback to direction-based check
+    // Letzter Fallback: blockedSides Array
     return blockedSides.includes(facade.direction);
   }, [neighbors, blockedSides, blockedDirectionsFromSSE, facadeToPolygonDistance]);
 
