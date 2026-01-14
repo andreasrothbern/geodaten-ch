@@ -66,7 +66,7 @@ Verwendung:
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Set
 from datetime import datetime
 from contextlib import contextmanager
 from threading import local
@@ -372,6 +372,41 @@ class Building3DService:
 
             return self._parse_polygon(result)
 
+    def get_egids_with_3d_layers(self, tile_id: str) -> Set[int]:
+        """
+        NEU 14.01.2026: Holt alle EGIDs mit has_3d_layers=1 für ein Tile.
+
+        Wird vom Prefetch verwendet um Gebäude mit detaillierten 3D-Daten
+        nicht zu überschreiben.
+
+        Args:
+            tile_id: Tile-Referenz (z.B. "1088-22")
+
+        Returns:
+            Set von EGIDs die has_3d_layers=1 haben
+        """
+        result = set()
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT egid FROM buildings_3d WHERE tile_id = ? AND has_3d_layers = 1",
+                    (tile_id,)
+                )
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    if isinstance(row, tuple):
+                        result.add(int(row[0]))
+                    else:
+                        result.add(int(row['egid']))
+
+        except Exception as e:
+            logger.warning(f"Fehler beim Laden der 3D-Layer EGIDs: {e}")
+
+        return result
+
     def get_by_coordinates(
         self,
         e: float,
@@ -547,17 +582,37 @@ class Building3DService:
         """
         Task 4: Prepared Statement für Bulk-Insert.
 
-        NEU 13.01.2026: INSERT OR REPLACE funktioniert für SQLite UND DuckDB (>=0.8)
+        NEU 14.01.2026: UPSERT-Logik - nur Gebäude OHNE 3D-Layer werden aktualisiert!
+        Gebäude mit has_3d_layers=1 behalten ihre detaillierten Daten.
         """
         if self._prepared_insert is None:
-            # INSERT OR REPLACE funktioniert für beide Engines!
+            # UPSERT: INSERT neue Gebäude, UPDATE nur wenn has_3d_layers=0
             self._prepared_insert = """
-                INSERT OR REPLACE INTO buildings_3d
+                INSERT INTO buildings_3d
                 (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
                  area_m2, perimeter_m, center_e, center_n, tile_id, source,
                  objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
                  roof_form, roof_form_confidence, roof_orientation, has_3d_layers)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (egid) DO UPDATE SET
+                    polygon = COALESCE(excluded.polygon, buildings_3d.polygon),
+                    traufhoehe_m = COALESCE(excluded.traufhoehe_m, buildings_3d.traufhoehe_m),
+                    firsthoehe_m = COALESCE(excluded.firsthoehe_m, buildings_3d.firsthoehe_m),
+                    gebaeudehoehe_m = COALESCE(excluded.gebaeudehoehe_m, buildings_3d.gebaeudehoehe_m),
+                    area_m2 = COALESCE(excluded.area_m2, buildings_3d.area_m2),
+                    perimeter_m = COALESCE(excluded.perimeter_m, buildings_3d.perimeter_m),
+                    center_e = COALESCE(excluded.center_e, buildings_3d.center_e),
+                    center_n = COALESCE(excluded.center_n, buildings_3d.center_n),
+                    tile_id = COALESCE(excluded.tile_id, buildings_3d.tile_id),
+                    source = COALESCE(excluded.source, buildings_3d.source),
+                    objektart = COALESCE(excluded.objektart, buildings_3d.objektart),
+                    name_komplett = COALESCE(excluded.name_komplett, buildings_3d.name_komplett),
+                    gebaeude_nutzung = COALESCE(excluded.gebaeude_nutzung, buildings_3d.gebaeude_nutzung),
+                    gebaeudeeinheit = COALESCE(excluded.gebaeudeeinheit, buildings_3d.gebaeudeeinheit),
+                    roof_form = COALESCE(excluded.roof_form, buildings_3d.roof_form),
+                    roof_form_confidence = COALESCE(excluded.roof_form_confidence, buildings_3d.roof_form_confidence),
+                    roof_orientation = COALESCE(excluded.roof_orientation, buildings_3d.roof_orientation)
+                WHERE buildings_3d.has_3d_layers = 0 OR buildings_3d.has_3d_layers IS NULL
             """
         return self._prepared_insert
 

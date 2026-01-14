@@ -139,6 +139,14 @@ def prefetch_tile_buildings(
 
         # Gebäude filtern (exclude bereits geladene)
         exclude_egids = exclude_egids or set()
+
+        # NEU 14.01.2026: Gebäude mit has_3d_layers=1 NICHT überschreiben!
+        # Diese haben detaillierte 3D-Geometrie die erhalten bleiben muss.
+        egids_with_3d_layers = building_3d_service.get_egids_with_3d_layers(tile_id)
+        if egids_with_3d_layers:
+            exclude_egids = exclude_egids | egids_with_3d_layers
+            logger.debug(f"[PREFETCH] Überspringe {len(egids_with_3d_layers)} Gebäude mit 3D-Layern")
+
         buildings_to_save = []
         for building in buildings:
             egid = building.get("egid")
