@@ -38,7 +38,23 @@ während der Frontend-Wert bei 2.0m bleibt. Das führt zu inkonsistenter Anzeige
 Fassaden, die eigentlich durch Nachbargebäude blockiert sein sollten, wurden als "frei" (farbig)
 angezeigt statt als "blockiert" (hell-grau, im Hintergrund). Das Problem trat bei Knospenweg 4, Bern auf.
 
-**Screenshot:** `2026-01-14 15_19_49-lawil – 3D_Blockierte Fassade.md.png`
+```
+VOR dem Fix:                         NACH dem Fix:
+┌─────────────────┐                  ┌─────────────────┐
+│   Nachbar       │                  │   Nachbar       │
+│   (grau)        │                  │   (grau)        │
+└────────┬────────┘                  └────────┬────────┘
+         │ 1.5m                               │ 1.5m
+    ═════╧═════  ← ROT (falsch!)         ----+----  ← GRAU (korrekt!)
+    ║         ║                          ║         ║
+    ║  Kno4   ║                          ║  Kno4   ║
+    ║         ║                          ║         ║
+    ═══════════                          ═══════════
+
+Legende:
+  ═══ / ║ = Farbige Fassade (auswählbar)
+  -------  = Blockierte Fassade (hell-grau, nicht auswählbar)
+```
 
 **Ursache:**
 Der Backend-Schwellenwert für blockierte Fassaden war **0.5m** (zu streng!).
