@@ -3,6 +3,66 @@
 > **NEU 13.01.2026:** `building_3d.db` wurde auf DuckDB migriert → `building_3d.duckdb`
 > Historische Bug-Referenzen auf `building_3d.db` beziehen sich auf die neue DuckDB-Datei.
 
+## ⚠️ KRITISCH: Blockierte Fassaden - Schwellenwert
+
+**WICHTIG für zukünftige Änderungen:**
+
+Die Erkennung blockierter Fassaden verwendet einen **Schwellenwert von 2.0m** an zwei Stellen:
+
+| Ort | Datei | Konstante | Wert |
+|-----|-------|-----------|------|
+| Backend | `geruestbau.py:537` | `BLOCKING_THRESHOLD_M` | 2.0m |
+| Frontend | `FacadePanel.tsx:94` | `BLOCKING_THRESHOLD_M` | 2.0m |
+
+**Diese Werte MÜSSEN identisch sein!**
+
+Wenn ein Nachbargebäude innerhalb von 2.0m einer Fassade liegt, wird diese als "blockiert" markiert
+(lila statt rot im UI). Gebäude mit blockierten Fassaden können nicht direkt eingerüstet werden.
+
+**Typische Fehlerquelle:** Der Backend-Wert wird auf einen niedrigeren Wert geändert (z.B. 0.5m),
+während der Frontend-Wert bei 2.0m bleibt. Das führt zu inkonsistenter Anzeige.
+
+---
+
+## Gefixte Bugs (Neu)
+
+### BUG-022: Blockierte Fassaden werden nicht erkannt (GEFIXT)
+
+**Status:** ✅ Gefixt am 14.01.2026 18:15
+
+**Problem:**
+Fassaden, die eigentlich durch Nachbargebäude blockiert sein sollten, wurden als "frei" (rot)
+angezeigt statt als "blockiert" (lila). Das Problem trat bei Knospenweg 4, Bern auf.
+
+**Screenshot:** `2026-01-14 15_19_49-lawil – 3D_Blockierte Fassade.md.png`
+
+**Ursache:**
+Der Backend-Schwellenwert für blockierte Fassaden war **0.5m** (zu streng!).
+Ein Nachbargebäude musste praktisch direkt angrenzen (< 50cm) um als "blockierend" erkannt zu werden.
+
+```python
+# VOR dem Fix (geruestbau.py:536)
+if neighbor.distance_m < 0.5:  # Direkt angrenzend
+```
+
+Das Frontend verwendete hingegen korrekt **2.0m** als Schwellenwert.
+
+**Fix:**
+Backend-Schwellenwert auf 2.0m erhöht, übereinstimmend mit Frontend:
+```python
+# NACH dem Fix (geruestbau.py:537-540)
+BLOCKING_THRESHOLD_M = 2.0
+if neighbor.distance_m < BLOCKING_THRESHOLD_M:
+```
+
+**Betroffene Dateien:**
+- `backend/app/routers/geruestbau.py:537-540`
+
+**Prävention:**
+Siehe Abschnitt "⚠️ KRITISCH: Blockierte Fassaden - Schwellenwert" oben.
+
+---
+
 ## Offene Bugs
 
 ### BUG-017: Fassaden bei Knospenweg 1 falsch dargestellt

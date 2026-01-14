@@ -531,9 +531,13 @@ async def get_building_neighbors(
         )
 
     # Blockierte Seiten aus Nachbarn ableiten
+    # FIX 14.01.2026 18:15 - Schwellenwert von 0.5m auf 2.0m erhöht
+    # 0.5m war zu streng - Nachbargebäude innerhalb von 2m blockieren Gerüstaufbau
+    # Dieser Wert muss mit BLOCKING_THRESHOLD_M im Frontend übereinstimmen!
+    BLOCKING_THRESHOLD_M = 2.0
     blocked_sides = []
     for neighbor in result.neighbors:
-        if neighbor.distance_m < 0.5:  # Direkt angrenzend
+        if neighbor.distance_m < BLOCKING_THRESHOLD_M:
             if neighbor.direction and neighbor.direction not in blocked_sides:
                 blocked_sides.append(neighbor.direction)
 
