@@ -1941,25 +1941,21 @@ class SmartBuildingService:
             logger.warning(f"Tile loading failed for E={e}, N={n}: {e}")
 
     def _fetch_roof_geometry_for_complex(self, bundle: BuildingDataBundle):
-        """NEU 12.01.2026: Lädt ALLE 3D-Layer (Roof, Wall) für komplexe Gebäude on-demand.
+        """NEU 14.01.2026: Lädt 3D-Layer (Roof, Wall) für ALLE angefragten Gebäude on-demand.
 
-        Wird UNABHÄNGIG von include_zones aufgerufen. Nutzt _needs_zones_analysis()
-        um die Komplexität zu prüfen, sodass die Geometrie auch bei
-        include_zones=false geladen wird (z.B. geruestbau-app).
+        Wird für JEDES Gebäude aufgerufen, das über die API angefragt wird.
+        Die 3D-Geometrie wird einmalig aus dem Tile geladen und in der DB gecacht.
 
         Geladene Layer:
-        - Roof_solid → building_roofs.geometry_wkb
-        - Wall → building_walls.geometry_wkb
+        - Roof_solid → building_roofs.geometry_wkb (echte 3D-Dachform)
+        - Wall → building_walls.geometry_wkb (Fassaden-Höhen)
         """
         # Nur für Gebäude mit EGID
         if not bundle.egid:
             return
 
-        # Prüfe Komplexität über _needs_zones_analysis() ODER bereits gesetzte complexity
-        # Das funktioniert auch wenn include_zones=false (geruestbau-app)
-        is_complex = bundle.complexity == "complex" or self._needs_zones_analysis(bundle)
-        if not is_complex:
-            return
+        # NEU 14.01.2026: Komplexitäts-Check ENTFERNT
+        # Jedes angefragte Gebäude bekommt echte 3D-Geometrie
 
         try:
             from app.services.roof_3d_service import get_roof_3d_service
@@ -1970,13 +1966,13 @@ class SmartBuildingService:
 
             if result['loaded_layers']:
                 logger.info(
-                    f"[COMPLEX] 3D-Layer für EGID {bundle.egid} geladen: {result['loaded_layers']}"
+                    f"[3D-GEOM] 3D-Layer für EGID {bundle.egid} geladen: {result['loaded_layers']}"
                 )
             else:
-                logger.debug(f"[COMPLEX] Keine 3D-Geometrie für EGID {bundle.egid} verfügbar")
+                logger.debug(f"[3D-GEOM] Keine 3D-Geometrie für EGID {bundle.egid} verfügbar")
 
         except Exception as e:
-            logger.warning(f"[COMPLEX] Fehler beim Laden der 3D-Layer für {bundle.egid}: {e}")
+            logger.warning(f"[3D-GEOM] Fehler beim Laden der 3D-Layer für {bundle.egid}: {e}")
 
     def _assess_data_quality(self, bundle: BuildingDataBundle):
         """Bewertet die Gesamtqualität der gesammelten Daten"""
