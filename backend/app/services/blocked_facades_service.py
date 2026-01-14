@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Set
 
 # NEU 13.01.2026 17:00: DuckDB-kompatible Connection
-from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH
+# FIX 14.01.2026 13:50: DATA_DIR aus config.py für Railway Volume
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, DATA_DIR
 
 
 @dataclass
@@ -66,7 +67,8 @@ class BlockedFacadesService:
     DEFAULT_THRESHOLD_M = 2.0  # Gerüstbreite + Arbeitsraum
 
     def __init__(self):
-        self.data_path = Path(__file__).parent.parent / "data"
+        # FIX 14.01.2026 13:50: Nutze zentrale DATA_DIR aus config.py
+        self.data_path = DATA_DIR
         # NEU 13.01.2026 17:00: Nutzt BUILDING_3D_DB_PATH (DuckDB oder SQLite)
         self.building_3d_db_path = BUILDING_3D_DB_PATH
 

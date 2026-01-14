@@ -37,12 +37,12 @@ from datetime import datetime
 from contextlib import contextmanager
 
 # NEU 13.01.2026 17:00: DuckDB-kompatible Connection
-from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, USE_DUCKDB
+# FIX 14.01.2026 13:50: DATA_DIR aus config.py für Railway Volume
+from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, USE_DUCKDB, DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-# Pfad zur Datenbank (NEU 13.01.2026: aus config)
-DATA_DIR = Path(__file__).parent.parent / "data"
+# Pfad zur Datenbank (aus config.py)
 BUILDING_3D_DB = BUILDING_3D_DB_PATH
 
 
