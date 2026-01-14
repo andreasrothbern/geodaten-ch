@@ -637,7 +637,97 @@ Gefährdungszonen:
 
 | Phase | Features | Status |
 |-------|----------|--------|
-| **Phase 1** | P1: Wall-Layer Höhen | 🔄 In Arbeit |
-| **Phase 2** | P2a: Dachform-Erkennung, P2b: 3D-Dachform | ⏳ Geplant |
+| **Phase 1** | P1: Wall-Layer Höhen | ✅ ERLEDIGT (14.01.2026) |
+| **Phase 2** | P2a: Dachform-Erkennung | ✅ ERLEDIGT (14.01.2026) |
+| **Phase 2** | P2b: 3D-Dachform im Viewer | ⏳ Bereit zur Umsetzung |
 | **Phase 3** | P3a: Zugangs-Vorschläge, P3b: Gefährdungszonen | ⏳ Geplant |
 | **Phase 4** | Transport, Schatten, Export | 📋 Backlog |
+
+---
+
+## On-Demand 3D-Layer-Import (NEU 14.01.2026)
+
+### Datenfluss
+
+### Dateien und Funktionen
+
+| Datei | Funktion | Beschreibung |
+|-------|----------|--------------|
+|  |  | Triggert On-Demand Import |
+|  |  | Lädt gespeicherte Daten ins Bundle |
+|  |  | Öffnet GDB, extrahiert Geometrie |
+|  |  | Speichert in building_roofs/walls |
+|  |  | Erkennt Dachform aus 3D-Geometrie |
+
+### Wann wird 3D-Geometrie geladen?
+
+### Speicherstrategie
+
+| Stufe | Was | Wo | Wann |
+|-------|-----|-----|------|
+| tile_prefetch | Alle Gebäude: polygon, höhen, roof_form | building_roofs | Tile-Download |
+| On-Demand | geometry_wkb für komplexe Gebäude | building_roofs.geometry_wkb | Adress-Suche |
+| Tiles | GDB-Dateien | tiles/ | Bleiben gecacht |
+
+---
+
+## Möglichkeiten mit 3D-Geometrie-Daten
+
+### Verfügbare Geometrie-Daten (nach On-Demand Import)
+
+| Daten | Tabelle | Format | Nutzen |
+|-------|---------|--------|--------|
+| **Dach-Geometrie** | building_roofs.geometry_wkb | WKB (MultiPolygonZ) | 3D-Viewer, SVG |
+| **Wand-Geometrie** | building_walls.geometry_wkb | WKB (MultiPolygonZ) | Fassaden-Analyse |
+| **Dachform** | building_roofs.roof_form | String | Gerüst-Empfehlung |
+| **Dachneigung** | building_roofs.roof_angle_deg | Float | PSA-Empfehlung |
+| **Dach-Orientierung** | building_roofs.roof_orientation | String | First-Position |
+| **Dach m ü.M.** | building_roofs.dach_min, dach_max | Float | Höhen-Berechnung |
+| **Wand-Höhen** | building_walls.z_min, z_max | Float | Fassaden-Höhen |
+
+### Feature-Analyse (Todos)
+
+#### A) 3D-Viewer Verbesserungen
+
+| Feature | Beschreibung | Daten | Aufwand |
+|---------|--------------|-------|---------|
+| **Echte Dachform rendern** | geometry_wkb → Three.js Mesh | roof_geometry_wkb | 3-4h |
+| **Gauben/Kamine zeigen** | Teil der Dach-Geometrie | inklusiv | 0h |
+| **Dachüberstände korrekt** | Aus Geometrie berechnen | geometry_wkb | 1h |
+| **Wand-Texturen** | Fenster-Platzierung aus Wand-Geometrie | wall_geometry_wkb | 4-6h |
+
+#### B) Gerüstplanung-Features
+
+| Feature | Beschreibung | Daten | Aufwand |
+|---------|--------------|-------|---------|
+| **Dachgerüst-Empfehlung** | "Dachfanggerüst empfohlen" wenn angle > 45° | roof_angle_deg | 1h |
+| **First-Arbeitsbühne** | Position aus Dach-Geometrie | geometry_wkb | 2h |
+| **PSA-Empfehlung** | "Seilsicherung erforderlich" wenn angle > 60° | roof_angle_deg | 0.5h |
+| **Traufen-Höhe pro Fassade** | Exakt aus Wand-Geometrie | z_min, z_max | 2h |
+
+#### C) Analyse & Berechnung
+
+| Feature | Beschreibung | Daten | Aufwand |
+|---------|--------------|-------|---------|
+| **Dachfläche 3D** | Echte Oberfläche (nicht Projektion) | geometry_wkb | 2h |
+| **Gebäudevolumen** | Aus 3D-Geometrie berechnen | wall + roof wkb | 1h |
+| **Kollisionserkennung** | Gerüst vs. Dachüberstand | geometry_wkb | 4h |
+| **Export DXF/IFC** | 3D-Geometrie exportieren | geometry_wkb | 8-12h |
+
+#### D) Visualisierung
+
+| Feature | Beschreibung | Daten | Aufwand |
+|---------|--------------|-------|---------|
+| **SVG Schnitt exakt** | Aus 3D-Geometrie schneiden | geometry_wkb | 4h |
+| **PDF mit 3D-Ansicht** | Screenshot aus Viewer | - | 2h |
+| **AR-Vorschau** | Geometrie für AR-App | geometry_wkb | 8h+ |
+
+### Empfohlene Reihenfolge
+
+| Prio | Feature | Begründung |
+|------|---------|------------|
+| **1** | Echte Dachform rendern | Höchster visueller Impact, Daten sind da |
+| **2** | Dachgerüst-Empfehlung | Einfach umzusetzen (1h), sofortiger Nutzen |
+| **3** | PSA-Empfehlung | SUVA-Compliance, automatisch |
+| **4** | Dachfläche 3D | Präzisere Materialkalkulation |
+| **5** | Export DXF | Integration mit CAD-Software |

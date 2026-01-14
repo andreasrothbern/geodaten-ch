@@ -3769,6 +3769,59 @@ async def get_smart_building_data(
         from app.services.smart_building import get_smart_building_service
         from app.services.polygon_simplifier import simplify_building_polygon
 
+        # NEU 14.01.2026: Hilfsfunktion für WKB → JSON Koordinaten
+        def _wkb_to_coords(wkb_data: bytes) -> Optional[List[List[List[float]]]]:
+            """
+            Konvertiert WKB (Well-Known Binary) zu JSON-Koordinaten für Frontend.
+            Gibt Liste von Polygonen zurück, jedes Polygon ist Liste von [x, y, z] Punkten.
+            """
+            if not wkb_data:
+                return None
+            try:
+                from shapely import wkb
+                geom = wkb.loads(wkb_data)
+
+                def extract_coords(geometry):
+                    """Extrahiert 3D-Koordinaten aus verschiedenen Geometrie-Typen"""
+                    if geometry.is_empty:
+                        return []
+
+                    geom_type = geometry.geom_type
+
+                    if geom_type == 'Polygon':
+                        # Exterior ring als Liste von [x, y, z]
+                        coords = list(geometry.exterior.coords)
+                        return [[[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords]]
+
+                    elif geom_type == 'MultiPolygon':
+                        result = []
+                        for poly in geometry.geoms:
+                            coords = list(poly.exterior.coords)
+                            result.append([[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords])
+                        return result
+
+                    elif geom_type in ('GeometryCollection', 'MultiSurface'):
+                        result = []
+                        for g in geometry.geoms:
+                            result.extend(extract_coords(g))
+                        return result
+
+                    elif geom_type == 'LineString':
+                        coords = list(geometry.coords)
+                        return [[[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords]]
+
+                    else:
+                        # Unbekannter Typ - loggen und leere Liste
+                        import logging
+                        logging.warning(f"[WKB] Unbekannter Geometrie-Typ: {geom_type}")
+                        return []
+
+                return extract_coords(geom)
+            except Exception as e:
+                import logging
+                logging.error(f"[WKB] Konvertierung fehlgeschlagen: {e}")
+                return None
+
         service = get_smart_building_service()
         bundle = await service.collect_all_data(
             address=address,
@@ -3851,6 +3904,8 @@ async def get_smart_building_data(
             "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
             # FIX 12.01.2026 21:30 - has_3d_layers fehlte in API-Response
             "has_3d_layers": bundle.has_3d_layers,
+            # NEU 14.01.2026: 3D-Dachgeometrie als JSON-Koordinaten für Frontend
+            "roof_geometry_coords": _wkb_to_coords(bundle.roof_geometry_wkb) if bundle.roof_geometry_wkb else None,
 
             # Zonen
             "zones": [
