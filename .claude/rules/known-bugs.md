@@ -16,8 +16,12 @@ Die Erkennung blockierter Fassaden verwendet einen **Schwellenwert von 2.0m** an
 
 **Diese Werte MÜSSEN identisch sein!**
 
-Wenn ein Nachbargebäude innerhalb von 2.0m einer Fassade liegt, wird diese als "blockiert" markiert
-(lila statt rot im UI). Gebäude mit blockierten Fassaden können nicht direkt eingerüstet werden.
+Wenn ein Nachbargebäude innerhalb von 2.0m einer Fassade liegt, wird diese als "blockiert" markiert.
+
+**Visuelle Darstellung blockierter Fassaden:**
+- **Farbe:** Hell-grau (statt farbig/rot)
+- **Optik:** Tritt in den Hintergrund, nicht auswählbar
+- **Bedeutung:** Kann nicht direkt eingerüstet werden (Nachbargebäude im Weg)
 
 **Typische Fehlerquelle:** Der Backend-Wert wird auf einen niedrigeren Wert geändert (z.B. 0.5m),
 während der Frontend-Wert bei 2.0m bleibt. Das führt zu inkonsistenter Anzeige.
@@ -31,8 +35,8 @@ während der Frontend-Wert bei 2.0m bleibt. Das führt zu inkonsistenter Anzeige
 **Status:** ✅ Gefixt am 14.01.2026 18:15
 
 **Problem:**
-Fassaden, die eigentlich durch Nachbargebäude blockiert sein sollten, wurden als "frei" (rot)
-angezeigt statt als "blockiert" (lila). Das Problem trat bei Knospenweg 4, Bern auf.
+Fassaden, die eigentlich durch Nachbargebäude blockiert sein sollten, wurden als "frei" (farbig)
+angezeigt statt als "blockiert" (hell-grau, im Hintergrund). Das Problem trat bei Knospenweg 4, Bern auf.
 
 **Screenshot:** `2026-01-14 15_19_49-lawil – 3D_Blockierte Fassade.md.png`
 
