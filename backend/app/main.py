@@ -59,10 +59,11 @@ def cleanup_orphaned_tiles():
     import shutil
     import sqlite3
     from pathlib import Path
-    from app.config import DATA_DIR, TILES_DB_PATH
+    # NEU 15.01.2026: TILES_DIR und PARQUET_DIR aus config für Ephemeral Storage
+    from app.config import TILES_DB_PATH, TILES_DIR, PARQUET_DIR
 
-    tiles_dir = DATA_DIR / "tiles"
-    parquet_dir = DATA_DIR / "parquet"
+    tiles_dir = TILES_DIR
+    parquet_dir = PARQUET_DIR
 
     # 1. GDB-Verzeichnisse löschen
     deleted_count = 0
@@ -115,11 +116,72 @@ def cleanup_orphaned_tiles():
             print(f"[CLEANUP] Fehler beim Aktualisieren von tiles.db: {e}")
 
 
+def cleanup_wall_geometry():
+    """
+    NEU 15.01.2026: Startup-Cleanup für Wall-Geometrie in DuckDB.
+
+    Problem: Vor dem Fix wurden Wall-Geometrien für ALLE Gebäude beim
+    Prefetch gespeichert (~249 MB für 56.679 Einträge).
+
+    Lösung:
+    - geometry_wkb wird nur noch On-Demand für angefragte Gebäude gespeichert
+    - Diese Funktion räumt bestehende Wall-Geometrien auf (einmalig)
+
+    Nach der Bereinigung:
+    - Walls haben geometry_wkb = NULL (ausser On-Demand geladen)
+    - Speicherersparnis: ~249 MB
+
+    WICHTIG: Nur ausführen wenn CLEANUP_WALL_GEOMETRY=true gesetzt ist!
+    Nach einmaliger Ausführung auf Railway das Flag wieder entfernen.
+    """
+    # Nur ausführen wenn explizit aktiviert (einmalige Migration)
+    if os.getenv("CLEANUP_WALL_GEOMETRY", "").lower() != "true":
+        return
+
+    from app.config import BUILDING_3D_DB_PATH, USE_DUCKDB, get_building_3d_connection
+
+    if not USE_DUCKDB or not BUILDING_3D_DB_PATH.exists():
+        return
+
+    try:
+        conn = get_building_3d_connection()
+
+        # Prüfen ob es überhaupt Wall-Geometrien gibt
+        result = conn.execute("""
+            SELECT COUNT(*) as cnt FROM building_walls
+            WHERE geometry_wkb IS NOT NULL
+        """).fetchone()
+
+        walls_with_geom = result[0] if result else 0
+
+        if walls_with_geom == 0:
+            conn.close()
+            return  # Nichts zu bereinigen
+
+        # Berechne ungefähre Grösse (vor Bereinigung)
+        size_result = conn.execute("""
+            SELECT SUM(octet_length(geometry_wkb)) / 1024 / 1024 as mb
+            FROM building_walls
+            WHERE geometry_wkb IS NOT NULL
+        """).fetchone()
+        size_mb = size_result[0] if size_result and size_result[0] else 0
+
+        # Wall-Geometrien bereinigen
+        conn.execute("UPDATE building_walls SET geometry_wkb = NULL")
+        conn.close()
+
+        print(f"[CLEANUP] Wall-Geometrie bereinigt: {walls_with_geom} Einträge, ~{size_mb:.1f} MB freigegeben")
+
+    except Exception as e:
+        print(f"[CLEANUP] Fehler bei Wall-Geometrie-Bereinigung: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown Events"""
     # Startup
     cleanup_orphaned_tiles()  # NEU 14.01.2026: Tiles aufräumen
+    cleanup_wall_geometry()   # NEU 15.01.2026: Wall-Geometrie bereinigen
     cache.initialize()
     print("[OK] Geodaten API gestartet")
     yield

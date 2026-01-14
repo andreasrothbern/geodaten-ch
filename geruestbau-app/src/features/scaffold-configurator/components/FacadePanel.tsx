@@ -16,6 +16,8 @@ import type { BlockedFacadesData } from '../../../hooks/useProjectContextStream'
 
 interface FacadePanelProps {
   neighbors?: NeighborBuilding[];
+  // FIX 15.01.2026 01:45 - Separate Liste für Blocking (immer aktiv, unabhängig vom Slider)
+  blockingNeighbors?: NeighborBuilding[];
   blockedSides?: string[];
   // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support via SSE)
   blockedFacadesData?: BlockedFacadesData | null;
@@ -28,6 +30,7 @@ interface FacadePanelProps {
 
 export default function FacadePanel({
   neighbors = [],
+  blockingNeighbors = [],
   blockedSides = [],
   blockedFacadesData,
   additionalBuildings = [],
@@ -157,13 +160,13 @@ export default function FacadePanel({
   }, [blockedFacadesData]);
 
   // Check if a facade is blocked by neighbors (geometry-based)
-  // FIX 14.01.2026 19:20 - IMMER Geometrie-basiert prüfen!
-  // Direction-basiert war falsch: Alle Fassaden einer Richtung wurden blockiert.
+  // FIX 15.01.2026 01:45 - Nutze blockingNeighbors (immer aktiv) statt neighbors (Slider-abhängig)
   // Geometrie-basiert: Prüft tatsächliche Distanz Fassade → Nachbar-Polygon
   const isFacadeBlocked = useCallback((facade: ScaffoldFacade, _facadeIndex: number): boolean => {
-    // Geometry-based calculation: Check distance to each neighbor polygon
-    if (facade.start_point && facade.end_point && neighbors.length > 0) {
-      for (const neighbor of neighbors) {
+    // Geometry-based calculation: Check distance to each blocking neighbor polygon
+    // blockingNeighbors enthält alle Nachbarn innerhalb von 2m, unabhängig vom Slider
+    if (facade.start_point && facade.end_point && blockingNeighbors.length > 0) {
+      for (const neighbor of blockingNeighbors) {
         if (!neighbor.polygon || neighbor.polygon.length < 3) {
           continue;
         }
@@ -176,11 +179,11 @@ export default function FacadePanel({
           return true;
         }
       }
-      // Geometrie-Check hat keine Blockierung gefunden
+      // Geometrie-Check mit blockingNeighbors hat keine Blockierung gefunden
       return false;
     }
 
-    // Fallback wenn keine Geometrie-Daten: Direction-based check
+    // Fallback wenn keine Geometrie-Daten: Direction-based check via SSE
     if (blockedDirectionsFromSSE.size > 0) {
       const facadeDirection = facade.direction;
       if (facadeDirection && blockedDirectionsFromSSE.has(facadeDirection)) {
@@ -190,7 +193,7 @@ export default function FacadePanel({
 
     // Letzter Fallback: blockedSides Array
     return blockedSides.includes(facade.direction);
-  }, [neighbors, blockedSides, blockedDirectionsFromSSE, facadeToPolygonDistance]);
+  }, [blockingNeighbors, blockedSides, blockedDirectionsFromSSE, facadeToPolygonDistance]);
 
   // Get default height from existing facades
   const defaultHeight = useMemo(() => {

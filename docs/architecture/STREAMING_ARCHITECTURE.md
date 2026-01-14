@@ -1,6 +1,6 @@
 # Streaming Architecture
 
-> **Version:** 3.10 (14.01.2026)
+> **Version:** 3.11 (15.01.2026)
 > **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅ | Fassaden-Höhen ✅
 
 ---
@@ -15,8 +15,11 @@
 6. [Teil E: Tile-Prefetch Timing](#teil-e-tile-prefetch-timing--on-demand-architektur) (implementiert)
 7. [Teil F: Frontend Service-Aufrufe](#teil-f-frontend-service-aufrufe-configuratorpage) (Analyse)
 8. [Teil G: 3D Layer Architecture](#teil-g-3d-layer-architecture-dach-daten) (implementiert)
-9. [Services für Streaming](#services-für-streaming)
-10. [Implementierungsplan](#implementierungsplan)
+9. [Teil I: Blocking-Architektur Refactoring](#teil-i-blocking-architektur-refactoring-todo) (TODO)
+10. [Teil J: Storage-Strategie (Railway Pro)](#teil-j-storage-strategie-railway-pro) (TODO)
+11. [Teil K: Projektspezifische 3D-Daten](#teil-k-projektspezifische-3d-daten) (TODO)
+12. [Services für Streaming](#services-für-streaming)
+13. [Implementierungsplan](#implementierungsplan)
 
 ---
 
@@ -2314,10 +2317,302 @@ Siehe [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) Teil 6 für vollständige T
 
 ---
 
+# Teil I: Blocking-Architektur Refactoring (TODO)
+
+> **Stand:** 15.01.2026 03:00
+> **Status:** 📋 Geplant
+
+## I.1 Problem: Redundante Datenquellen
+
+Die aktuelle Architektur für "blockierte Fassaden" nutzt **3 redundante Quellen**:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│              AKTUELLE ARCHITEKTUR (Redundant!)                         │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  1. SSE blocked_facades (Backend-berechnet)                     │  │
+│  │     └─ Endpunkt: /project-context-stream                        │  │
+│  │     └─ Liefert: blocked_indices pro EGID                        │  │
+│  │     └─ Frontend: blockedFacadesData → blockedDirectionsFromSSE  │  │
+│  │                                                                 │  │
+│  │  ⚠️ PROBLEM: blocked_indices basiert auf BACKEND-Polygon!       │  │
+│  │     Das Frontend hat ein ANDERES vereinfachtes Polygon          │  │
+│  │     → Index-Mismatch möglich!                                   │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  2. neighbors API → blockedSides (Richtungs-Fallback)           │  │
+│  │     └─ Endpunkt: /building/{egid}/neighbors                     │  │
+│  │     └─ Liefert: blockedSides = ["N", "S", "O", "W"]             │  │
+│  │     └─ Richtungs-basiert, nicht fassaden-spezifisch             │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  3. blockingNeighbors → Frontend Geometrie-Check (NEU)          │  │
+│  │     └─ FIX 15.01.2026: Nachbarn im Frontend gefiltert           │  │
+│  │     └─ facadeToPolygonDistance() < 2m → blockiert               │  │
+│  │     └─ Konsistent weil auf denselben Daten wie Anzeige          │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## I.2 Ziel: Vereinfachte Architektur
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│              NEUE ARCHITEKTUR (Vereinfacht)                            │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  SSE neighbors (nur Nachbar-Polygone)                           │  │
+│  │     └─ Keine blocked_facades mehr im SSE                        │  │
+│  │     └─ Nur: neighbors[] mit Polygon + Koordinaten               │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                              │                                         │
+│                              ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  Frontend: Geometrie-Check (Single Source of Truth)             │  │
+│  │     └─ blockingNeighbors = neighbors.filter(n => n.distance < 2m)│  │
+│  │     └─ isFacadeBlocked() = facadeToPolygonDistance() < 2m       │  │
+│  │     └─ KEINE Index-basierte Logik mehr                          │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  ENTFERNEN:                                                           │
+│  ❌ SSE blocked_facades Event                                         │
+│  ❌ blockedFacadesData State                                          │
+│  ❌ blockedDirectionsFromSSE                                          │
+│  ❌ blockedSides (Richtungs-Fallback)                                 │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## I.3 Implementierungsplan
+
+| # | Aufgabe | Dateien | Priorität |
+|---|---------|---------|-----------|
+| I.1 | Backend: `blocked_facades` SSE-Event entfernen | `geruestbau.py`, `project_context_stream()` | P2 |
+| I.2 | Frontend: `blockedFacadesData` State entfernen | `ConfiguratorPage.tsx` | P2 |
+| I.3 | Frontend: `blockedDirectionsFromSSE` entfernen | `FacadePanel.tsx` | P2 |
+| I.4 | Frontend: `blockedSides` Prop entfernen | `FacadePanel.tsx`, `ThreeDPanel.tsx` | P2 |
+| I.5 | Frontend: Nur `blockingNeighbors` verwenden | `FacadePanel.tsx:isFacadeBlocked()` | P2 |
+| I.6 | Backend: neighbors API vereinfachen | `geruestbau.py` | P3 |
+| I.7 | Tests aktualisieren | - | P3 |
+
+---
+
+# Teil J: Storage-Strategie (Railway Pro)
+
+> **Stand:** 15.01.2026 03:00
+> **Status:** 📋 Geplant (erfordert Railway Pro)
+
+## J.1 Problem: Volume-Nutzung
+
+Railway Free/Starter hat nur 500MB Volume-Speicher. Aktuelle Nutzung:
+
+| Datei | Grösse | Inhalt |
+|-------|--------|--------|
+| `building_3d.duckdb` | ~557 MB | Buildings + Roofs + Walls (ALLE!) |
+| `geruestbau.db` | ~0.03 MB | Projekte |
+| `tiles.db` | ~0.02 MB | Tile-Metadaten |
+| `building_contexts.db` | ~0.25 MB | Zonen, Terrain-Cache |
+| **Total** | **~557 MB** | ⚠️ Über 500MB Limit! |
+
+**Problem:** `building_3d.duckdb` speichert Wall-Geometrie für ALLE Gebäude beim BATCH_IMPORT!
+
+## J.2 Ziel: Ephemeral vs Volume Trennung
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│              NEUE STORAGE-STRATEGIE                                    │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  EPHEMERAL STORAGE (100GB, wiped bei Redeploy)                  │  │
+│  │  ══════════════════════════════════════════════                 │  │
+│  │  • tiles/ - GDB-Rohdateien (temporär)                          │  │
+│  │  • parquet/ - Parquet-Dateien für Import                       │  │
+│  │  • cache/ - Temporäre API-Caches                               │  │
+│  │                                                                 │  │
+│  │  ✅ Vorteil: Unbegrenzt, wird automatisch aufgeräumt           │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  VOLUME 1: Geodaten (persistent, shared)                        │  │
+│  │  ══════════════════════════════════════                         │  │
+│  │  • building_3d.duckdb - NUR Metadaten:                         │  │
+│  │    - EGID, Polygon, Höhen, Zentrum                             │  │
+│  │    - KEINE Wall/Roof Geometrie mehr!                           │  │
+│  │  • tiles.db - Tile-Metadaten                                   │  │
+│  │  • building_contexts.db - Zonen, Terrain-Cache                 │  │
+│  │                                                                 │  │
+│  │  ✅ Geschätzte Grösse: ~50-100 MB (statt 557 MB)               │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  VOLUME 2: Gerüstbau-App (persistent, projektspezifisch)        │  │
+│  │  ═══════════════════════════════════════════════════            │  │
+│  │  • geruestbau.db - Projekte mit:                               │  │
+│  │    - Projekt-Metadaten (Name, Adresse, Client, etc.)           │  │
+│  │    - buildings[] Array (Multi-Building)                        │  │
+│  │    - NEU: roof_geometry (nur für Projekt-Gebäude)              │  │
+│  │    - NEU: wall_geometry (nur für Projekt-Gebäude)              │  │
+│  │                                                                 │  │
+│  │  ✅ Bei Projekt-Löschung: Geometrie-Daten werden mitgelöscht   │  │
+│  │  ✅ Geschätzte Grösse: ~1-10 MB pro aktive Projekte            │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## J.3 Config-Änderungen
+
+```python
+# config.py - NEU
+
+# Ephemeral Storage (wiped bei Redeploy, OK für temporäre Dateien)
+EPHEMERAL_DIR = Path(os.getenv("EPHEMERAL_DIR", "/tmp/geodaten"))
+TILES_DIR = EPHEMERAL_DIR / "tiles"
+PARQUET_DIR = EPHEMERAL_DIR / "parquet"
+
+# Volume 1: Geodaten (persistent, shared)
+GEODATEN_VOLUME = Path(os.getenv("GEODATEN_VOLUME", "/app/data/geodaten"))
+BUILDING_3D_DB = GEODATEN_VOLUME / "building_3d.duckdb"
+TILES_DB = GEODATEN_VOLUME / "tiles.db"
+CONTEXTS_DB = GEODATEN_VOLUME / "building_contexts.db"
+
+# Volume 2: Gerüstbau-App (persistent, projektspezifisch)
+GERUESTBAU_VOLUME = Path(os.getenv("GERUESTBAU_VOLUME", "/app/data/geruestbau"))
+GERUESTBAU_DB = GERUESTBAU_VOLUME / "geruestbau.db"
+```
+
+## J.4 Wall-Import nur für Projekt-Gebäude
+
+**Aktuell (FALSCH):**
+```python
+# tile_prefetch.py - IMPORT_ALL_LAYERS = true
+# → Speichert Wall-Geometrie für ALLE Gebäude im Tile
+```
+
+**Neu (RICHTIG):**
+```python
+# Wall-Geometrie NUR on-demand für ausgewählte Gebäude
+# 1. User erstellt Projekt mit EGID
+# 2. ConfiguratorPage lädt 3D-Daten für dieses EGID
+# 3. Wall/Roof Geometrie wird in geruestbau.db gespeichert (projektspezifisch)
+```
+
+## J.5 Implementierungsplan
+
+| # | Aufgabe | Priorität | Erfordert |
+|---|---------|-----------|-----------|
+| J.1 | `IMPORT_ALL_LAYERS = false` setzen | P1 | - |
+| J.2 | Wall-Geometrie aus building_3d.duckdb entfernen | P2 | Migration |
+| J.3 | Neue Tabellen in geruestbau.db: `project_walls`, `project_roofs` | P2 | Schema |
+| J.4 | roof_3d_service.py: Speichern in geruestbau.db | P2 | Code |
+| J.5 | layer_fetcher.py: Speichern in geruestbau.db | P2 | Code |
+| J.6 | Railway Config: 2 Volumes einrichten | P2 | Railway Pro |
+| J.7 | Ephemeral Paths konfigurieren | P2 | - |
+
+---
+
+# Teil K: Wall-Geometrie Optimierung
+
+> **Stand:** 15.01.2026 05:00
+> **Status:** ✅ Implementiert
+
+## K.1 Problem: Wall speichert Geometrie für ALLE Gebäude
+
+**Analyse 15.01.2026:**
+
+| Tabelle | Einträge | Mit geometry_wkb | Speicher |
+|---------|----------|------------------|----------|
+| building_roofs | 57.700 | **4** (0.007%) | 0.02 MB |
+| building_walls | 56.679 | **56.679** (100%) | **249 MB** |
+
+**Ursache in `tile_prefetch.py`:**
+
+```python
+# ROOF (Zeile 454-457) - OPTIMIERT ✅
+# OPTIMIERUNG 12.01.2026: geometry_wkb NICHT beim Prefetch speichern
+geometry_wkb = None
+
+# WALL (Zeile 349-353) - NICHT OPTIMIERT ❌
+geometry_wkb = None
+if feature['geometry'] is not None:
+    geom = shape(feature['geometry'])
+    geometry_wkb = geom.wkb  # ← Speichert Geometrie für ALLE!
+```
+
+## K.2 Korrekter Datenfluss
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│              DATENFLUSS FÜR 3D-GEOMETRIE                               │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  1. User sucht Adresse                                                 │
+│     └─ Tile wird heruntergeladen (falls nicht gecacht)                │
+│     └─ Für DIESES Gebäude: Wall/Roof MIT Geometrie speichern          │
+│     └─ Prefetch (Background): Alle anderen Gebäude im Tile            │
+│        └─ NUR Metadaten (z_min, z_max, etc.)                          │
+│        └─ KEINE geometry_wkb (= NULL)                                 │
+│                                                                        │
+│  2. User konfiguriert Projekt                                          │
+│     └─ 3D-Ansicht: Daten aus building_3d.duckdb via SSE               │
+│     └─ Wall/Roof Geometrie bereits vorhanden (aus Schritt 1)          │
+│                                                                        │
+│  3. User speichert Projekt                                             │
+│     └─ Nur Projekt-Metadaten in geruestbau.db                         │
+│     └─ 3D-Daten bleiben in building_3d.duckdb (wie bisher)            │
+│                                                                        │
+│  4. User öffnet Projekt später                                         │
+│     └─ Geometrie aus building_3d.duckdb (bereits vorhanden)           │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## K.3 Fix: Wall-Geometrie nur für angefragte Gebäude
+
+**Datei:** `tile_prefetch.py`, Funktion `_parse_wall_layer_from_gdb()`
+
+```python
+# VORHER (speichert Geometrie für ALLE):
+geometry_wkb = None
+if feature['geometry'] is not None:
+    geom = shape(feature['geometry'])
+    geometry_wkb = geom.wkb
+
+# NACHHER (wie Roof - nur Metadaten):
+# OPTIMIERUNG 15.01.2026: geometry_wkb NICHT beim Prefetch speichern
+# Reduziert DB-Grösse von ~557MB auf ~308MB (45% Ersparnis!)
+# Wall-Geometrie wird nur für angefragte Gebäude gespeichert
+geometry_wkb = None
+```
+
+**Zusätzlich:** Bestehende Wall-Geometrie bereinigen:
+```sql
+UPDATE building_walls SET geometry_wkb = NULL
+WHERE egid NOT IN (SELECT DISTINCT egid FROM projects WHERE egid IS NOT NULL);
+```
+
+## K.4 Erwartete Ersparnis
+
+| Metrik | Vorher | Nachher |
+|--------|--------|---------|
+| building_3d.duckdb | 557 MB | ~308 MB |
+| Wall geometry_wkb | 249 MB | ~1-5 MB (nur Projekt-Gebäude) |
+| Ersparnis | - | **~45%** |
+
+---
+
 # Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 15.01.2026 | 3.11 | Teil I: Blocking-Architektur Refactoring, Teil J: Storage-Strategie, Teil K: Projektspezifische 3D-Daten |
 | 14.01.2026 | 3.10 | T1-T4 Fassaden-Höhen End-to-End implementiert |
 | 12.01.2026 | 3.9 | Teil H: Terrain/Hanglage Architecture mit TODOs |
 | 12.01.2026 | 3.8 | Teil G.8: TODO 3D-Layer Daten im SSE-Stream |

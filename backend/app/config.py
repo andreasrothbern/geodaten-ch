@@ -25,18 +25,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# PFADE
+# PFADE (NEU 15.01.2026: Ephemeral vs Volume Trennung)
 # =============================================================================
 
-# Basis-Verzeichnis für Daten
-# NEU 14.01.2026 12:00: Nutzt RAILWAY_VOLUME_MOUNT_PATH oder DATA_DIR
-# - Railway: /app/data (aus RAILWAY_VOLUME_MOUNT_PATH, automatisch gesetzt)
-# - Lokal: ./app/data (relativ zum Code)
+# DATA_DIR: Persistente Daten (Datenbanken)
+# - Railway: Volume mount (/app/data) - überlebt Redeploys
+# - Lokal: ./app/data
 _default_data_dir = Path(__file__).parent / "data"
-# Priorisiere RAILWAY_VOLUME_MOUNT_PATH (von Railway automatisch gesetzt wenn Volume attached)
 _data_dir_env = os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DATA_DIR")
 DATA_DIR = Path(_data_dir_env) if _data_dir_env else _default_data_dir
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# EPHEMERAL_DIR: Temporäre Daten (Tiles, Parquet)
+# - Railway: Ephemeral Storage (/tmp) - wird bei Redeploy gelöscht, 100GB verfügbar
+# - Lokal: ./app/data (gleich wie DATA_DIR für Einfachheit)
+# NEU 15.01.2026: Tiles und Parquet-Dateien gehören hier hin!
+_ephemeral_dir_env = os.getenv("EPHEMERAL_DIR")
+if _ephemeral_dir_env:
+    EPHEMERAL_DIR = Path(_ephemeral_dir_env)
+elif os.getenv("RAILWAY_ENVIRONMENT"):
+    # Railway: /tmp für Ephemeral Storage
+    EPHEMERAL_DIR = Path("/tmp/geodaten")
+else:
+    # Lokal: gleich wie DATA_DIR
+    EPHEMERAL_DIR = DATA_DIR
+EPHEMERAL_DIR.mkdir(parents=True, exist_ok=True)
+
+# Tile-Verzeichnis (GDB-Dateien, temporär)
+TILES_DIR = EPHEMERAL_DIR / "tiles"
+TILES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Parquet-Verzeichnis (für Batch-Import, temporär)
+PARQUET_DIR = EPHEMERAL_DIR / "parquet"
+PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # FEATURE FLAGS
@@ -55,8 +76,8 @@ LOAD_3D_LAYERS = os.getenv("LOAD_3D_LAYERS", "false").lower() == "true"
 CALC_ROOF_FROM_3D = os.getenv("CALC_ROOF_FROM_3D", "false").lower() == "true"
 
 # NEU 13.01.2026 18:15: All-Layer-Import beim Prefetch
-# Default: true - Importiert Building_solid + Roof_solid + Wall zusammen
-# Bei false: Nur Building_solid + Roof_solid (Walls on-demand)
+# Bei true: Importiert Building_solid + Roof_solid + Wall zusammen
+# Bei false: Nur Building_solid + Roof_solid
 IMPORT_ALL_LAYERS = os.getenv("IMPORT_ALL_LAYERS", "true").lower() != "false"
 
 # NEU 13.01.2026 18:15: Tiles nach Import löschen
@@ -139,6 +160,12 @@ def get_db_engine_name() -> str:
 # =============================================================================
 # LOGGING BEI IMPORT
 # =============================================================================
+
+# Storage-Pfade
+logger.info(f"[CONFIG] DATA_DIR (Volume): {DATA_DIR}")
+logger.info(f"[CONFIG] EPHEMERAL_DIR (Temp): {EPHEMERAL_DIR}")
+if DATA_DIR != EPHEMERAL_DIR:
+    logger.info("[CONFIG] Storage-Trennung aktiv: DBs → Volume, Tiles → Ephemeral")
 
 if USE_DUCKDB:
     logger.info(f"[CONFIG] DuckDB aktiviert: {BUILDING_3D_DUCKDB_PATH}")

@@ -590,10 +590,20 @@ export default function ConfiguratorPage() {
   }, [sseData.neighbors]);
 
   // Gefilterte Nachbarn basierend auf Slider (0=Aus, 20/50/100=Radius)
+  // FIX 15.01.2026 01:45 - Separate Liste für Blocking (immer aktiv)
+  const BLOCKING_THRESHOLD_M = 2.0;
+
+  // Nachbarn für ANZEIGE (kontrolliert durch Slider)
   const filteredNeighbors = useMemo(() => {
     if (neighborsRadius === 0) return [];
     return neighbors.filter(n => n.distance_m <= neighborsRadius);
   }, [neighbors, neighborsRadius]);
+
+  // Nachbarn für BLOCKING (immer aktiv, unabhängig vom Slider)
+  // Enthält alle Nachbarn innerhalb von 2m für die Geometrie-basierte Blockierungsprüfung
+  const blockingNeighbors = useMemo(() => {
+    return neighbors.filter(n => n.distance_m <= BLOCKING_THRESHOLD_M);
+  }, [neighbors]);
 
   // REST API Fallback bei Slider-Änderung (nur für Adress-Suche ohne Projekt)
   useEffect(() => {
@@ -672,6 +682,30 @@ export default function ConfiguratorPage() {
 
         setBuildingData(configData);
         setLoadingState('success');
+
+        // FIX 15.01.2026 02:30 - Multi-Building Support: Lade zusätzliche Gebäude aus gespeichertem Projekt
+        if (loadedProject.buildings && loadedProject.buildings.length > 1) {
+          console.log(`[Multi-Building] Projekt hat ${loadedProject.buildings.length} Gebäude, lade zusätzliche...`);
+          setLoadingAdditionalBuildings(true);
+
+          try {
+            // Lade Polygone für alle zusätzlichen Gebäude (ab Index 1)
+            const additionalAddresses = loadedProject.buildings.slice(1).map(b => b.address);
+            const additionalData = await Promise.all(
+              additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
+            );
+
+            // Filtere fehlgeschlagene Ladevorgänge
+            const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
+            setManualAdditionalBuildings(validAdditional);
+            console.log(`[Multi-Building] ${validAdditional.length} zusätzliche Gebäude geladen`);
+          } catch (err) {
+            console.error('[Multi-Building] Fehler beim Laden zusätzlicher Gebäude:', err);
+          } finally {
+            setLoadingAdditionalBuildings(false);
+          }
+        }
+
         return;
       }
     }
@@ -680,6 +714,26 @@ export default function ConfiguratorPage() {
     console.log('No geodata in cache, fetching from API');
     setAddress(loadedProject.address);
     await fetchBuildingData(loadedProject.address, loadedProject);
+
+    // FIX 15.01.2026 02:30 - Multi-Building Support für Fallback-Pfad
+    if (loadedProject.buildings && loadedProject.buildings.length > 1) {
+      console.log(`[Multi-Building Fallback] Projekt hat ${loadedProject.buildings.length} Gebäude, lade zusätzliche...`);
+      setLoadingAdditionalBuildings(true);
+
+      try {
+        const additionalAddresses = loadedProject.buildings.slice(1).map(b => b.address);
+        const additionalData = await Promise.all(
+          additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
+        );
+        const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
+        setManualAdditionalBuildings(validAdditional);
+        console.log(`[Multi-Building Fallback] ${validAdditional.length} zusätzliche Gebäude geladen`);
+      } catch (err) {
+        console.error('[Multi-Building Fallback] Fehler beim Laden:', err);
+      } finally {
+        setLoadingAdditionalBuildings(false);
+      }
+    }
   };
 
   // Load project from API (fallback for direct links)
@@ -1141,6 +1195,7 @@ export default function ConfiguratorPage() {
         selectedFacades={convertToSelectedFacades(buildingData)}
         roof={convertRoofData(buildingData)}
         neighbors={filteredNeighbors}
+        blockingNeighbors={blockingNeighbors}
         blockedSides={blockedSides}
         // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
         blockedFacadesData={blockedFacadesData}

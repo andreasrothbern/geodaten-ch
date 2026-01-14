@@ -29,8 +29,8 @@ from shapely.ops import unary_union
 
 logger = logging.getLogger(__name__)
 
-# Parquet-Output-Verzeichnis
-PARQUET_DIR = Path(__file__).parent.parent / "data" / "parquet"
+# NEU 15.01.2026: PARQUET_DIR aus config.py für Ephemeral Storage
+from app.config import PARQUET_DIR
 
 
 # =============================================================================

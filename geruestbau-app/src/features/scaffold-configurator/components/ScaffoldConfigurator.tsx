@@ -24,7 +24,8 @@ interface ScaffoldConfiguratorProps {
   buildingPolygon?: [number, number][];  // ORIGINAL from swissBUILDINGS3D (LV95)
   selectedFacades: SelectedFacade[];
   roof?: RoofData;
-  neighbors?: NeighborBuilding[];  // Neighboring buildings for 3D view
+  neighbors?: NeighborBuilding[];  // Neighboring buildings for 3D view (filtered by slider)
+  blockingNeighbors?: NeighborBuilding[];  // FIX 15.01.2026 01:45 - Neighbors for blocking check (always active, within 2m)
   blockedSides?: string[];  // Facade directions blocked by neighbors (fallback)
   // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
   blockedFacadesData?: BlockedFacadesData | null;
@@ -48,6 +49,7 @@ export default function ScaffoldConfigurator({
   selectedFacades,
   roof,
   neighbors = [],
+  blockingNeighbors = [],
   blockedSides = [],
   blockedFacadesData,
   additionalBuildings = [],
@@ -158,7 +160,7 @@ export default function ScaffoldConfigurator({
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4">
-        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} additionalBuildings={additionalBuildings} facadeZMin={facadeZMin} facadeZMax={facadeZMax} />}
+        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockingNeighbors={blockingNeighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} additionalBuildings={additionalBuildings} facadeZMin={facadeZMin} facadeZMax={facadeZMax} />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
         {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} zones={zones} complexity={complexity} />}

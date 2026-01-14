@@ -345,15 +345,11 @@ def _parse_wall_layer_from_gdb(gdb_path: Path) -> list:
 
                 valid_count += 1
 
-                # Geometrie parsen und als WKB speichern
+                # OPTIMIERUNG 15.01.2026: geometry_wkb NICHT beim Prefetch speichern
+                # Reduziert DB-Grösse von ~557MB auf ~308MB (45% Ersparnis!)
+                # Wall-Geometrie wird nur für angefragte Gebäude gespeichert
+                # via roof_3d_service.fetch_all_layers_on_demand()
                 geometry_wkb = None
-                if feature['geometry'] is not None:
-                    try:
-                        geom = shape(feature['geometry'])
-                        geometry_wkb = geom.wkb
-                    except Exception as e:
-                        logger.debug(f"Wall-Geometrie-Fehler: {e}")
-                        continue
 
                 # z_min und z_max berechnen
                 # Wall-Layer hat GELAENDEPUNKT (Terrain) und GESAMTHOEHE (Wandhöhe)
@@ -375,7 +371,8 @@ def _parse_wall_layer_from_gdb(gdb_path: Path) -> list:
         if valid_count > 0:
             logger.info(
                 f"[WALL] Wall-Layer geparst: {len(walls)} Wände | "
-                f"{parse_time_ms:.0f}ms ({parse_time_ms/max(1,len(walls)):.1f}ms/Wand)"
+                f"{parse_time_ms:.0f}ms ({parse_time_ms/max(1,len(walls)):.1f}ms/Wand) | "
+                f"geometry_wkb=SKIPPED (on-demand)"
             )
 
         # NEU 14.01.2026: Import-Metriken für Baseline-Messung aktualisieren

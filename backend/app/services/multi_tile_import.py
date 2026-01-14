@@ -362,7 +362,7 @@ def cleanup_all_temp_files():
     Nützlich für manuellen Cleanup nach unterbrochenen Imports.
     """
     from app.services.parquet_writer import cleanup_parquet_dir, PARQUET_DIR
-    from app.config import DATA_DIR
+    from app.config import TILES_DIR  # NEU 15.01.2026: Aus Ephemeral Storage
 
     cleaned = {
         "parquet_deleted": False,
@@ -374,10 +374,9 @@ def cleanup_all_temp_files():
         cleanup_parquet_dir(None)  # None = alles löschen
         cleaned["parquet_deleted"] = True
 
-    # Alte Tile-Verzeichnisse prüfen (optional: älter als 7 Tage)
-    tiles_dir = DATA_DIR / "tiles"
-    if tiles_dir.exists():
-        for tile_dir in tiles_dir.iterdir():
+    # Alte Tile-Verzeichnisse prüfen (optional: älter als 24 Stunden)
+    if TILES_DIR.exists():
+        for tile_dir in TILES_DIR.iterdir():
             if tile_dir.is_dir():
                 try:
                     # Lösche nur wenn älter als 24 Stunden

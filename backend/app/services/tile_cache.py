@@ -23,10 +23,14 @@ from typing import Optional, Dict, Any, Tuple
 
 # NEU 13.01.2026 17:30: DuckDB-kompatible Connection für building_3d
 # FIX 14.01.2026 13:50: Zentrale Pfade aus config.py für Railway Volume!
-from app.config import get_building_3d_connection, BUILDING_3D_DB_PATH, DATA_DIR, TILES_DB_PATH
+# NEU 15.01.2026: TILES_DIR aus config.py für Ephemeral Storage
+from app.config import (
+    get_building_3d_connection,
+    BUILDING_3D_DB_PATH,
+    TILES_DB_PATH,
+    TILES_DIR,  # NEU: Aus Ephemeral Storage
+)
 
-# Pfade - NEU: Aus config.py für Railway-Kompatibilität
-TILES_DIR = DATA_DIR / "tiles"
 TILE_CACHE_DB = TILES_DB_PATH  # Nutzt zentrale Config
 
 
