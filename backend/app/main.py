@@ -264,6 +264,78 @@ async def root():
     }
 
 
+@app.get("/debug/storage", tags=["System"])
+async def debug_storage():
+    """
+    NEU 15.01.2026: Diagnose-Endpoint für Storage-Nutzung.
+    Zeigt alle Dateien auf Volume und Ephemeral Storage.
+    """
+    from app.config import DATA_DIR, EPHEMERAL_DIR, BUILDING_3D_DB_PATH, USE_DUCKDB
+    import os
+
+    def get_dir_contents(path: Path, label: str) -> dict:
+        """Listet alle Dateien in einem Verzeichnis mit Grössen."""
+        result = {"path": str(path), "exists": path.exists(), "files": [], "total_mb": 0}
+        if not path.exists():
+            return result
+
+        for item in path.rglob("*"):
+            if item.is_file():
+                try:
+                    size_mb = item.stat().st_size / (1024 * 1024)
+                    result["files"].append({
+                        "name": str(item.relative_to(path)),
+                        "size_mb": round(size_mb, 2)
+                    })
+                    result["total_mb"] += size_mb
+                except Exception:
+                    pass
+
+        result["total_mb"] = round(result["total_mb"], 2)
+        result["files"].sort(key=lambda x: x["size_mb"], reverse=True)
+        return result
+
+    # DuckDB Stats
+    duckdb_stats = {"path": str(BUILDING_3D_DB_PATH), "exists": BUILDING_3D_DB_PATH.exists()}
+    if BUILDING_3D_DB_PATH.exists() and USE_DUCKDB:
+        try:
+            from app.config import get_building_3d_connection
+            conn = get_building_3d_connection(read_only=True)
+
+            # Tabellen-Stats
+            tables = {}
+            for table in ["buildings_3d", "building_roofs", "building_walls"]:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    tables[table] = {"count": count}
+                except:
+                    tables[table] = {"count": 0, "error": "table not found"}
+
+            # Wall geometry check
+            wall_geom = conn.execute("""
+                SELECT COUNT(*) as with_geom,
+                       COALESCE(SUM(octet_length(geometry_wkb)), 0) / 1024 / 1024 as mb
+                FROM building_walls WHERE geometry_wkb IS NOT NULL
+            """).fetchone()
+            tables["building_walls"]["with_geometry"] = wall_geom[0]
+            tables["building_walls"]["geometry_mb"] = round(wall_geom[1], 2)
+
+            conn.close()
+            duckdb_stats["tables"] = tables
+            duckdb_stats["size_mb"] = round(BUILDING_3D_DB_PATH.stat().st_size / (1024 * 1024), 2)
+        except Exception as e:
+            duckdb_stats["error"] = str(e)
+
+    return {
+        "use_duckdb": USE_DUCKDB,
+        "data_dir": get_dir_contents(DATA_DIR, "DATA_DIR (Volume)"),
+        "ephemeral_dir": get_dir_contents(EPHEMERAL_DIR, "EPHEMERAL_DIR"),
+        "building_3d_db": duckdb_stats,
+        "railway_env": os.getenv("RAILWAY_ENVIRONMENT", "nicht gesetzt"),
+        "volume_mount": os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "nicht gesetzt")
+    }
+
+
 @app.get("/debug/libraries", tags=["System"])
 async def debug_libraries():
     """Debug: Zeigt verfügbare Bibliotheken für Dokumentgenerierung"""
