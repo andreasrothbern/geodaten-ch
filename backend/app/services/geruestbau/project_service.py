@@ -14,14 +14,17 @@ from ...models.geruestbau import (
 from ..swisstopo import SwisstopoService
 from ..swissbuildings3d_service import get_swissbuildings3d_service
 from ..smart_building import get_smart_building_service
+# NEU 14.01.2026 13:15: Verwende DATA_DIR aus config für Railway Volume
+from app.config import GERUESTBAU_DB_PATH, BUILDING_CONTEXTS_DB_PATH
 
 
 class ProjectService:
     """Service für Gerüstbau-Projekt-Verwaltung."""
 
     def __init__(self):
-        self.db_path = Path(__file__).parent.parent.parent / "data" / "geruestbau.db"
-        self.contexts_db_path = Path(__file__).parent.parent.parent / "data" / "building_contexts.db"
+        # NEU 14.01.2026 13:15: Nutze zentrale Pfade aus config.py für Railway Volume
+        self.db_path = GERUESTBAU_DB_PATH
+        self.contexts_db_path = BUILDING_CONTEXTS_DB_PATH
         self.swisstopo = SwisstopoService()
         self._init_db()
 
