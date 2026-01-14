@@ -1,9 +1,13 @@
 # 3D-Layer Analyse - Umfassende Bestandsaufnahme
 
-> **Version:** 1.2
-> **Datum:** 14.01.2026 18:30
+> **Version:** 1.3
+> **Datum:** 14.01.2026 14:45
 > **Status:** T1-T4 implementiert ✅
 > **Autor:** Claude Code
+>
+> **NEU 14.01.2026:** 3D-Dach-Rendering für alle Gebäude (Fix ScaffoldScene.tsx)
+>
+> **Siehe auch:** [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) - Railway Volume & Deployment
 
 ---
 
@@ -657,3 +661,5 @@ docs/architecture/
 | 13.01.2026 | 1.0 | Initiale Analyse erstellt |
 | 13.01.2026 | 1.1 | T1 (Wall→Facade Matching) implementiert |
 | 14.01.2026 | 1.2 | T2-T4 implementiert: Fassaden-Höhen End-to-End |
+| 14.01.2026 | 1.3 | 3D-Dach für ALLE Gebäude (Fix ScaffoldScene.tsx) |
+| 14.01.2026 | 1.3 | Railway Fixes → siehe [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) |

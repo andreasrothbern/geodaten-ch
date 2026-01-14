@@ -1,9 +1,13 @@
 # 3D-Layer Datenverwendung
 
-> **Datum:** 14.01.2026 22:00
+> **Datum:** 14.01.2026 14:30
 > **Status:** P1 + P2 + P3 (T1-T4) + P4 ✅ ALLE IMPLEMENTIERT
 > **Basis:** BUILDING_3D_SCHEMA.md, SWISSBUILDINGS3D_ANALYSE.md, 3D_LAYER_ANALYSIS.md
 > **Siehe auch:** [`3D_LAYER_USAGE_SCAFFOLDING.md`](3D_LAYER_USAGE_SCAFFOLDING.md) - Gerüst-Kalkulation Details
+>
+> **NEU 14.01.2026:** 3D-Dachgeometrie wird für ALLE Gebäude gerendert (Fix in ScaffoldScene.tsx)
+>
+> **Siehe auch:** [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) - Railway Volume & Pfad-Konfiguration
 
 ---
 
@@ -839,9 +843,50 @@ facade_heights = matcher.get_facade_heights(egid="2245881", sides=polygon_sides)
 
 ---
 
+## 3D-Dach-Rendering für ALLE Gebäude (NEU 14.01.2026)
+
+### Problem
+
+Das Frontend ignorierte echte 3D-Dachgeometrie für komplexe Gebäude mit Spezialzonen
+(Kuppel, Turm, Treppenhaus). Die Prüfung `shouldRenderRoof` war `false` für solche
+Gebäude, wodurch der gesamte Dach-Rendering-Block übersprungen wurde.
+
+### Lösung: Echte Geometrie IMMER priorisieren
+
+```typescript
+// ScaffoldScene.tsx - FIX 14.01.2026 13:35
+
+// NEU: Prüfe echte 3D-Geometrie UNABHÄNGIG von Komplexität
+const hasReal3DGeometry = config.roof?.has_roof_geometry &&
+                           config.roof?.roof_geometry_coords?.length > 0 &&
+                           config.roof?.roof_dach_min_m;
+
+if (hasReal3DGeometry) {
+  // IMMER echte Geometrie verwenden wenn verfügbar
+  parent.add(createRoofFrom3DGeometry(...));
+} else {
+  // Fallback: Heuristisches Dach NUR für einfache Gebäude ohne echte Daten
+  const shouldRenderHeuristicRoof = !hasSpecialZones || buildingComplexity === 'simple';
+  if (shouldRenderHeuristicRoof) {
+    parent.add(createRoofFromPolygon(...));
+  }
+}
+```
+
+**Betroffene Datei:**
+- `geruestbau-app/src/features/.../ScaffoldScene.tsx:1105-1145`
+
+**Ergebnis:**
+- Bundeshaus: 12 Polygone Dachgeometrie werden jetzt korrekt gerendert
+- Alle komplexen Gebäude: Echte 3D-Dächer sichtbar
+
+---
+
 ## Referenzen
 
 - [`STREAMING_ARCHITECTURE.md`](STREAMING_ARCHITECTURE.md) - SSE-Stream Details
 - [`BUILDING_3D_SCHEMA.md`](BUILDING_3D_SCHEMA.md) - DB-Schema Konzept
 - [`SWISSBUILDINGS3D_ANALYSE.md`](SWISSBUILDINGS3D_ANALYSE.md) - Layer-Details
 - [`3D_LAYER_ANALYSIS.md`](3D_LAYER_ANALYSIS.md) - Detailanalyse, Service-Layer Diagramme
+- [`3D_LAYER_USAGE_3D_VIEW.md`](3D_LAYER_USAGE_3D_VIEW.md) - 3D-View Rendering Details
+- [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) - Railway Volume & Deployment Guide

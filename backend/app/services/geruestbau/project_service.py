@@ -3,9 +3,12 @@
 import uuid
 import sqlite3
 import json
+import logging
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from ...models.geruestbau import (
     Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
@@ -231,50 +234,119 @@ class ProjectService:
 
         Verwendet den zentralen smart_building_cache (building_contexts.db),
         der alle Gebäudedaten enthält (Polygon, Höhen, Terrain, Zonen, etc.).
+
+        FIX 14.01.2026 14:00: Fallback auf SmartBuildingService.collect_all_data()
+        wenn Cache leer ist (z.B. nach Railway Redeployment).
         """
         project = await self.get_project(project_id)
         if not project:
             return None
 
         geodata = None
+        bundle = None
+
+        # Versuch 1: Bundle aus Cache laden (wenn EGID vorhanden)
         if project.egid:
             bundle = self._get_bundle_from_smart_service(project.egid)
-            if bundle:
-                # Bundle zu Geodata-Format konvertieren (kompatibel mit Frontend)
-                geodata = {
-                    'egid': bundle.get('egid'),
-                    'address': bundle.get('address_matched'),
-                    'polygon': bundle.get('polygon'),
-                    'traufhoehe_m': bundle.get('traufhoehe_m'),
-                    'firsthoehe_m': bundle.get('firsthoehe_m'),
-                    'gebaeudehoehe_m': bundle.get('gebaeudehoehe_m'),
-                    'area_m2': bundle.get('footprint_area_m2'),
-                    'perimeter_m': bundle.get('perimeter_m'),
-                    'center_e': bundle.get('lv95_e'),
-                    'center_n': bundle.get('lv95_n'),
-                    'coord_e': bundle.get('lv95_e'),
-                    'coord_n': bundle.get('lv95_n'),
-                    # Zusätzliche Felder aus dem Bundle
-                    'sides': bundle.get('sides'),
-                    'terrain': bundle.get('terrain'),
-                    'zones': bundle.get('zones'),
-                    'roof_type': bundle.get('roof_type'),
-                    'roof_angle_deg': bundle.get('roof_angle_deg'),
-                    'roof_orientation': bundle.get('roof_orientation'),
-                    'complexity': bundle.get('complexity'),
-                    'building_type': bundle.get('building_type'),
-                }
-                # NEU 14.01.2026 18:00 - Fassaden-Höhen direkt ins geodata (für BuildingDataCard)
-                terrain = bundle.get('terrain')
-                if terrain:
-                    geodata['facade_z_min'] = terrain.get('facade_z_min')
-                    geodata['facade_z_max'] = terrain.get('facade_z_max')
-                    geodata['facade_heights_source'] = terrain.get('facade_heights_source')
-                    geodata['terrain_height_m'] = terrain.get('reference_height_m')
-                    geodata['slope_m'] = terrain.get('slope_m')
-                    geodata['slope_class'] = terrain.get('slope_class')
-                # NEU 14.01.2026 18:05 - 3D-Layer Flag
-                geodata['has_3d_layers'] = bundle.get('has_3d_layers', False)
+
+        # FIX 14.01.2026 14:00 / 15:15: Fallback - Bundle neu laden wenn Cache leer ODER keine EGID
+        # collect_all_data() speichert das Bundle automatisch im Cache,
+        # danach laden wir es mit _get_bundle_from_smart_service() für konsistente Struktur
+        if bundle is None and project.address:
+            logger.info(f"[PROJECT] Bundle nicht im Cache, lade neu für {project.address}")
+            try:
+                smart_service = get_smart_building_service()
+                new_bundle = await smart_service.collect_all_data(
+                    address=project.address,
+                    force_refresh=False,
+                    include_research=True,
+                    include_zones_analysis=True,
+                    include_terrain=True
+                )
+                if new_bundle and new_bundle.egid:
+                    # Bundle wurde im Cache gespeichert, jetzt mit korrekter Struktur laden
+                    bundle = self._get_bundle_from_smart_service(new_bundle.egid)
+                    if bundle:
+                        logger.info(f"[PROJECT] Bundle neu geladen für EGID {new_bundle.egid}")
+                    else:
+                        # Fallback: Falls Cache-Load fehlschlägt, manuell konvertieren
+                        logger.warning(f"[PROJECT] Cache-Load fehlgeschlagen, verwende direkte Konvertierung")
+                        bundle = {
+                            'egid': new_bundle.egid,
+                            'address_matched': new_bundle.address_matched,
+                            'polygon': new_bundle.polygon,
+                            'sides': new_bundle.sides,
+                            'traufhoehe_m': new_bundle.traufhoehe_m,
+                            'firsthoehe_m': new_bundle.firsthoehe_m,
+                            'gebaeudehoehe_m': new_bundle.gebaeudehoehe_m,
+                            'footprint_area_m2': new_bundle.footprint_area_m2,
+                            'perimeter_m': new_bundle.perimeter_m,
+                            'lv95_e': new_bundle.lv95_e,
+                            'lv95_n': new_bundle.lv95_n,
+                            'terrain': {
+                                'reference_height_m': new_bundle.terrain.reference_height_m,
+                                'slope_m': new_bundle.terrain.slope_m,
+                                'slope_class': new_bundle.terrain.slope_class,
+                                'facade_z_min': new_bundle.terrain.facade_z_min,
+                                'facade_z_max': new_bundle.terrain.facade_z_max,
+                                'facade_heights_source': new_bundle.terrain.facade_heights_source,
+                            } if new_bundle.terrain else None,
+                            'zones': [
+                                {
+                                    'id': z.id,
+                                    'name': z.name,
+                                    'zone_type': z.zone_type,
+                                    'traufhoehe_m': z.traufhoehe_m,
+                                    'firsthoehe_m': z.firsthoehe_m,
+                                }
+                                for z in new_bundle.zones
+                            ] if new_bundle.zones else None,
+                            'roof_type': new_bundle.roof_type,
+                            'roof_angle_deg': new_bundle.roof_angle_deg,
+                            'roof_orientation': new_bundle.roof_orientation,
+                            'complexity': new_bundle.complexity,
+                            'building_type': new_bundle.building_type,
+                            'has_3d_layers': new_bundle.has_3d_layers,
+                        }
+            except Exception as e:
+                logger.error(f"[PROJECT] Fehler beim Laden des Bundles: {e}")
+
+        if bundle:
+            # Bundle zu Geodata-Format konvertieren (kompatibel mit Frontend)
+            geodata = {
+                'egid': bundle.get('egid'),
+                'address': bundle.get('address_matched'),
+                'polygon': bundle.get('polygon'),
+                'traufhoehe_m': bundle.get('traufhoehe_m'),
+                'firsthoehe_m': bundle.get('firsthoehe_m'),
+                'gebaeudehoehe_m': bundle.get('gebaeudehoehe_m'),
+                'area_m2': bundle.get('footprint_area_m2'),
+                'perimeter_m': bundle.get('perimeter_m'),
+                'center_e': bundle.get('lv95_e'),
+                'center_n': bundle.get('lv95_n'),
+                'coord_e': bundle.get('lv95_e'),
+                'coord_n': bundle.get('lv95_n'),
+                # Zusätzliche Felder aus dem Bundle
+                'sides': bundle.get('sides'),
+                'terrain': bundle.get('terrain'),
+                'zones': bundle.get('zones'),
+                'roof_type': bundle.get('roof_type'),
+                'roof_angle_deg': bundle.get('roof_angle_deg'),
+                'roof_orientation': bundle.get('roof_orientation'),
+                'complexity': bundle.get('complexity'),
+                'building_type': bundle.get('building_type'),
+            }
+            # NEU 14.01.2026 18:00 - Fassaden-Höhen direkt ins geodata (für BuildingDataCard)
+            terrain = bundle.get('terrain')
+            if terrain:
+                geodata['facade_z_min'] = terrain.get('facade_z_min')
+                geodata['facade_z_max'] = terrain.get('facade_z_max')
+                geodata['facade_heights_source'] = terrain.get('facade_heights_source')
+                geodata['terrain_height_m'] = terrain.get('reference_height_m')
+                geodata['slope_m'] = terrain.get('slope_m')
+                geodata['slope_class'] = terrain.get('slope_class')
+            # NEU 14.01.2026 18:05 - 3D-Layer Flag
+            geodata['has_3d_layers'] = bundle.get('has_3d_layers', False)
 
         return ProjectWithGeodata(
             **project.model_dump(),
