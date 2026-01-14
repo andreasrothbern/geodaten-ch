@@ -332,6 +332,7 @@ async def get_facade_data_for_configurator(
     building_name = None
     complexity = "simple"
     research_source = "auto"
+    bundle = None  # NEU 14.01.2026: Initialisierung für 3D-Geometrie
 
     try:
         # SmartBuildingService liefert zones, building_name, complexity, research_source
@@ -361,9 +362,49 @@ async def get_facade_data_for_configurator(
         complexity = bundle.complexity
         research_source = bundle.research_source
 
+        # NEU 14.01.2026: 3D-Dachgeometrie aus Bundle übernehmen
+        if bundle.has_roof_geometry and bundle.roof_geometry_wkb:
+            from shapely import wkb
+
+            def _wkb_to_coords(wkb_data: bytes):
+                """Konvertiert WKB zu JSON-Koordinaten."""
+                if not wkb_data:
+                    return None
+                try:
+                    geom = wkb.loads(wkb_data)
+
+                    def extract_coords(geometry):
+                        if geometry.is_empty:
+                            return []
+                        geom_type = geometry.geom_type
+                        if geom_type == 'Polygon':
+                            coords = list(geometry.exterior.coords)
+                            return [[[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords]]
+                        elif geom_type == 'MultiPolygon':
+                            result = []
+                            for poly in geometry.geoms:
+                                coords = list(poly.exterior.coords)
+                                result.append([[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords])
+                            return result
+                        elif geom_type in ('GeometryCollection', 'MultiSurface'):
+                            result = []
+                            for g in geometry.geoms:
+                                result.extend(extract_coords(g))
+                            return result
+                        return []
+
+                    return extract_coords(geom)
+                except Exception:
+                    return None
+
+            roof_geometry_coords = _wkb_to_coords(bundle.roof_geometry_wkb)
+        else:
+            roof_geometry_coords = None
+
     except Exception as zone_error:
         logger.warning(f"Konnte Zonen nicht laden: {zone_error}")
         # Fallback: Keine Zonen-Daten
+        roof_geometry_coords = None
 
     # 6. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
@@ -381,7 +422,14 @@ async def get_facade_data_for_configurator(
             "center_n": n,
         },
         "selected_facades": selected_facades,
-        "roof": roof_data.to_dict(),
+        "roof": {
+            **roof_data.to_dict(),
+            # NEU 14.01.2026: Echte 3D-Dachgeometrie aus swissBUILDINGS3D
+            "roof_geometry_coords": roof_geometry_coords,
+            "has_roof_geometry": roof_geometry_coords is not None and len(roof_geometry_coords) > 0,
+            "roof_dach_min_m": bundle.roof_dach_min_m if bundle else None,
+            "roof_dach_max_m": bundle.roof_dach_max_m if bundle else None,
+        },
         # Zonen-Daten für komplexe GebÃ¤ude (NEU 05.01.2026)
         "zones": zones_data,
         "building_name": building_name,

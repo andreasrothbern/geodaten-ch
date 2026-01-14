@@ -482,6 +482,88 @@ function createRoofFromPolygon(
   return group;
 }
 
+// NEU 14.01.2026: Echte 3D-Dachgeometrie aus swissBUILDINGS3D
+// Rendert die tatsächliche Dachform basierend auf den importierten 3D-Koordinaten
+function createRoofFrom3DGeometry(
+  roofCoords: number[][][],  // Array von Polygonen: [[[E, N, Z], ...], ...]
+  centerE: number,           // Gebäude-Zentrum E (LV95)
+  centerN: number,           // Gebäude-Zentrum N (LV95)
+  roofDachMinM: number,      // Niedrigste Z-Höhe (Traufe) in m ü.M.
+  buildingHeight: number     // Traufhöhe im lokalen Koordinatensystem (Y-Offset)
+): THREE.Group {
+  const group = new THREE.Group();
+
+  if (!roofCoords || roofCoords.length === 0) {
+    console.warn('[3D-ROOF] Keine Dach-Koordinaten vorhanden');
+    return group;
+  }
+
+  const roofMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8b5cf6,  // Violett wie das heuristische Dach
+    side: THREE.DoubleSide,
+  });
+
+  // Transformiere jedes Polygon (Dreieck/Fläche)
+  roofCoords.forEach((polygon) => {
+    if (polygon.length < 3) return;
+
+    // Transformiere Koordinaten von LV95 zu lokalen Three.js Koordinaten
+    // X = E - centerE
+    // Z = -(N - centerN)  [negiert für Three.js Koordinatensystem]
+    // Y = buildingHeight + (Z_abs - roofDachMinM)  [relative Höhe über Traufe]
+    const transformedPoints = polygon.map(point => {
+      const [e, n, z] = point;
+      return {
+        x: e - centerE,
+        y: buildingHeight + (z - roofDachMinM),  // Relative Höhe
+        z: -(n - centerN),  // Negiert für Three.js
+      };
+    });
+
+    // Erstelle BufferGeometry für dieses Polygon
+    if (polygon.length === 4) {
+      // Dreieck (4 Punkte = 3 Eckpunkte + 1 Schlusspunkt)
+      // Verwende nur die ersten 3 Punkte
+      const vertices = new Float32Array([
+        transformedPoints[0].x, transformedPoints[0].y, transformedPoints[0].z,
+        transformedPoints[1].x, transformedPoints[1].y, transformedPoints[1].z,
+        transformedPoints[2].x, transformedPoints[2].y, transformedPoints[2].z,
+      ]);
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.setIndex([0, 1, 2]);  // Ein Dreieck
+      geometry.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(geometry, roofMaterial);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    } else {
+      // Komplexeres Polygon - verwende ShapeGeometry
+      const shape = new THREE.Shape();
+      shape.moveTo(transformedPoints[0].x, transformedPoints[0].z);
+      for (let i = 1; i < transformedPoints.length - 1; i++) {
+        shape.lineTo(transformedPoints[i].x, transformedPoints[i].z);
+      }
+      shape.closePath();
+
+      const geometry = new THREE.ShapeGeometry(shape);
+      const mesh = new THREE.Mesh(geometry, roofMaterial);
+
+      // Rotiere für horizontale Ausrichtung und setze Y-Position
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = transformedPoints[0].y;  // Verwende die Höhe des ersten Punkts
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+  });
+
+  console.log(`[3D-ROOF] Echte Dachgeometrie gerendert: ${roofCoords.length} Polygone`);
+  return group;
+}
+
 // Legacy helper to create roof geometry (for fallback box-based buildings)
 function createRoof(
   width: number,
@@ -1028,11 +1110,34 @@ export default function ScaffoldScene({
       const shouldRenderRoof = !hasSpecialZones || buildingComplexity === 'simple';
 
       if (shouldRenderRoof) {
-        const roofType = config.roof?.roof_type || 'satteldach';
-        const roofHeight = config.roof?.trauf_to_first_m || 3;
-        const roofOrientation = config.roof?.roof_orientation || 'O-W';
-        const roofOverhang = config.roof?.roof_overhang_m || 0.4;
-        parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+        // NEU 14.01.2026: Echte 3D-Dachgeometrie priorisieren wenn verfügbar
+        const hasReal3DGeometry = config.roof?.has_roof_geometry &&
+                                   config.roof?.roof_geometry_coords &&
+                                   config.roof.roof_geometry_coords.length > 0 &&
+                                   config.roof?.roof_dach_min_m;
+
+        if (hasReal3DGeometry) {
+          // Echte 3D-Geometrie aus swissBUILDINGS3D verwenden
+          console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie', {
+            polygons: config.roof!.roof_geometry_coords!.length,
+            dachMin: config.roof!.roof_dach_min_m,
+            dachMax: config.roof!.roof_dach_max_m,
+          });
+          parent.add(createRoofFrom3DGeometry(
+            config.roof!.roof_geometry_coords!,
+            bboxCenter[0],  // center_e (LV95)
+            bboxCenter[1],  // center_n (LV95)
+            config.roof!.roof_dach_min_m!,
+            buildingHeight
+          ));
+        } else {
+          // Fallback: Heuristisches Dach basierend auf Polygon-Form
+          const roofType = config.roof?.roof_type || 'satteldach';
+          const roofHeight = config.roof?.trauf_to_first_m || 3;
+          const roofOrientation = config.roof?.roof_orientation || 'O-W';
+          const roofOverhang = config.roof?.roof_overhang_m || 0.4;
+          parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+        }
       }
 
       // Add zones for complex buildings (Türme, Kuppeln, Anbauten, etc.)

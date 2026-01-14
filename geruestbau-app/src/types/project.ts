@@ -64,6 +64,9 @@ export interface Geodata {
   roof_dach_min_m?: number  // Traufhöhe absolut (m ü.M.)
   roof_dach_max_m?: number  // Firsthöhe absolut (m ü.M.)
   roof_gebaeudeeinheit?: string
+  // NEU 14.01.2026: Echte 3D-Dachgeometrie als Koordinaten-Array
+  // Format: Array von Polygonen, jedes Polygon ist Array von [E, N, Z] Punkten
+  roof_geometry_coords?: number[][][]
   // Dach-Analyse Daten
   roof_type?: string  // flachdach, satteldach, walmdach, etc.
   roof_orientation?: string  // 'N-S' oder 'O-W' (First-Verlauf)

@@ -639,7 +639,7 @@ Gefährdungszonen:
 |-------|----------|--------|
 | **Phase 1** | P1: Wall-Layer Höhen | ✅ ERLEDIGT (14.01.2026) |
 | **Phase 2** | P2a: Dachform-Erkennung | ✅ ERLEDIGT (14.01.2026) |
-| **Phase 2** | P2b: 3D-Dachform im Viewer | ⏳ Bereit zur Umsetzung |
+| **Phase 2** | P2b: 3D-Dachform im Viewer | ✅ ERLEDIGT (14.01.2026) |
 | **Phase 3** | P3a: Zugangs-Vorschläge, P3b: Gefährdungszonen | ⏳ Geplant |
 | **Phase 4** | Transport, Schatten, Export | 📋 Backlog |
 
@@ -731,3 +731,109 @@ Gefährdungszonen:
 | **3** | PSA-Empfehlung | SUVA-Compliance, automatisch |
 | **4** | Dachfläche 3D | Präzisere Materialkalkulation |
 | **5** | Export DXF | Integration mit CAD-Software |
+
+---
+
+## P2b: Echte 3D-Dachform im Viewer (Stand 14.01.2026)
+
+### Implementiert ✅
+
+Die echte 3D-Dachgeometrie aus dem swissBUILDINGS3D Roof_solid Layer wird jetzt im Three.js Viewer gerendert.
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    P2B: ECHTE 3D-DACHGEOMETRIE                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  1. WKB-Geometrie aus building_roofs.geometry_wkb                               │
+│     │                                                                           │
+│     ├─ On-Demand Import (roof_3d_service.py)                                   │
+│     │   └─ fetch_all_layers_on_demand() → geometry_wkb in DB                   │
+│     │                                                                           │
+│     └─ Laden in Bundle (_load_roof_data_from_db)                               │
+│         └─ bundle.roof_geometry_wkb = bytes (WKB)                              │
+│                                                                                 │
+│  2. WKB → JSON Konvertierung (main.py:_wkb_to_coords)                          │
+│     │                                                                           │
+│     ├─ from shapely import wkb                                                 │
+│     ├─ geom = wkb.loads(wkb_data)                                              │
+│     └─ Koordinaten extrahieren (Polygon, MultiPolygon, GeometryCollection)     │
+│                                                                                 │
+│  3. API Response (geruestbau.py:/configurator/facades)                         │
+│     │                                                                           │
+│     └─ "roof": {                                                               │
+│            "roof_geometry_coords": [[[ [E,N,Z], [E,N,Z], ... ]], ...],        │
+│            "has_roof_geometry": true,                                          │
+│            "roof_dach_min_m": 569.55,                                          │
+│            "roof_dach_max_m": 571.05                                           │
+│        }                                                                       │
+│                                                                                 │
+│  4. Frontend (ScaffoldScene.tsx)                                               │
+│     │                                                                           │
+│     ├─ if (hasReal3DGeometry)                                                  │
+│     │   └─ createRoofFrom3DGeometry(roofCoords, centerE, centerN, ...)        │
+│     │                                                                           │
+│     └─ else (Fallback)                                                         │
+│         └─ createRoofFromPolygon() // Heuristisches Dach                       │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Koordinaten-Transformation (LV95 → Three.js)
+
+```typescript
+// ScaffoldScene.tsx:createRoofFrom3DGeometry()
+
+// Input: LV95 Koordinaten (E, N, Z in Metern ü.M.)
+const [e, n, z] = coord;  // z.B. [2600450.5, 1199830.2, 570.15]
+
+// Output: Three.js lokale Koordinaten
+const x = e - centerE;           // Relativ zum Gebäudezentrum
+const threeZ = -(n - centerN);   // Y-Achse invertiert!
+const y = buildingHeight + (z - roofDachMinM);  // Höhe über Gebäude
+```
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/main.py:3768-3819` | `_wkb_to_coords()` Konverter |
+| `backend/app/routers/geruestbau.py:363-406` | `roof_geometry_coords` in Response |
+| `backend/app/services/smart_building/service.py:465-468` | Base64 Cache-Serialisierung |
+| `geruestbau-app/src/types/project.ts:69` | `roof_geometry_coords` TypeScript Interface |
+| `geruestbau-app/src/.../scaffold.types.ts:77-82` | 3D-Dach Interfaces |
+| `geruestbau-app/src/pages/ConfiguratorPage.tsx:1079-1082` | Dach-Daten Mapping |
+| `geruestbau-app/src/.../ScaffoldScene.tsx:485-566` | `createRoofFrom3DGeometry()` |
+| `geruestbau-app/src/.../ScaffoldScene.tsx:1112-1138` | Rendering-Logik |
+
+### Cache-Serialisierung (WKB als Base64)
+
+```python
+# service.py - _bundle_to_dict()
+"roof_geometry_wkb_base64": base64.b64encode(bundle.roof_geometry_wkb).decode('ascii')
+
+# service.py - _dict_to_bundle()
+if data.get("roof_geometry_wkb_base64"):
+    bundle.roof_geometry_wkb = base64.b64decode(data["roof_geometry_wkb_base64"])
+```
+
+### Testfall: Bundeshaus
+
+```
+API Response für Bundesplatz 3, 3011 Bern:
+  - roof_geometry_coords: 12 Polygone
+  - Z-Range: 569.55 - 571.05 m ü.M.
+  - has_roof_geometry: true
+```
+
+### Fallback-Strategie
+
+```
+1. has_roof_geometry == true?
+   → createRoofFrom3DGeometry() // Echte 3D-Geometrie
+
+2. Sonst (has_roof_geometry == false):
+   → createRoofFromPolygon()    // Heuristisches Dach (Satteldach etc.)
+```

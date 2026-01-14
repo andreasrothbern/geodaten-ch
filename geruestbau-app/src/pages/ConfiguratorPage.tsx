@@ -1076,6 +1076,11 @@ export default function ConfiguratorPage() {
       roof_overhang_m: data.roof.roof_overhang_m,
       // Use traufhoehe from roof data (calculated by backend), fallback to building data
       traufhoehe_m: data.roof.traufhoehe_m ?? data.building.trauf_height_m,
+      // NEU 14.01.2026: Echte 3D-Dachgeometrie für präzise Visualisierung
+      roof_geometry_coords: data.roof.roof_geometry_coords,
+      has_roof_geometry: data.roof.has_roof_geometry,
+      roof_dach_min_m: data.roof.roof_dach_min_m,
+      roof_dach_max_m: data.roof.roof_dach_max_m,
     };
   };
 

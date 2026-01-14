@@ -72,6 +72,13 @@ export interface RoofData {
   roof_overhang_m?: number; // Default: 0.4m
   // Traufhöhe für 3D-Visualisierung (Gebäudehöhe bis Dachansatz)
   traufhoehe_m?: number;
+  // NEU 14.01.2026: Echte 3D-Dachgeometrie aus swissBUILDINGS3D Roof_solid Layer
+  // Format: Array von Polygonen, jedes Polygon ist Array von [E, N, Z] Punkten (LV95)
+  roof_geometry_coords?: number[][][];
+  has_roof_geometry?: boolean;
+  // Absolute Höhen für Transformation (m ü.M.)
+  roof_dach_min_m?: number;  // Traufhöhe absolut
+  roof_dach_max_m?: number;  // Firsthöhe absolut
 }
 
 // Zone data for complex buildings (from known_buildings or Claude API)

@@ -30,6 +30,7 @@ CACHING:
 """
 
 import asyncio
+import base64  # NEU 14.01.2026: Für WKB-Serialisierung im Cache
 import logging
 import hashlib
 import json
@@ -360,6 +361,8 @@ class SmartBuildingService:
             "has_roof_geometry": bundle.has_roof_geometry,
             "roof_dach_min_m": bundle.roof_dach_min_m,
             "roof_dach_max_m": bundle.roof_dach_max_m,
+            # NEU 14.01.2026: 3D-Dachgeometrie als Base64 für Cache
+            "roof_geometry_wkb_base64": base64.b64encode(bundle.roof_geometry_wkb).decode('ascii') if bundle.roof_geometry_wkb else None,
         }
 
     def _dict_to_bundle(self, data: Dict[str, Any]) -> BuildingDataBundle:
@@ -453,6 +456,13 @@ class SmartBuildingService:
                 bundle.data_sources.append(DataSource(s))
             except ValueError:
                 pass
+
+        # NEU 14.01.2026: 3D-Dachgeometrie aus Cache laden
+        bundle.has_roof_geometry = data.get("has_roof_geometry", False)
+        bundle.roof_dach_min_m = data.get("roof_dach_min_m")
+        bundle.roof_dach_max_m = data.get("roof_dach_max_m")
+        if data.get("roof_geometry_wkb_base64"):
+            bundle.roof_geometry_wkb = base64.b64decode(data["roof_geometry_wkb_base64"])
 
         return bundle
 
