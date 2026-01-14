@@ -29,11 +29,13 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Basis-Verzeichnis für Daten
-# NEU 14.01.2026 02:15: Nutzt DATA_DIR Umgebungsvariable für Railway Volume
-# - Railway: /app/data (Volume mount)
+# NEU 14.01.2026 12:00: Nutzt RAILWAY_VOLUME_MOUNT_PATH oder DATA_DIR
+# - Railway: /app/data (aus RAILWAY_VOLUME_MOUNT_PATH, automatisch gesetzt)
 # - Lokal: ./app/data (relativ zum Code)
 _default_data_dir = Path(__file__).parent / "data"
-DATA_DIR = Path(os.getenv("DATA_DIR", str(_default_data_dir)))
+# Priorisiere RAILWAY_VOLUME_MOUNT_PATH (von Railway automatisch gesetzt wenn Volume attached)
+_data_dir_env = os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DATA_DIR")
+DATA_DIR = Path(_data_dir_env) if _data_dir_env else _default_data_dir
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
