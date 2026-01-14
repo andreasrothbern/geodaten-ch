@@ -29,6 +29,7 @@ from app.config import (
     BUILDING_3D_DB_PATH,
     TILES_DB_PATH,
     TILES_DIR,  # NEU: Aus Ephemeral Storage
+    DATA_DIR,   # FIX 15.01.2026: Fehlender Import
 )
 
 TILE_CACHE_DB = TILES_DB_PATH  # Nutzt zentrale Config
