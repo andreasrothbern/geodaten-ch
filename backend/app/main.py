@@ -270,6 +270,7 @@ async def debug_storage():
     NEU 15.01.2026: Diagnose-Endpoint für Storage-Nutzung.
     Zeigt alle Dateien auf Volume und Ephemeral Storage.
     """
+    from pathlib import Path
     from app.config import DATA_DIR, EPHEMERAL_DIR, BUILDING_3D_DB_PATH, USE_DUCKDB
     import os
 
