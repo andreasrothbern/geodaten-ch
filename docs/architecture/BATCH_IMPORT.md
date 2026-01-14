@@ -1969,10 +1969,91 @@ für eine sync-Funktion). Mit dem `asyncio.to_thread()` Wrapper blockiert das Ba
 
 ---
 
+## Railway Deployment: Admin-Import (NEU 15.01.2026 02:30)
+
+Nach dem Deployment auf Railway startet die Datenbank **leer**. Die Gebäude müssen via API importiert werden.
+
+### Voraussetzungen
+
+1. **Railway Volume** muss konfiguriert sein:
+   - Dashboard → Service → Settings → Volumes
+   - Mount Path: `/app/data`
+
+2. **Backend läuft** und ist erreichbar
+
+### Schritt-für-Schritt Anleitung
+
+```bash
+# Railway Backend URL
+BASE_URL="https://acceptable-trust-production.up.railway.app"
+
+# 1. Verfügbare Regionen anzeigen
+curl "$BASE_URL/api/v1/batch/import/regions"
+
+# 2. Schnelltest mit kleiner Region (1-2 min)
+curl -X POST "$BASE_URL/api/v1/batch/import/region/solothurn"
+
+# 3. Status prüfen (wiederholen bis "running": false)
+curl "$BASE_URL/api/v1/batch/import/status"
+
+# 4. DB-Statistiken prüfen
+curl "$BASE_URL/api/v1/batch/import/db-stats"
+
+# 5. Produktions-Region importieren (10-15 min)
+curl -X POST "$BASE_URL/api/v1/batch/import/region/bern"
+```
+
+### Import-Reihenfolge (Empfehlung)
+
+| Schritt | Region | Tiles | Zeit | Gebäude |
+|---------|--------|-------|------|---------|
+| 1. Test | `solothurn` | 2 | ~2 min | ~3,000 |
+| 2. Produktion | `bern` | 11 | ~10 min | ~42,000 |
+| 3. Optional | `basel` | 16 | ~15 min | ~25,000 |
+| 4. Optional | `zurich` | 50 | ~45 min | ~80,000 |
+
+### Status-Response verstehen
+
+```json
+{
+  "running": true,           // Import läuft noch
+  "task": "region:bern",     // Aktuelle Region
+  "tiles_total": 11,         // Gesamtzahl Tiles
+  "tiles_processed": 5,      // Abgeschlossen
+  "tiles_failed": 0,         // Fehlgeschlagen
+  "buildings_imported": 23450, // Gebäude bisher
+  "current_tile": "1047-34", // Aktuelles Tile
+  "elapsed_seconds": 245.3   // Laufzeit
+}
+```
+
+### Fehlerbehandlung
+
+| Fehler | Lösung |
+|--------|--------|
+| `409 Conflict` | Import läuft bereits - warten oder Backend neu starten |
+| `404 Not Found` | Region existiert nicht - `/regions` prüfen |
+| `tiles_failed > 0` | Einzelne Tiles fehlgeschlagen - `/status` → `errors` prüfen |
+
+### Nach dem Import
+
+Die Daten bleiben **persistent** im Railway Volume:
+- Bei Redeploy: Daten bleiben erhalten
+- Bei Volume-Löschung: Neu importieren nötig
+
+```bash
+# Prüfen ob Daten vorhanden
+curl "$BASE_URL/api/v1/batch/import/db-stats"
+# → buildings.total_count > 0
+```
+
+---
+
 ## Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 15.01.2026 02:30 | 7.1 | **Railway Admin-Import:** Neue Sektion für API-basiertes Importieren nach Deployment. Schritt-für-Schritt Anleitung mit curl-Befehlen. |
 | 14.01.2026 00:15 | 6.9 | **DB-Statistiken verifiziert:** 4,832 Gebäude, 30,443 Dächer, 29,927 Wände in DuckDB (402 MB). `get_stats()` in `building_3d_service.py` um roofs/walls erweitert. Endpoint `/api/v1/batch/import/db-stats` zeigt jetzt alle Tabellen. |
 | 15.01.2026 23:45 | 6.8 | **C.4 IMPLEMENTIERT:** `prefetch_tile_buildings_async` nutzt jetzt die Parquet-Pipeline (`import_tile_with_parquet_pipeline`). Die gesamte Parquet-Pipeline (C.1-C.4) ist nun produktiv. |
 | 15.01.2026 12:30 | 6.7 | **C.1-C.3 IMPLEMENTIERT:** Parquet-Pipeline funktioniert! Test-Tile 1322-21: 51.2s (vs. 147.2s Baseline = **2.88x Speedup**). `parquet_writer.py`: StreamingParquetWriter, paralleles Parsing mit asyncio.gather(). DuckDB Bulk-Load: read_parquet() → INSERT OR REPLACE. Fixes: Column-Mapping, DuckDB-Syntax (changes() → COUNT(*)), Schema-Anpassungen für roofs/walls. |
