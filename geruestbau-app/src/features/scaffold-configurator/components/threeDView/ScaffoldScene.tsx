@@ -973,6 +973,11 @@ export default function ScaffoldScene({
         // Initialize components
         components.init();
 
+        // FIX 14.01.2026 17:30 - Camera controls aktivieren für Zoom/Rotation
+        // SimpleCamera verwendet yomotsu's camera-controls
+        // Zoom funktioniert über DOLLY (Mausrad) - muss explizit enabled sein
+        world.camera.controls.enabled = true;
+
         // Add lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -1348,7 +1353,8 @@ export default function ScaffoldScene({
   }
 
   return (
-    <div ref={containerRef} className="w-full h-full min-h-[400px] relative">
+    // FIX 14.01.2026 17:30 - touch-action: none für Touch-Zoom, user-select: none für Drag
+    <div ref={containerRef} className="w-full h-full min-h-[400px] relative" style={{ touchAction: 'none', userSelect: 'none' }}>
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-sky-50">
           <div className="text-center">

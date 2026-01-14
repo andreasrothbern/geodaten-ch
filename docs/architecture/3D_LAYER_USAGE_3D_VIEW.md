@@ -1,7 +1,11 @@
 # 3D-Layer Verwendung: 3D-View & Nachbarn
 
-> **Stand 13.01.2026 23:50**
+> **Stand 14.01.2026 17:30**
 > **Status:** ✅ IMPLEMENTIERT
+>
+> **FIX 14.01.2026 17:30:** Zoom-Funktion im 3D-Viewer repariert (camera.controls.enabled + CSS)
+> **NEU 14.01.2026 13:35:** 3D-Dachgeometrie wird jetzt für ALLE Gebäude gerendert
+> (nicht nur für simple Gebäude ohne Spezialzonen)
 
 ## Übersicht
 
@@ -828,12 +832,252 @@ API Response für Bundesplatz 3, 3011 Bern:
   - has_roof_geometry: true
 ```
 
-### Fallback-Strategie
+### Fallback-Strategie (FIX 14.01.2026 13:35)
+
+**WICHTIG:** Echte 3D-Geometrie wird IMMER priorisiert, unabhängig von Gebäudekomplexität!
 
 ```
-1. has_roof_geometry == true?
-   → createRoofFrom3DGeometry() // Echte 3D-Geometrie
-
-2. Sonst (has_roof_geometry == false):
-   → createRoofFromPolygon()    // Heuristisches Dach (Satteldach etc.)
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    DACH-RENDERING PRIORISIERUNG                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  1. ECHTE 3D-GEOMETRIE (IMMER wenn verfügbar)                                   │
+│     ════════════════════════════════════════                                     │
+│     Bedingung:                                                                   │
+│       has_roof_geometry == true                                                  │
+│       roof_geometry_coords.length > 0                                            │
+│       roof_dach_min_m vorhanden                                                  │
+│                                                                                  │
+│     → createRoofFrom3DGeometry(coords, centerE, centerN, dachMin, height)       │
+│     → Echte swissBUILDINGS3D Dachform (Kuppeln, Gauben, etc.)                   │
+│     → Funktioniert für ALLE Gebäude: simple, moderate, complex                  │
+│                                                                                  │
+│  2. HEURISTISCHES DACH (nur Fallback)                                           │
+│     ═══════════════════════════════════                                          │
+│     Bedingung:                                                                   │
+│       has_roof_geometry == false ODER keine roof_geometry_coords                 │
+│       UND keine Spezialzonen (Turm, Kuppel, Treppenhaus)                        │
+│       ODER buildingComplexity == "simple"                                        │
+│                                                                                  │
+│     → createRoofFromPolygon() // Satteldach, Walmdach etc.                      │
+│                                                                                  │
+│  3. KEIN DACH (nur bei Fallback-Unmöglichkeit)                                  │
+│     ═════════════════════════════════════════                                    │
+│     Bedingung:                                                                   │
+│       Keine echte 3D-Geometrie                                                   │
+│       UND Spezialzonen vorhanden (Turm, Kuppel, Treppenhaus)                    │
+│       UND buildingComplexity != "simple"                                         │
+│                                                                                  │
+│     → Kein heuristisches Dach (wäre ungenau/irreführend)                        │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Bug-Fix 14.01.2026 13:35:**
+
+Das Problem war, dass der Code die echte 3D-Geometrie IGNORIERTE wenn das Gebäude
+als "complex" klassifiziert war oder Spezialzonen hatte. Die Korrektur stellt sicher,
+dass echte 3D-Geometrie IMMER verwendet wird, wenn sie verfügbar ist:
+
+```typescript
+// ScaffoldScene.tsx - VORHER (Bug):
+if (shouldRenderRoof) {  // false bei complex + Spezialzonen
+  // 3D-Geometrie wurde hier geprüft, aber nie erreicht!
+  if (hasReal3DGeometry) { ... }
+}
+
+// NACHHER (Fix):
+if (hasReal3DGeometry) {  // IMMER zuerst prüfen!
+  createRoofFrom3DGeometry(...);
+} else if (shouldRenderFallbackRoof) {  // Nur noch für Fallback
+  createRoofFromPolygon(...);
+}
+```
+
+**Betroffene Dateien:**
+- `geruestbau-app/src/features/.../ScaffoldScene.tsx:1105-1145`
+
+---
+
+## Todo-Liste: 3D-Layer Features (Stand 14.01.2026)
+
+> Diese Liste dient als Tracking für alle geplanten Features die mit den 3D-Layer-Daten möglich sind.
+
+### A) 3D-Viewer Verbesserungen
+
+| # | Feature | Status | Aufwand | Prio |
+|---|---------|--------|---------|------|
+| A1 | **Echte Dachform rendern** - geometry_wkb → Three.js Mesh | ✅ ERLEDIGT | 3-4h | P1 |
+| A2 | Gauben/Kamine zeigen - Teil der Dach-Geometrie | ✅ inklusiv | 0h | P1 |
+| A3 | Dachüberstände korrekt - Aus Geometrie berechnen | ⏳ TODO | 1h | P2 |
+| A4 | Wand-Texturen - Fenster-Platzierung aus Wand-Geometrie | ⏳ TODO | 4-6h | P3 |
+
+### B) Gerüstplanung-Features
+
+| # | Feature | Status | Aufwand | Prio |
+|---|---------|--------|---------|------|
+| B1 | **Dachgerüst-Empfehlung** - "Dachfanggerüst empfohlen" wenn angle > 45° | ⏳ TODO | 1h | P1 |
+| B2 | **First-Arbeitsbühne** - Position aus Dach-Geometrie | ⏳ TODO | 2h | P2 |
+| B3 | **PSA-Empfehlung** - "Seilsicherung erforderlich" wenn angle > 60° | ⏳ TODO | 0.5h | P1 |
+| B4 | Traufen-Höhe pro Fassade - Exakt aus Wand-Geometrie (z_min, z_max) | ✅ ERLEDIGT | 2h | P1 |
+| B5 | Intelligente Zugangs-Vorschläge (P3a) | ⏳ TODO | 2-3h | P2 |
+| B6 | Gefährdungszonen-Analyse (P3b) - SUVA-Checkliste | ⏳ TODO | 4-6h | P2 |
+
+### C) Analyse & Berechnung
+
+| # | Feature | Status | Aufwand | Prio |
+|---|---------|--------|---------|------|
+| C1 | **Dachfläche 3D** - Echte Oberfläche (nicht Projektion) | ⏳ TODO | 2h | P2 |
+| C2 | **Gebäudevolumen** - Aus 3D-Geometrie berechnen | ⏳ TODO | 1h | P3 |
+| C3 | **Kollisionserkennung** - Gerüst vs. Dachüberstand | ⏳ TODO | 4h | P2 |
+| C4 | **Export DXF/IFC** - 3D-Geometrie exportieren für CAD | ⏳ TODO | 8-12h | P3 |
+
+### D) Visualisierung
+
+| # | Feature | Status | Aufwand | Prio |
+|---|---------|--------|---------|------|
+| D1 | **SVG Schnitt exakt** - Aus 3D-Geometrie schneiden | ⏳ TODO | 4h | P2 |
+| D2 | **PDF mit 3D-Ansicht** - Screenshot aus Viewer | ⏳ TODO | 2h | P2 |
+| D3 | **AR-Vorschau** - Geometrie für AR-App | ⏳ TODO | 8h+ | P4 |
+
+### E) Weitere Ideen (Backlog)
+
+| # | Feature | Status | Aufwand | Prio |
+|---|---------|--------|---------|------|
+| E1 | Material-Transport-Optimierung - Kürzester Weg LKW → Gerüst, Kranposition | ⏳ TODO | 6-8h | P4 |
+| E2 | Schatten-Analyse - Nordseite = Moos, Südseite = schnell trocknend | ⏳ TODO | 2-3h | P4 |
+| E3 | Wetter-Exposition - Windrichtung, offene Seiten markieren | ⏳ TODO | 2-3h | P4 |
+| E4 | Kollisions-Erkennung - Gerüst vs. Balkon, Vordach, Leitungen | ⏳ TODO | 4-6h | P3 |
+| E5 | Export für LayPLAN - IFC/DXF mit 3D-Gerüstdaten | ⏳ TODO | 8-12h | P3 |
+
+---
+
+### Zusammenfassung nach Priorität
+
+**P1 - Sofort umsetzbar (Quick Wins):**
+- [x] A1: Echte Dachform rendern ✅
+- [x] A2: Gauben/Kamine zeigen ✅
+- [x] B4: Traufen-Höhe pro Fassade ✅
+- [ ] B1: Dachgerüst-Empfehlung (1h)
+- [ ] B3: PSA-Empfehlung (0.5h)
+
+**P2 - Mittelfristig:**
+- [ ] A3: Dachüberstände (1h)
+- [ ] B2: First-Arbeitsbühne (2h)
+- [ ] B5: Intelligente Zugangs-Vorschläge (2-3h)
+- [ ] B6: Gefährdungszonen-Analyse (4-6h)
+- [ ] C1: Dachfläche 3D (2h)
+- [ ] C3: Kollisionserkennung (4h)
+- [ ] D1: SVG Schnitt exakt (4h)
+- [ ] D2: PDF mit 3D-Ansicht (2h)
+
+**P3 - Langfristig:**
+- [ ] A4: Wand-Texturen (4-6h)
+- [ ] C2: Gebäudevolumen (1h)
+- [ ] C4: Export DXF/IFC (8-12h)
+- [ ] E4: Kollisions-Erkennung (4-6h)
+- [ ] E5: Export für LayPLAN (8-12h)
+
+**P4 - Backlog:**
+- [ ] D3: AR-Vorschau (8h+)
+- [ ] E1: Material-Transport-Optimierung (6-8h)
+- [ ] E2: Schatten-Analyse (2-3h)
+- [ ] E3: Wetter-Exposition (2-3h)
+
+---
+
+### Nächste Schritte (Empfehlung)
+
+1. **B1 + B3 implementieren** (1.5h) - Dachgerüst + PSA Empfehlungen (höchster Nutzen mit minimalem Aufwand)
+2. **A3 implementieren** (1h) - Dachüberstände für bessere 3D-Darstellung
+3. **D2 implementieren** (2h) - PDF Export mit 3D-Ansicht für Angebote
+4. **B5 + B6 implementieren** (6-9h) - Intelligente Planung und SUVA-Compliance
+
+---
+
+## Kamera-Controls (3D-Viewer)
+
+> **FIX 14.01.2026 17:30:** Zoom-Funktion repariert
+
+### Verwendete Bibliotheken
+
+```
+@thatopen/components (OBC) → OBC.SimpleCamera
+    └── verwendet intern: yomotsu/camera-controls
+        └── Three.js PerspectiveCamera
+```
+
+### Bedienung
+
+| Aktion | Eingabe | Beschreibung |
+|--------|---------|--------------|
+| **Zoom** | Mausrad / Pinch | Dolly (rein/raus) |
+| **Rotation** | Linke Maustaste ziehen | Orbit um Ziel |
+| **Pan** | Rechte Maustaste ziehen | Verschieben |
+| **View-Preset** | View-Selector (rechts oben) | Nord, Ost, Süd, West, Top, Isometrisch |
+
+### Kritische Konfiguration
+
+**1. Camera-Controls aktivieren:**
+```typescript
+// ScaffoldScene.tsx - Nach world.camera Initialisierung
+world.camera.controls.enabled = true;
+```
+
+**2. Container CSS für Touch-Events:**
+```tsx
+<div
+  ref={containerRef}
+  style={{ touchAction: 'none', userSelect: 'none' }}
+>
+```
+
+**Warum wichtig?**
+- `controls.enabled = true` - OBC SimpleCamera Controls sind standardmäßig aktiv, aber können durch Initialisierungs-Reihenfolge deaktiviert werden
+- `touchAction: none` - Verhindert Browser-Standard-Scrolling bei Touch
+- `userSelect: none` - Verhindert Textauswahl beim Ziehen
+
+### Bekannte Probleme & Lösungen
+
+| Problem | Ursache | Lösung |
+|---------|---------|--------|
+| Zoom funktioniert nicht | `controls.enabled = false` | Explizit `controls.enabled = true` setzen |
+| Touch-Zoom steckt | CSS `touch-action: auto` | `touch-action: none` auf Container |
+| Rotation ruckelt | Parent-Scrolling | `overflow: hidden` auf Parents |
+| Kamera springt | Viewport-Resize | `world.camera.updateAspect()` aufrufen |
+
+### Dateien
+
+| Datei | Relevante Zeilen | Beschreibung |
+|-------|------------------|--------------|
+| `ScaffoldScene.tsx:963-979` | Kamera-Initialisierung | `OBC.SimpleCamera` + `setLookAt` |
+| `ScaffoldScene.tsx:1045-1055` | View-Wechsel | `controls.setLookAt()` mit Transition |
+| `ScaffoldScene.tsx:1355-1357` | Container JSX | `touchAction: none` CSS |
+
+### API (yomotsu/camera-controls)
+
+Die wichtigsten Methoden von `world.camera.controls`:
+
+```typescript
+// Position setzen
+controls.setLookAt(posX, posY, posZ, targetX, targetY, targetZ, enableTransition);
+
+// Zoom
+controls.dollyTo(distance, enableTransition);
+controls.zoom(zoomStep, enableTransition);
+
+// Limits
+controls.minDistance = 1;
+controls.maxDistance = 1000;
+controls.minZoom = 0.1;
+controls.maxZoom = 10;
+
+// State
+controls.enabled = true;
+controls.update(deltaTime);
+```
+
+### Quellen
+
+- [ThatOpen SimpleCamera Docs](https://docs.thatopen.com/api/@thatopen/components/classes/SimpleCamera)
+- [yomotsu/camera-controls API](https://yomotsu.github.io/camera-controls/classes/CameraControls)
