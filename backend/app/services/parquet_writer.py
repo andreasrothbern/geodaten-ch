@@ -562,21 +562,12 @@ def load_parquets_to_duckdb(
             count_result = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{buildings_glob}')").fetchone()
             parquet_count = count_result[0] if count_result else 0
 
-            # FIX 14.01.2026: Gebäude mit has_3d_layers=1 NICHT überschreiben!
-            # Diese haben detaillierte 3D-Geometrie die erhalten bleiben muss.
-            protected_result = conn.execute(
-                "SELECT egid FROM buildings_3d WHERE has_3d_layers = 1"
-            ).fetchall()
-            protected_count = len(protected_result) if protected_result else 0
-
-            if protected_count > 0:
-                logger.info(f"[DUCKDB] Schütze {protected_count} Gebäude mit 3D-Layern vor Überschreiben")
-
-            # INSERT OR REPLACE mit expliziter Spaltenangabe
-            # WICHTIG: Spaltenreihenfolge muss mit buildings_3d Schema übereinstimmen
-            # FIX 14.01.2026: WHERE-Klausel filtert geschützte Gebäude aus
+            # FIX 14.01.2026 v2: Echter UPSERT mit ON CONFLICT
+            # - Neue Gebäude werden eingefügt
+            # - Bestehende Gebäude werden NUR aktualisiert wenn has_3d_layers = 0
+            # - Gebäude mit has_3d_layers = 1 behalten ihre detaillierten Daten
             conn.execute(f"""
-                INSERT OR REPLACE INTO buildings_3d (
+                INSERT INTO buildings_3d (
                     egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
                     area_m2, perimeter_m, center_e, center_n, tile_id,
                     objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
@@ -592,17 +583,30 @@ def load_parquets_to_duckdb(
                     current_timestamp as imported_at,
                     source
                 FROM read_parquet('{buildings_glob}')
-                WHERE egid NOT IN (
-                    SELECT egid FROM buildings_3d WHERE has_3d_layers = 1
-                )
+                ON CONFLICT (egid) DO UPDATE SET
+                    polygon = excluded.polygon,
+                    traufhoehe_m = excluded.traufhoehe_m,
+                    firsthoehe_m = excluded.firsthoehe_m,
+                    gebaeudehoehe_m = excluded.gebaeudehoehe_m,
+                    area_m2 = excluded.area_m2,
+                    perimeter_m = excluded.perimeter_m,
+                    center_e = excluded.center_e,
+                    center_n = excluded.center_n,
+                    tile_id = excluded.tile_id,
+                    objektart = excluded.objektart,
+                    name_komplett = excluded.name_komplett,
+                    gebaeude_nutzung = excluded.gebaeude_nutzung,
+                    gebaeudeeinheit = excluded.gebaeudeeinheit,
+                    roof_form = excluded.roof_form,
+                    roof_form_confidence = excluded.roof_form_confidence,
+                    roof_orientation = excluded.roof_orientation,
+                    imported_at = current_timestamp,
+                    source = excluded.source
+                WHERE buildings_3d.has_3d_layers = 0 OR buildings_3d.has_3d_layers IS NULL
             """)
 
-            # Log mit Info über geschützte Gebäude
             results['buildings'] = parquet_count
-            if protected_count > 0:
-                logger.info(f"[DUCKDB] buildings_3d: ~{parquet_count - protected_count} rows loaded (von {parquet_count}, {protected_count} geschützt)")
-            else:
-                logger.info(f"[DUCKDB] buildings_3d: {parquet_count} rows loaded")
+            logger.info(f"[DUCKDB] buildings_3d: {parquet_count} rows (UPSERT, 3D-Layer geschützt)")
 
         # 2. ROOFS
         # Schema building_roofs: gebaeudeeinheit, egid(INT), dach_min, dach_max,
