@@ -1102,41 +1102,44 @@ export default function ScaffoldScene({
       // Add building from actual polygon
       parent.add(createBuildingFromPolygon(normalized, buildingHeight));
 
-      // Check if building has towers or domes - skip standard roof for complex buildings
-      // Complex buildings with separate height zones (churches, public buildings) should NOT get a single roof
-      const hasSpecialZones = buildingZones.some(z =>
-        z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
-      );
-      const shouldRenderRoof = !hasSpecialZones || buildingComplexity === 'simple';
+      // NEU 14.01.2026 13:35: Echte 3D-Dachgeometrie IMMER priorisieren, unabhängig von Komplexität
+      const hasReal3DGeometry = config.roof?.has_roof_geometry &&
+                                 config.roof?.roof_geometry_coords &&
+                                 config.roof.roof_geometry_coords.length > 0 &&
+                                 config.roof?.roof_dach_min_m;
 
-      if (shouldRenderRoof) {
-        // NEU 14.01.2026: Echte 3D-Dachgeometrie priorisieren wenn verfügbar
-        const hasReal3DGeometry = config.roof?.has_roof_geometry &&
-                                   config.roof?.roof_geometry_coords &&
-                                   config.roof.roof_geometry_coords.length > 0 &&
-                                   config.roof?.roof_dach_min_m;
+      if (hasReal3DGeometry) {
+        // Echte 3D-Geometrie aus swissBUILDINGS3D - IMMER verwenden wenn verfügbar
+        console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie', {
+          polygons: config.roof!.roof_geometry_coords!.length,
+          dachMin: config.roof!.roof_dach_min_m,
+          dachMax: config.roof!.roof_dach_max_m,
+          complexity: buildingComplexity,
+        });
+        parent.add(createRoofFrom3DGeometry(
+          config.roof!.roof_geometry_coords!,
+          bboxCenter[0],  // center_e (LV95)
+          bboxCenter[1],  // center_n (LV95)
+          config.roof!.roof_dach_min_m!,
+          buildingHeight
+        ));
+      } else {
+        // Fallback: Heuristisches Dach NUR für einfache Gebäude
+        // Komplexe Gebäude mit Türmen/Kuppeln bekommen kein heuristisches Dach
+        const hasSpecialZones = buildingZones.some(z =>
+          z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
+        );
+        const shouldRenderHeuristicRoof = !hasSpecialZones || buildingComplexity === 'simple';
 
-        if (hasReal3DGeometry) {
-          // Echte 3D-Geometrie aus swissBUILDINGS3D verwenden
-          console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie', {
-            polygons: config.roof!.roof_geometry_coords!.length,
-            dachMin: config.roof!.roof_dach_min_m,
-            dachMax: config.roof!.roof_dach_max_m,
-          });
-          parent.add(createRoofFrom3DGeometry(
-            config.roof!.roof_geometry_coords!,
-            bboxCenter[0],  // center_e (LV95)
-            bboxCenter[1],  // center_n (LV95)
-            config.roof!.roof_dach_min_m!,
-            buildingHeight
-          ));
-        } else {
-          // Fallback: Heuristisches Dach basierend auf Polygon-Form
+        if (shouldRenderHeuristicRoof) {
+          console.log('[3D-ROOF] Fallback: Heuristisches Dach', { complexity: buildingComplexity });
           const roofType = config.roof?.roof_type || 'satteldach';
           const roofHeight = config.roof?.trauf_to_first_m || 3;
           const roofOrientation = config.roof?.roof_orientation || 'O-W';
           const roofOverhang = config.roof?.roof_overhang_m || 0.4;
           parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+        } else {
+          console.log('[3D-ROOF] Kein Dach: Komplexes Gebäude ohne 3D-Daten', { complexity: buildingComplexity, hasSpecialZones });
         }
       }
 
