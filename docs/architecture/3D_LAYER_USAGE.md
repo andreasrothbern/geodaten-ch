@@ -66,21 +66,38 @@ Diese Daten ermöglichen präzisere Gerüstplanung als die bisherigen Heuristike
 
 ### Fallback-Kette für Fassaden-Höhen
 
+> **WICHTIG (15.01.2026):** Die Höhenwerte `z_min` und `z_max` sind **separate Skalarwerte**,
+> NICHT abhängig von `geometry_wkb`! Sie werden beim Prefetch aus den GDB-Attributen berechnet:
+>
+> ```python
+> # tile_prefetch.py - Höchste Konfidenz (LiDAR)
+> z_min = GELAENDEPUNKT                    # Terrain-Höhe (m ü.M.)
+> z_max = GELAENDEPUNKT + GESAMTHOEHE      # Wandoberkante (m ü.M.)
+> ```
+>
+> | Feld | Gespeichert bei Prefetch | Beschreibung |
+> |------|--------------------------|--------------|
+> | `z_min` | ✅ JA | Terrain-Höhe am Gebäude (Skalar) |
+> | `z_max` | ✅ JA | Wandoberkante (Skalar) |
+> | `geometry_wkb` | ❌ NULL | 3D-Geometrie (nur On-Demand, spart ~250 MB) |
+>
+> **Fazit:** Alle per Prefetch geladenen Gebäude haben bereits die Höhendaten mit höchster Konfidenz!
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    FASSADEN-HÖHEN FALLBACK-KETTE                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  STUFE 1: Wall-Layer Matching (höchste Präzision)                       │
-│  ════════════════════════════════════════════════                        │
-│  Bedingung: has_3d_layers=1 UND building_walls Einträge vorhanden       │
+│  STUFE 1: Wall-Layer z_min/z_max (höchste Präzision)                    │
+│  ════════════════════════════════════════════════════                    │
+│  Bedingung: building_walls Einträge vorhanden (via Prefetch!)           │
 │                                                                          │
-│     WallFacadeMatcher.get_facade_heights(egid, sides)                   │
+│     Datenquelle: building_walls.z_min, building_walls.z_max             │
 │          │                                                               │
-│          └─► Für jede Fassade: z_min, z_max aus Wall-Geometrie          │
-│              • z_min = Terrain-Höhe (m ü.M.) an dieser Fassade          │
-│              • z_max = Wandoberkante (m ü.M.)                           │
-│              • Konfidenz: 0.3 - 1.0 (abhängig vom Matching-Score)       │
+│          └─► Für jede Fassade: z_min, z_max aus DB-Spalten (NICHT WKB!) │
+│              • z_min = GELAENDEPUNKT (m ü.M.) - beim Prefetch berechnet │
+│              • z_max = GELAENDEPUNKT + GESAMTHOEHE (m ü.M.)             │
+│              • Konfidenz: 1.0 (LiDAR-Daten aus swissBUILDINGS3D)        │
 │                                                                          │
 │  STUFE 2: swissALTI3D Terrain-Sampling (gute Präzision)                 │
 │  ══════════════════════════════════════════════════════                  │
