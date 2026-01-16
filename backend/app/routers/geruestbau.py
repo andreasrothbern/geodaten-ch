@@ -11,8 +11,8 @@ from sse_starlette.sse import EventSourceResponse
 logger = logging.getLogger(__name__)
 
 from ..models.geruestbau import (
-    Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
-    PhotoAnalysis, ScaffoldConfig
+    Project, ProjectCreate, ProjectUpdate, ProjectStatus,
+    ProjectWithGeruestbaudata, PhotoAnalysis, ScaffoldConfig
 )
 from ..services.geruestbau.project_service import ProjectService
 from ..services.swissbuildings3d_service import get_swissbuildings3d_service
@@ -57,9 +57,9 @@ async def create_project(project: ProjectCreate):
     return await project_service.create_project(project)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectWithGeodata)
+@router.get("/projects/{project_id}", response_model=ProjectWithGeruestbaudata)
 async def get_project(project_id: str):
-    """Projekt-Details mit Geodaten aus smart_building_cache abrufen."""
+    """Projekt-Details mit GeruestbauData abrufen."""
     project = await project_service.get_project_with_data(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
@@ -82,15 +82,6 @@ async def delete_project(project_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
     return {"status": "deleted"}
-
-
-@router.post("/projects/{project_id}/enrich", response_model=ProjectWithGeodata)
-async def enrich_project(project_id: str):
-    """Projekt mit Geodaten anreichern (GWR, HÃ¶hen, Polygon)."""
-    project = await project_service.enrich_with_geodata(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
-    return project
 
 
 @router.post("/projects/{project_id}/photos")
@@ -121,6 +112,35 @@ async def get_scaffold_config(project_id: str):
 async def update_scaffold_config(project_id: str, config: ScaffoldConfig):
     """GerÃ¼st-Konfiguration aktualisieren."""
     return await project_service.update_scaffold_config(project_id, config)
+
+
+# NEU 16.01.2026 11:00: GeruestbauData im Projekt speichern
+@router.post("/projects/{project_id}/geruestbaudata", response_model=Dict[str, Any])
+async def save_geruestbaudata(
+    project_id: str,
+    egid: str = Query(..., description="EGID des Gebäudes"),
+    address: str = Query(..., description="Adresse des Gebäudes")
+):
+    """
+    Speichert alle Gebäudedaten (inkl. 3D-Layer) als GeruestbauData im Projekt.
+
+    Wird nach dem SSE-Stream aufgerufen, wenn alle Daten geladen sind.
+    Die GeruestbauData enthält:
+    - Gebäude-Grunddaten (EGID, Polygon, Koordinaten)
+    - Höhendaten (Trauf-, First-, Gebäudehöhe)
+    - 3D-Layer (building_walls, building_roofs)
+    - Terrain-Daten (Geländehöhe, Hanglage)
+    - Zonen (bei komplexen Gebäuden)
+
+    Returns:
+        {"success": true/false, "message": "..."}
+    """
+    success = await project_service.save_geruestbaudata_to_project(project_id, egid, address)
+
+    if success:
+        return {"success": True, "message": "GeruestbauData gespeichert"}
+    else:
+        return {"success": False, "message": "Fehler beim Speichern der GeruestbauData"}
 
 
 @router.post("/projects/{project_id}/export")
@@ -406,7 +426,114 @@ async def get_facade_data_for_configurator(
         # Fallback: Keine Zonen-Daten
         roof_geometry_coords = None
 
-    # 6. Response im ProjectInput-Format zusammenstellen
+    # 6. Building Walls laden (NEU 15.01.2026 - BUG-024)
+    # FIX 15.01.2026: DB-Naming (building_walls), ALLE Geometrie-Daten (nicht nur erstes Polygon)
+    building_walls = []
+    if building.egid:
+        try:
+            from app.services.layer_fetcher import get_layer_fetcher_service
+            from shapely import wkb as shapely_wkb
+
+            layer_fetcher = get_layer_fetcher_service()
+            raw_walls = layer_fetcher.get_walls_for_building(str(building.egid))
+
+            for wall in raw_walls:
+                wall_wkb = wall.get('geometry_wkb')
+                geometry_type = None
+                coords_3d = None  # Volle 3D-Koordinaten (ALLE Polygone!)
+
+                if wall_wkb:
+                    try:
+                        geom = shapely_wkb.loads(wall_wkb)
+                        geometry_type = geom.geom_type
+
+                        # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
+                        # Frontend erwartet: coords_3d[polygon][point] = [E, N, Z]
+                        if geom.geom_type == 'Polygon':
+                            coords_3d = [[list(c) for c in geom.exterior.coords]]
+
+                        elif geom.geom_type == 'MultiPolygon':
+                            coords_3d = [
+                                [list(c) for c in poly.exterior.coords]
+                                for poly in geom.geoms
+                            ]
+
+                        elif geom.geom_type == 'LineString':
+                            coords_3d = [[list(c) for c in geom.coords]]
+
+                    except Exception as wkb_err:
+                        logger.debug(f"WKB-Parsing für Wall fehlgeschlagen: {wkb_err}")
+
+                # DB-Feldnamen exakt übernehmen
+                building_walls.append({
+                    "gebaeudeeinheit": wall.get('gebaeudeeinheit', ''),
+                    "egid": wall.get('egid'),
+                    "z_min": wall.get('z_min'),  # Terrain-Höhe (m ü.M.)
+                    "z_max": wall.get('z_max'),  # Trauf-Höhe (m ü.M.)
+                    "geometry_type": geometry_type,
+                    "coords_3d": coords_3d,  # Volle 3D-Geometrie
+                })
+
+            logger.info(f"[BUILDING-WALLS] {len(building_walls)} walls für EGID {building.egid} geladen")
+        except Exception as wall_err:
+            logger.warning(f"Building walls konnten nicht geladen werden: {wall_err}")
+
+    # 7. Building Roofs laden (NEU 15.01.2026 23:30 - analog zu building_walls)
+    # Analog zu building_walls: DB-Naming, volle 3D-Geometrie
+    building_roofs = []
+    if building.egid:
+        try:
+            from app.services.layer_fetcher import get_layer_fetcher_service
+            from shapely import wkb as shapely_wkb
+
+            layer_fetcher = get_layer_fetcher_service()
+            raw_roofs = layer_fetcher.get_roofs_for_building(str(building.egid))
+
+            for roof in raw_roofs:
+                roof_wkb = roof.get('geometry_wkb')
+                geometry_type = None
+                coords_3d = None  # Volle 3D-Koordinaten (ALLE Polygone!)
+
+                if roof_wkb:
+                    try:
+                        geom = shapely_wkb.loads(roof_wkb)
+                        geometry_type = geom.geom_type
+
+                        # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
+                        # Frontend erwartet: coords_3d[polygon][point] = [E, N, Z]
+                        if geom.geom_type == 'Polygon':
+                            coords_3d = [[list(c) for c in geom.exterior.coords]]
+
+                        elif geom.geom_type == 'MultiPolygon':
+                            coords_3d = [
+                                [list(c) for c in poly.exterior.coords]
+                                for poly in geom.geoms
+                            ]
+
+                        elif geom.geom_type == 'LineString':
+                            coords_3d = [[list(c) for c in geom.coords]]
+
+                    except Exception as wkb_err:
+                        logger.debug(f"WKB-Parsing für Roof fehlgeschlagen: {wkb_err}")
+
+                # DB-Feldnamen exakt übernehmen
+                building_roofs.append({
+                    "gebaeudeeinheit": roof.get('gebaeudeeinheit', ''),
+                    "egid": roof.get('egid'),
+                    "dach_min": roof.get('dach_min'),  # Trauf-Höhe (m ü.M.)
+                    "dach_max": roof.get('dach_max'),  # First-Höhe (m ü.M.)
+                    "roof_form": roof.get('roof_form'),
+                    "roof_angle_deg": roof.get('roof_angle_deg'),
+                    "roof_orientation": roof.get('roof_orientation'),
+                    "geometry_type": geometry_type,
+                    "coords_3d": coords_3d,  # Volle 3D-Geometrie
+                })
+
+            logger.info(f"[BUILDING-ROOFS] {len(building_roofs)} roofs für EGID {building.egid} geladen")
+        except Exception as roof_err:
+            logger.warning(f"Building roofs konnten nicht geladen werden: {roof_err}")
+
+    # 8. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
 
     response = {
@@ -435,6 +562,12 @@ async def get_facade_data_for_configurator(
         "building_name": building_name,
         "complexity": complexity,
         "research_source": research_source,
+        # NEU 15.01.2026 BUG-024: Building Walls direkt aus DB (DB-Naming!)
+        # FIX: Volle 3D-Geometrie, ALLE Polygone (nicht nur erstes)
+        "building_walls": building_walls,
+        # NEU 15.01.2026 23:30: Building Roofs direkt aus DB (DB-Naming!)
+        # Analog zu building_walls: volle 3D-Geometrie für Dach-Rendering
+        "building_roofs": building_roofs,
         "metadata": {
             "source": "swissBUILDINGS3D_composite",
             "polygon_points": len(building.polygon),
@@ -447,6 +580,8 @@ async def get_facade_data_for_configurator(
             "confidence": building.confidence,
             "zones_count": len(zones_data),
             "research_source": research_source,
+            "building_walls_count": len(building_walls),  # NEU 15.01.2026 BUG-024
+            "building_roofs_count": len(building_roofs),  # NEU 15.01.2026 23:30
         }
     }
 
@@ -821,13 +956,16 @@ async def stream_project_context(
     return EventSourceResponse(event_generator())
 
 
-@router.get("/building/{egid}/blocked-facades", response_model=Dict[str, Any])
+@router.get("/building/{egid}/blocked-facades", response_model=Dict[str, Any], deprecated=True)
 async def get_blocked_facades(
     egid: str,
     exclude_egids: str = Query(None, description="Komma-separierte EGIDs die nicht als Blocker gelten"),
     threshold_m: float = Query(2.0, ge=0.5, le=5.0, description="Distanz-Schwellenwert in Metern")
 ):
     """
+    DEPRECATED 15.01.2026: Verwende Frontend-Berechnung mit Nachbar-Polygonen stattdessen.
+    Siehe BUG-024 und TODO_CURRENT.md für Details.
+
     Berechnet blockierte Fassaden für ein GebÃ¤ude.
 
     Eine Fassade gilt als blockiert wenn ein externes GebÃ¤ude

@@ -11,7 +11,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from ...models.geruestbau import (
-    Project, ProjectCreate, ProjectUpdate, ProjectStatus, ProjectWithGeodata,
+    Project, ProjectCreate, ProjectUpdate, ProjectStatus,
+    ProjectWithGeodata, ProjectWithGeruestbaudata,
     PhotoAnalysis, ScaffoldConfig, ScaffoldZone
 )
 from ..swisstopo import SwisstopoService
@@ -75,9 +76,12 @@ class ProjectService:
         # Alle erwarteten Spalten die evtl. fehlen könnten
         migrations = {
             'description': 'TEXT',      # SIMAP-Import Feature
-            'building_data': 'TEXT',    # Geodaten-Anreicherung
+            'building_data': 'TEXT',    # Geodaten-Anreicherung (Legacy)
             'scaffold_config': 'TEXT',  # Gerüst-Konfiguration
             'buildings': 'TEXT',        # Multi-Building Support (JSON array)
+            'geruestbaudata': 'TEXT',   # DEPRECATED - Single-Building Format
+            # NEU 16.01.2026: buildings_data als Record<EGID, GeruestbauData>
+            'buildings_data': 'TEXT',   # Multi-Building fähig: {"egid1": {...}, "egid2": {...}}
         }
 
         for col_name, col_type in migrations.items():
@@ -146,6 +150,16 @@ class ProjectService:
         conn.commit()
         conn.close()
 
+        # NEU 16.01.2026: GeruestbauData automatisch speichern (inkl. 3D-Layer)
+        # Das macht das Projekt-Öffnen schneller (Fast Path in get_project_with_data)
+        if egid and data.address:
+            try:
+                await self.save_geruestbaudata_to_project(project_id, egid, data.address)
+                logger.info(f"[PROJECT] GeruestbauData automatisch gespeichert für {project_id}")
+            except Exception as e:
+                # Fehler beim Speichern ist nicht kritisch - Fallback auf Legacy-Pfad
+                logger.warning(f"[PROJECT] GeruestbauData konnte nicht gespeichert werden: {e}")
+
         return await self.get_project(project_id)
 
     async def get_project(self, project_id: str) -> Optional[Project]:
@@ -163,194 +177,352 @@ class ProjectService:
 
         return self._row_to_project(row)
 
-    def _get_bundle_from_smart_service(self, egid: str) -> Optional[dict]:
+    async def save_geruestbaudata_to_project(
+        self,
+        project_id: str,
+        egid: str,
+        address: str,
+        additional_egids: list[str] = None
+    ) -> bool:
         """
-        Lädt BuildingDataBundle über den SmartBuildingService.
+        NEU 16.01.2026: Speichert GeruestbauData in buildings_data mit EGID als Key.
 
-        Der SmartBuildingService verwaltet den Cache (building_contexts.db).
-        Diese Methode ist ein Wrapper für die Integration mit dem project_service.
+        Single-Building: {"egid": GeruestbauData}
+        Multi-Building: {"egid1": GeruestbauData, "egid2": GeruestbauData, ...}
+
+        Diese Methode wird beim Projekt-Erstellen aufgerufen und speichert:
+        - Gebäude-Grunddaten (EGID, Polygon, Koordinaten)
+        - Höhendaten (Trauf-, First-, Gebäudehöhe) - ALTLAST: sollte aus walls berechnet werden!
+        - 3D-Layer (building_walls, building_roofs)
+        - Terrain-Daten (Geländehöhe, Hanglage)
+        - Zonen (bei komplexen Gebäuden)
 
         Args:
-            egid: Eidgenössische Gebäudeidentifikation
+            project_id: Projekt-ID
+            egid: EGID des ersten Gebäudes (alle Gebäude gleichwertig)
+            address: Adresse für SmartBuildingService
+            additional_egids: Weitere EGIDs für Multi-Building Projekte
 
         Returns:
-            Dict mit Bundle-Daten oder None
+            True wenn erfolgreich gespeichert
         """
         try:
+            # 1. Bundle vom SmartBuildingService laden
             smart_service = get_smart_building_service()
-            bundle = smart_service.get_bundle_by_egid(egid)
+            bundle = await smart_service.collect_all_data(
+                address=address,
+                force_refresh=False,
+                include_research=True,
+                include_zones_analysis=True,
+                include_terrain=True
+            )
 
-            if bundle is None:
+            if not bundle or not bundle.egid:
+                logger.warning(f"[PROJECT] Kein Bundle für {address}")
+                return False
+
+            # 2. Building Walls und Roofs aus DB laden
+            building_walls = []
+            building_roofs = []
+
+            try:
+                from app.services.layer_fetcher import get_layer_fetcher_service
+                layer_fetcher = get_layer_fetcher_service()
+
+                # Walls laden
+                walls_raw = layer_fetcher.get_walls_for_building(bundle.egid)
+                for wall in walls_raw:
+                    coords_3d = None
+                    wkb = wall.get('geometry_wkb')
+                    if wkb:
+                        try:
+                            from shapely import wkb as shapely_wkb
+                            geom = shapely_wkb.loads(wkb)
+                            # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
+                            # Frontend erwartet: [polygon][point] = [E, N, Z]
+                            if hasattr(geom, 'geoms'):  # MultiPolygon
+                                coords_3d = [
+                                    list(g.exterior.coords)
+                                    for g in geom.geoms
+                                ]
+                            elif hasattr(geom, 'exterior'):  # Polygon
+                                coords_3d = [list(geom.exterior.coords)]
+                            elif hasattr(geom, 'coords'):  # LineString
+                                coords_3d = [list(geom.coords)]
+                        except Exception:
+                            pass
+
+                    building_walls.append({
+                        "gebaeudeeinheit": wall.get('gebaeudeeinheit', ''),
+                        "egid": wall.get('egid'),
+                        "z_min": wall.get('z_min'),
+                        "z_max": wall.get('z_max'),
+                        "geometry_type": wall.get('geometry_type'),
+                        "coords_3d": coords_3d,
+                    })
+
+                # Roofs laden
+                roofs_raw = layer_fetcher.get_roofs_for_building(bundle.egid)
+                for roof in roofs_raw:
+                    coords_3d = None
+                    wkb = roof.get('geometry_wkb')
+                    if wkb:
+                        try:
+                            from shapely import wkb as shapely_wkb
+                            geom = shapely_wkb.loads(wkb)
+                            # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
+                            # Frontend erwartet: [polygon][point] = [E, N, Z]
+                            if hasattr(geom, 'geoms'):  # MultiPolygon
+                                coords_3d = [
+                                    list(g.exterior.coords)
+                                    for g in geom.geoms
+                                ]
+                            elif hasattr(geom, 'exterior'):  # Polygon
+                                coords_3d = [list(geom.exterior.coords)]
+                            elif hasattr(geom, 'coords'):  # LineString
+                                coords_3d = [list(geom.coords)]
+                        except Exception:
+                            pass
+
+                    building_roofs.append({
+                        "gebaeudeeinheit": roof.get('gebaeudeeinheit', ''),
+                        "egid": roof.get('egid'),
+                        "dach_min": roof.get('dach_min'),
+                        "dach_max": roof.get('dach_max'),
+                        "roof_form": roof.get('roof_form'),
+                        "roof_angle_deg": roof.get('roof_angle_deg'),
+                        "roof_orientation": roof.get('roof_orientation'),
+                        "geometry_type": roof.get('geometry_type'),
+                        "coords_3d": coords_3d,
+                    })
+
+                logger.info(f"[PROJECT] 3D-Layer geladen: {len(building_walls)} walls, {len(building_roofs)} roofs")
+            except Exception as e:
+                logger.warning(f"[PROJECT] 3D-Layer konnten nicht geladen werden: {e}")
+
+            # 3. GeruestbauData Struktur erstellen
+            geruestbaudata = self._build_geruestbaudata(
+                bundle, address, building_walls, building_roofs
+            )
+
+            # 4. buildings_data Record aufbauen (EGID als Key)
+            buildings_data = {bundle.egid: geruestbaudata}
+
+            # 5. Multi-Building: Weitere EGIDs laden
+            if additional_egids:
+                for add_egid in additional_egids:
+                    if add_egid == egid:
+                        continue  # Diese EGID bereits geladen
+                    try:
+                        add_data = await self._load_geruestbaudata_for_egid(add_egid)
+                        if add_data:
+                            buildings_data[add_egid] = add_data
+                            logger.info(f"[PROJECT] Multi-Building: Daten für EGID {add_egid} geladen")
+                    except Exception as e:
+                        logger.warning(f"[PROJECT] Multi-Building: Fehler bei EGID {add_egid}: {e}")
+
+            # 6. In Projekt speichern (buildings_data statt geruestbaudata)
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE projects SET buildings_data = ?, updated_at = ? WHERE id = ?
+            ''', (
+                json.dumps(buildings_data),
+                datetime.utcnow().isoformat(),
+                project_id
+            ))
+            conn.commit()
+            conn.close()
+
+            egid_count = len(buildings_data)
+            logger.info(f"[PROJECT] buildings_data für {project_id} gespeichert ({egid_count} Gebäude)")
+            return True
+
+        except Exception as e:
+            logger.error(f"[PROJECT] Fehler beim Speichern von GeruestbauData: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _build_geruestbaudata(self, bundle, address: str, building_walls: list, building_roofs: list) -> dict:
+        """Baut GeruestbauData-Struktur aus Bundle und 3D-Layern."""
+        return {
+            "building": {
+                "egid": bundle.egid,
+                "address": bundle.address_matched or address,
+                "polygon": bundle.polygon,
+                "polygon_simplified": None,  # Wird on-demand berechnet
+                "center_e": bundle.lv95_e,
+                "center_n": bundle.lv95_n,
+                "perimeter_m": bundle.perimeter_m or 0,
+                "area_m2": bundle.footprint_area_m2 or 0,
+            },
+            "heights": {
+                # ALTLAST: Diese Werte sollten aus walls berechnet werden!
+                # Siehe STREAMING_ARCHITECTURE.md L.11
+                "traufhoehe_m": bundle.traufhoehe_m or 0,
+                "firsthoehe_m": bundle.firsthoehe_m or 0,
+                "gebaeudehoehe_m": bundle.gebaeudehoehe_m or 0,
+                "terrain_height_m": bundle.terrain.reference_height_m if bundle.terrain else 0,
+                "source": "swissBUILDINGS3D",
+            },
+            "walls": building_walls,
+            "roofs": building_roofs,
+            "terrain": {
+                "height_m": bundle.terrain.reference_height_m if bundle.terrain else 0,
+                "min_m": bundle.terrain.min_height_m if bundle.terrain else 0,
+                "max_m": bundle.terrain.max_height_m if bundle.terrain else 0,
+                "slope_m": bundle.terrain.slope_m if bundle.terrain else 0,
+                "slope_class": bundle.terrain.slope_class if bundle.terrain else "eben",
+                "requires_level_compensation": (bundle.terrain.slope_m or 0) > 0.5 if bundle.terrain else False,
+            } if bundle.terrain else {
+                "height_m": 0,
+                "min_m": 0,
+                "max_m": 0,
+                "slope_m": 0,
+                "slope_class": "eben",
+                "requires_level_compensation": False,
+            },
+            "zones": [
+                {
+                    "id": z.id,
+                    "name": z.name,
+                    "zone_type": z.zone_type,
+                    "position": getattr(z, 'position', None),
+                    "traufhoehe_m": z.traufhoehe_m,
+                    "firsthoehe_m": z.firsthoehe_m,
+                    "gebaeudehoehe_m": getattr(z, 'gebaeudehoehe_m', None),
+                    "beruesten": z.beruesten,
+                    "sonderkonstruktion": z.sonderkonstruktion,
+                    "confidence": z.confidence,
+                }
+                for z in bundle.zones
+            ] if bundle.zones else [],
+            "astra": None,  # ASTRA-Daten noch nicht implementiert
+            "fetched_at": datetime.utcnow().isoformat(),
+            "data_quality": "complete" if building_walls else "partial",
+            "missing_data": [] if building_walls else ["building_walls", "building_roofs"],
+        }
+
+    async def _load_geruestbaudata_for_egid(self, egid: str) -> Optional[dict]:
+        """Lädt GeruestbauData für eine einzelne EGID (für Multi-Building)."""
+        try:
+            # Versuche Adresse für EGID zu finden
+            from ..building_3d_service import get_building_3d_service
+            building_3d = get_building_3d_service()
+            building = building_3d.get_by_egid(egid)
+
+            if not building:
+                logger.warning(f"[PROJECT] Kein Gebäude für EGID {egid} in building_3d.db")
                 return None
 
-            # Bundle zu Dict konvertieren (für Kompatibilität)
-            return {
-                'egid': bundle.egid,
-                'address_matched': bundle.address_matched,
-                'polygon': bundle.polygon,
-                'sides': bundle.sides,
-                'traufhoehe_m': bundle.traufhoehe_m,
-                'firsthoehe_m': bundle.firsthoehe_m,
-                'gebaeudehoehe_m': bundle.gebaeudehoehe_m,
-                'footprint_area_m2': bundle.footprint_area_m2,
-                'perimeter_m': bundle.perimeter_m,
-                'lv95_e': bundle.lv95_e,
-                'lv95_n': bundle.lv95_n,
-                'terrain': {
-                    'reference_height_m': bundle.terrain.reference_height_m,
-                    'slope_m': bundle.terrain.slope_m,
-                    'slope_class': getattr(bundle.terrain, 'slope_class', None),
-                    # NEU 14.01.2026 18:00 - Fassaden-Höhen aus Wall-Layer (T2-T4)
-                    'facade_z_min': bundle.terrain.facade_z_min,
-                    'facade_z_max': bundle.terrain.facade_z_max,
-                    'facade_heights_source': bundle.terrain.facade_heights_source,
-                } if bundle.terrain else None,
-                'zones': [
-                    {
-                        'id': z.id,
-                        'name': z.name,
-                        'zone_type': z.zone_type,
-                        'traufhoehe_m': z.traufhoehe_m,
-                        'firsthoehe_m': z.firsthoehe_m,
-                    }
-                    for z in bundle.zones
-                ] if bundle.zones else None,
-                'roof_type': bundle.roof_type,
-                'roof_angle_deg': bundle.roof_angle_deg,
-                'roof_orientation': bundle.roof_orientation,
-                'complexity': bundle.complexity,
-                'building_type': bundle.building_type,
-                # NEU 14.01.2026 18:05 - 3D-Layer Flag für BuildingDataCard
-                'has_3d_layers': bundle.has_3d_layers,
-            }
+            # Adresse aus Koordinaten ermitteln oder Fallback
+            address = f"EGID {egid}"  # Fallback
+
+            # SmartBuildingService für vollständige Daten
+            smart_service = get_smart_building_service()
+            bundle = await smart_service.collect_all_data(
+                address=address,
+                egid_override=egid,
+                force_refresh=False,
+                include_research=False,  # Schneller für Multi-Building
+                include_zones_analysis=False,
+                include_terrain=True
+            )
+
+            if not bundle:
+                return None
+
+            # 3D-Layer laden
+            building_walls = []
+            building_roofs = []
+            try:
+                from app.services.layer_fetcher import get_layer_fetcher_service
+                layer_fetcher = get_layer_fetcher_service()
+                walls_raw = layer_fetcher.get_walls_for_building(egid)
+                roofs_raw = layer_fetcher.get_roofs_for_building(egid)
+
+                # Walls verarbeiten
+                for wall in walls_raw:
+                    building_walls.append({
+                        "gebaeudeeinheit": wall.get('gebaeudeeinheit', ''),
+                        "egid": wall.get('egid'),
+                        "z_min": wall.get('z_min'),
+                        "z_max": wall.get('z_max'),
+                        "geometry_type": wall.get('geometry_type'),
+                        "coords_3d": None,  # Vereinfacht für Multi-Building
+                    })
+
+                # Roofs verarbeiten
+                for roof in roofs_raw:
+                    building_roofs.append({
+                        "gebaeudeeinheit": roof.get('gebaeudeeinheit', ''),
+                        "egid": roof.get('egid'),
+                        "dach_min": roof.get('dach_min'),
+                        "dach_max": roof.get('dach_max'),
+                        "roof_form": roof.get('roof_form'),
+                        "roof_angle_deg": roof.get('roof_angle_deg'),
+                        "roof_orientation": roof.get('roof_orientation'),
+                        "geometry_type": roof.get('geometry_type'),
+                        "coords_3d": None,  # Vereinfacht für Multi-Building
+                    })
+            except Exception as e:
+                logger.warning(f"[PROJECT] 3D-Layer für EGID {egid}: {e}")
+
+            return self._build_geruestbaudata(bundle, address, building_walls, building_roofs)
+
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Error loading bundle for EGID {egid}: {e}")
+            logger.error(f"[PROJECT] Fehler beim Laden für EGID {egid}: {e}")
             return None
 
-    async def get_project_with_data(self, project_id: str) -> Optional[ProjectWithGeodata]:
+    async def get_project_with_data(self, project_id: str) -> Optional[ProjectWithGeruestbaudata]:
         """
-        Projekt mit Geodaten aus smart_building_cache abrufen.
+        Projekt mit buildings_data abrufen.
 
-        Verwendet den zentralen smart_building_cache (building_contexts.db),
-        der alle Gebäudedaten enthält (Polygon, Höhen, Terrain, Zonen, etc.).
-
-        FIX 14.01.2026 14:00: Fallback auf SmartBuildingService.collect_all_data()
-        wenn Cache leer ist (z.B. nach Railway Redeployment).
+        NEU 16.01.2026: buildings_data als Record<EGID, GeruestbauData>.
+        Unterstützt Single- und Multi-Building Projekte.
         """
         project = await self.get_project(project_id)
         if not project:
             return None
 
-        geodata = None
-        bundle = None
+        buildings_data = None
+        geruestbaudata = None  # Legacy Fallback
 
-        # Versuch 1: Bundle aus Cache laden (wenn EGID vorhanden)
-        if project.egid:
-            bundle = self._get_bundle_from_smart_service(project.egid)
+        # buildings_data aus Projekt laden (NEU)
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT buildings_data, geruestbaudata FROM projects WHERE id = ?', (project_id,))
+        row = cursor.fetchone()
+        conn.close()
 
-        # FIX 14.01.2026 14:00 / 15:15: Fallback - Bundle neu laden wenn Cache leer ODER keine EGID
-        # collect_all_data() speichert das Bundle automatisch im Cache,
-        # danach laden wir es mit _get_bundle_from_smart_service() für konsistente Struktur
-        if bundle is None and project.address:
-            logger.info(f"[PROJECT] Bundle nicht im Cache, lade neu für {project.address}")
-            try:
-                smart_service = get_smart_building_service()
-                new_bundle = await smart_service.collect_all_data(
-                    address=project.address,
-                    force_refresh=False,
-                    include_research=True,
-                    include_zones_analysis=True,
-                    include_terrain=True
-                )
-                if new_bundle and new_bundle.egid:
-                    # Bundle wurde im Cache gespeichert, jetzt mit korrekter Struktur laden
-                    bundle = self._get_bundle_from_smart_service(new_bundle.egid)
-                    if bundle:
-                        logger.info(f"[PROJECT] Bundle neu geladen für EGID {new_bundle.egid}")
-                    else:
-                        # Fallback: Falls Cache-Load fehlschlägt, manuell konvertieren
-                        logger.warning(f"[PROJECT] Cache-Load fehlgeschlagen, verwende direkte Konvertierung")
-                        bundle = {
-                            'egid': new_bundle.egid,
-                            'address_matched': new_bundle.address_matched,
-                            'polygon': new_bundle.polygon,
-                            'sides': new_bundle.sides,
-                            'traufhoehe_m': new_bundle.traufhoehe_m,
-                            'firsthoehe_m': new_bundle.firsthoehe_m,
-                            'gebaeudehoehe_m': new_bundle.gebaeudehoehe_m,
-                            'footprint_area_m2': new_bundle.footprint_area_m2,
-                            'perimeter_m': new_bundle.perimeter_m,
-                            'lv95_e': new_bundle.lv95_e,
-                            'lv95_n': new_bundle.lv95_n,
-                            'terrain': {
-                                'reference_height_m': new_bundle.terrain.reference_height_m,
-                                'slope_m': new_bundle.terrain.slope_m,
-                                'slope_class': new_bundle.terrain.slope_class,
-                                'facade_z_min': new_bundle.terrain.facade_z_min,
-                                'facade_z_max': new_bundle.terrain.facade_z_max,
-                                'facade_heights_source': new_bundle.terrain.facade_heights_source,
-                            } if new_bundle.terrain else None,
-                            'zones': [
-                                {
-                                    'id': z.id,
-                                    'name': z.name,
-                                    'zone_type': z.zone_type,
-                                    'traufhoehe_m': z.traufhoehe_m,
-                                    'firsthoehe_m': z.firsthoehe_m,
-                                }
-                                for z in new_bundle.zones
-                            ] if new_bundle.zones else None,
-                            'roof_type': new_bundle.roof_type,
-                            'roof_angle_deg': new_bundle.roof_angle_deg,
-                            'roof_orientation': new_bundle.roof_orientation,
-                            'complexity': new_bundle.complexity,
-                            'building_type': new_bundle.building_type,
-                            'has_3d_layers': new_bundle.has_3d_layers,
-                        }
-            except Exception as e:
-                logger.error(f"[PROJECT] Fehler beim Laden des Bundles: {e}")
+        if row:
+            # Neues Format: buildings_data (Record mit EGID als Key)
+            if row['buildings_data']:
+                try:
+                    buildings_data = json.loads(row['buildings_data'])
+                    egid_count = len(buildings_data)
+                    logger.info(f"[PROJECT] buildings_data geladen für {project_id} ({egid_count} Gebäude)")
+                except json.JSONDecodeError:
+                    logger.warning(f"[PROJECT] buildings_data JSON ungültig für {project_id}")
 
-        if bundle:
-            # Bundle zu Geodata-Format konvertieren (kompatibel mit Frontend)
-            geodata = {
-                'egid': bundle.get('egid'),
-                'address': bundle.get('address_matched'),
-                'polygon': bundle.get('polygon'),
-                'traufhoehe_m': bundle.get('traufhoehe_m'),
-                'firsthoehe_m': bundle.get('firsthoehe_m'),
-                'gebaeudehoehe_m': bundle.get('gebaeudehoehe_m'),
-                'area_m2': bundle.get('footprint_area_m2'),
-                'perimeter_m': bundle.get('perimeter_m'),
-                'center_e': bundle.get('lv95_e'),
-                'center_n': bundle.get('lv95_n'),
-                'coord_e': bundle.get('lv95_e'),
-                'coord_n': bundle.get('lv95_n'),
-                # Zusätzliche Felder aus dem Bundle
-                'sides': bundle.get('sides'),
-                'terrain': bundle.get('terrain'),
-                'zones': bundle.get('zones'),
-                'roof_type': bundle.get('roof_type'),
-                'roof_angle_deg': bundle.get('roof_angle_deg'),
-                'roof_orientation': bundle.get('roof_orientation'),
-                'complexity': bundle.get('complexity'),
-                'building_type': bundle.get('building_type'),
-            }
-            # NEU 14.01.2026 18:00 - Fassaden-Höhen direkt ins geodata (für BuildingDataCard)
-            terrain = bundle.get('terrain')
-            if terrain:
-                geodata['facade_z_min'] = terrain.get('facade_z_min')
-                geodata['facade_z_max'] = terrain.get('facade_z_max')
-                geodata['facade_heights_source'] = terrain.get('facade_heights_source')
-                geodata['terrain_height_m'] = terrain.get('reference_height_m')
-                geodata['slope_m'] = terrain.get('slope_m')
-                geodata['slope_class'] = terrain.get('slope_class')
-            # NEU 14.01.2026 18:05 - 3D-Layer Flag
-            geodata['has_3d_layers'] = bundle.get('has_3d_layers', False)
+            # Legacy Fallback: geruestbaudata (Single-Building)
+            if not buildings_data and row['geruestbaudata']:
+                try:
+                    geruestbaudata = json.loads(row['geruestbaudata'])
+                    # Migration: Legacy zu buildings_data konvertieren
+                    if geruestbaudata and geruestbaudata.get('building', {}).get('egid'):
+                        egid = geruestbaudata['building']['egid']
+                        buildings_data = {egid: geruestbaudata}
+                        logger.info(f"[PROJECT] Legacy geruestbaudata zu buildings_data migriert für {project_id}")
+                except json.JSONDecodeError:
+                    logger.warning(f"[PROJECT] geruestbaudata JSON ungültig für {project_id}")
 
-        return ProjectWithGeodata(
+        return ProjectWithGeruestbaudata(
             **project.model_dump(),
-            geodata=geodata
+            buildings_data=buildings_data,
+            geruestbaudata=geruestbaudata  # Legacy für Rückwärtskompatibilität
         )
 
     async def list_projects(self, status: ProjectStatus = None) -> List[Project]:
@@ -425,130 +597,6 @@ class ProjectService:
         conn.close()
 
         return deleted
-
-    async def enrich_with_geodata(self, project_id: str) -> Optional[ProjectWithGeodata]:
-        """Projekt mit ZUSÄTZLICHEN Daten anreichern.
-
-        Enrichment-Daten werden in building_contexts.db → building_environment
-        gespeichert (pro EGID, nicht pro Projekt).
-
-        Enrichment holt:
-        - Terrain (Geländehöhe am Referenzpunkt)
-        - Hanglage (Steigung über Gebäude-Polygon)
-        - Zukünftig: Foto-Analyse, Zonen
-
-        NICHT im Enrichment (dynamisch abgerufen):
-        - Nachbar-Gebäude (API mit variablem Radius)
-        """
-        project = await self.get_project(project_id)
-        if not project:
-            return None
-
-        egid = project.egid
-        polygon = None
-        terrain_data = None
-
-        try:
-            # Koordinaten und Polygon aus Projekt-Buildings oder Geodata holen
-            coord_e, coord_n = None, None
-
-            if project.buildings and len(project.buildings) > 0:
-                # Multi-Adresse: Koordinaten aus erstem Gebäude
-                first_building = project.buildings[0]
-                if first_building.get('coordinates'):
-                    coord_e = first_building['coordinates'].get('lv95_e')
-                    coord_n = first_building['coordinates'].get('lv95_n')
-                if not egid:
-                    egid = first_building.get('egid')
-                # Polygon aus building
-                if first_building.get('polygon'):
-                    polygon = first_building['polygon']
-
-            # Fallback: Geodata über SmartBuildingService laden
-            if not coord_e or not coord_n:
-                if egid:
-                    bundle = self._get_bundle_from_smart_service(egid)
-                    if bundle:
-                        coord_e = bundle.get('lv95_e')
-                        coord_n = bundle.get('lv95_n')
-                        # Koordinaten normalisieren (LV95)
-                        if coord_e and coord_e < 2000000:
-                            coord_e += 2000000
-                        if coord_n and coord_n < 1000000:
-                            coord_n += 1000000
-                        if bundle.get('polygon') and not polygon:
-                            polygon = bundle.get('polygon')
-
-            # ENRICHMENT: Terrain + Hanglage
-            if coord_e and coord_n:
-                from app.services.terrain import get_terrain_service
-
-                terrain_service = get_terrain_service()
-                terrain_height = await terrain_service.get_height(coord_e, coord_n)
-
-                terrain_data = {
-                    "height_m": terrain_height,
-                    "coordinates": {"e": coord_e, "n": coord_n},
-                    "enriched_at": datetime.utcnow().isoformat(),
-                }
-
-                # Hanglage berechnen wenn Polygon vorhanden
-                if polygon and len(polygon) >= 3:
-                    terrain_info = await terrain_service.get_terrain_info(
-                        coord_e, coord_n, polygon
-                    )
-                    if terrain_info:
-                        terrain_data["min_terrain_m"] = terrain_info.min_terrain_m
-                        terrain_data["max_terrain_m"] = terrain_info.max_terrain_m
-                        terrain_data["slope_m"] = terrain_info.terrain_slope_m
-
-                        # Hanglage-Klassifikation
-                        if terrain_info.terrain_slope_m:
-                            slope = terrain_info.terrain_slope_m
-                            if slope < 0.5:
-                                terrain_data["slope_class"] = "eben"
-                            elif slope < 1.5:
-                                terrain_data["slope_class"] = "leicht"
-                            elif slope < 3.0:
-                                terrain_data["slope_class"] = "mittel"
-                            else:
-                                terrain_data["slope_class"] = "stark"
-
-                print(f"[Gerüstbau] Terrain für EGID {egid}: {terrain_height}m ü.M., Hanglage: {terrain_data.get('slope_m', 0):.1f}m")
-
-        except Exception as e:
-            print(f"[Gerüstbau] Fehler bei Enrichment: {e}")
-            import traceback
-            traceback.print_exc()
-
-        # Terrain in building_environment speichern (pro EGID, nicht pro Projekt)
-        if terrain_data and egid:
-            from app.services.intelligent_db import IntelligentDBService
-            db_service = IntelligentDBService()
-            db_service.set_building_environment(
-                egid=egid,
-                surrounding_buildings=[],  # Wird dynamisch abgerufen
-                blocked_facades=[],
-                terrain_data=terrain_data
-            )
-
-        # Projekt-Status aktualisieren (KEIN building_data mehr!)
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE projects
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-        ''', (
-            ProjectStatus.ENRICHED.value,
-            datetime.utcnow().isoformat(),
-            project_id
-        ))
-        conn.commit()
-        conn.close()
-
-        # Mit Geodaten zurückgeben
-        return await self.get_project_with_data(project_id)
 
     async def upload_photo(self, project_id: str, file) -> dict:
         """Foto hochladen (Placeholder)."""
