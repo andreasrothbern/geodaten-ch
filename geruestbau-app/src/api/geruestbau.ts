@@ -1,5 +1,5 @@
 import { api, API_BASE } from './client'
-import type { Project, ProjectWithGeodata, ProjectCreate, ProjectUpdate, OcrExtractionResult } from '../types/project'
+import type { Project, ProjectWithGeruestbaudata, ProjectCreate, ProjectUpdate, OcrExtractionResult } from '../types/project'
 
 // Neighbors API Types
 export interface NeighborBuilding {
@@ -25,28 +25,106 @@ export interface AddressRangeParsed {
   range_type: 'single' | 'range' | 'explicit'
 }
 
+// FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
+// Korrekte Höhen aus: roof_dach_min_m - terrain_z_min
 export interface AddressRangeBuilding {
   address: string
   matched_address?: string  // Full address from geocoding
   egid: string
   egid_source?: string
   polygon?: [number, number][]
-  traufhoehe_m?: number
-  firsthoehe_m?: number
+  // Rohdaten für Höhenberechnung (NEU 16.01.2026)
+  roof_dach_min_m?: number   // Trauf absolut (m ü.M.)
+  roof_dach_max_m?: number   // First absolut (m ü.M.)
+  terrain_z_min?: number     // Niedrigstes Terrain (m ü.M.)
+  gebaeudehoehe_m?: number   // Gebäudehöhe (relativ)
   coordinates?: {
     lv95_e: number
     lv95_n: number
   }
 }
 
-// Multi-Building Data for 3D View
+// =============================================================================
+// NEU 19.01.2026: Objekt-basierte Architektur
+// Ein Projekt = Ein Objekt. polygon_object ist IMMER vorhanden.
+// =============================================================================
+
+/**
+ * Metadaten eines Gebäudes im Projekt (für projectBuildings[])
+ * Nur Identifikation, keine Geometrie - die kommt aus polygon_object
+ */
+export interface ProjectBuildingMetadata {
+  egid: string
+  address: string
+  center_e: number
+  center_n: number
+}
+
+/**
+ * Fassade des Objekt-Polygons (facades_object)
+ */
+export interface ObjectFacade {
+  index: number
+  direction: string
+  length_m: number
+  height_m: number
+  start_point: [number, number]
+  end_point: [number, number]
+  azimuth_deg: number
+}
+
+/**
+ * Objekt-Daten vom Backend (object_data in SSE Response)
+ * Enthält polygon_object - das Polygon für Gerüstplanung
+ * Bei Single-Building: Das eine Polygon
+ * Bei Multi-Building: Union aller Polygone (äussere Kontur)
+ */
+export interface ObjectData {
+  polygon_object: [number, number][]  // Das Objekt-Polygon (IMMER vorhanden)
+  facades_object: ObjectFacade[]      // Fassaden des Objekt-Polygons
+  roof_object?: {
+    z_min: number | null              // Tiefste Traufe (m ü.M.)
+    z_max: number | null              // Höchster First (m ü.M.)
+  }
+  projectBuildings: ProjectBuildingMetadata[]  // Metadaten aller Gebäude
+  total_area_m2: number
+  total_perimeter_m: number
+  avg_traufhoehe_m: number | null
+  building_count: number
+}
+
+// =============================================================================
+// DEPRECATED: Alte Interfaces (für Rückwärtskompatibilität)
+// =============================================================================
+
+/**
+ * @deprecated Use ObjectFacade instead
+ */
+export interface MultiBuildingFacade {
+  id: string
+  direction: string
+  length_m: number
+  height_m: number
+  start_point: [number, number]
+  end_point: [number, number]
+}
+
+/**
+ * @deprecated Use ObjectData + ProjectBuildingMetadata instead
+ * Wird noch verwendet in Legacy-Code der additionalBuildings verwendet
+ */
 export interface MultiBuildingData {
   egid: string
   address: string
   polygon: [number, number][]
   center: [number, number]  // LV95 coordinates
-  traufhoehe_m: number
-  firsthoehe_m: number
+  // Rohdaten für Höhenberechnung (NEU 16.01.2026)
+  roof_dach_min_m?: number   // Trauf absolut (m ü.M.)
+  roof_dach_max_m?: number   // First absolut (m ü.M.)
+  terrain_z_min?: number     // Niedrigstes Terrain (m ü.M.)
+  gebaeudehoehe_m?: number   // Gebäudehöhe (relativ) als Fallback
+  // NEU 18.01.2026 BUG-027: Fassaden für Gerüst
+  facades?: MultiBuildingFacade[]
 }
 
 export interface AddressRangeResponse {
@@ -107,13 +185,67 @@ export interface BlockedFacadesResponse {
   query_time_ms: number
 }
 
+// NEU 19.01.2026: Geodaten per API laden (Architektur-Trennung)
+// Siehe: docs/architecture/ARCHITECTURE.md
+export interface GeodataBuilding {
+  egid: string
+  polygon?: [number, number][]
+  center_e?: number
+  center_n?: number
+  distance_m: number
+  traufhoehe_m?: number
+  firsthoehe_m?: number
+  gebaeudehoehe_m?: number
+  walls?: Array<{
+    z_min: number
+    z_max: number
+    coords_3d?: number[][][]
+  }>
+  roofs?: Array<{
+    dach_min: number
+    dach_max: number
+  }>
+}
+
+export interface ProjectGeodataResponse {
+  project_buildings: GeodataBuilding[]
+  neighbors: GeodataBuilding[]
+  center: { e: number; n: number }
+  radius_m: number
+  buildings_count: number
+  project_egids: string[]
+  query_time_ms: number
+}
+
 export const geruestbauApi = {
   // Projekte
   listProjects: () =>
     api.get<Project[]>('/api/v1/geruestbau/projects'),
 
   getProject: (id: string) =>
-    api.get<ProjectWithGeodata>(`/api/v1/geruestbau/projects/${id}`),
+    api.get<ProjectWithGeruestbaudata>(`/api/v1/geruestbau/projects/${id}`),
+
+  // NEU 19.01.2026: Geodaten per API laden (ersetzt buildings_data)
+  // Siehe: docs/architecture/ARCHITECTURE.md → "Koordinaten-basierte API Strategie"
+  getProjectGeodata: async (
+    projectId: string,
+    radiusM: number = 100,
+    includeWalls: boolean = true,
+    includeRoofs: boolean = true
+  ): Promise<ProjectGeodataResponse> => {
+    const params = new URLSearchParams({
+      radius_m: radiusM.toString(),
+      include_walls: includeWalls.toString(),
+      include_roofs: includeRoofs.toString(),
+    })
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/projects/${projectId}/geodata?${params}`
+    )
+    if (!response.ok) {
+      throw new Error(`Geodata API error: ${response.status}`)
+    }
+    return response.json()
+  },
 
   createProject: (data: ProjectCreate) =>
     api.post<Project>('/api/v1/geruestbau/projects', data),
@@ -123,10 +255,6 @@ export const geruestbauApi = {
 
   deleteProject: (id: string) =>
     api.delete(`/api/v1/geruestbau/projects/${id}`),
-
-  // Geodaten
-  enrichProject: (id: string) =>
-    api.post<ProjectWithGeodata>(`/api/v1/geruestbau/projects/${id}/enrich`, {}),
 
   // Fotos
   uploadPhoto: async (projectId: string, file: File) => {
@@ -234,13 +362,17 @@ export const geruestbauApi = {
         return null
       }
 
+      // FIX 16.01.2026 17:00: Rohdaten statt berechnete Höhen
       return {
         egid: data.egid || 'unknown',
         address: data.address_matched || address,
         polygon: data.polygon,
         center: [data.coordinates_lv95?.[0] || 0, data.coordinates_lv95?.[1] || 0],
-        traufhoehe_m: data.traufhoehe_m || 10,
-        firsthoehe_m: data.firsthoehe_m || 13,
+        // Rohdaten für korrekte Höhenberechnung
+        roof_dach_min_m: data.roof?.roof_dach_min_m,
+        roof_dach_max_m: data.roof?.roof_dach_max_m,
+        terrain_z_min: data.roof?.terrain_z_min,
+        gebaeudehoehe_m: data.gebaeudehoehe_m,
       }
     } catch (err) {
       console.warn(`Error fetching polygon for ${address}:`, err)

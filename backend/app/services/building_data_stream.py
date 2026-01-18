@@ -3,6 +3,13 @@ BuildingDataStreamService - Streaming beim Laden von Gebäudedaten.
 
 Nutzt den SmartBuildingService intern und streamt jeden Schritt als SSE-Event.
 
+NEU 18.01.2026: Unterstützt jetzt auch Multi-Adressen (z.B. "Knospenweg 4-6, Bern").
+Beide Formate verwenden denselben SSE-Endpunkt:
+- Single: event.data = {matched_address, egid, polygon, ...}
+- Multi:  event.data = {buildings: [{matched_address, egid, polygon, ...}, {...}]}
+
+Frontend prüft: if (data.buildings) → Multi else → Single
+
 Wird verwendet bei:
 - Projekt-Erstellung (Adresse eingeben → Daten laden)
 - Gebäude hinzufügen zu bestehendem Projekt
@@ -16,18 +23,247 @@ Liefert progressiv via Server-Sent Events (SSE):
 5. terrain - Terrain-Höhe, Hanglage (~200ms, optional)
 6. zones - Zonen-Analyse (~500ms, Claude nur bei komplexen Gebäuden)
 7. research - Gebäudename, Architekturstil (~1s, optional)
-8. complete - Vollständiges BuildingDataBundle
+8. complete - Vollständiges BuildingDataBundle (oder Liste bei Multi)
 """
 
 import json
+import re
 import time
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncGenerator, Dict, Any, Optional
+from typing import AsyncGenerator, Dict, Any, Optional, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
+    """
+    NEU 19.01.2026: Berechnet polygon_object - das Objekt-Polygon für Gerüstplanung.
+
+    Ein Projekt = Ein Objekt. Das Objekt-Polygon ist:
+    - Single-Building: Das Polygon des einen Gebäudes
+    - Multi-Building: Union aller Gebäude-Polygone (äussere Kontur)
+
+    Das Frontend verwendet polygon_object für:
+    - SVG-Visualisierung
+    - 2D-Fassadenansicht
+    - 3D-Gerüstplanung
+    - Fassaden-Berechnung
+
+    projectBuildings[] enthält die Metadaten (Adressen, EGIDs) aller Gebäude.
+
+    Args:
+        bundles: Liste von BuildingDataBundle Objekten (1 oder mehr)
+
+    Returns:
+        Dict mit polygon_object, facades_object, roof_object, projectBuildings, etc.
+        oder None bei Fehler
+    """
+    if not bundles:
+        return None
+
+    try:
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+
+        # Alle gültigen Polygone und Metadaten sammeln
+        all_polygons = []
+        project_buildings = []  # Metadaten für projectBuildings
+        total_traufhoehe = 0
+        trauf_count = 0
+
+        # Dach-Höhen sammeln (m ü.M.)
+        roof_z_mins = []  # Traufhöhen
+        roof_z_maxs = []  # Firsthöhen
+
+        for bundle in bundles:
+            if bundle.polygon and len(bundle.polygon) >= 3:
+                coords = [(p[0], p[1]) for p in bundle.polygon]
+                all_polygons.append(Polygon(coords))
+
+                # projectBuildings Metadaten sammeln
+                project_buildings.append({
+                    "egid": bundle.egid,
+                    "address": bundle.address_matched or "",
+                    "center_e": bundle.lv95_e,
+                    "center_n": bundle.lv95_n,
+                })
+
+                if bundle.traufhoehe_m:
+                    total_traufhoehe += bundle.traufhoehe_m
+                    trauf_count += 1
+
+                # Dach-Höhen aus roof_dach_min/max (m ü.M.)
+                if bundle.roof_dach_min_m:
+                    roof_z_mins.append(bundle.roof_dach_min_m)
+                if bundle.roof_dach_max_m:
+                    roof_z_maxs.append(bundle.roof_dach_max_m)
+
+        if len(all_polygons) == 0:
+            return None
+
+        # NEU 19.01.2026: Unterscheide Single vs Multi-Building
+        object_polygon = None
+        outer_facades = []
+
+        if len(all_polygons) == 1:
+            # Single-Building: Das Polygon direkt verwenden
+            single = all_polygons[0]
+            object_polygon = [
+                [round(c[0], 2), round(c[1], 2)]
+                for c in single.exterior.coords
+            ]
+            avg_traufhoehe = total_traufhoehe / trauf_count if trauf_count > 0 else None
+            outer_facades = _extract_facades_from_polygon(object_polygon, avg_traufhoehe)
+            total_perimeter = round(single.length, 2)
+        else:
+            # Multi-Building: Union aller Polygone
+            combined = unary_union(all_polygons)
+            avg_traufhoehe = total_traufhoehe / trauf_count if trauf_count > 0 else None
+
+            if hasattr(combined, 'exterior'):
+                # Einfaches Polygon
+                object_polygon = [
+                    [round(c[0], 2), round(c[1], 2)]
+                    for c in combined.exterior.coords
+                ]
+                outer_facades = _extract_facades_from_polygon(object_polygon, avg_traufhoehe)
+
+            elif hasattr(combined, 'geoms'):
+                # MultiPolygon - nehme das größte
+                largest = max(combined.geoms, key=lambda p: p.area)
+                if hasattr(largest, 'exterior'):
+                    object_polygon = [
+                        [round(c[0], 2), round(c[1], 2)]
+                        for c in largest.exterior.coords
+                    ]
+                    outer_facades = _extract_facades_from_polygon(object_polygon, avg_traufhoehe)
+
+            total_perimeter = round(combined.length if hasattr(combined, 'length') else 0, 2)
+
+        if not object_polygon:
+            return None
+
+        # Statistiken
+        total_area = round(sum(b.footprint_area_m2 or 0 for b in bundles), 2)
+
+        # Dach-Höhen (min/max über alle Gebäude)
+        roof_object = None
+        if roof_z_mins or roof_z_maxs:
+            roof_object = {
+                "z_min": min(roof_z_mins) if roof_z_mins else None,  # Tiefste Traufe
+                "z_max": max(roof_z_maxs) if roof_z_maxs else None,  # Höchster First
+            }
+
+        return {
+            # NEU 19.01.2026: Einheitliches Naming - polygon_object ist IMMER vorhanden
+            "polygon_object": object_polygon,
+            "facades_object": outer_facades,
+            "roof_object": roof_object,
+            "projectBuildings": project_buildings,  # Metadaten aller Gebäude
+            "total_area_m2": total_area,
+            "total_perimeter_m": total_perimeter,
+            "avg_traufhoehe_m": round(avg_traufhoehe, 2) if avg_traufhoehe else None,
+            "building_count": len(bundles),
+        }
+
+    except Exception as e:
+        logger.warning(f"[OBJECT] Fehler bei Objekt-Berechnung: {e}")
+        return None
+
+
+def _extract_facades_from_polygon(polygon_coords: List[List[float]], default_height: Optional[float]) -> List[Dict[str, Any]]:
+    """
+    Extrahiert Fassaden aus einem Polygon für das combined-Objekt.
+
+    Args:
+        polygon_coords: Liste von [e, n] Koordinaten
+        default_height: Standard-Höhe für alle Fassaden
+
+    Returns:
+        Liste von Fassaden-Dicts
+    """
+    import math
+
+    if len(polygon_coords) < 3:
+        return []
+
+    facades = []
+
+    for i in range(len(polygon_coords) - 1):
+        p1 = polygon_coords[i]
+        p2 = polygon_coords[i + 1]
+
+        # Länge berechnen
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        length = math.sqrt(dx * dx + dy * dy)
+
+        if length < 0.5:  # Kurze Segmente ignorieren
+            continue
+
+        # Richtung bestimmen
+        angle = math.degrees(math.atan2(dy, dx))
+        direction = _angle_to_direction(angle)
+
+        facades.append({
+            "index": len(facades),
+            "direction": direction,
+            "start_point": p1,
+            "end_point": p2,
+            "length_m": round(length, 2),
+            "height_m": default_height,
+        })
+
+    return facades
+
+
+def _angle_to_direction(angle: float) -> str:
+    """Konvertiert Winkel (Grad) zu Himmelsrichtung."""
+    # Normalisieren auf 0-360
+    angle = angle % 360
+    if angle < 0:
+        angle += 360
+
+    # 8 Richtungen
+    directions = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
+    index = round(angle / 45) % 8
+    return directions[index]
+
+
+def _is_multi_address(address: str) -> bool:
+    """
+    Prüft ob eine Adresse ein Multi-Adress-Format hat.
+
+    Erkannte Formate:
+    - Range: "Knospenweg 4-6" oder "Knospenweg 4 - 6"
+    - Slash: "Kramgasse 27/29"
+    - Komma in Hausnummer: "Hauptstr. 10, 12, 14" (nicht Komma vor Stadt!)
+
+    Returns:
+        True wenn Multi-Adresse erkannt
+    """
+    # Muster: Zahl-Zahl (Range)
+    if re.search(r'\d+\s*-\s*\d+', address):
+        # Aber nicht wenn es eine PLZ ist (4 Ziffern gefolgt von Leerzeichen und Stadt)
+        # z.B. "3006 Bern" sollte nicht als Range erkannt werden
+        match = re.search(r'(\d+)\s*-\s*(\d+)', address)
+        if match:
+            # Prüfe ob es Teil einer PLZ sein könnte
+            start = int(match.group(1))
+            end = int(match.group(2))
+            # PLZ in der Schweiz: 1000-9999
+            if start >= 1000 and end >= 1000:
+                return False
+            return True
+
+    # Muster: Zahl/Zahl (Slash)
+    if re.search(r'\d+\s*/\s*\d+', address):
+        return True
+
+    return False
 
 
 class StreamStep(str, Enum):
@@ -89,11 +325,12 @@ class BuildingDataStreamService:
         """
         Generator für SSE Events beim Laden von Gebäudedaten.
 
-        Ruft die Methoden des SmartBuildingService auf und sendet
-        nach jedem Schritt ein Event.
+        NEU 18.01.2026: Unterstützt Single UND Multi-Adressen in EINER Methode!
+        Erkennt automatisch ob Multi (z.B. "Knospenweg 4-6") und verarbeitet
+        alle Gebäude mit derselben Logik.
 
         Args:
-            address: Zu suchende Adresse
+            address: Zu suchende Adresse (Single oder Multi wie "Knospenweg 4-6")
             include_research: Claude-Recherche für Gebäudename
             include_zones: Zonen-Analyse (Claude nur bei komplexen Gebäuden)
             include_terrain: Terrain-Daten laden
@@ -109,233 +346,421 @@ class BuildingDataStreamService:
             6. zones
             7. research (optional)
             8. complete
+
+        Event-Format:
+            Single: {matched_address, egid, polygon, ...}
+            Multi:  {buildings: [{...}, {...}], building_count: N}
         """
         from .smart_building.models import BuildingDataBundle
+        from .address_parser import get_address_parser
+
+        is_multi = _is_multi_address(address)
+        if is_multi:
+            logger.info(f"[STREAM] Multi-Adresse erkannt: {address}")
+
+        # Parse Adressen (Single = 1 Adresse, Multi = N Adressen)
+        parser = get_address_parser()
+        if is_multi:
+            parsed = parser.parse(address)
+            addresses_to_process = parsed.get_full_addresses()
+            if not addresses_to_process:
+                yield SSEEvent(
+                    event=StreamStep.ERROR,
+                    data={"code": "PARSE_FAILED", "message": f"Konnte keine Adressen aus '{address}' parsen", "step": StreamStep.GEOCODING}
+                )
+                return
+            logger.info(f"[STREAM] {len(addresses_to_process)} Adressen geparst: {addresses_to_process}")
+        else:
+            addresses_to_process = [address]
 
         start_time = time.time()
         smart = self._get_smart_service()
 
-        # Bundle erstellen (wie in SmartBuildingService.collect_all_data)
-        bundle = BuildingDataBundle(
-            address_input=address,
-            collection_timestamp=datetime.now(),
-        )
-
         try:
             # ═══════════════════════════════════════════════════════════════
-            # 1. GEOCODING + GWR (für EGID)
+            # 1. GEOCODING + GWR (für alle Adressen)
             # ═══════════════════════════════════════════════════════════════
             step_start = time.time()
+            bundles: List[BuildingDataBundle] = []
+            geocoding_results = []
 
-            await smart._collect_geocoding(bundle)
-
-            if not bundle.lv95_e or not bundle.lv95_n:
-                yield SSEEvent(
-                    event=StreamStep.ERROR,
-                    data={
-                        "code": "GEOCODING_FAILED",
-                        "message": f"Adresse nicht gefunden: {address}",
-                        "step": StreamStep.GEOCODING
-                    }
+            for single_address in addresses_to_process:
+                bundle = BuildingDataBundle(
+                    address_input=single_address,
+                    collection_timestamp=datetime.now(),
                 )
-                return
 
-            # GWR-Daten holen (setzt EGID!)
-            await smart._collect_gwr_data(bundle)
+                await smart._collect_geocoding(bundle)
 
-            yield SSEEvent(
-                event=StreamStep.GEOCODING,
-                data={
+                if not bundle.lv95_e or not bundle.lv95_n:
+                    if is_multi:
+                        logger.warning(f"[STREAM] Geocoding fehlgeschlagen für: {single_address}")
+                        continue
+                    else:
+                        yield SSEEvent(
+                            event=StreamStep.ERROR,
+                            data={
+                                "code": "GEOCODING_FAILED",
+                                "message": f"Adresse nicht gefunden: {address}",
+                                "step": StreamStep.GEOCODING
+                            }
+                        )
+                        return
+
+                # GWR-Daten holen (setzt EGID!)
+                await smart._collect_gwr_data(bundle)
+                bundles.append(bundle)
+
+                geocoding_results.append({
                     "matched_address": bundle.address_matched,
                     "egid": bundle.egid,
                     "coordinates": {
                         "lv95_e": bundle.lv95_e,
                         "lv95_n": bundle.lv95_n,
                     },
-                    "duration_ms": round((time.time() - step_start) * 1000, 1)
-                }
-            )
+                })
+
+            if not bundles:
+                yield SSEEvent(
+                    event=StreamStep.ERROR,
+                    data={
+                        "code": "GEOCODING_FAILED",
+                        "message": f"Keine Gebäude gefunden für: {address}",
+                        "step": StreamStep.GEOCODING
+                    }
+                )
+                return
+
+            geocoding_duration = round((time.time() - step_start) * 1000, 1)
+
+            if is_multi:
+                yield SSEEvent(
+                    event=StreamStep.GEOCODING,
+                    data={
+                        "buildings": geocoding_results,
+                        "building_count": len(geocoding_results),
+                        "duration_ms": geocoding_duration
+                    }
+                )
+            else:
+                b = bundles[0]
+                yield SSEEvent(
+                    event=StreamStep.GEOCODING,
+                    data={
+                        "matched_address": b.address_matched,
+                        "egid": b.egid,
+                        "coordinates": {
+                            "lv95_e": b.lv95_e,
+                            "lv95_n": b.lv95_n,
+                        },
+                        "duration_ms": geocoding_duration
+                    }
+                )
 
             # ═══════════════════════════════════════════════════════════════
             # 2. GWR-DATEN (separates Event für UI)
             # ═══════════════════════════════════════════════════════════════
-            yield SSEEvent(
-                event=StreamStep.GWR,
-                data={
-                    "egid": bundle.egid,
-                    "floors": bundle.gwr_floors,
-                    "area_m2": bundle.gwr_area_m2,
-                    "category": bundle.gwr_category_code,
-                    "category_name": bundle.gwr_category,
-                    "duration_ms": 0  # Bereits in geocoding gemessen
-                }
-            )
-
-            # ═══════════════════════════════════════════════════════════════
-            # 3. POLYGON + HEIGHTS (ein API-Aufruf, zwei Events)
-            # ═══════════════════════════════════════════════════════════════
-            step_start = time.time()
-
-            # Prüfe ob Tile-Download nötig (für Progress-Event)
-            from .tile_cache import get_tile_cache
-            tile_cache = get_tile_cache()
-            # get_tile_for_coordinates gibt direkt Path zurück (oder None)
-            tile_path = tile_cache.get_tile_for_coordinates(bundle.lv95_e, bundle.lv95_n)
-
-            if not tile_path:
+            if is_multi:
+                gwr_results = [{
+                    "egid": b.egid,
+                    "matched_address": b.address_matched,
+                    "floors": b.gwr_floors,
+                    "area_m2": b.gwr_area_m2,
+                    "category": b.gwr_category_code,
+                    "category_name": b.gwr_category,
+                } for b in bundles]
                 yield SSEEvent(
-                    event=StreamStep.POLYGON_PROGRESS,
+                    event=StreamStep.GWR,
+                    data={"buildings": gwr_results, "duration_ms": 0}
+                )
+            else:
+                b = bundles[0]
+                yield SSEEvent(
+                    event=StreamStep.GWR,
                     data={
-                        "status": "downloading",
-                        "message": "Lade Gebäudedaten von swisstopo...",
+                        "egid": b.egid,
+                        "floors": b.gwr_floors,
+                        "area_m2": b.gwr_area_m2,
+                        "category": b.gwr_category_code,
+                        "category_name": b.gwr_category,
+                        "duration_ms": 0
                     }
                 )
 
-            # Polygon + Höhen laden (ein Aufruf!)
-            await smart._collect_building_3d_data(bundle)
-            polygon_duration = round((time.time() - step_start) * 1000, 1)
+            # ═══════════════════════════════════════════════════════════════
+            # 3. POLYGON + HEIGHTS (ein API-Aufruf pro Gebäude)
+            # ═══════════════════════════════════════════════════════════════
+            step_start = time.time()
 
-            yield SSEEvent(
-                event=StreamStep.POLYGON,
-                data={
+            # Progress-Event für Tile-Download
+            if is_multi:
+                yield SSEEvent(
+                    event=StreamStep.POLYGON_PROGRESS,
+                    data={
+                        "status": "loading",
+                        "message": f"Lade Gebäudedaten für {len(bundles)} Gebäude...",
+                        "building_count": len(bundles)
+                    }
+                )
+            else:
+                # Prüfe ob Tile-Download nötig (für Progress-Event)
+                from .tile_cache import get_tile_cache
+                tile_cache = get_tile_cache()
+                tile_path = tile_cache.get_tile_for_coordinates(bundles[0].lv95_e, bundles[0].lv95_n)
+
+                if not tile_path:
+                    yield SSEEvent(
+                        event=StreamStep.POLYGON_PROGRESS,
+                        data={
+                            "status": "downloading",
+                            "message": "Lade Gebäudedaten von swisstopo...",
+                        }
+                    )
+
+            # Polygon + Höhen für alle Gebäude laden
+            polygon_results = []
+            for bundle in bundles:
+                await smart._collect_building_3d_data(bundle)
+                # FIX 18.01.2026 BUG-028: 3D-Layer on-demand laden
+                smart._fetch_roof_geometry_for_complex(bundle)
+                smart._load_roof_data_from_db(bundle)
+
+                polygon_results.append({
+                    "egid": bundle.egid,
+                    "matched_address": bundle.address_matched,
                     "polygon": bundle.polygon,
                     "sides": bundle.sides,
                     "perimeter_m": bundle.perimeter_m,
                     "area_m2": bundle.footprint_area_m2,
+                })
+
+            polygon_duration = round((time.time() - step_start) * 1000, 1)
+
+            if is_multi:
+                yield SSEEvent(
+                    event=StreamStep.POLYGON,
+                    data={"buildings": polygon_results, "duration_ms": polygon_duration}
+                )
+            else:
+                b = bundles[0]
+                from .tile_cache import get_tile_cache
+                tile_cache = get_tile_cache()
+                tile_path = tile_cache.get_tile_for_coordinates(b.lv95_e, b.lv95_n)
+                yield SSEEvent(
+                    event=StreamStep.POLYGON,
+                    data={
+                        "polygon": b.polygon,
+                        "sides": b.sides,
+                        "perimeter_m": b.perimeter_m,
+                        "area_m2": b.footprint_area_m2,
+                        "egid": b.egid,
+                        "cache_hit": tile_path is not None,
+                        "duration_ms": polygon_duration
+                    }
+                )
+
+            # ═══════════════════════════════════════════════════════════════
+            # 4. HEIGHTS (separates Event)
+            # ═══════════════════════════════════════════════════════════════
+            heights_results = []
+            for bundle in bundles:
+                height_source = "swissBUILDINGS3D" if bundle.traufhoehe_m or bundle.firsthoehe_m else "default"
+                heights_results.append({
                     "egid": bundle.egid,
-                    "cache_hit": tile_path is not None,
-                    "duration_ms": polygon_duration
-                }
-            )
-
-            # ═══════════════════════════════════════════════════════════════
-            # 4. HEIGHTS (aus demselben Aufruf, separates Event)
-            # ═══════════════════════════════════════════════════════════════
-            height_source = "swissBUILDINGS3D"
-            if not bundle.traufhoehe_m and not bundle.firsthoehe_m:
-                height_source = "default"
-
-            # NEU 12.01.2026 22:15 - 3D-Layer Felder hinzufügen
-            # NEU 12.01.2026 22:45 - roof_type, roof_orientation, roof_angle_deg für 3D-Viewer
-            yield SSEEvent(
-                event=StreamStep.HEIGHTS,
-                data={
+                    "matched_address": bundle.address_matched,
                     "traufhoehe_m": bundle.traufhoehe_m,
                     "firsthoehe_m": bundle.firsthoehe_m,
                     "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
                     "source": height_source,
-                    "duration_ms": 0,  # Bereits in polygon gemessen
-                    # 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
                     "has_3d_layers": bundle.has_3d_layers,
                     "has_roof_geometry": bundle.has_roof_geometry,
                     "roof_dach_min_m": bundle.roof_dach_min_m,
                     "roof_dach_max_m": bundle.roof_dach_max_m,
                     "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
-                    # Dach-Analyse Daten (für 3D-Viewer)
                     "roof_type": bundle.roof_type,
                     "roof_orientation": bundle.roof_orientation,
                     "roof_angle_deg": bundle.roof_angle_deg,
-                }
-            )
+                })
+
+            if is_multi:
+                yield SSEEvent(
+                    event=StreamStep.HEIGHTS,
+                    data={"buildings": heights_results, "duration_ms": 0}
+                )
+            else:
+                h = heights_results[0]
+                yield SSEEvent(
+                    event=StreamStep.HEIGHTS,
+                    data={
+                        "traufhoehe_m": h["traufhoehe_m"],
+                        "firsthoehe_m": h["firsthoehe_m"],
+                        "gebaeudehoehe_m": h["gebaeudehoehe_m"],
+                        "source": h["source"],
+                        "duration_ms": 0,
+                        "has_3d_layers": h["has_3d_layers"],
+                        "has_roof_geometry": h["has_roof_geometry"],
+                        "roof_dach_min_m": h["roof_dach_min_m"],
+                        "roof_dach_max_m": h["roof_dach_max_m"],
+                        "roof_gebaeudeeinheit": h["roof_gebaeudeeinheit"],
+                        "roof_type": h["roof_type"],
+                        "roof_orientation": h["roof_orientation"],
+                        "roof_angle_deg": h["roof_angle_deg"],
+                    }
+                )
 
             # ═══════════════════════════════════════════════════════════════
             # 5. TERRAIN (optional)
             # ═══════════════════════════════════════════════════════════════
             if include_terrain:
                 step_start = time.time()
-                await smart._collect_terrain_data(bundle)
+                terrain_results = []
 
-                terrain_data = {
-                    "duration_ms": round((time.time() - step_start) * 1000, 1)
-                }
+                for bundle in bundles:
+                    await smart._collect_terrain_data(bundle)
 
-                if bundle.terrain:
-                    terrain_data.update({
-                        "terrain_height_m": bundle.terrain.reference_height_m,
-                        "min_terrain_m": bundle.terrain.min_height_m,
-                        "max_terrain_m": bundle.terrain.max_height_m,
-                        "slope_m": bundle.terrain.slope_m,
-                        "slope_class": bundle.terrain.slope_class,
-                        # NEU 14.01.2026 (T3): Fassaden-Höhen aus Wall-Layer
-                        "facade_z_min": bundle.terrain.facade_z_min,
-                        "facade_z_max": bundle.terrain.facade_z_max,
-                        "facade_heights_source": bundle.terrain.facade_heights_source,
-                    })
+                    terrain_data = {"egid": bundle.egid, "matched_address": bundle.address_matched}
+                    if bundle.terrain:
+                        terrain_data.update({
+                            "terrain_height_m": bundle.terrain.reference_height_m,
+                            "min_terrain_m": bundle.terrain.min_height_m,
+                            "max_terrain_m": bundle.terrain.max_height_m,
+                            "slope_m": bundle.terrain.slope_m,
+                            "slope_class": bundle.terrain.slope_class,
+                            "facade_z_min": bundle.terrain.facade_z_min,
+                            "facade_z_max": bundle.terrain.facade_z_max,
+                            "facade_heights_source": bundle.terrain.facade_heights_source,
+                        })
+                    terrain_results.append(terrain_data)
 
-                yield SSEEvent(
-                    event=StreamStep.TERRAIN,
-                    data=terrain_data
-                )
+                terrain_duration = round((time.time() - step_start) * 1000, 1)
+
+                if is_multi:
+                    yield SSEEvent(
+                        event=StreamStep.TERRAIN,
+                        data={"buildings": terrain_results, "duration_ms": terrain_duration}
+                    )
+                else:
+                    t = terrain_results[0]
+                    yield SSEEvent(
+                        event=StreamStep.TERRAIN,
+                        data={
+                            "duration_ms": terrain_duration,
+                            "terrain_height_m": t.get("terrain_height_m"),
+                            "min_terrain_m": t.get("min_terrain_m"),
+                            "max_terrain_m": t.get("max_terrain_m"),
+                            "slope_m": t.get("slope_m"),
+                            "slope_class": t.get("slope_class"),
+                            "facade_z_min": t.get("facade_z_min"),
+                            "facade_z_max": t.get("facade_z_max"),
+                            "facade_heights_source": t.get("facade_heights_source"),
+                        }
+                    )
 
             # ═══════════════════════════════════════════════════════════════
             # 6. ZONES (immer, aber Claude nur bei komplexen Gebäuden)
             # ═══════════════════════════════════════════════════════════════
             if include_zones:
                 step_start = time.time()
+                zones_results = []
 
-                # Komplexitäts-Check (wie in SmartBuildingService)
-                if smart._needs_zones_analysis(bundle):
-                    await smart._collect_zones_analysis(bundle)
-                    zones_source = "claude"
-                else:
-                    smart._create_default_zone(bundle)
-                    zones_source = "auto"
+                for bundle in bundles:
+                    if smart._needs_zones_analysis(bundle):
+                        await smart._collect_zones_analysis(bundle)
+                        zones_source = "claude"
+                    else:
+                        smart._create_default_zone(bundle)
+                        zones_source = "auto"
 
-                # Zonen zu Dict konvertieren
-                zones_list = []
-                for zone in bundle.zones:
-                    zone_dict = {
-                        "id": zone.id,
-                        "name": zone.name,
-                        "zone_type": zone.zone_type.value if hasattr(zone.zone_type, 'value') else str(zone.zone_type),
-                        "traufhoehe_m": zone.traufhoehe_m,
-                        "firsthoehe_m": zone.firsthoehe_m,
-                        "beruesten": zone.beruesten,
-                    }
-                    zones_list.append(zone_dict)
+                    zones_list = []
+                    for zone in bundle.zones:
+                        zones_list.append({
+                            "id": zone.id,
+                            "name": zone.name,
+                            "zone_type": zone.zone_type.value if hasattr(zone.zone_type, 'value') else str(zone.zone_type),
+                            "traufhoehe_m": zone.traufhoehe_m,
+                            "firsthoehe_m": zone.firsthoehe_m,
+                            "beruesten": zone.beruesten,
+                        })
 
-                yield SSEEvent(
-                    event=StreamStep.ZONES,
-                    data={
+                    zones_results.append({
+                        "egid": bundle.egid,
+                        "matched_address": bundle.address_matched,
                         "zones": zones_list,
                         "complexity": bundle.complexity,
                         "source": zones_source,
                         "building_name": bundle.building_name,
-                        "duration_ms": round((time.time() - step_start) * 1000, 1)
-                    }
-                )
+                    })
+
+                zones_duration = round((time.time() - step_start) * 1000, 1)
+
+                if is_multi:
+                    yield SSEEvent(
+                        event=StreamStep.ZONES,
+                        data={"buildings": zones_results, "duration_ms": zones_duration}
+                    )
+                else:
+                    z = zones_results[0]
+                    yield SSEEvent(
+                        event=StreamStep.ZONES,
+                        data={
+                            "zones": z["zones"],
+                            "complexity": z["complexity"],
+                            "source": z["source"],
+                            "building_name": z["building_name"],
+                            "duration_ms": zones_duration
+                        }
+                    )
 
             # ═══════════════════════════════════════════════════════════════
             # 7. RESEARCH (optional)
             # ═══════════════════════════════════════════════════════════════
             if include_research:
                 step_start = time.time()
-                await smart._collect_research_data(bundle, force_refresh)
+                research_results = []
 
-                yield SSEEvent(
-                    event=StreamStep.RESEARCH,
-                    data={
+                for bundle in bundles:
+                    await smart._collect_research_data(bundle, force_refresh)
+
+                    research_results.append({
+                        "egid": bundle.egid,
+                        "matched_address": bundle.address_matched,
                         "building_name": bundle.building_name,
                         "building_type": bundle.building_type,
                         "architectural_style": bundle.architectural_style,
                         "source": bundle.research_source,
-                        "duration_ms": round((time.time() - step_start) * 1000, 1)
-                    }
-                )
+                    })
+
+                research_duration = round((time.time() - step_start) * 1000, 1)
+
+                if is_multi:
+                    yield SSEEvent(
+                        event=StreamStep.RESEARCH,
+                        data={"buildings": research_results, "duration_ms": research_duration}
+                    )
+                else:
+                    r = research_results[0]
+                    yield SSEEvent(
+                        event=StreamStep.RESEARCH,
+                        data={
+                            "building_name": r["building_name"],
+                            "building_type": r["building_type"],
+                            "architectural_style": r["architectural_style"],
+                            "source": r["source"],
+                            "duration_ms": research_duration
+                        }
+                    )
 
             # ═══════════════════════════════════════════════════════════════
             # 8. COMPLETE
             # ═══════════════════════════════════════════════════════════════
-            smart._assess_data_quality(bundle)
             total_duration = round((time.time() - start_time) * 1000, 1)
 
-            yield SSEEvent(
-                event=StreamStep.COMPLETE,
-                data={
-                    "status": "ok",
-                    "duration_ms": total_duration,
-                    "address": bundle.address_matched or address,
+            complete_results = []
+            for bundle in bundles:
+                smart._assess_data_quality(bundle)
+                complete_results.append({
                     "egid": bundle.egid,
+                    "matched_address": bundle.address_matched,
                     "summary": {
                         "has_polygon": bundle.polygon is not None and len(bundle.polygon) > 0,
                         "has_heights": bundle.traufhoehe_m is not None,
@@ -345,8 +770,40 @@ class BuildingDataStreamService:
                         "quality": bundle.overall_quality.value if bundle.overall_quality else "unknown",
                     },
                     "bundle": self._bundle_to_dict(bundle)
-                }
-            )
+                })
+
+            # NEU 19.01.2026: object_data wird IMMER berechnet (Single + Multi)
+            # Ein Projekt = Ein Objekt. Das Frontend verwendet polygon_object für alles.
+            object_data = _calculate_object_data(bundles)
+
+            if is_multi:
+                yield SSEEvent(
+                    event=StreamStep.COMPLETE,
+                    data={
+                        "status": "ok",
+                        "duration_ms": total_duration,
+                        "address": address,
+                        "building_count": len(bundles),
+                        "buildings": complete_results,
+                        # NEU 19.01.2026: object_data statt combined (IMMER vorhanden)
+                        "object_data": object_data,
+                    }
+                )
+            else:
+                c = complete_results[0]
+                yield SSEEvent(
+                    event=StreamStep.COMPLETE,
+                    data={
+                        "status": "ok",
+                        "duration_ms": total_duration,
+                        "address": c["matched_address"] or address,
+                        "egid": c["egid"],
+                        "summary": c["summary"],
+                        "bundle": c["bundle"],
+                        # NEU 19.01.2026: object_data auch bei Single-Building
+                        "object_data": object_data,
+                    }
+                )
 
         except Exception as e:
             logger.exception(f"Error in stream_building_data: {e}")
@@ -394,6 +851,8 @@ class BuildingDataStreamService:
             "lv95_n": bundle.lv95_n,
             "polygon": bundle.polygon,
             "sides": bundle.sides,
+            # NEU 18.01.2026: Fassaden mit Höhen pro Fassade (für GeruestbauData)
+            "facades": bundle.facades,
             "perimeter_m": bundle.perimeter_m,
             "footprint_area_m2": bundle.footprint_area_m2,
             "traufhoehe_m": bundle.traufhoehe_m,
