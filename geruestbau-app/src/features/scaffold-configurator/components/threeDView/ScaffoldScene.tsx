@@ -9,43 +9,13 @@ import { useRef, useEffect, useState } from 'react';
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D, BuildingZone } from '../../types/scaffold.types';
-import type { NeighborBuilding, MultiBuildingData } from '../../../../api/geruestbau';
+import type { NeighborBuilding, ObjectData } from '../../../../api/geruestbau';
 import type { BuildingWall } from '../../../../types/project';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
-// FIX 11.01.2026 02:40 - Dach-Orientierung aus Polygon berechnen
-// Gleiche Logik wie Backend (roof.py): First senkrecht zur längsten Seite
-function calculatePolygonRoofOrientation(polygon: [number, number][]): 'O-W' | 'N-S' {
-  if (!polygon || polygon.length < 3) return 'O-W';
-
-  // Längste Seite finden
-  let maxLength = 0;
-  let longestSideVector = { dx: 1, dy: 0 };
-
-  for (let i = 0; i < polygon.length; i++) {
-    const p1 = polygon[i];
-    const p2 = polygon[(i + 1) % polygon.length];
-    const dx = p2[0] - p1[0];
-    const dy = p2[1] - p1[1];
-    const length = Math.sqrt(dx * dx + dy * dy);
-
-    if (length > maxLength) {
-      maxLength = length;
-      longestSideVector = { dx, dy };
-    }
-  }
-
-  // Azimut berechnen (0° = Nord, 90° = Ost)
-  let azimuthDeg = Math.atan2(longestSideVector.dx, longestSideVector.dy) * (180 / Math.PI);
-  if (azimuthDeg < 0) azimuthDeg += 360;
-
-  // Klassifizierung: Längste Seite ~O-W (67.5-112.5° oder 247.5-292.5°) → Dach neigt O-W
-  if ((azimuthDeg >= 67.5 && azimuthDeg < 112.5) ||
-      (azimuthDeg >= 247.5 && azimuthDeg < 292.5)) {
-    return 'O-W';
-  }
-  return 'N-S';
-}
+// NOTE 19.01.2026: calculatePolygonRoofOrientation wurde entfernt nach Objekt-Architektur Refactoring
+// Die Funktion wurde nur für Multi-Building-Polygone benötigt, die jetzt als Union im Haupt-Polygon sind.
+// Falls wieder benötigt: Siehe Git-History oder createRoofFromPolygon() für ähnliche Logik.
 
 interface ScaffoldSceneProps {
   configuration: ScaffoldConfiguration;
@@ -53,7 +23,8 @@ interface ScaffoldSceneProps {
   onViewChange?: (view: View3D) => void;
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
-  additionalBuildings?: MultiBuildingData[];
+  // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+  objectData?: ObjectData;
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
   // NEU 18.01.2026: Echte 3D-Wandgeometrie aus swissBUILDINGS3D
@@ -884,105 +855,10 @@ function createScaffoldFacadeAlongEdge(
   return group;
 }
 
-// NEU 18.01.2026 BUG-027: Helper für Gerüst auf Zusatzgebäuden
-// Einfachere Version ohne ScaffoldFacade-Typ
-function createScaffoldForMultiBuilding(
-  facade: { start_point: [number, number]; end_point: [number, number]; length_m: number; height_m: number },
-  buildingCenter: [number, number],
-  mainCenter: [number, number],
-  fieldWidth: number,
-  levelHeight: number,
-  scaffoldGap: number = 0.5
-): THREE.Group {
-  const group = new THREE.Group();
-  const cellDepth = 0.73;
-  const colorHex = 0x22c55e; // Green for additional building scaffolds
-
-  // Check if we have actual coordinates
-  if (!facade.start_point || !facade.end_point) {
-    return group;
-  }
-
-  // Calculate fields and levels from facade dimensions
-  const fields = Math.max(1, Math.ceil(facade.length_m / fieldWidth));
-  const levels = Math.max(1, Math.ceil(facade.height_m / levelHeight));
-
-  // Normalize coordinates relative to building center, then add offset to main center
-  const offsetX = buildingCenter[0] - mainCenter[0];
-  const offsetZ = -(buildingCenter[1] - mainCenter[1]);
-
-  // Swap start/end to match polygon winding order (same as createScaffoldFacadeAlongEdge)
-  const startX = (facade.end_point[0] - buildingCenter[0]) + offsetX;
-  const startZ = -(facade.end_point[1] - buildingCenter[1]) + offsetZ;
-  const endX = (facade.start_point[0] - buildingCenter[0]) + offsetX;
-  const endZ = -(facade.start_point[1] - buildingCenter[1]) + offsetZ;
-
-  // Calculate facade direction vector
-  const dx = endX - startX;
-  const dz = endZ - startZ;
-  const length = Math.sqrt(dx * dx + dz * dz);
-
-  if (length < 0.01) return group;
-
-  // Normalize direction
-  const dirX = dx / length;
-  const dirZ = dz / length;
-
-  // Perpendicular direction (outward from building)
-  const perpX = -dirZ;
-  const perpZ = dirX;
-
-  // Offset scaffolds outward from building edge
-  const scaffoldOffsetX = perpX * (scaffoldGap + cellDepth / 2);
-  const scaffoldOffsetZ = perpZ * (scaffoldGap + cellDepth / 2);
-
-  // Inset scaffolds slightly at corners
-  const cornerInset = 0.5 / fields;
-
-  for (let level = 0; level < levels; level++) {
-    for (let field = 0; field < fields; field++) {
-      // Position along the facade edge
-      const tRaw = (field + 0.5) / fields;
-      const t = cornerInset + tRaw * (1 - 2 * cornerInset);
-      const cellX = startX + dx * t + scaffoldOffsetX;
-      const cellZ = startZ + dz * t + scaffoldOffsetZ;
-      const cellY = level * levelHeight + levelHeight / 2;
-
-      const cellWidth = fieldWidth * 0.95;
-      const cellHeight = levelHeight * 0.95;
-
-      // Create cell geometry
-      const cellGroup = new THREE.Group();
-      const geometry = new THREE.BoxGeometry(cellWidth, cellHeight, cellDepth);
-      const material = new THREE.MeshStandardMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: 0.75,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-
-      // Wireframe
-      const edges = new THREE.EdgesGeometry(geometry);
-      const line = new THREE.LineSegments(
-        edges,
-        new THREE.LineBasicMaterial({ color: 0x166534 }) // Dark green
-      );
-
-      cellGroup.add(mesh);
-      cellGroup.add(line);
-
-      // Position and rotate to align with facade
-      cellGroup.position.set(cellX, cellY, cellZ);
-      const angle = Math.atan2(dirZ, dirX);
-      cellGroup.rotation.y = -angle;
-
-      group.add(cellGroup);
-    }
-  }
-
-  return group;
-}
+// NOTE 19.01.2026: createScaffoldForMultiBuilding wurde entfernt nach Objekt-Architektur Refactoring
+// Mit der neuen Architektur ist das Haupt-Polygon die Union aller Gebäude.
+// Gerüste werden nur für die Fassaden des Union-Polygons gerendert (enabledFacades).
+// Falls wieder benötigt für separate Gebäude: Siehe Git-History.
 
 // Helper to create scaffold facade (legacy - fallback)
 function createScaffoldFacade(
@@ -1142,7 +1018,7 @@ export default function ScaffoldScene({
   activeView,
   neighbors = [],
   blockedSides = [],
-  additionalBuildings = [],
+  objectData,
   zones = [],
   complexity = 'simple',
   buildingWalls = [],
@@ -1151,8 +1027,9 @@ export default function ScaffoldScene({
   if (neighbors.length > 0) {
     console.log(`ScaffoldScene: ${neighbors.length} neighbors, blocked sides: ${blockedSides.join(', ')}`);
   }
-  if (additionalBuildings.length > 0) {
-    console.log(`ScaffoldScene: ${additionalBuildings.length} additional buildings for multi-building view`);
+  // NEU 19.01.2026: Objekt-Architektur - projectBuildings sind nur Metadaten
+  if (objectData?.projectBuildings && objectData.projectBuildings.length > 1) {
+    console.log(`ScaffoldScene: Multi-building object with ${objectData.projectBuildings.length} buildings (polygon is UNION)`);
   }
   // Log zones for complex buildings
   if (zones.length > 0) {
@@ -1251,7 +1128,7 @@ export default function ScaffoldScene({
     };
   }, []);  // Initial scene setup - only once
 
-  // Update scene content when configuration, neighbors, or additionalBuildings change
+  // Update scene content when configuration, neighbors, or objectData change
   useEffect(() => {
     const contentGroup = contentGroupRef.current;
     if (!contentGroup || !worldRef.current?.scene?.three) return;
@@ -1272,16 +1149,17 @@ export default function ScaffoldScene({
     }
 
     // Add new content
-    addSceneContent(contentGroup, configuration, neighbors, additionalBuildings, zones, complexity);
+    // NEU 19.01.2026: objectData statt additionalBuildings (polygon ist bereits Union)
+    addSceneContent(contentGroup, configuration, neighbors, objectData, zones, complexity);
 
     console.log('Scene content updated:', {
       neighbors: neighbors.length,
-      additionalBuildings: additionalBuildings.length,
+      isMultiBuilding: objectData?.projectBuildings ? objectData.projectBuildings.length > 1 : false,
       facades: configuration.elements.filter(e => e.type === 'facade' && e.enabled).length,
       zones: zones.length,
       complexity,
     });
-  }, [configuration, neighbors, additionalBuildings, zones, complexity]);
+  }, [configuration, neighbors, objectData, zones, complexity]);
 
   // Update camera when view changes
   useEffect(() => {
@@ -1296,11 +1174,12 @@ export default function ScaffoldScene({
   }, [activeView]);
 
   // Add scene content (works with Scene or Group)
+  // NEU 19.01.2026: objectData statt multiBuildingData (Objekt-Architektur)
   function addSceneContent(
     parent: THREE.Object3D,
     config: ScaffoldConfiguration,
     neighborBuildings: NeighborBuilding[] = [],
-    multiBuildingData: MultiBuildingData[] = [],
+    objectData: ObjectData | undefined,
     buildingZones: BuildingZone[] = [],
     buildingComplexity: 'simple' | 'moderate' | 'complex' = 'simple'
   ) {
@@ -1498,81 +1377,15 @@ export default function ScaffoldScene({
         });
       }
 
-      // Add additional selected buildings (Phase 3.4 - Multi-Building View)
-      if (multiBuildingData.length > 0) {
-        const mainCenter = bboxCenter;
-        multiBuildingData.forEach((building, index) => {
-          if (!building.polygon || building.polygon.length < 3) return;
-
-          // Use building.center from API (LV95 coordinates)
-          const buildingCenterE = building.center[0];
-          const buildingCenterN = building.center[1];
-
-          // Offset from main building center
-          const offsetX = buildingCenterE - mainCenter[0];
-          const offsetZ = -(buildingCenterN - mainCenter[1]); // Y in LV95 -> -Z in THREE.js
-
-          // Normalize building polygon relative to its own center
-          const normalizedBuilding = building.polygon.map(p =>
-            [p[0] - buildingCenterE, p[1] - buildingCenterN] as [number, number]
-          );
-
-          // FIX 16.01.2026 17:00: Korrekte Höhenberechnung aus Rohdaten
-          // Create building mesh with full opacity (blue-purple tint for additional buildings)
-          let addBuildingHeight = 10; // Fallback
-          if (building.roof_dach_min_m != null && building.terrain_z_min != null) {
-            addBuildingHeight = building.roof_dach_min_m - building.terrain_z_min;
-          } else if (building.gebaeudehoehe_m != null) {
-            addBuildingHeight = building.gebaeudehoehe_m;
-          }
-          const buildingMesh = createBuildingFromPolygon(normalizedBuilding, addBuildingHeight);
-
-          // Apply distinct color for additional buildings
-          buildingMesh.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              child.material = new THREE.MeshStandardMaterial({
-                color: 0x6366f1, // Indigo/purple for additional buildings
-                transparent: true,
-                opacity: 0.7,
-              });
-            }
-          });
-
-          // Position relative to main building
-          buildingMesh.position.set(offsetX, 0, offsetZ);
-          parent.add(buildingMesh);
-
-          // Add roof for additional buildings
-          // FIX 11.01.2026 02:40 - Dach-Typ und Orientierung pro Gebäude berechnen
-          // FIX 16.01.2026 17:00: Korrekte Dachhöhenberechnung aus Rohdaten
-          let addFirstHeight = addBuildingHeight + 3; // Fallback
-          if (building.roof_dach_max_m != null && building.terrain_z_min != null) {
-            addFirstHeight = building.roof_dach_max_m - building.terrain_z_min;
-          }
-          const addRoofHeight = addFirstHeight - addBuildingHeight;
-          // Dachtyp aus Höhendifferenz: < 0.5m = flachdach, sonst satteldach
-          const addRoofType = addRoofHeight < 0.5 ? 'flachdach' : 'satteldach';
-          const addRoofOrientation = calculatePolygonRoofOrientation(building.polygon);
-          const additionalRoof = createRoofFromPolygon(normalizedBuilding, addBuildingHeight, addRoofHeight, addRoofType, addRoofOrientation);
-          additionalRoof.position.set(offsetX, 0, offsetZ);
-          parent.add(additionalRoof);
-
-          // NEU 18.01.2026 BUG-027: Gerüst für Zusatzgebäude rendern
-          if (building.facades && building.facades.length > 0) {
-            building.facades.forEach((facade) => {
-              const scaffoldGroup = createScaffoldForMultiBuilding(
-                facade,
-                building.center,
-                mainCenter,
-                fieldWidth,
-                levelHeight
-              );
-              parent.add(scaffoldGroup);
-            });
-            console.log(`Added scaffolds for additional building ${building.address}: ${building.facades.length} facades`);
-          }
-
-          console.log(`Added additional building ${index + 1}/${multiBuildingData.length}: ${building.address} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
+      // NEU 19.01.2026: Objekt-Architektur - Multi-Building-Projekte
+      // Das Haupt-Polygon IST bereits die Union aller Gebäude.
+      // objectData.projectBuildings enthält nur Metadaten (egid, address, center) - KEINE Polygone mehr.
+      // Daher werden zusätzliche Gebäude nicht mehr separat gerendert.
+      // Die Fassaden des Union-Polygons werden oben mit enabledFacades gerendert.
+      if (objectData?.projectBuildings && objectData.projectBuildings.length > 1) {
+        console.log(`Multi-building object: ${objectData.projectBuildings.length} buildings in union polygon`);
+        objectData.projectBuildings.forEach((building, index) => {
+          console.log(`  - Building ${index + 1}: ${building.address} (EGID: ${building.egid})`);
         });
       }
 

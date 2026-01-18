@@ -8,7 +8,7 @@ import { RotateCw, ZoomIn, Home, X, Package, AlertTriangle } from 'lucide-react'
 import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldConfig';
 import { formatNumber } from '../utils/calculations';
 import type { View3D, BuildingZone, ScaffoldFacade } from '../types/scaffold.types';
-import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
+import type { NeighborBuilding, ObjectData } from '../../../api/geruestbau';
 import type { BuildingWall } from '../../../types/project';
 import { ScaffoldScene } from './threeDView';
 
@@ -45,14 +45,15 @@ interface MaterialListResponse {
 interface ThreeDPanelProps {
   neighbors?: NeighborBuilding[];
   blockedSides?: string[];
-  additionalBuildings?: MultiBuildingData[];
+  // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+  objectData?: ObjectData;
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
   // NEU 18.01.2026: Echte 3D-Wandgeometrie aus swissBUILDINGS3D
   buildingWalls?: BuildingWall[];
 }
 
-export default function ThreeDPanel({ neighbors = [], blockedSides = [], additionalBuildings = [], zones = [], complexity = 'simple', buildingWalls = [] }: ThreeDPanelProps) {
+export default function ThreeDPanel({ neighbors = [], blockedSides = [], objectData, zones = [], complexity = 'simple', buildingWalls = [] }: ThreeDPanelProps) {
   const { setCurrentTab, configuration } = useScaffoldConfig();
   const totals = useTotals();
   const settings = useSettings();
@@ -156,7 +157,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], additio
               onViewChange={setActiveView}
               neighbors={neighbors}
               blockedSides={blockedSides}
-              additionalBuildings={additionalBuildings}
+              objectData={objectData}
               zones={zones}
               complexity={complexity}
               buildingWalls={buildingWalls}

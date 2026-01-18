@@ -15,7 +15,7 @@ import BuildingDataCard from '../components/ui/BuildingDataCard';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData, type GeodataBuilding } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type GeodataBuilding, type ObjectData } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeruestbaudata, Geodata, BuildingWall, BuildingRoof } from '../types/project';
 import { convertGeruestbaudataToGeodata, convertGeodataToGeruestbaudata, getBuildingEgids } from '../types/project';
@@ -60,8 +60,9 @@ interface ConfiguratorBuildingData {
   // NEU 16.01.2026 14:50: Terrain-Höhen pro Fassade für konsistente 3D-Berechnung
   facade_z_min?: Record<string, number>;  // Terrain-Höhe pro Himmelsrichtung (m ü.M.)
   facade_z_max?: Record<string, number>;  // Oberkante pro Himmelsrichtung (m ü.M.)
-  // NEU 18.01.2026: Kombiniertes Polygon für Multi-Building
-  polygon_combined?: number[][];  // Union-Polygon aller Gebäude
+  // NEU 19.01.2026: Objekt-Daten (Ein Projekt = Ein Objekt)
+  // polygon_object ist IMMER vorhanden (Single- und Multi-Building)
+  object_data?: ObjectData;
   metadata: {
     source: string;
     polygon_points: number;
@@ -529,11 +530,12 @@ export default function ConfiguratorPage() {
   const { data: sseData, start: startSSE, stop: stopSSE } = useProjectContextStream();
 
   // Multi-Building State (Phase 3)
-  // NEU 19.01.2026: Vereinfacht - alle Gebäude sind gleichwertig
-  // Bei Multi-Building wird ein Union-Polygon verwendet (polygon_combined)
+  // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+  // object_data enthält polygon_object (Union aller Gebäude) und projectBuildings (Metadaten)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
   const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
   const [isMultiMode, setIsMultiMode] = useState(false);
+  const [loadingMultiBuilding, setLoadingMultiBuilding] = useState(false);
 
   // Load project data: prefer Router State, fallback to API
   useEffect(() => {
@@ -814,96 +816,16 @@ export default function ConfiguratorPage() {
         setBuildingData(configData);
         setLoadingState('success');
 
-        // NEU 18.01.2026: Multi-Building Support
-        // Einfache Logik: polygon_combined vorhanden = Union-Polygon bereits berechnet
-        const isCombinedObject = configData.polygon_combined != null;
-        if (isCombinedObject) {
-          console.log('[Multi-Building] Union-Polygon vorhanden - keine separaten Daten nötig');
+        // NEU 19.01.2026: Objekt-Architektur
+        // object_data wird vom Backend geliefert und enthält:
+        // - polygon_object: Das Objekt-Polygon (IMMER vorhanden)
+        // - projectBuildings: Metadaten aller Gebäude
+        // - facades_object: Fassaden des Objekt-Polygons
+        if (configData.object_data) {
+          console.log(`[Objekt-Architektur] object_data vorhanden mit ${configData.object_data.building_count} Gebäude(n)`);
         } else if (egids.length > 1) {
-          console.log(`[Multi-Building] Projekt hat ${egids.length} Gebäude in buildings_data`);
-          setLoadingAdditionalBuildings(true);
-
-          try {
-            const additionalEgids = egids.slice(1);  // Alle außer dem ersten
-            const additionalBuildings: MultiBuildingData[] = [];
-
-            for (const addEgid of additionalEgids) {
-              const buildingData = loadedProject.buildings_data?.[addEgid];
-              if (buildingData) {
-                // FIX 16.01.2026 17:00: Rohdaten für Höhenberechnung
-                // Rohdaten aus roofs und terrain extrahieren
-                const firstRoof = buildingData.roofs?.[0];
-                // FIX 18.01.2026: heights ist jetzt optional
-                const terrainMin = buildingData.terrain?.min_m ?? buildingData.heights?.terrain_height_m ?? 0;
-
-                // NEU 18.01.2026 BUG-027: Fassaden für Gerüst berechnen
-                // Traufhöhe = dach_min - terrain_min (oder Fallback auf gebaeudehoehe)
-                // Priorität: facades[0].height_m > heights.gebaeudehoehe_m > 8
-                let traufHeight = buildingData.facades?.[0]?.height_m ?? buildingData.heights?.gebaeudehoehe_m ?? 8;
-                if (firstRoof?.dach_min && terrainMin) {
-                  traufHeight = firstRoof.dach_min - terrainMin;
-                }
-
-                // Polygon zu Fassaden konvertieren
-                const polygon = buildingData.building.polygon as [number, number][];
-                const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
-                const calculatedFacades = sidesToFacades(simplifyResult.sides, traufHeight);
-
-                // Konvertieren zu MultiBuildingFacade Format
-                const facades = calculatedFacades.map(f => ({
-                  id: f.id,
-                  direction: f.direction,
-                  length_m: f.length_m,
-                  height_m: f.height_m,
-                  start_point: f.start_point,
-                  end_point: f.end_point,
-                }));
-
-                additionalBuildings.push({
-                  egid: buildingData.building.egid,
-                  address: buildingData.building.address,
-                  polygon: polygon,
-                  // Rohdaten für korrekte Höhenberechnung
-                  roof_dach_min_m: firstRoof?.dach_min ?? undefined,
-                  roof_dach_max_m: firstRoof?.dach_max ?? undefined,
-                  terrain_z_min: terrainMin,
-                  // FIX 18.01.2026: heights ist optional, Fallback auf facades
-                  gebaeudehoehe_m: buildingData.heights?.gebaeudehoehe_m ?? buildingData.facades?.[0]?.height_m,
-                  center: [buildingData.building.center_e, buildingData.building.center_n],
-                  // NEU 18.01.2026 BUG-027: Fassaden für Gerüst
-                  facades: facades,
-                });
-                console.log(`[Multi-Building] EGID ${addEgid} aus buildings_data geladen mit ${facades.length} Fassaden`);
-              }
-            }
-
-            setManualAdditionalBuildings(additionalBuildings);
-            console.log(`[Multi-Building] ${additionalBuildings.length} zusätzliche Gebäude aus Cache geladen`);
-          } catch (err) {
-            console.error('[Multi-Building] Fehler beim Verarbeiten zusätzlicher Gebäude:', err);
-          } finally {
-            setLoadingAdditionalBuildings(false);
-          }
-        } else if (!isCombinedObject && loadedProject.buildings && loadedProject.buildings.length > 1) {
-          // Legacy-Fallback: buildings Array mit Adressen, via API laden
-          // NUR wenn KEIN kombiniertes Objekt vorliegt (alte Projekte ohne Union-Polygon)
-          console.log(`[Multi-Building Legacy] Projekt hat ${loadedProject.buildings.length} Gebäude, lade via API...`);
-          setLoadingAdditionalBuildings(true);
-
-          try {
-            const additionalAddresses = loadedProject.buildings.slice(1).map(b => b.address);
-            const additionalData = await Promise.all(
-              additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
-            );
-
-            const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
-            setManualAdditionalBuildings(validAdditional);
-            console.log(`[Multi-Building Legacy] ${validAdditional.length} zusätzliche Gebäude via API geladen`);
-          } catch (err) {
-            console.error('[Multi-Building Legacy] Fehler beim Laden:', err);
-          } finally {
-            setLoadingAdditionalBuildings(false);
-          }
+          // Legacy-Fallback: Alte Projekte ohne object_data
+          console.log(`[Legacy Multi-Building] Projekt hat ${egids.length} Gebäude, aber kein object_data - benötigt Migration`);
         }
 
         return;
@@ -914,26 +836,6 @@ export default function ConfiguratorPage() {
     console.log('No geodata in cache, fetching from API');
     setAddress(loadedProject.address);
     await fetchBuildingData(loadedProject.address, loadedProject);
-
-    // FIX 15.01.2026 02:30 - Multi-Building Support für Fallback-Pfad
-    if (loadedProject.buildings && loadedProject.buildings.length > 1) {
-      console.log(`[Multi-Building Fallback] Projekt hat ${loadedProject.buildings.length} Gebäude, lade zusätzliche...`);
-      setLoadingAdditionalBuildings(true);
-
-      try {
-        const additionalAddresses = loadedProject.buildings.slice(1).map(b => b.address);
-        const additionalData = await Promise.all(
-          additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
-        );
-        const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
-        setManualAdditionalBuildings(validAdditional);
-        console.log(`[Multi-Building Fallback] ${validAdditional.length} zusätzliche Gebäude geladen`);
-      } catch (err) {
-        console.error('[Multi-Building Fallback] Fehler beim Laden:', err);
-      } finally {
-        setLoadingAdditionalBuildings(false);
-      }
-    }
   };
 
   // Load project from API (fallback for direct links)
@@ -1297,38 +1199,32 @@ export default function ConfiguratorPage() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (selectedBuildings.length === 1) {
-                      // Single building - load directly
-                      setIsMultiMode(false);
-                      setManualAdditionalBuildings([]);
-                      fetchBuildingData(selectedBuildings[0].address, project);
-                    } else if (selectedBuildings.length > 1) {
-                      // Multi-Building Projekt: Alle Gebäude sind Teil EINES Objekts
-                      setIsMultiMode(false);
-                      setLoadingAdditionalBuildings(true);
+                    // NEU 19.01.2026: Objekt-Architektur
+                    // Multi-Building verwendet jetzt das Backend für polygon_object (Union)
+                    setIsMultiMode(false);
+                    setLoadingMultiBuilding(true);
 
-                      // Lade erstes Projekt-Gebäude (für Fassaden-Anzeige)
-                      await fetchBuildingData(selectedBuildings[0].address, project);
-
-                      // Lade Polygone für weitere Projekt-Gebäude parallel
-                      const additionalAddresses = selectedBuildings.slice(1).map(b => b.address);
-                      const additionalData = await Promise.all(
-                        additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
-                      );
-
-                      // Filtere fehlgeschlagene Ladevorgänge
-                      const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
-                      setManualAdditionalBuildings(validAdditional);
-                      setLoadingAdditionalBuildings(false);
-
-                      console.log(`Projekt mit ${1 + validAdditional.length} Gebäuden geladen`);
+                    try {
+                      if (selectedBuildings.length === 1) {
+                        // Single building - load directly
+                        await fetchBuildingData(selectedBuildings[0].address, project);
+                      } else if (selectedBuildings.length > 1) {
+                        // Multi-Building: Lade mit kombinierter Adresse
+                        // Backend berechnet automatisch object_data mit polygon_object
+                        const combinedAddress = selectedBuildings.map(b => b.address).join(', ');
+                        console.log(`[Objekt-Architektur] Lade ${selectedBuildings.length} Gebäude: ${combinedAddress}`);
+                        await fetchBuildingData(selectedBuildings[0].address, project);
+                        // TODO: Backend SSE sollte object_data liefern
+                      }
+                    } finally {
+                      setLoadingMultiBuilding(false);
                     }
                   }}
-                  disabled={selectedBuildings.length === 0 || loadingAdditionalBuildings}
+                  disabled={selectedBuildings.length === 0 || loadingMultiBuilding}
                   className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loadingAdditionalBuildings
-                    ? 'Lade Polygone...'
+                  {loadingMultiBuilding
+                    ? 'Lade Gebäudedaten...'
                     : selectedBuildings.length === 0
                     ? 'Gebäude auswählen'
                     : selectedBuildings.length === 1
@@ -1527,7 +1423,8 @@ export default function ConfiguratorPage() {
         blockedSides={blockedSides}
         // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
         blockedFacadesData={blockedFacadesData}
-        additionalBuildings={additionalBuildings}
+        // NEU 19.01.2026: Objekt-Architektur - object_data statt additionalBuildings
+        objectData={buildingData.object_data}
         // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
         zones={buildingData.zones}
         complexity={buildingData.complexity}

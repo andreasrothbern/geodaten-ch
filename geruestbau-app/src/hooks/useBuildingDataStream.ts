@@ -176,10 +176,11 @@ export interface CompleteData {
     };
     bundle: BuildingDataBundle;
   }>;
-  // NEU 18.01.2026: Kombinierte Daten für Multi-Building (Union-Polygon)
-  combined?: {
-    polygon_combined: number[][];           // Union aller Gebäude-Polygone
-    facades_combined: Array<{               // Äußere Fassaden des Union-Polygons
+  // NEU 19.01.2026: Objekt-Daten (Ein Projekt = Ein Objekt)
+  // polygon_object ist IMMER vorhanden (Single- und Multi-Building)
+  object_data?: {
+    polygon_object: [number, number][];     // Das Objekt-Polygon (IMMER vorhanden)
+    facades_object: Array<{                 // Fassaden des Objekt-Polygons
       index: number;
       direction: string;
       start_point: [number, number];
@@ -188,10 +189,16 @@ export interface CompleteData {
       azimuth_deg: number;
       height_m: number;
     }>;
-    roof_combined?: {
+    roof_object?: {
       z_min: number | null;                 // Tiefste Traufe (m ü.M.)
       z_max: number | null;                 // Höchster First (m ü.M.)
     };
+    projectBuildings: Array<{               // Metadaten aller Gebäude im Projekt
+      egid: string;
+      address: string;
+      center_e: number;
+      center_n: number;
+    }>;
     total_area_m2: number;
     total_perimeter_m: number;
     avg_traufhoehe_m: number | null;

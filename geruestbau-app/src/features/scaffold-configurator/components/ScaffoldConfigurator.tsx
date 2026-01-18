@@ -8,7 +8,7 @@ import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
 import type { MainTab, SelectedFacade, RoofData, BuildingZone } from '../types/scaffold.types';
 import type { BuildingWall } from '../../../types/project';
-import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
+import type { NeighborBuilding, ObjectData } from '../../../api/geruestbau';
 // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support)
 import type { BlockedFacadesData } from '../../../hooks/useProjectContextStream';
 
@@ -30,7 +30,9 @@ interface ScaffoldConfiguratorProps {
   blockedSides?: string[];  // Facade directions blocked by neighbors (fallback)
   // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
   blockedFacadesData?: BlockedFacadesData | null;
-  additionalBuildings?: MultiBuildingData[];  // Additional selected buildings for 3D view
+  // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+  // objectData enthält polygon_object (Union) und projectBuildings (Metadaten)
+  objectData?: ObjectData;
   // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
@@ -57,7 +59,7 @@ export default function ScaffoldConfigurator({
   blockingNeighbors = [],
   blockedSides = [],
   blockedFacadesData,
-  additionalBuildings = [],
+  objectData,
   zones = [],
   complexity = 'simple',
   researchSource,
@@ -166,10 +168,10 @@ export default function ScaffoldConfigurator({
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4">
-        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockingNeighbors={blockingNeighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} additionalBuildings={additionalBuildings} facadeZMin={facadeZMin} facadeZMax={facadeZMax} buildingWalls={buildingWalls} />}
+        {currentTab === 'facade' && <FacadePanel neighbors={neighbors} blockingNeighbors={blockingNeighbors} blockedSides={blockedSides} blockedFacadesData={blockedFacadesData} objectData={objectData} facadeZMin={facadeZMin} facadeZMax={facadeZMax} buildingWalls={buildingWalls} />}
         {currentTab === 'overview' && <OverviewPanel />}
         {currentTab === 'editor' && <EditorPanel />}
-        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} additionalBuildings={additionalBuildings} zones={zones} complexity={complexity} buildingWalls={buildingWalls} />}
+        {currentTab === '3d' && <ThreeDPanel neighbors={neighbors} blockedSides={blockedSides} objectData={objectData} zones={zones} complexity={complexity} buildingWalls={buildingWalls} />}
       </main>
     </div>
   );

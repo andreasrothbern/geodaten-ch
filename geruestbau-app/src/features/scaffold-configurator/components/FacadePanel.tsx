@@ -9,7 +9,7 @@ import { Check, ArrowRight, Compass, SlidersHorizontal } from 'lucide-react';
 import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks/useScaffoldConfig';
 import type { ScaffoldFacade, SelectedFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
-import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
+import type { NeighborBuilding, ObjectData } from '../../../api/geruestbau';
 import type { BuildingWall } from '../../../types/project';
 import { simplifyPolygon, sidesToFacades, sidesToFacadesWithWalls } from '../utils/polygonSimplifier';
 // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support)
@@ -22,8 +22,8 @@ interface FacadePanelProps {
   blockedSides?: string[];
   // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support via SSE)
   blockedFacadesData?: BlockedFacadesData | null;
-  // NEU 10.01.2026 22:35 - Zusätzliche Projekt-Gebäude (Multi-Building)
-  additionalBuildings?: MultiBuildingData[];
+  // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+  objectData?: ObjectData;
   // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
   /** @deprecated Use buildingWalls instead (BUG-024) */
   facadeZMin?: Record<string, number>;  // Terrain-Höhen (m ü.M.)
@@ -39,7 +39,7 @@ export default function FacadePanel({
   blockingNeighbors = [],
   blockedSides = [],
   blockedFacadesData,
-  additionalBuildings = [],
+  objectData,
   facadeZMin,
   facadeZMax,
   buildingWalls = [],  // NEU 15.01.2026 BUG-024
@@ -239,10 +239,9 @@ export default function FacadePanel({
   const polygonSvg = useMemo(() => {
     if (!polygon || polygon.length < 3 || facades.length === 0) return null;
 
-    // Calculate bounds including neighbors AND additional project buildings
-    // NEU 10.01.2026 22:35 - additionalBuildings für Multi-Building Support
-    const additionalPolygons = additionalBuildings.filter(b => b.polygon && b.polygon.length >= 3).map(b => b.polygon);
-    const allPolygons = [polygon, ...additionalPolygons, ...neighbors.filter(n => n.polygon).map(n => n.polygon!)];
+    // Calculate bounds including neighbors
+    // NEU 19.01.2026: Mit objectData ist das Haupt-Polygon bereits das Gesamt-Polygon (Union bei Multi-Building)
+    const allPolygons = [polygon, ...neighbors.filter(n => n.polygon).map(n => n.polygon!)];
     const allXs = allPolygons.flatMap(p => p.map(pt => pt[0]));
     const allYs = allPolygons.flatMap(p => p.map(pt => pt[1]));
 
@@ -275,36 +274,14 @@ export default function FacadePanel({
       );
     });
 
-    // FIX 11.01.2026 01:25 - ALLE Projekt-Gebäude als EIN OBJEKT darstellen
-    // Beide haben den gleichen Stil UND eine Projekt-Umrandung
+    // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
+    // Das Haupt-Polygon IST bereits das Gesamt-Polygon (Union bei Multi-Building)
+    // projectBuildings enthält nur noch Metadaten (keine separaten Polygone)
+    const isMultiBuilding = objectData?.projectBuildings && objectData.projectBuildings.length > 1;
     const projectBorderWidth = width * 0.012; // Dickere Linie für Projekt-Grenze
 
-    // FIX 11.01.2026 01:25 - Zusätzliche Projekt-Gebäude darstellen
-    const additionalBuildingElements = additionalBuildings.filter(b => b.polygon && b.polygon.length >= 3).map((building, idx) => {
-      const buildingPath = building.polygon.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
-      return (
-        <g key={`additional-${idx}`}>
-          {/* Projekt-Umrandung (dicker, blau) - zeigt Zugehörigkeit zum Objekt */}
-          <path
-            d={buildingPath}
-            fill="none"
-            stroke="#3b82f6"
-            strokeWidth={projectBorderWidth}
-            opacity={0.6}
-          />
-          {/* Gebäude-Füllung */}
-          <path
-            d={buildingPath}
-            fill="#f3f4f6"
-            stroke="#ddd"
-            strokeWidth={width * 0.005}
-          />
-        </g>
-      );
-    });
-
-    // Projekt-Umrandung auch für das Hauptgebäude (für einheitliches Aussehen)
-    const mainBuildingProjectBorder = (
+    // Projekt-Umrandung für Multi-Building-Projekte (zeigt dass es EIN Objekt ist)
+    const mainBuildingProjectBorder = isMultiBuilding ? (
       <path
         d={pathData}
         fill="none"
@@ -312,7 +289,7 @@ export default function FacadePanel({
         strokeWidth={projectBorderWidth}
         opacity={0.6}
       />
-    );
+    ) : null;
 
     // Create facade segments - thicker lines for better visibility
     const lineWidth = width * 0.06; // Dickere Linien für bessere Farbsichtbarkeit
@@ -385,11 +362,9 @@ export default function FacadePanel({
         <g transform={`translate(0, ${maxY + minY}) scale(1, -1)`}>
           {/* Neighbor buildings (external, NOT part of project) - gray */}
           {neighborElements}
-          {/* Zusätzliche Projekt-Gebäude (Teil des EINEN Objekts) */}
-          {additionalBuildingElements}
-          {/* Projekt-Umrandung für erstes Gebäude (nur bei Multi-Building) */}
-          {additionalBuildings.length > 0 && mainBuildingProjectBorder}
-          {/* Erstes Projekt-Gebäude */}
+          {/* Projekt-Umrandung (nur bei Multi-Building-Projekten) */}
+          {mainBuildingProjectBorder}
+          {/* Objekt-Polygon (bei Multi-Building: Union aller Gebäude) */}
           <path
             d={pathData}
             fill="#f3f4f6"
@@ -406,7 +381,7 @@ export default function FacadePanel({
         </g>
       </svg>
     );
-  }, [polygon, facades, neighbors, additionalBuildings, isFacadeBlocked, toggleFacadeEnabled]);
+  }, [polygon, facades, neighbors, objectData, isFacadeBlocked, toggleFacadeEnabled]);
 
   return (
     <div className="space-y-4">
