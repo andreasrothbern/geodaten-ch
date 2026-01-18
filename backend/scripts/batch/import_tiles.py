@@ -54,8 +54,7 @@ logger = logging.getLogger(__name__)
 
 # Services importieren
 from app.services.tile_cache import get_tile_cache, lv95_to_tile_id, TILES_DIR
-from app.services.tile_prefetch import _parse_all_buildings_from_gdb
-from app.services.building_3d_service import get_building_3d_service
+from app.services.parquet_writer import import_tile_with_parquet_pipeline
 
 # Regionen-Definitionen (BBox in LV95)
 REGIONS = {
@@ -80,9 +79,11 @@ REGIONS = {
         "expected_tiles": 16
     },
     "test": {
-        "name": "Test (1 Tile Bern)",
-        "bbox": (2600000, 1199000, 2601000, 1200000),  # 1x1 km - ACHTUNG: Bern!
-        "expected_tiles": 1
+        "name": "Test (1 Tile Knospenweg)",
+        # FIX 18.01.2026: Korrigierte Koordinaten - Bundeshaus-Bereich hat keine EGIDs!
+        # Knospenweg-Bereich (WEST von Bundeshaus) hat Gebäude mit EGIDs in Tile 1166-41
+        "bbox": (2595000, 1198000, 2598000, 1200000),  # 3x2 km - Knospenweg/Breitenrain
+        "expected_tiles": 4
     },
     "basel_test": {
         "name": "Basel Test (1 Tile)",
@@ -103,7 +104,7 @@ class TileImporter:
         self.workers = workers
         self.dry_run = dry_run
         self.tile_cache = get_tile_cache()
-        self.building_service = get_building_3d_service()
+        # NEU 18.01.2026: building_service nicht mehr nötig - Parquet-Pipeline macht alles
 
         # Statistiken
         self.stats = {
@@ -164,15 +165,30 @@ class TileImporter:
         logger.info(f"Querying STAC API for region '{region['name']}' (bbox: {bbox})...")
         items = await self.discover_tiles_from_stac(bbox)
 
-        tiles = []
+        # FIX 18.01.2026: Sammle ALLE Versionen, wähle dann die NEUESTE pro Tile
+        # Ältere Versionen (2016, 2018) haben oft keine EGIDs!
+        tile_versions: Dict[str, List[Tuple[int, str, str]]] = {}  # tile_id -> [(year, item_id, url), ...]
+
         for item in items:
-            # Tile-ID aus Item-ID extrahieren
+            # Tile-ID und Jahr aus Item-ID extrahieren
             # Format: swissbuildings3d_3_0_2024_1047-34
             item_id = item.get("id", "")
-            if "_" in item_id:
-                tile_id = item_id.split("_")[-1]  # z.B. "1047-34"
+            parts = item_id.split("_") if "_" in item_id else []
+
+            if len(parts) >= 4:
+                tile_id = parts[-1]  # z.B. "1047-34"
+                try:
+                    year = int(parts[3])  # z.B. 2024
+                except ValueError:
+                    year = 0
             else:
                 tile_id = item_id
+                year = 0
+
+            # FIX 18.01.2026: Validiere Tile-ID Format (muss XXXX-YY sein)
+            if "-" not in tile_id or tile_id.isdigit():
+                logger.debug(f"  Überspringe ungültige Tile-ID: {tile_id} (item: {item_id})")
+                continue
 
             # Download-URL finden
             download_url = None
@@ -198,8 +214,21 @@ class TileImporter:
                         break
 
             if download_url:
-                tiles.append((tile_id, download_url))
-                logger.debug(f"  Found tile: {tile_id}")
+                if tile_id not in tile_versions:
+                    tile_versions[tile_id] = []
+                tile_versions[tile_id].append((year, item_id, download_url))
+
+        # FIX 18.01.2026: Für jede Tile-ID die NEUESTE Version wählen
+        tiles = []
+        for tile_id, versions in tile_versions.items():
+            # Sortiere nach Jahr absteigend, nimm neueste
+            versions.sort(key=lambda x: x[0], reverse=True)
+            newest_year, newest_item_id, newest_url = versions[0]
+            tiles.append((tile_id, newest_url))
+            if len(versions) > 1:
+                logger.debug(f"  {tile_id}: Wähle {newest_year} (ignoriere {[v[0] for v in versions[1:]]})")
+            else:
+                logger.debug(f"  Found tile: {tile_id} ({newest_year})")
 
         logger.info(f"Region '{region['name']}': {len(tiles)} Tiles via STAC gefunden")
         return tiles
@@ -393,9 +422,10 @@ class TileImporter:
 
         return None
 
-    def import_tile(self, tile_id: str, gdb_path: Path) -> int:
+    async def import_tile_async(self, tile_id: str, gdb_path: Path) -> int:
         """
-        Importiert alle Gebäude aus einem Tile.
+        NEU 18.01.2026: Verwendet Parquet-Pipeline statt bulk_save (OOM-sicher).
+        Importiert Building + Roof + Wall Layer, KEIN Terrain-Sampling.
 
         Args:
             tile_id: Tile-Referenz
@@ -408,30 +438,28 @@ class TileImporter:
             logger.info(f"[DRY-RUN] Würde Tile {tile_id} importieren")
             return 0
 
-        logger.info(f"Parsing Tile {tile_id}...")
+        logger.info(f"Importing Tile {tile_id} via Parquet-Pipeline...")
         start = time.time()
 
-        # GDB parsen (nutzt Fiona Streaming)
-        buildings = _parse_all_buildings_from_gdb(gdb_path)
+        try:
+            result = await import_tile_with_parquet_pipeline(
+                gdb_path=gdb_path,
+                tile_id=tile_id,
+                cleanup_after=True  # Parquet-Dateien nach Import löschen
+            )
 
-        parse_time = time.time() - start
-        logger.info(f"  Parsed: {len(buildings)} Gebäude in {parse_time:.1f}s")
+            import_time = time.time() - start
+            buildings_count = result.get('buildings_count', 0)
 
-        if not buildings:
+            logger.info(f"  Imported: {buildings_count} Gebäude in {import_time:.1f}s")
+            if result.get('roofs_count', 0) > 0:
+                logger.info(f"  + {result['roofs_count']} Dächer, {result.get('walls_count', 0)} Wände")
+
+            return buildings_count
+
+        except Exception as e:
+            logger.error(f"  Import-Fehler: {e}")
             return 0
-
-        # Tile-ID setzen
-        for b in buildings:
-            b["tile_id"] = tile_id
-
-        # Bulk-Save
-        start = time.time()
-        saved = self.building_service.bulk_save(buildings, tile_id)
-        save_time = time.time() - start
-
-        logger.info(f"  Saved: {saved} Gebäude in {save_time:.1f}s")
-
-        return saved
 
     async def process_tile(self, tile_id: str, download_url: str = None) -> Tuple[str, int, str]:
         """
@@ -446,8 +474,8 @@ class TileImporter:
             if not gdb_path:
                 return (tile_id, 0, "skipped")
 
-            # Import
-            count = self.import_tile(tile_id, gdb_path)
+            # Import via Parquet-Pipeline (NEU 18.01.2026)
+            count = await self.import_tile_async(tile_id, gdb_path)
             return (tile_id, count, "ok")
 
         except Exception as e:
@@ -491,10 +519,8 @@ class TileImporter:
         logger.info(f"Dry-Run: {self.dry_run}")
         logger.info(f"{'='*60}\n")
 
-        # Index vor Import droppen (schneller)
-        if not self.dry_run and total > 5:
-            logger.info("Dropping indexes for faster import...")
-            self.building_service.drop_indexes()
+        # NEU 18.01.2026: Index-Management entfernt - Parquet-Pipeline schreibt direkt nach DuckDB
+        # DuckDB benötigt keine manuelle Index-Verwaltung wie SQLite
 
         # Import durchführen
         if self.workers > 1:
@@ -503,11 +529,6 @@ class TileImporter:
         else:
             # Sequentiell
             await self._run_sequential(tile_urls)
-
-        # Index nach Import erstellen
-        if not self.dry_run and total > 5:
-            logger.info("Creating indexes...")
-            self.building_service.create_indexes()
 
         # Zusammenfassung
         self._print_summary()
@@ -581,8 +602,9 @@ class TileImporter:
             if len(self.stats["errors"]) > 5:
                 print(f"    ... und {len(self.stats['errors']) - 5} weitere")
 
-        # DB-Statistiken
-        stats = self.building_service.get_stats()
+        # DB-Statistiken (lazy import)
+        from app.services.building_3d_service import get_building_3d_service
+        stats = get_building_3d_service().get_stats()
         print(f"\n  Datenbank enthält jetzt:")
         print(f"    {stats['total_buildings']:,} Gebäude")
         print(f"    {stats['total_tiles']} Tiles")
@@ -591,6 +613,7 @@ class TileImporter:
 
 def show_status():
     """Zeigt aktuellen Status der Datenbanken."""
+    from app.services.building_3d_service import get_building_3d_service
     tile_cache = get_tile_cache()
     building_service = get_building_3d_service()
 
