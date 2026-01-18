@@ -14,6 +14,7 @@ Höhenmodelle:
 - DTM25: DHM25 25m (älteres Modell)
 """
 
+import asyncio
 import httpx
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
@@ -55,8 +56,25 @@ class TerrainService:
     BASE_URL = "https://api3.geo.admin.ch"
     DEFAULT_MODEL = "COMB"  # Beste verfügbare Auflösung
 
+    # FIX 18.01.2026 - Shared resources fuer parallele Calls
+    _semaphore: asyncio.Semaphore = None
+    _client: httpx.AsyncClient = None
+
     def __init__(self):
         self.timeout = httpx.Timeout(10.0, connect=5.0)
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        if TerrainService._semaphore is None:
+            TerrainService._semaphore = asyncio.Semaphore(10)
+        return TerrainService._semaphore
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if TerrainService._client is None or TerrainService._client.is_closed:
+            TerrainService._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+            )
+        return TerrainService._client
 
     async def get_height(
         self,
@@ -83,7 +101,10 @@ class TerrainService:
             params["elevation_model"] = elevation_model
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            semaphore = self._get_semaphore()
+            client = self._get_client()
+
+            async with semaphore:
                 url = f"{self.BASE_URL}/rest/services/height"
                 response = await client.get(url, params=params)
                 response.raise_for_status()
@@ -95,7 +116,7 @@ class TerrainService:
                 return None
 
         except Exception as e:
-            print(f"[TerrainService] Fehler bei get_height: {e}")
+            print(f"[TerrainService] Fehler bei get_height: {type(e).__name__}: {e}")
             return None
 
     async def get_terrain_info(

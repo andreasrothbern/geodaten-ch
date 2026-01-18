@@ -649,6 +649,227 @@ async def search_buildings(
 
 
 # ============================================================================
+# Koordinaten-basierte Gebäude-Abfragen (NEU 19.01.2026)
+# ============================================================================
+# Diese Endpunkte sind Teil der Architektur-Trennung:
+# - Geodaten-Backend (main.py) hat direkten DuckDB-Zugriff
+# - Gerüstbau-Backend (geruestbau.py) ruft diese Endpunkte per HTTP auf
+# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+
+@app.get("/api/v1/building/area",
+         tags=["Geodaten"],
+         summary="Alle Gebäude im Umkreis einer Koordinate")
+async def get_buildings_in_area(
+    e: float = Query(..., description="LV95 Easting (z.B. 2596300)"),
+    n: float = Query(..., description="LV95 Northing (z.B. 1199805)"),
+    radius_m: float = Query(100, ge=1, le=500, description="Suchradius in Metern"),
+    include_walls: bool = Query(False, description="3D-Wall-Daten mitliefern"),
+    include_roofs: bool = Query(False, description="3D-Roof-Daten mitliefern")
+):
+    """
+    NEU 19.01.2026: Koordinaten-basierte Gebäude-Abfrage.
+
+    Liefert ALLE Gebäude im Umkreis einer Koordinate aus building_3d.duckdb.
+    Dies ist der Haupt-Endpunkt für die Architektur-Trennung.
+
+    **Verwendung:**
+    - Gerüstbau-Backend ruft diesen Endpunkt per HTTP auf
+    - Client kategorisiert Gebäude selbst (Projekt vs. Nachbar)
+
+    **Performance:** ~1-2ms (DuckDB BBox-Query)
+
+    **Beispiel:**
+    ```
+    GET /api/v1/building/area?e=2596300&n=1199805&radius_m=100
+    ```
+
+    Returns:
+        - center: Abfrage-Zentrum
+        - radius_m: Verwendeter Radius
+        - buildings: Liste aller Gebäude mit Polygon, Höhen, Distanz
+        - query_time_ms: Abfragezeit
+    """
+    import time
+    import json
+    import math
+    from app.config import get_building_3d_connection
+
+    start_time = time.time()
+
+    # LV95 Koordinaten normalisieren
+    if e < 2000000:
+        e += 2000000
+    if n < 1000000:
+        n += 1000000
+
+    conn = get_building_3d_connection(read_only=True)
+    cursor = conn.cursor()
+
+    # BBox-Query für Kandidaten
+    cursor.execute("""
+        SELECT egid, polygon, center_e, center_n,
+               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
+        FROM buildings_3d
+        WHERE center_e BETWEEN ? AND ?
+          AND center_n BETWEEN ? AND ?
+    """, (
+        e - radius_m, e + radius_m,
+        n - radius_m, n + radius_m
+    ))
+
+    rows = cursor.fetchall()
+
+    buildings = []
+    for row in rows:
+        egid = str(row[0])
+        center_e = row[2]
+        center_n = row[3]
+
+        # Distanz zum Abfrage-Zentrum
+        dx = center_e - e
+        dy = center_n - n
+        distance_m = round(math.sqrt(dx*dx + dy*dy), 2)
+
+        # Nur Gebäude innerhalb des Radius
+        if distance_m > radius_m:
+            continue
+
+        # Polygon parsen
+        polygon_data = row[1]
+        polygon = None
+        if polygon_data:
+            try:
+                polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        building = {
+            "egid": egid,
+            "polygon": polygon,
+            "center_e": center_e,
+            "center_n": center_n,
+            "distance_m": distance_m,
+            "traufhoehe_m": row[4],
+            "firsthoehe_m": row[5],
+            "gebaeudehoehe_m": row[6]
+        }
+
+        buildings.append(building)
+
+    # Optional: 3D-Layer laden
+    if include_walls or include_roofs:
+        egid_list = [b["egid"] for b in buildings]
+
+        if include_walls and egid_list:
+            cursor.execute(f"""
+                SELECT egid, z_min, z_max, coords_3d
+                FROM building_walls
+                WHERE egid IN ({','.join(['?' for _ in egid_list])})
+            """, egid_list)
+
+            walls_by_egid = {}
+            for wall_row in cursor.fetchall():
+                wall_egid = str(wall_row[0])
+                if wall_egid not in walls_by_egid:
+                    walls_by_egid[wall_egid] = []
+                walls_by_egid[wall_egid].append({
+                    "z_min": wall_row[1],
+                    "z_max": wall_row[2],
+                    "coords_3d": json.loads(wall_row[3]) if wall_row[3] else None
+                })
+
+            for b in buildings:
+                b["walls"] = walls_by_egid.get(b["egid"], [])
+
+        if include_roofs and egid_list:
+            cursor.execute(f"""
+                SELECT egid, dach_min, dach_max
+                FROM building_roofs
+                WHERE egid IN ({','.join(['?' for _ in egid_list])})
+            """, egid_list)
+
+            roofs_by_egid = {}
+            for roof_row in cursor.fetchall():
+                roof_egid = str(roof_row[0])
+                if roof_egid not in roofs_by_egid:
+                    roofs_by_egid[roof_egid] = []
+                roofs_by_egid[roof_egid].append({
+                    "dach_min": roof_row[1],
+                    "dach_max": roof_row[2]
+                })
+
+            for b in buildings:
+                b["roofs"] = roofs_by_egid.get(b["egid"], [])
+
+    conn.close()
+
+    # Nach Distanz sortieren
+    buildings.sort(key=lambda x: x["distance_m"])
+
+    query_time_ms = round((time.time() - start_time) * 1000, 2)
+
+    return {
+        "center": {"e": e, "n": n},
+        "radius_m": radius_m,
+        "buildings_count": len(buildings),
+        "buildings": buildings,
+        "query_time_ms": query_time_ms
+    }
+
+
+@app.get("/api/v1/building/neighbors/{egid}",
+         tags=["Geodaten"],
+         summary="Nachbar-Gebäude per EGID")
+async def get_building_neighbors_api(
+    egid: str,
+    radius_m: float = Query(100, ge=1, le=500, description="Suchradius in Metern"),
+    include_polygons: bool = Query(True, description="Polygone mitliefern")
+):
+    """
+    NEU 19.01.2026: Nachbar-Suche per EGID.
+
+    Wrapper um den NeighborsService für die API-Trennung.
+
+    **Hinweis:** Für Multi-EGID Projekte (z.B. "1243787+1243789")
+    wird das Objekt-Zentrum berechnet und alle Nachbarn gesucht.
+
+    Returns:
+        - target_egid: Angefragtes EGID
+        - target_polygon: Polygon des Zielgebäudes
+        - neighbors: Liste der Nachbarn
+        - blocked_sides: Richtungen mit blockierten Fassaden
+        - query_time_ms: Abfragezeit
+    """
+    from app.services.neighbors_service import get_neighbors_service
+
+    neighbors_service = get_neighbors_service()
+    result = neighbors_service.get_neighbors(
+        egid=egid,
+        radius_m=radius_m,
+        include_polygons=include_polygons
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Gebäude mit EGID {egid} nicht gefunden"
+        )
+
+    # Blockierte Fassaden berechnen (< 2m Distanz)
+    BLOCKING_THRESHOLD_M = 2.0
+    blocked_sides = []
+    for neighbor in result.neighbors:
+        if neighbor.distance_m < BLOCKING_THRESHOLD_M:
+            if neighbor.direction and neighbor.direction not in blocked_sides:
+                blocked_sides.append(neighbor.direction)
+
+    response = result.to_dict()
+    response["blocked_sides"] = blocked_sides
+
+    return response
+
+
+# ============================================================================
 # Kombinierte Abfragen
 # ============================================================================
 
@@ -659,7 +880,7 @@ async def lookup_address(
 ):
     """
     Komplette Abfrage: Adresse → Koordinaten → Gebäudedaten
-    
+
     Kombiniert Geokodierung und Gebäudesuche in einem Request.
     
     **Beispiel:** `?address=Bundesplatz 3, 3011 Bern`
@@ -4131,6 +4352,8 @@ async def get_smart_building_data(
             "polygon": bundle.polygon,
             "polygon_simplified": polygon_simplified,
             "sides": bundle.sides,
+            # NEU 18.01.2026: Fassaden mit Höhen pro Fassade (für GeruestbauData)
+            "facades": bundle.facades,
             "perimeter_m": bundle.perimeter_m,
             "footprint_area_m2": bundle.footprint_area_m2,
             "bbox_width_m": bundle.bbox_width_m,

@@ -12,17 +12,18 @@ import {
   Settings,
   Download,
 } from 'lucide-react'
-import type { ExtractedProjectData, Geodata, BuildingEntry, ZoneInfo } from '../../../types/project'
+import type { ExtractedProjectData, GeruestbauData, BuildingEntry, ZoneInfo, GeruestbauFassade } from '../../../types/project'
 import BuildingDataCard from '../../ui/BuildingDataCard'
-import { geruestbauApi } from '../../../api/geruestbau'
 import { useBuildingDataStream, type CompleteData, type ZonesData, type ErrorData } from '../../../hooks/useBuildingDataStream'
+// NEU 18.01.2026: Union-Polygon für Multi-Building
+import { combineBuildings } from '../../../utils/polygonUnion'
 
 interface GeodataStepProps {
   data: ExtractedProjectData
   source: 'pdf' | 'photo' | 'url' | 'manual'
-  loadGeodata?: (address: string) => Promise<Geodata | null>  // Optional, nur für Fallback
+  loadGeodata?: (address: string) => Promise<GeruestbauData | null>  // Optional, nur für Fallback
   onBack: () => void
-  onSubmit: (geodata: Geodata | null, buildings?: BuildingEntry[]) => void
+  onSubmit: (data: GeruestbauData | null, buildings?: BuildingEntry[]) => void
   loading: boolean
   onLoadComplete?: (success: boolean) => void
 }
@@ -50,7 +51,7 @@ export default function GeodataStep({
   void _source  // Suppress unused variable warning
   void _loadGeodata  // Unused - we use streaming now
 
-  const [geodata, setGeodata] = useState<Geodata | null>(null)
+  const [geruestbauData, setGeruestbauData] = useState<GeruestbauData | null>(null)
   const [buildings, setBuildings] = useState<BuildingEntry[]>([])
   const [addressErrors, setAddressErrors] = useState<{ address: string; error: string }[]>([])
   const [isMultiAddress, setIsMultiAddress] = useState(false)
@@ -63,7 +64,6 @@ export default function GeodataStep({
   })
   const [researchStatus, setResearchStatus] = useState<ResearchStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [isLoadingMulti, setIsLoadingMulti] = useState(false)
 
   // ==========================================================================
   // SSE Streaming Hook für Single-Address
@@ -105,28 +105,216 @@ export default function GeodataStep({
     }, []),
 
     onComplete: useCallback((completeData: CompleteData) => {
-      // Stream komplett - Geodata aus Bundle aufbauen
+      // NEU 18.01.2026: Multi-Building Support mit Union-Polygon
+      // Prüfe ob Multi-Format (buildings[] Array vorhanden)
+      if (completeData.buildings && completeData.buildings.length > 0) {
+        // MULTI-BUILDING: Alle Gebäude verarbeiten
+        const buildingEntries: BuildingEntry[] = completeData.buildings.map(b => ({
+          egid: b.egid,
+          address: b.matched_address,
+          coordinates: b.bundle.lv95_e && b.bundle.lv95_n ? {
+            lv95_e: b.bundle.lv95_e,
+            lv95_n: b.bundle.lv95_n,
+          } : undefined,
+          egid_source: 'swissBUILDINGS3D',
+          // Volle Daten für Projekt-Speicherung
+          polygon: b.bundle.polygon ?? undefined,
+          sides: b.bundle.sides ?? undefined,
+          roof_dach_min_m: b.bundle.roof_dach_min_m ?? undefined,
+          roof_dach_max_m: b.bundle.roof_dach_max_m ?? undefined,
+          gebaeudehoehe_m: b.bundle.gebaeudehoehe_m ?? undefined,
+          terrain: b.bundle.terrain ?? undefined,
+          zones: b.bundle.zones ?? undefined,
+          has_3d_layers: b.bundle.has_3d_layers ?? false,
+        }))
+        setBuildings(buildingEntries)
+        setIsMultiAddress(true)
+
+        // NEU 18.01.2026: GeruestbauData für JEDES Gebäude erstellen
+        const allBuildingData: GeruestbauData[] = completeData.buildings.map(b => {
+          const bundle = b.bundle
+          const buildingFacades: GeruestbauFassade[] = (bundle.sides ?? []).map((side, index) => {
+            const direction = side.direction ?? 'N'
+            const terrainZMin = bundle.terrain?.facade_z_min?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+            const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+            const wallZMax = bundle.roof_dach_min_m ?? terrainZMin + 8
+            const heightM = wallZMax - Math.min(terrainZMin, terrainZMax)
+            return {
+              index,
+              direction,
+              start_point: (side.start_point ?? [0, 0]) as [number, number],
+              end_point: (side.end_point ?? [0, 0]) as [number, number],
+              length_m: side.length_m ?? 0,
+              azimuth_deg: side.azimuth_deg ?? 0,
+              terrain_z_min: terrainZMin,
+              terrain_z_max: terrainZMax,
+              wall_z_max: wallZMax,
+              height_m: heightM,
+              slope_m: Math.abs(terrainZMax - terrainZMin),
+              height_source: (bundle.terrain?.facade_heights_source as GeruestbauFassade['height_source']) ?? 'building_global',
+              is_blocked: false,
+            }
+          })
+          return {
+            building: {
+              egid: b.egid,
+              address: b.matched_address,
+              polygon: bundle.polygon ?? [],
+              center_e: bundle.lv95_e ?? 0,
+              center_n: bundle.lv95_n ?? 0,
+              perimeter_m: bundle.perimeter_m ?? 0,
+              area_m2: bundle.footprint_area_m2 ?? 0,
+              name: bundle.building_name ?? undefined,
+              has_3d_layers: bundle.has_3d_layers ?? false,
+              roof_dach_min_m: bundle.roof_dach_min_m ?? undefined,
+              roof_dach_max_m: bundle.roof_dach_max_m ?? undefined,
+            },
+            facades: buildingFacades,
+            walls: [],
+            roofs: [],
+            terrain: {
+              height_m: bundle.terrain?.reference_height_m ?? 0,
+              min_m: bundle.terrain?.min_height_m ?? bundle.terrain?.reference_height_m ?? 0,
+              max_m: bundle.terrain?.max_height_m ?? bundle.terrain?.reference_height_m ?? 0,
+              slope_m: bundle.terrain?.slope_m ?? 0,
+              slope_class: (bundle.terrain?.slope_class as 'eben' | 'leicht' | 'mittel' | 'stark') ?? 'eben',
+              requires_level_compensation: (bundle.terrain?.slope_m ?? 0) > 0.5,
+            },
+            heights: {
+              // FIX 18.01.2026: Berechne relative Höhen aus absoluten Werten
+              // traufhoehe = roof_dach_min_m (Traufe m ü.M.) - terrain_min (Boden m ü.M.)
+              traufhoehe_m: bundle.roof_dach_min_m && bundle.terrain?.min_height_m
+                ? bundle.roof_dach_min_m - bundle.terrain.min_height_m
+                : undefined,
+              firsthoehe_m: bundle.roof_dach_max_m && bundle.terrain?.min_height_m
+                ? bundle.roof_dach_max_m - bundle.terrain.min_height_m
+                : undefined,
+              gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
+              source: bundle.has_3d_layers ? 'swissBUILDINGS3D' : 'gwr_estimated',
+            },
+            zones: (bundle.zones ?? []).map(z => ({
+              ...z,
+              zone_type: z.zone_type as ZoneInfo['zone_type'],
+              traufhoehe_m: z.traufhoehe_m ?? undefined,
+              firsthoehe_m: z.firsthoehe_m ?? undefined,
+              sonderkonstruktion: ['turm', 'kuppel'].includes(z.zone_type),
+              confidence: 1.0,
+            })),
+            fetched_at: new Date().toISOString(),
+            data_quality: 'partial',
+            complexity: bundle.complexity as GeruestbauData['complexity'],
+            research_source: bundle.research_source as GeruestbauData['research_source'],
+          } as GeruestbauData
+        })
+
+        // NEU 18.01.2026: Union-Polygon berechnen (Frontend als Single Source of Truth)
+        const combined = combineBuildings(allBuildingData)
+        if (combined) {
+          console.log(`[Multi-Building] Union-Polygon erstellt: ${combined.building_count} Gebäude → ${combined.facades.length} äußere Fassaden`)
+
+          // KOMBINIERTE Daten als Haupt-GeruestbauData verwenden
+          // Das Union-Polygon enthält nur die äußeren Fassaden (Zwischenwände eliminiert!)
+          const combinedData: GeruestbauData = {
+            building: {
+              egid: allBuildingData.map(b => b.building.egid).join('+'),  // z.B. "123+456+789"
+              address: completeData.address,
+              polygon: combined.polygon,
+              center_e: combined.polygon.reduce((sum, p) => sum + p[0], 0) / combined.polygon.length,
+              center_n: combined.polygon.reduce((sum, p) => sum + p[1], 0) / combined.polygon.length,
+              perimeter_m: combined.total_perimeter_m,
+              area_m2: combined.total_area_m2,
+              name: `${combined.building_count} Gebäude kombiniert`,
+              has_3d_layers: allBuildingData.some(b => b.building.has_3d_layers),
+            },
+            facades: combined.facades,  // NUR äußere Fassaden!
+            walls: [],
+            roofs: [],
+            terrain: {
+              height_m: (combined.min_terrain_m + combined.max_terrain_m) / 2,
+              min_m: combined.min_terrain_m,
+              max_m: combined.max_terrain_m,
+              slope_m: combined.max_terrain_m - combined.min_terrain_m,
+              slope_class: combined.slope_class,
+              requires_level_compensation: combined.requires_level_compensation,
+            },
+            heights: {
+              traufhoehe_m: combined.avg_traufhoehe_m,
+              firsthoehe_m: combined.max_firsthoehe_m,
+              gebaeudehoehe_m: combined.avg_traufhoehe_m,
+              source: 'swissBUILDINGS3D',
+            },
+            zones: [],  // Kombinierte Gebäude haben keine separaten Zonen
+            fetched_at: new Date().toISOString(),
+            data_quality: 'complete',
+            complexity: 'complex',
+            research_source: 'auto',
+          }
+          setGeruestbauData(combinedData)
+        } else {
+          // Fallback: Erstes Gebäude verwenden wenn Union fehlschlägt
+          console.warn('[Multi-Building] Union fehlgeschlagen, verwende erstes Gebäude als Fallback')
+          setGeruestbauData(allBuildingData[0])
+        }
+
+        setLoadingStates((s) => ({ ...s, building3d: 'success', enrichment: 'success', research: 'success' }))
+        setResearchStatus('done')
+        return
+      }
+
+      // SINGLE-BUILDING: Stream komplett - GeruestbauData aus Bundle aufbauen
+      // NEU 18.01.2026: Saubere GeruestbauData Struktur
       const bundle = completeData.bundle
-      const newGeodata: Geodata = {
-        egid: completeData.egid ?? undefined,
-        address: completeData.address,
-        traufhoehe_m: bundle.traufhoehe_m ?? undefined,
-        firsthoehe_m: bundle.firsthoehe_m ?? undefined,
-        gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
-        terrain_height_m: bundle.terrain?.reference_height_m,
-        slope_class: bundle.terrain?.slope_class,
-        // NEU 14.01.2026 (T4): Fassaden-Höhen aus Wall-Layer
-        facade_z_min: bundle.terrain?.facade_z_min,
-        facade_z_max: bundle.terrain?.facade_z_max,
-        facade_heights_source: bundle.terrain?.facade_heights_source,
-        polygon: bundle.polygon ?? undefined,
-        sides: bundle.sides ?? undefined,
-        perimeter_m: bundle.perimeter_m ?? undefined,
-        footprint_area_m2: bundle.footprint_area_m2 ?? undefined,
-        gwr_floors: bundle.gwr_floors ?? undefined,
-        gwr_area_m2: bundle.gwr_area_m2 ?? undefined,
-        gwr_category: bundle.gwr_category ?? undefined,
-        gwr_category_code: bundle.gwr_category_code ?? undefined,
+
+      // Facades aus sides + terrain.facade_z_min/max erstellen
+      const facades: GeruestbauFassade[] = (bundle.sides ?? []).map((side, index) => {
+        const direction = side.direction ?? 'N'
+        const terrainZMin = bundle.terrain?.facade_z_min?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+        const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+        const wallZMax = bundle.roof_dach_min_m ?? terrainZMin + 8 // Fallback 8m Höhe
+        const heightM = wallZMax - Math.min(terrainZMin, terrainZMax)
+
+        return {
+          index,
+          direction,
+          start_point: (side.start_point ?? [0, 0]) as [number, number],
+          end_point: (side.end_point ?? [0, 0]) as [number, number],
+          length_m: side.length_m ?? 0,
+          azimuth_deg: side.azimuth_deg ?? 0,
+          terrain_z_min: terrainZMin,
+          terrain_z_max: terrainZMax,
+          wall_z_max: wallZMax,
+          height_m: heightM,
+          slope_m: Math.abs(terrainZMax - terrainZMin),
+          height_source: (bundle.terrain?.facade_heights_source as GeruestbauFassade['height_source']) ?? 'building_global',
+          is_blocked: false,
+        }
+      })
+
+      const newData: GeruestbauData = {
+        building: {
+          egid: completeData.egid ?? '',
+          address: completeData.address,
+          polygon: bundle.polygon ?? [],
+          center_e: bundle.lv95_e ?? 0,
+          center_n: bundle.lv95_n ?? 0,
+          perimeter_m: bundle.perimeter_m ?? 0,
+          area_m2: bundle.footprint_area_m2 ?? 0,
+          name: bundle.building_name ?? undefined,
+          has_3d_layers: bundle.has_3d_layers ?? false,
+          roof_dach_min_m: bundle.roof_dach_min_m ?? undefined,
+          roof_dach_max_m: bundle.roof_dach_max_m ?? undefined,
+        },
+        facades,
+        walls: [],
+        roofs: [],
+        terrain: {
+          height_m: bundle.terrain?.reference_height_m ?? 0,
+          min_m: bundle.terrain?.min_height_m ?? bundle.terrain?.reference_height_m ?? 0,
+          max_m: bundle.terrain?.max_height_m ?? bundle.terrain?.reference_height_m ?? 0,
+          slope_m: bundle.terrain?.slope_m ?? 0,
+          slope_class: (bundle.terrain?.slope_class as 'eben' | 'leicht' | 'mittel' | 'stark') ?? 'eben',
+          requires_level_compensation: (bundle.terrain?.slope_m ?? 0) > 0.5,
+        },
         zones: bundle.zones?.map(z => ({
           ...z,
           zone_type: z.zone_type as ZoneInfo['zone_type'],
@@ -134,18 +322,13 @@ export default function GeodataStep({
           firsthoehe_m: z.firsthoehe_m ?? undefined,
           sonderkonstruktion: ['turm', 'kuppel'].includes(z.zone_type),
           confidence: 1.0,
-        })) ?? undefined,
-        complexity: (bundle.complexity as Geodata['complexity']) ?? undefined,
-        building_name: bundle.building_name ?? undefined,
-        research_source: (bundle.research_source as Geodata['research_source']) ?? (bundle.zones && bundle.zones.length > 0 ? 'auto' : undefined),
-        coordinates: bundle.lv95_e && bundle.lv95_n ? {
-          lv95_e: bundle.lv95_e,
-          lv95_n: bundle.lv95_n,
-        } : undefined,
-        // FIX 14.01.2026: has_3d_layers übertragen für 3D-Qualitäts-Badge
-        has_3d_layers: bundle.has_3d_layers ?? false,
+        })) ?? [],
+        fetched_at: new Date().toISOString(),
+        data_quality: bundle.has_3d_layers ? 'complete' : 'partial',
+        complexity: bundle.complexity as GeruestbauData['complexity'],
+        research_source: (bundle.research_source as GeruestbauData['research_source']) ?? (bundle.zones && bundle.zones.length > 0 ? 'auto' : undefined),
       }
-      setGeodata(newGeodata)
+      setGeruestbauData(newData)
       setResearchStatus('done')
     }, []),
 
@@ -164,69 +347,18 @@ export default function GeodataStep({
   })
 
   // Kombinierter Loading-State
-  const isLoading = isStreamLoading || isLoadingMulti
+  // NEU 18.01.2026: SSE für alles (Single + Multi)
+  const isLoading = isStreamLoading
 
   // ==========================================================================
-  // Multi-Address Laden (Range wie "2-10")
-  // ==========================================================================
-  const loadMultiAddress = useCallback(async (address: string) => {
-    setIsLoadingMulti(true)
-    setError(null)
-    setGeodata(null)
-    setBuildings([])
-    setAddressErrors([])
-    setIsMultiAddress(true)
-    setLoadingStates({ geocoding: 'loading', gwr: 'pending', building3d: 'pending', enrichment: 'pending', research: 'pending' })
-
-    try {
-      setLoadingStates((s) => ({ ...s, geocoding: 'success', gwr: 'loading' }))
-      const resolved = await geruestbauApi.resolveAddressRange(address)
-      setLoadingStates((s) => ({ ...s, gwr: 'success', building3d: 'loading' }))
-
-      if (resolved.buildings && resolved.buildings.length > 0) {
-        const buildingEntries: BuildingEntry[] = resolved.buildings.map(b => ({
-          egid: b.egid,
-          address: b.matched_address || b.address,
-          traufhoehe_m: b.traufhoehe_m,
-          firsthoehe_m: b.firsthoehe_m,
-          coordinates: b.coordinates,
-          egid_source: 'swissBUILDINGS3D',
-        }))
-        setBuildings(buildingEntries)
-
-        const firstBuilding = resolved.buildings[0]
-        setGeodata({
-          egid: firstBuilding.egid,
-          address: firstBuilding.matched_address || firstBuilding.address,
-          traufhoehe_m: firstBuilding.traufhoehe_m,
-          firsthoehe_m: firstBuilding.firsthoehe_m,
-        })
-        setLoadingStates((s) => ({ ...s, building3d: 'success', enrichment: 'success', research: 'success' }))
-      } else {
-        setError(`Keine Gebäude gefunden für: ${address}`)
-        setLoadingStates((s) => ({ ...s, building3d: 'error', enrichment: 'error', research: 'error' }))
-      }
-
-      if (resolved.errors && resolved.errors.length > 0) {
-        setAddressErrors(resolved.errors.map(e => ({ address: e, error: 'Adresse nicht gefunden' })))
-      }
-    } catch (err) {
-      console.error('Fehler beim Laden der Grunddaten:', err)
-      setError('Fehler beim Laden der Grunddaten')
-      setLoadingStates({ geocoding: 'error', gwr: 'error', building3d: 'error', enrichment: 'error', research: 'error' })
-    } finally {
-      setIsLoadingMulti(false)
-    }
-  }, [])
-
-  // ==========================================================================
-  // Start Loading - Entscheidung Single vs Multi
+  // Start Loading - NEU 18.01.2026: IMMER SSE verwenden (Single + Multi)
+  // loadMultiAddress() wurde entfernt - Backend erkennt Multi automatisch
   // ==========================================================================
   const loadData = useCallback(() => {
     if (!data.address) return
 
     setError(null)
-    setGeodata(null)
+    setGeruestbauData(null)
     setBuildings([])
     setAddressErrors([])
     setResearchStatus('idle')
@@ -234,15 +366,13 @@ export default function GeodataStep({
 
     // Check if address contains a range (e.g., "2-10" or "1-9")
     const hasRange = /\d+\s*-\s*\d+/.test(data.address)
+    setIsMultiAddress(hasRange)
 
-    if (hasRange) {
-      setIsMultiAddress(true)
-      loadMultiAddress(data.address)
-    } else {
-      setIsMultiAddress(false)
-      startStream(data.address)
-    }
-  }, [data.address, loadMultiAddress, startStream])
+    // NEU 18.01.2026: IMMER startStream() verwenden!
+    // Backend erkennt automatisch Multi-Adresse und sendet {buildings: [...]}
+    // loadMultiAddress() wird nicht mehr verwendet.
+    startStream(data.address)
+  }, [data.address, startStream])
 
   // Initial load
   useEffect(() => {
@@ -337,27 +467,27 @@ export default function GeodataStep({
                 </span>
               )}
               {/* Ergebnis-Badge nach Abschluss */}
-              {loadingStates.research === 'success' && geodata?.research_source && (
+              {loadingStates.research === 'success' && geruestbauData?.research_source && (
                 <span className="text-xs">
-                  {geodata.research_source === 'known_buildings' && (
+                  {geruestbauData.research_source === 'known_buildings' && (
                     <span className="inline-flex items-center gap-1 text-emerald-600">
                       <Zap className="w-3 h-3" />
                       Bekanntes Gebäude
                     </span>
                   )}
-                  {geodata.research_source === 'claude_api' && (
+                  {geruestbauData.research_source === 'claude_api' && (
                     <span className="inline-flex items-center gap-1 text-blue-600">
                       <Bot className="w-3 h-3" />
                       Claude analysiert
                     </span>
                   )}
-                  {geodata.research_source === 'cache' && (
+                  {geruestbauData.research_source === 'cache' && (
                     <span className="inline-flex items-center gap-1 text-gray-600">
                       <Database className="w-3 h-3" />
                       Aus Cache
                     </span>
                   )}
-                  {geodata.research_source === 'auto' && (
+                  {geruestbauData.research_source === 'auto' && (
                     <span className="inline-flex items-center gap-1 text-yellow-600">
                       <Settings className="w-3 h-3" />
                       Automatisch
@@ -388,11 +518,9 @@ export default function GeodataStep({
                   <Building2 className="w-4 h-4 text-green-600" />
                   <span className="font-medium">{building.address}</span>
                 </div>
+                {/* FIX 16.01.2026: traufhoehe_m entfernt - zeige nur EGID */}
                 <div className="flex items-center gap-3 text-gray-500">
                   <span className="text-xs">EGID: {building.egid}</span>
-                  {building.traufhoehe_m && (
-                    <span className="text-xs">H: {building.traufhoehe_m.toFixed(1)}m</span>
-                  )}
                 </div>
               </div>
             ))}
@@ -426,7 +554,7 @@ export default function GeodataStep({
       )}
 
       {/* Building Data Card - Single Address (Shared Component) */}
-      {!isMultiAddress && geodata && <BuildingDataCard geodata={geodata} />}
+      {!isMultiAddress && geruestbauData && <BuildingDataCard data={geruestbauData} />}
 
       {/* Error State */}
       {error && !isLoading && (
@@ -493,7 +621,7 @@ export default function GeodataStep({
         </button>
         <button
           type="button"
-          onClick={() => onSubmit(geodata, isMultiAddress ? buildings : undefined)}
+          onClick={() => onSubmit(geruestbauData, isMultiAddress ? buildings : undefined)}
           disabled={loading || isLoading}
           className="btn-primary flex-1 flex items-center justify-center gap-2"
         >

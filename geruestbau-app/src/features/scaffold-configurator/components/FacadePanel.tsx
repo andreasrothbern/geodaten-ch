@@ -10,7 +10,8 @@ import { useScaffoldConfig, useElements, useSettings, useTotals } from '../hooks
 import type { ScaffoldFacade, SelectedFacade } from '../types/scaffold.types';
 import { getFacadeColor } from '../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
-import { simplifyPolygon, sidesToFacades } from '../utils/polygonSimplifier';
+import type { BuildingWall } from '../../../types/project';
+import { simplifyPolygon, sidesToFacades, sidesToFacadesWithWalls } from '../utils/polygonSimplifier';
 // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support)
 import type { BlockedFacadesData } from '../../../hooks/useProjectContextStream';
 
@@ -24,8 +25,13 @@ interface FacadePanelProps {
   // NEU 10.01.2026 22:35 - Zusätzliche Projekt-Gebäude (Multi-Building)
   additionalBuildings?: MultiBuildingData[];
   // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
+  /** @deprecated Use buildingWalls instead (BUG-024) */
   facadeZMin?: Record<string, number>;  // Terrain-Höhen (m ü.M.)
+  /** @deprecated Use buildingWalls instead (BUG-024) */
   facadeZMax?: Record<string, number>;  // Wandoberkanten (m ü.M.)
+  // NEU 15.01.2026 BUG-024: BuildingWall direkt aus building_walls DB-Tabelle
+  // Für geometrisches Koordinaten-Matching mit exakten 3D-Geometrien
+  buildingWalls?: BuildingWall[];
 }
 
 export default function FacadePanel({
@@ -36,6 +42,7 @@ export default function FacadePanel({
   additionalBuildings = [],
   facadeZMin,
   facadeZMax,
+  buildingWalls = [],  // NEU 15.01.2026 BUG-024
 }: FacadePanelProps) {
   const {
     buildingName,
@@ -204,7 +211,7 @@ export default function FacadePanel({
   }, [facades]);
 
   // Handle polygon simplification
-  // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage übergeben
+  // NEU 15.01.2026 BUG-024: Bevorzuge buildingWalls (koordinatenbasiertes Matching)
   const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
     if (!polygon || polygon.length < 3) return;
 
@@ -212,12 +219,21 @@ export default function FacadePanel({
 
     // Simplify polygon and calculate new facades
     const result = simplifyPolygon(polygon, { epsilon: newEpsilon });
-    // NEU: Fassaden-spezifische Höhen für Hanglage-Gebäude übergeben
-    const newFacades: SelectedFacade[] = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax);
+
+    // NEU 15.01.2026 BUG-024: Bevorzuge buildingWalls für exaktes Koordinaten-Matching
+    // Fallback auf deprecated facadeZMin/facadeZMax wenn keine buildingWalls vorhanden
+    let newFacades: SelectedFacade[];
+    if (buildingWalls.length > 0) {
+      // Koordinatenbasiertes Matching mit exakter 3D-Geometrie aus DB
+      newFacades = sidesToFacadesWithWalls(result.sides, defaultHeight, buildingWalls);
+    } else {
+      // Legacy: Richtungsbasiertes Matching (deprecated)
+      newFacades = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax);
+    }
 
     // Apply to store
     applySimplification(newFacades);
-  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification, facadeZMin, facadeZMax]);
+  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification, facadeZMin, facadeZMax, buildingWalls]);
 
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {

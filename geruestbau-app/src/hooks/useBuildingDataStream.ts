@@ -88,19 +88,20 @@ export interface PolygonData {
   error?: string;
 }
 
+// FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
+// Korrekte Höhen berechnen: roof_dach_min_m - terrain_z_min
 export interface HeightsData {
-  traufhoehe_m: number | null;
-  firsthoehe_m: number | null;
   gebaeudehoehe_m: number | null;
   source: string;
   duration_ms: number;
-  // NEU 12.01.2026 22:15 - 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
+  // 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
   has_3d_layers?: boolean;
   has_roof_geometry?: boolean;
   roof_dach_min_m?: number | null;  // Traufhöhe absolut (m ü.M.)
   roof_dach_max_m?: number | null;  // Firsthöhe absolut (m ü.M.)
+  terrain_z_min?: number | null;    // Niedrigstes Terrain (m ü.M.) für korrekte Berechnung
   roof_gebaeudeeinheit?: string | null;
-  // NEU 12.01.2026 22:45 - Dach-Analyse Daten (für 3D-Viewer)
+  // Dach-Analyse Daten (für 3D-Viewer)
   roof_type?: string | null;  // flachdach, satteldach, walmdach, etc.
   roof_orientation?: string | null;  // 'N-S' oder 'O-W' (First-Verlauf)
   roof_angle_deg?: number | null;  // Dachneigung in Grad
@@ -160,6 +161,42 @@ export interface CompleteData {
     complexity: string;
   };
   bundle: BuildingDataBundle;
+  // NEU 18.01.2026: Multi-Building Support
+  building_count?: number;
+  buildings?: Array<{
+    egid: string;
+    matched_address: string;
+    summary: {
+      has_polygon: boolean;
+      has_heights: boolean;
+      has_terrain: boolean;
+      zones_count: number;
+      complexity: string;
+      quality: string;
+    };
+    bundle: BuildingDataBundle;
+  }>;
+  // NEU 18.01.2026: Kombinierte Daten für Multi-Building (Union-Polygon)
+  combined?: {
+    polygon_combined: number[][];           // Union aller Gebäude-Polygone
+    facades_combined: Array<{               // Äußere Fassaden des Union-Polygons
+      index: number;
+      direction: string;
+      start_point: [number, number];
+      end_point: [number, number];
+      length_m: number;
+      azimuth_deg: number;
+      height_m: number;
+    }>;
+    roof_combined?: {
+      z_min: number | null;                 // Tiefste Traufe (m ü.M.)
+      z_max: number | null;                 // Höchster First (m ü.M.)
+    };
+    total_area_m2: number;
+    total_perimeter_m: number;
+    avg_traufhoehe_m: number | null;
+    building_count: number;
+  };
 }
 
 // Bundle-Struktur wie vom Backend geliefert (flach, nicht nested)
@@ -187,9 +224,7 @@ export interface BuildingDataBundle {
   }> | null;
   perimeter_m: number | null;
   footprint_area_m2: number | null;
-  // Höhen
-  traufhoehe_m: number | null;
-  firsthoehe_m: number | null;
+  // Höhen - FIX 16.01.2026: traufhoehe_m/firsthoehe_m ENTFERNT!
   gebaeudehoehe_m: number | null;
   // GWR-Daten
   gwr_floors: number | null;

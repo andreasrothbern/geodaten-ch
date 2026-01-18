@@ -580,7 +580,7 @@ def load_parquets_to_duckdb(
                     objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
                     roof_form, roof_form_confidence, roof_orientation,
                     0 as has_3d_layers,
-                    current_timestamp as imported_at,
+                    now() as imported_at,
                     source
                 FROM read_parquet('{buildings_glob}')
                 ON CONFLICT (egid) DO UPDATE SET
@@ -600,7 +600,7 @@ def load_parquets_to_duckdb(
                     roof_form = excluded.roof_form,
                     roof_form_confidence = excluded.roof_form_confidence,
                     roof_orientation = excluded.roof_orientation,
-                    imported_at = current_timestamp,
+                    imported_at = now(),
                     source = excluded.source
                 WHERE buildings_3d.has_3d_layers = 0 OR buildings_3d.has_3d_layers IS NULL
             """)

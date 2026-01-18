@@ -2,6 +2,15 @@
 Wall-Facade Matcher Service
 ============================
 
+DEPRECATED 15.01.2026 (BUG-024):
+    Diese Datei wird nicht mehr verwendet. Wall-Segmente werden jetzt direkt
+    ans Frontend gesendet, wo geometrisches Matching durchgeführt wird.
+    Siehe: docs/architecture/3D_LAYER_USAGE_3D_VIEW.md → BUG-024
+
+    Kann nach vollständiger Migration gelöscht werden (505 Zeilen).
+
+---
+
 Matched Wall-Layer Geometrie (swissBUILDINGS3D) auf vereinfachte Fassaden (sides).
 
 Ziel: Pro Fassade die korrekte z_min/z_max Höhe aus Wall-Layer extrahieren.
@@ -13,6 +22,7 @@ Ablauf:
 4. facade_heights Dict erstellen: {"N": {"z_min": 541.0, "z_max": 550.0}, ...}
 
 Version: 1.0 (13.01.2026)
+DEPRECATED: 15.01.2026 (BUG-024)
 """
 
 import math

@@ -666,7 +666,7 @@ def get_bundle_by_egid(self, egid: str) -> Optional[BuildingDataBundle]:
 - ~~**BUG-016** - SmartBuildingService get_bundle_by_egid() fehlte~~ ✅
 - ~~**BUG-017** - Veraltete Tests referenzieren building_geodata.db~~ ✅
 
----
+--- 
 
 *Dokument erstellt: 30.12.2025*
 *Letzte Aktualisierung: 08.01.2026 - BUG-017 gefixt, Dokumentation bereinigt*

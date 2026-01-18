@@ -17,6 +17,7 @@ from dataclasses import dataclass, asdict
 from typing import AsyncGenerator, List, Dict, Any, Optional, Tuple, Set
 import logging
 
+from app.config import NEIGHBOR_SEARCH_RADIUS_M
 from .blocked_facades_service import get_blocked_facades_service, BlockedFacadesResult
 from .neighbors_service import get_neighbors_service, NeighborBuilding
 from .building_3d_service import get_building_3d_service
@@ -92,7 +93,7 @@ class ProjectContextStreamService:
     async def stream_context(
         self,
         project_egids: List[str],
-        max_radius_m: float = 100,
+        max_radius_m: float = NEIGHBOR_SEARCH_RADIUS_M,
         include_blocked_facades: bool = True,
         include_neighbors: bool = True
     ) -> AsyncGenerator[SSEEvent, None]:

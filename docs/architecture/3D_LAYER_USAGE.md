@@ -1,13 +1,203 @@
 # 3D-Layer Datenverwendung
 
-> **Datum:** 14.01.2026 14:30
+> **Datum:** 17.01.2026 16:00
 > **Status:** P1 + P2 + P3 (T1-T4) + P4 ✅ ALLE IMPLEMENTIERT
 > **Basis:** BUILDING_3D_SCHEMA.md, SWISSBUILDINGS3D_ANALYSE.md, 3D_LAYER_ANALYSIS.md
 > **Siehe auch:** [`3D_LAYER_USAGE_SCAFFOLDING.md`](3D_LAYER_USAGE_SCAFFOLDING.md) - Gerüst-Kalkulation Details
 >
 > **NEU 14.01.2026:** 3D-Dachgeometrie wird für ALLE Gebäude gerendert (Fix in ScaffoldScene.tsx)
+> **NEU 17.01.2026:** Höhenberechnung und Radius-Werte dokumentiert
 >
 > **Siehe auch:** [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) - Railway Volume & Pfad-Konfiguration
+
+---
+
+## Höhenberechnung (NEU 17.01.2026)
+
+### Objekt (1 oder mehrere Gebäude) vs. Nachbarn
+
+| Gebäudetyp | Methode | Genauigkeit | Datenquelle |
+|------------|---------|-------------|-------------|
+| **Objekt** | Terrain-Sampling | ±0.5m | swissALTI3D (8 Polygon-Ecken) |
+| **Nachbarn** | GELAENDEPUNKT | ±2-3m (Hang!) | swissBUILDINGS3D GDB |
+
+### Formeln
+
+**Objekt (korrekt - geruestbau.py:558-589):**
+```
+traufhoehe = dach_min (m ü.M.) - min(facade_z_min)
+
+Beispiel Knospenweg 9:
+  dach_min = 562.94m ü.M. (aus building_roofs)
+  min(facade_z_min) = 555.80m (niedrigster Polygon-Eckpunkt via swissALTI3D)
+  → traufhoehe = 7.14m
+```
+
+**Nachbarn (Prefetch - weniger genau):**
+```
+traufhoehe = DACH_MIN - GELAENDEPUNKT
+
+Beispiel Knospenweg 9:
+  DACH_MIN = 562.94m ü.M.
+  GELAENDEPUNKT = 557.45m (Gebäudezentrum, NICHT niedrigstes Terrain!)
+  → traufhoehe = 5.49m (±2.6m Abweichung bei Hanglage!)
+```
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HÖHENBERECHNUNG DATENFLUSS                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  OBJEKT (Smart-Building Endpoint)                        │
+│  ════════════════════════════════════                           │
+│                                                                 │
+│    swissALTI3D API                    building_roofs            │
+│    (Terrain-Sampling)                 (swissBUILDINGS3D)        │
+│          │                                  │                   │
+│          ▼                                  ▼                   │
+│    facade_z_min{}                      dach_min/dach_max        │
+│    {"N": 555.8, "S": 557.1, ...}       (m ü.M.)                │
+│          │                                  │                   │
+│          └──────────────┬───────────────────┘                   │
+│                         ▼                                       │
+│              traufhoehe = dach_min - min(facade_z_min)          │
+│              Genauigkeit: ±0.5m                                 │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  NACHBARN (Prefetch beim Tile-Import)                          │
+│  ════════════════════════════════════                           │
+│                                                                 │
+│    swissBUILDINGS3D GDB                                        │
+│    (direkt aus Tile)                                            │
+│          │                                                      │
+│          ├─► DACH_MIN (Traufhöhe m ü.M.)                       │
+│          └─► GELAENDEPUNKT (einzelner Terrain-Punkt)           │
+│                         │                                       │
+│                         ▼                                       │
+│              traufhoehe = DACH_MIN - GELAENDEPUNKT              │
+│              Genauigkeit: ±2-3m bei Hanglagen                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Warum der Unterschied?
+
+**GELAENDEPUNKT** ist ein einzelner Terrain-Punkt (meist Gebäudezentrum), der bei
+Hanglagen **nicht** das niedrigste Terrain ist. Für präzise Gerüstplanung am
+Hauptgebäude verwenden wir daher **Terrain-Sampling** an allen Polygon-Ecken.
+
+Für **Nachbarn** ist diese Genauigkeit meist ausreichend, da sie primär für:
+- Kollisionserkennung (blockierte Fassaden)
+- 3D-Visualisierung (Kontext)
+
+verwendet werden, nicht für die eigentliche Gerüstkalkulation.
+
+---
+
+## Radius-Werte (Klarstellung 17.01.2026)
+
+| Konstante | Wert | Datei | Verwendung |
+|-----------|------|-------|------------|
+| `immediate_radius_m` | **5m** | `tile_prefetch.py:1267` | Prefetch: Sofortige Nachbarn |
+| `BLOCKING_THRESHOLD_M` | **2m** | `geruestbau.py:747` | Fassade = "blockiert" |
+| `radius_m` (Default) | **10m** | `neighbors_service.py:58` | Neighbors-API Default |
+| `max_radius_m` | **100m** | `geruestbau.py:691` | Maximum erlaubt in API |
+
+**Wichtig:** Diese Werte MÜSSEN mit dem Frontend übereinstimmen!
+- Frontend `BLOCKING_THRESHOLD_M`: `FacadePanel.tsx:104`, `ConfiguratorPage.tsx:638`
+
+---
+
+## Blockierte Fassaden - Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    BLOCKIERTE FASSADEN                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  DATENQUELLE: building_3d.db (lokale DuckDB)                   │
+│  ═══════════════════════════════════════════                    │
+│                                                                 │
+│  "Ohne API Call" bedeutet:                                      │
+│  → KEINE externen APIs (swisstopo, swissBUILDINGS3D) nötig      │
+│  → Nachbarn sind BEREITS in building_3d.db (vom Prefetch)      │
+│  → Nur lokaler DB-Lookup (~5ms)                                 │
+│                                                                 │
+│  ABLAUF:                                                        │
+│  ═══════                                                        │
+│                                                                 │
+│  1. User öffnet Projekt                                         │
+│     ↓                                                           │
+│  2. Frontend: GET /api/v1/geruestbau/building/{egid}/neighbors  │
+│     ↓                                                           │
+│  3. Backend (geruestbau.py:746-751):                           │
+│     │  neighbors = building_3d_service.get_neighbors()          │
+│     │  for neighbor in neighbors:                               │
+│     │      if neighbor.distance_m < 2.0:  ← BLOCKING_THRESHOLD  │
+│     │          blocked_facades.add(direction)                   │
+│     ↓                                                           │
+│  4. Response: { neighbors[], blocked_facades[] }                │
+│     ↓                                                           │
+│  5. Frontend (FacadePanel.tsx:185):                             │
+│     │  if (dist < BLOCKING_THRESHOLD_M)                         │
+│     │      → Fassade grau (nicht wählbar)                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Terrain-Erweiterungen (Geplant)
+
+### Aktueller Stand: Terrain pro Gebäude
+
+- Jedes Gebäude einzeln: 8 Polygon-Eckpunkte parallel gesampled (~0.3s)
+- Cache: `building_environment` pro EGID (nicht projekt-bezogen)
+
+### Mögliche Erweiterung: Projekt-Terrain (100m Grid)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            PROJEKT-BEZOGENES TERRAIN (Idee)                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Projekt erstellen → Zentrum + 100m Radius definieren       │
+│                                                                 │
+│  2. Terrain-Grid holen:                                         │
+│     │  swissALTI3D: 10x10 Grid (100 Punkte, ~10m Abstand)      │
+│     │  → ~0.7s × 100 = 70s sequentiell                         │
+│     │  → Mit asyncio.gather: ~3-5s                              │
+│     │                                                           │
+│     └→ Speichern in geruestbau.db (project_terrain)            │
+│                                                                 │
+│  3. Strassen/Wege holen (swissTLM3D):                          │
+│     │  BBox-Query: roads_and_tracks                            │
+│     └→ Speichern in geruestbau.db (project_roads)              │
+│                                                                 │
+│  4. 3D-View rendern:                                            │
+│     │  Three.js: PlaneGeometry mit Height-Displacement          │
+│     │  Strassen: LineGeometry auf Terrain                       │
+│     └→ Gebäude: Wie bisher                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Verfügbare Datenquellen
+
+| Quelle | Daten | Zugriff | Format |
+|--------|-------|---------|--------|
+| [swissALTI3D](https://www.swisstopo.admin.ch/en/height-model-swissalti3d) | Höhenmodell | REST API, STAC | Punkte, GeoTIFF |
+| [swissTLM3D Roads](https://opendata.swiss/en/dataset/swisstlm3d-strassen-und-wege) | Strassen, Wege | STAC, Download | Vector, 0.2-1.5m |
+| [swissTLM3D Hiking](https://opendata.swiss/en/dataset/swisstlm3d-wanderwege) | Wanderwege | WMTS, API | Vector |
+| [Cesium Quantized Mesh](https://www.swisstopo.admin.ch/en/3d-viewer-update-data) | 3D Terrain Mesh | map.geo.admin.ch | Mesh tiles |
+
+### Priorität
+
+**Aktuell:** Fokus auf optimale 3D-Gebäudedarstellung (Dach, Kamin, Fenster, Foto-Vision)
+**Später:** Terrain-Grid und Strassen für vollständige 3D-Umgebung
 
 ---
 
@@ -896,6 +1086,124 @@ if (hasReal3DGeometry) {
 **Ergebnis:**
 - Bundeshaus: 12 Polygone Dachgeometrie werden jetzt korrekt gerendert
 - Alle komplexen Gebäude: Echte 3D-Dächer sichtbar
+
+---
+
+---
+
+## NEU: facades[] Array (18.01.2026)
+
+### Übersicht
+
+Das `facades[]` Array kombiniert Fassaden-Geometrie mit Höhen- und Giebel-Informationen.
+Es wird im `SmartBuildingService._build_facades_array()` aufgebaut und im API-Response mitgeliefert.
+
+### Datenstruktur
+
+```typescript
+interface Facade {
+  index: number;              // Fassaden-Index (0-basiert)
+  direction: string;          // Himmelsrichtung: "N", "E", "S", "W", "NW", etc.
+  start_point: [number, number];  // LV95 Koordinaten
+  end_point: [number, number];    // LV95 Koordinaten
+  length_m: number;           // Fassadenlänge in Metern
+
+  // FIX 18.01.2026: Höhe ist KONSTANT (Traufhöhe)
+  height_m: number;           // KONSTANTE Gerüsthöhe = Traufhöhe
+
+  // NEU 18.01.2026: Giebel-Erkennung
+  is_gable: boolean;          // True für Giebel-Fassaden (brauchen mehr Gerüst bis First)
+
+  // Terrain-Daten (nur für Stellspindeln/Nivelierung)
+  terrain_z_min: number;      // Terrain-Höhe (m ü.M.) an dieser Fassade
+  slope_m: number;            // Terrain-Gefälle in Metern
+}
+```
+
+### Giebel-Erkennung
+
+Die Giebel-Fassaden werden aus der `roof_orientation` ermittelt:
+
+```
+roof_orientation beschreibt wohin das Dach ZEIGT (Neigungsrichtung).
+Der First verläuft SENKRECHT zur Neigung.
+Giebel sind an den ENDEN des Firsts (senkrecht zur Neigung).
+
+| roof_orientation | Dach neigt nach | First verläuft | Giebel auf |
+|------------------|-----------------|----------------|------------|
+| O-W (E-W)        | Ost ↔ West      | Nord-Süd       | N, S       |
+| N-S              | Nord ↔ Süd      | Ost-West       | E, W (O)   |
+| NO-SW            | Diagonal        | Senkrecht      | NW, SO     |
+| NW-SO            | Diagonal        | Senkrecht      | NO, SW     |
+```
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         FACADES[] DATENFLUSS                                     │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  1. SmartBuildingService.collect_all_data()                                      │
+│     └─ _build_facades_array(bundle)                                              │
+│                                                                                  │
+│  2. Für jede Side aus bundle.sides:                                              │
+│     ├─ direction, start_point, end_point, length_m übernehmen                   │
+│     ├─ height_m = bundle.traufhoehe_m (KONSTANT!)                               │
+│     ├─ is_gable = direction in _get_gable_directions(roof_orientation)          │
+│     └─ terrain_z_min, slope_m aus TerrainProfile                                │
+│                                                                                  │
+│  3. bundle.facades = facades[] Array                                             │
+│                                                                                  │
+│  4. API Response (main.py)                                                       │
+│     └─ "facades": bundle.facades                                                 │
+│                                                                                  │
+│  5. SSE Stream (building_data_stream.py)                                         │
+│     └─ event: complete → facades[] enthalten                                     │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Verwendung im Frontend
+
+```typescript
+// Gerüsthöhe für Fassadenarbeit
+const scaffoldHeight = facade.height_m;  // Konstante Traufhöhe
+
+// Giebel-Fassaden brauchen zusätzliches Gerüst
+if (facade.is_gable) {
+  console.log(`Fassade ${facade.direction}: Giebel-Seite - Gerüst bis First nötig`);
+}
+
+// Terrain-Daten für Stellspindel-Berechnung
+const levelingHeight = facade.terrain_z_min;
+const slopeCompensation = facade.slope_m;
+```
+
+### Warum height_m KONSTANT sein muss
+
+**Problem (vor dem Fix):**
+```
+height_m = wall_z_max - terrain_z_min
+→ Bei Hanglagen: Fassaden hatten unterschiedliche Höhen
+→ Gerüst wurde zu hoch berechnet
+```
+
+**Lösung:**
+```
+height_m = bundle.traufhoehe_m (KONSTANT)
+→ Alle Fassaden haben gleiche Gerüsthöhe (bis Traufe)
+→ Giebel-Fassaden: is_gable=true → separates Giebel-Gerüst
+→ Terrain-Ausgleich: slope_m + terrain_z_min für Stellspindeln
+```
+
+### Betroffene Dateien
+
+| Datei | Funktion |
+|-------|----------|
+| `backend/app/services/smart_building/service.py:1193-1293` | `_build_facades_array()`, `_get_gable_directions()` |
+| `backend/app/main.py:4135` | facades im API-Response |
+| `backend/app/services/building_data_stream.py` | facades im SSE-Stream |
 
 ---
 

@@ -15,12 +15,16 @@ import BuildingDataCard from '../components/ui/BuildingDataCard';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type MultiBuildingData, type GeodataBuilding } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
-import type { ProjectWithGeodata, Geodata } from '../types/project';
+import type { ProjectWithGeruestbaudata, Geodata, BuildingWall, BuildingRoof } from '../types/project';
+import { convertGeruestbaudataToGeodata, convertGeodataToGeruestbaudata, getBuildingEgids } from '../types/project';
 // NEU 10.01.2026 19:15 - SSE-Hook für Multi-Building blocked facades
 import { useProjectContextStream, type BlockedFacadesData } from '../hooks/useProjectContextStream';
 import type { SelectedFacade, RoofData, BuildingZone } from '../features/scaffold-configurator/types/scaffold.types';
+// NEU 15.01.2026 BUG-024: Import für geometrisches Wall-Matching bei Initialisierung
+// NEU 18.01.2026 BUG-027: Import für Fassaden-Berechnung bei Multi-Building
+import { matchFacadeToWall, simplifyPolygon, sidesToFacades } from '../features/scaffold-configurator/utils/polygonSimplifier';
 
 interface ConfiguratorBuildingData {
   project_id: string;
@@ -49,6 +53,15 @@ interface ConfiguratorBuildingData {
   building_name?: string;
   complexity?: 'simple' | 'moderate' | 'complex';
   research_source?: 'known_buildings' | 'claude_api' | 'cache' | 'auto' | 'unknown';
+  // NEU 15.01.2026 BUG-024: BuildingWall direkt aus building_walls DB-Tabelle
+  building_walls?: BuildingWall[];
+  // NEU 15.01.2026 23:30: BuildingRoof direkt aus building_roofs DB-Tabelle
+  building_roofs?: BuildingRoof[];
+  // NEU 16.01.2026 14:50: Terrain-Höhen pro Fassade für konsistente 3D-Berechnung
+  facade_z_min?: Record<string, number>;  // Terrain-Höhe pro Himmelsrichtung (m ü.M.)
+  facade_z_max?: Record<string, number>;  // Oberkante pro Himmelsrichtung (m ü.M.)
+  // NEU 18.01.2026: Kombiniertes Polygon für Multi-Building
+  polygon_combined?: number[][];  // Union-Polygon aller Gebäude
   metadata: {
     source: string;
     polygon_points: number;
@@ -204,6 +217,92 @@ function invalidateStoreIfProjectChanged(projectId: string | null) {
 // Call immediately on module load (before Zustand hydrates)
 invalidateStoreIfNewSelection();
 
+// NEU 19.01.2026: Konvertiert GeodataBuilding (von API) zu ConfiguratorBuildingData
+// Diese Funktion ersetzt die alten buildings_data/geruestbaudata Konvertierungen
+function convertGeodataBuildingToConfiguratorFormat(
+  geodataBuilding: GeodataBuilding,
+  projectId: string,
+  address: string
+): ConfiguratorBuildingData | null {
+  if (!geodataBuilding.polygon || geodataBuilding.polygon.length < 3) {
+    console.warn('[convertGeodataBuilding] No valid polygon');
+    return null;
+  }
+
+  const polygon = geodataBuilding.polygon as [number, number][];
+
+  // Höhen berechnen (Priorität: trauf/first > gebaeude > default)
+  const traufHeight = geodataBuilding.traufhoehe_m ?? geodataBuilding.gebaeudehoehe_m ?? 8;
+  const firstHeight = geodataBuilding.firsthoehe_m ?? (traufHeight + 2);
+
+  // Fassaden aus Polygon berechnen
+  const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
+  const facades = sidesToFacades(simplifyResult.sides, traufHeight);
+
+  // Zentrum berechnen (falls nicht vorhanden)
+  const centerE = geodataBuilding.center_e ?? polygon.reduce((sum, p) => sum + p[0], 0) / polygon.length;
+  const centerN = geodataBuilding.center_n ?? polygon.reduce((sum, p) => sum + p[1], 0) / polygon.length;
+
+  // Perimeter und Fläche berechnen
+  const perimeter = simplifyResult.sides.reduce((sum, s) => sum + s.length_m, 0);
+  const area = calculateArea(polygon);
+
+  // Dach-Daten berechnen
+  const roofHeight = firstHeight - traufHeight;
+  const roofOrientation = calculateRoofOrientation(polygon);
+  const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
+  const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
+
+  return {
+    project_id: projectId,
+    building: {
+      egid: geodataBuilding.egid,
+      address: address,
+      name: address,
+      polygon: polygon,
+      trauf_height_m: traufHeight,
+      first_height_m: firstHeight,
+      center_e: centerE,
+      center_n: centerN,
+    },
+    selected_facades: facades.map(f => ({
+      id: f.id,
+      direction: f.direction,
+      length_m: f.length_m,
+      height_m: f.height_m,
+      slope_percent: 0,
+      start_point: f.start_point,
+      end_point: f.end_point,
+    })),
+    roof: {
+      roof_type: roofType,
+      roof_angle_deg: roofAngle,
+      roof_orientation: roofOrientation,
+      trauf_to_first_m: roofHeight,
+      scaffolding_height_m: firstHeight + 1,
+      confidence: 0.7,
+      traufhoehe_m: traufHeight,
+    },
+    // Walls und Roofs aus der API (können leer sein)
+    building_walls: geodataBuilding.walls?.map(w => ({
+      z_min: w.z_min,
+      z_max: w.z_max,
+      coords_3d: w.coords_3d,
+    })) as BuildingWall[] | undefined,
+    metadata: {
+      source: 'geodata_api',
+      polygon_points: polygon.length,
+      facade_count: facades.length,
+      perimeter_m: Math.round(perimeter * 10) / 10,
+      area_m2: Math.round(area * 10) / 10,
+      roof_type: roofType,
+      roof_surfaces_count: 0,
+      height_source: geodataBuilding.traufhoehe_m ? 'swissBUILDINGS3D' : 'estimated',
+      confidence: 0.7,
+    },
+  };
+}
+
 function getSelectedFacadesFromSession(traufHeight: number): ConfiguratorBuildingData['selected_facades'] | null {
   try {
     const stored = sessionStorage.getItem('selectedFacades');
@@ -237,15 +336,38 @@ function extractPolygon(geodata: Geodata): [number, number][] | null {
 }
 
 // Helper: Get height values from geodata
+// FIX 16.01.2026 17:00: Korrekte Berechnung aus Rohdaten
 function extractHeights(geodata: Geodata): { trauf: number; first: number } {
-  const trauf = geodata.traufhoehe_m ?? geodata.gebaeudehoehe_m ?? 10;
-  const first = geodata.firsthoehe_m ?? trauf + 2;
-  return { trauf, first };
+  // NEU: Korrekte Berechnung aus 3D-Rohdaten
+  let trauf: number | null = null;
+  let first: number | null = null;
+
+  // Wenn Rohdaten vorhanden: Korrekte Berechnung
+  if (geodata.roof_dach_min_m != null) {
+    // Finde niedrigstes Terrain aus facade_z_min oder building_walls
+    let terrainMin = geodata.terrain_height_m ?? 0;
+    if (geodata.facade_z_min) {
+      terrainMin = Math.min(...Object.values(geodata.facade_z_min));
+    }
+    trauf = geodata.roof_dach_min_m - terrainMin;
+  }
+  if (geodata.roof_dach_max_m != null) {
+    let terrainMin = geodata.terrain_height_m ?? 0;
+    if (geodata.facade_z_min) {
+      terrainMin = Math.min(...Object.values(geodata.facade_z_min));
+    }
+    first = geodata.roof_dach_max_m - terrainMin;
+  }
+
+  // Fallback auf gebaeudehoehe wenn keine Rohdaten
+  const finalTrauf = trauf ?? geodata.gebaeudehoehe_m ?? 10;
+  const finalFirst = first ?? finalTrauf + 2;
+  return { trauf: finalTrauf, first: finalFirst };
 }
 
 // Helper: Convert geodata to configurator format
 function convertGeodataToConfiguratorFormat(
-  project: ProjectWithGeodata,
+  project: ProjectWithGeruestbaudata,
   geodata: Geodata
 ): ConfiguratorBuildingData | null {
   // Extract polygon
@@ -380,14 +502,14 @@ export default function ConfiguratorPage() {
   const forceRefreshParam = searchParams.get('force_refresh') === 'true';
 
   // Get project from Router State (passed from ProjectDetailPage)
-  const passedProject = location.state?.project as ProjectWithGeodata | undefined;
+  const passedProject = location.state?.project as ProjectWithGeruestbaudata | undefined;
 
   // State
   const [address, setAddress] = useState(searchParams.get('address') || '');
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [buildingData, setBuildingData] = useState<ConfiguratorBuildingData | null>(null);
-  const [project, setProject] = useState<ProjectWithGeodata | null>(null);
+  const [project, setProject] = useState<ProjectWithGeruestbaudata | null>(null);
 
   // Neighbors State (Phase 2)
   // Default to 0 (off) - neighbors loaded on-demand when user selects radius
@@ -407,33 +529,11 @@ export default function ConfiguratorPage() {
   const { data: sseData, start: startSSE, stop: stopSSE } = useProjectContextStream();
 
   // Multi-Building State (Phase 3)
+  // NEU 19.01.2026: Vereinfacht - alle Gebäude sind gleichwertig
+  // Bei Multi-Building wird ein Union-Polygon verwendet (polygon_combined)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
   const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
   const [isMultiMode, setIsMultiMode] = useState(false);
-  // FIX 11.01.2026 00:15 - Hybrid: Manual selection + SSE override
-  // State für manuelle Auswahl (Multi-Building Mode bei Projekt-Erstellung)
-  const [manualAdditionalBuildings, setManualAdditionalBuildings] = useState<MultiBuildingData[]>([]);
-  const [loadingAdditionalBuildings, setLoadingAdditionalBuildings] = useState(false);
-
-  // FIX 11.01.2026 - Derived value: SSE-Daten haben Priorität, dann manuelle Auswahl
-  const additionalBuildings = useMemo<MultiBuildingData[]>(() => {
-    // SSE-Daten haben Priorität (für gespeicherte Projekte)
-    if (sseData.projectBuildings && sseData.projectBuildings.length > 1) {
-      const additional = sseData.projectBuildings.slice(1)
-        .filter(b => b.polygon && b.polygon.length >= 3)
-        .map(b => ({
-          egid: b.egid,
-          address: '',
-          polygon: b.polygon as [number, number][],
-          center: [b.center_e ?? 0, b.center_n ?? 0] as [number, number],
-          traufhoehe_m: b.traufhoehe_m ?? 0,
-          firsthoehe_m: b.firsthoehe_m ?? 0,
-        }));
-      return additional;
-    }
-    // Fallback: Manuelle Auswahl (für neue Projekte)
-    return manualAdditionalBuildings;
-  }, [sseData.projectBuildings, manualAdditionalBuildings]);
 
   // Load project data: prefer Router State, fallback to API
   useEffect(() => {
@@ -530,13 +630,20 @@ export default function ConfiguratorPage() {
     const updatedBuilding = { ...buildingData.building };
     let hasChanges = false;
 
-    if (firstBuilding.traufhoehe_m != null && firstBuilding.traufhoehe_m !== updatedBuilding.trauf_height_m) {
-      updatedBuilding.trauf_height_m = firstBuilding.traufhoehe_m;
-      hasChanges = true;
+    // FIX 16.01.2026 17:00: Korrekte Höhenberechnung aus Rohdaten
+    if (firstBuilding.roof_dach_min_m != null && firstBuilding.terrain_z_min != null) {
+      const calculatedTrauf = firstBuilding.roof_dach_min_m - firstBuilding.terrain_z_min;
+      if (calculatedTrauf !== updatedBuilding.trauf_height_m) {
+        updatedBuilding.trauf_height_m = calculatedTrauf;
+        hasChanges = true;
+      }
     }
-    if (firstBuilding.firsthoehe_m != null && firstBuilding.firsthoehe_m !== updatedBuilding.first_height_m) {
-      updatedBuilding.first_height_m = firstBuilding.firsthoehe_m;
-      hasChanges = true;
+    if (firstBuilding.roof_dach_max_m != null && firstBuilding.terrain_z_min != null) {
+      const calculatedFirst = firstBuilding.roof_dach_max_m - firstBuilding.terrain_z_min;
+      if (calculatedFirst !== updatedBuilding.first_height_m) {
+        updatedBuilding.first_height_m = calculatedFirst;
+        hasChanges = true;
+      }
     }
     if (firstBuilding.polygon && firstBuilding.polygon.length >= 3) {
       updatedBuilding.polygon = firstBuilding.polygon as [number, number][];
@@ -631,34 +738,58 @@ export default function ConfiguratorPage() {
   }, [buildingData?.building.egid, neighborsRadius, projectId]);
 
   // Process loaded project and set building data
-  const handleProjectLoaded = async (loadedProject: ProjectWithGeodata) => {
-    setProject(loadedProject);
+  const handleProjectLoaded = async (loadedProject: ProjectWithGeruestbaudata) => {
+    // NEU 16.01.2026: buildings_data mit EGID als Key verwenden
+    // Alle Gebäude sind gleichwertig - wir nehmen das erste für die Anzeige
+    const egids = getBuildingEgids(loadedProject);
+    const firstEgid = egids[0] || loadedProject.egid;
 
-    // Check if project has geodata from cache
-    if (loadedProject.geodata?.polygon) {
+    // Gebäudedaten für die EGID laden
+    let geodata: Geodata | null = null;
+    if (firstEgid && loadedProject.buildings_data?.[firstEgid]) {
+      // NEU: buildings_data mit EGID-Key
+      geodata = convertGeruestbaudataToGeodata(loadedProject.buildings_data[firstEgid]);
+      console.log(`[handleProjectLoaded] Using buildings_data for EGID ${firstEgid}`);
+    } else if (loadedProject.geruestbaudata) {
+      // Legacy-Fallback: geruestbaudata direkt
+      geodata = convertGeruestbaudataToGeodata(loadedProject.geruestbaudata);
+      console.log('[handleProjectLoaded] Legacy fallback: using geruestbaudata');
+    }
+
+    // Für bestehenden Code: Project mit geodata setzen
+    const projectWithGeodata: ProjectWithGeruestbaudata = {
+      ...loadedProject,
+      geodata: geodata || undefined,
+    };
+    setProject(projectWithGeodata);
+
+    // Check if project has geodata
+    if (geodata?.polygon) {
       const configData = convertGeodataToConfiguratorFormat(
-        loadedProject,
-        loadedProject.geodata
+        projectWithGeodata,
+        geodata
       );
 
       if (configData) {
-        console.log('Using geodata from cache - polygon is ORIGINAL from swissBUILDINGS3D');
+        console.log('Using geruestbaudata from project - polygon is ORIGINAL from swissBUILDINGS3D');
 
         // Calculate roof from cached heights if not present
-        if (!configData.roof && loadedProject.geodata) {
-          const trauf = loadedProject.geodata.traufhoehe_m ?? 10;
-          const first = loadedProject.geodata.firsthoehe_m ?? trauf + 3;
+        // FIX 16.01.2026 17:00: Korrekte Berechnung aus Rohdaten
+        if (!configData.roof && geodata) {
+          const heights = extractHeights(geodata);  // Verwendet korrigierte Berechnung
+          const trauf = heights.trauf;
+          const first = heights.first;
           const roofHeight = first - trauf;
 
           // NEU 12.01.2026 22:45 - Echte Dach-Daten verwenden wenn has_3d_layers=true
-          const has3DLayers = loadedProject.geodata.has_3d_layers === true;
-          const realRoofType = loadedProject.geodata.roof_type;
-          const realRoofOrientation = loadedProject.geodata.roof_orientation;
-          const realRoofAngle = loadedProject.geodata.roof_angle_deg;
+          const has3DLayers = geodata.has_3d_layers === true;
+          const realRoofType = geodata.roof_type;
+          const realRoofOrientation = geodata.roof_orientation;
+          const realRoofAngle = geodata.roof_angle_deg;
 
           // Fallback-Berechnung nur wenn keine echten Daten
           const fallbackAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
-          const fallbackOrientation = calculateRoofOrientation(loadedProject.geodata.polygon as [number, number][]);
+          const fallbackOrientation = calculateRoofOrientation(geodata.polygon as [number, number][]);
 
           // Priorität: Echte Daten > Fallback
           const roofAngle = realRoofAngle ?? fallbackAngle;
@@ -683,24 +814,93 @@ export default function ConfiguratorPage() {
         setBuildingData(configData);
         setLoadingState('success');
 
-        // FIX 15.01.2026 02:30 - Multi-Building Support: Lade zusätzliche Gebäude aus gespeichertem Projekt
-        if (loadedProject.buildings && loadedProject.buildings.length > 1) {
-          console.log(`[Multi-Building] Projekt hat ${loadedProject.buildings.length} Gebäude, lade zusätzliche...`);
+        // NEU 18.01.2026: Multi-Building Support
+        // Einfache Logik: polygon_combined vorhanden = Union-Polygon bereits berechnet
+        const isCombinedObject = configData.polygon_combined != null;
+        if (isCombinedObject) {
+          console.log('[Multi-Building] Union-Polygon vorhanden - keine separaten Daten nötig');
+        } else if (egids.length > 1) {
+          console.log(`[Multi-Building] Projekt hat ${egids.length} Gebäude in buildings_data`);
           setLoadingAdditionalBuildings(true);
 
           try {
-            // Lade Polygone für alle zusätzlichen Gebäude (ab Index 1)
+            const additionalEgids = egids.slice(1);  // Alle außer dem ersten
+            const additionalBuildings: MultiBuildingData[] = [];
+
+            for (const addEgid of additionalEgids) {
+              const buildingData = loadedProject.buildings_data?.[addEgid];
+              if (buildingData) {
+                // FIX 16.01.2026 17:00: Rohdaten für Höhenberechnung
+                // Rohdaten aus roofs und terrain extrahieren
+                const firstRoof = buildingData.roofs?.[0];
+                // FIX 18.01.2026: heights ist jetzt optional
+                const terrainMin = buildingData.terrain?.min_m ?? buildingData.heights?.terrain_height_m ?? 0;
+
+                // NEU 18.01.2026 BUG-027: Fassaden für Gerüst berechnen
+                // Traufhöhe = dach_min - terrain_min (oder Fallback auf gebaeudehoehe)
+                // Priorität: facades[0].height_m > heights.gebaeudehoehe_m > 8
+                let traufHeight = buildingData.facades?.[0]?.height_m ?? buildingData.heights?.gebaeudehoehe_m ?? 8;
+                if (firstRoof?.dach_min && terrainMin) {
+                  traufHeight = firstRoof.dach_min - terrainMin;
+                }
+
+                // Polygon zu Fassaden konvertieren
+                const polygon = buildingData.building.polygon as [number, number][];
+                const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
+                const calculatedFacades = sidesToFacades(simplifyResult.sides, traufHeight);
+
+                // Konvertieren zu MultiBuildingFacade Format
+                const facades = calculatedFacades.map(f => ({
+                  id: f.id,
+                  direction: f.direction,
+                  length_m: f.length_m,
+                  height_m: f.height_m,
+                  start_point: f.start_point,
+                  end_point: f.end_point,
+                }));
+
+                additionalBuildings.push({
+                  egid: buildingData.building.egid,
+                  address: buildingData.building.address,
+                  polygon: polygon,
+                  // Rohdaten für korrekte Höhenberechnung
+                  roof_dach_min_m: firstRoof?.dach_min ?? undefined,
+                  roof_dach_max_m: firstRoof?.dach_max ?? undefined,
+                  terrain_z_min: terrainMin,
+                  // FIX 18.01.2026: heights ist optional, Fallback auf facades
+                  gebaeudehoehe_m: buildingData.heights?.gebaeudehoehe_m ?? buildingData.facades?.[0]?.height_m,
+                  center: [buildingData.building.center_e, buildingData.building.center_n],
+                  // NEU 18.01.2026 BUG-027: Fassaden für Gerüst
+                  facades: facades,
+                });
+                console.log(`[Multi-Building] EGID ${addEgid} aus buildings_data geladen mit ${facades.length} Fassaden`);
+              }
+            }
+
+            setManualAdditionalBuildings(additionalBuildings);
+            console.log(`[Multi-Building] ${additionalBuildings.length} zusätzliche Gebäude aus Cache geladen`);
+          } catch (err) {
+            console.error('[Multi-Building] Fehler beim Verarbeiten zusätzlicher Gebäude:', err);
+          } finally {
+            setLoadingAdditionalBuildings(false);
+          }
+        } else if (!isCombinedObject && loadedProject.buildings && loadedProject.buildings.length > 1) {
+          // Legacy-Fallback: buildings Array mit Adressen, via API laden
+          // NUR wenn KEIN kombiniertes Objekt vorliegt (alte Projekte ohne Union-Polygon)
+          console.log(`[Multi-Building Legacy] Projekt hat ${loadedProject.buildings.length} Gebäude, lade via API...`);
+          setLoadingAdditionalBuildings(true);
+
+          try {
             const additionalAddresses = loadedProject.buildings.slice(1).map(b => b.address);
             const additionalData = await Promise.all(
               additionalAddresses.map(addr => geruestbauApi.getBuildingPolygon(addr))
             );
 
-            // Filtere fehlgeschlagene Ladevorgänge
             const validAdditional = additionalData.filter((d): d is MultiBuildingData => d !== null);
             setManualAdditionalBuildings(validAdditional);
-            console.log(`[Multi-Building] ${validAdditional.length} zusätzliche Gebäude geladen`);
+            console.log(`[Multi-Building Legacy] ${validAdditional.length} zusätzliche Gebäude via API geladen`);
           } catch (err) {
-            console.error('[Multi-Building] Fehler beim Laden zusätzlicher Gebäude:', err);
+            console.error('[Multi-Building Legacy] Fehler beim Laden:', err);
           } finally {
             setLoadingAdditionalBuildings(false);
           }
@@ -737,13 +937,53 @@ export default function ConfiguratorPage() {
   };
 
   // Load project from API (fallback for direct links)
+  // NEU 19.01.2026: Geodaten werden per separater API geladen (Architektur-Trennung)
   const loadProjectData = async (id: string) => {
     setLoadingState('loading');
     setError(null);
 
     try {
+      // 1. Projekt-Metadaten laden
       const loadedProject = await geruestbauApi.getProject(id);
+      setProject(loadedProject);
+
+      // 2. NEU: Geodaten per API laden (statt aus buildings_data/geruestbaudata)
+      console.log('[loadProjectData] Loading geodata via API...');
+      const geodataResponse = await geruestbauApi.getProjectGeodata(id, 100, true, true);
+      console.log(`[loadProjectData] Geodata loaded: ${geodataResponse.project_buildings.length} project buildings, ${geodataResponse.neighbors.length} neighbors`);
+
+      // 3. Projekt-Gebäude verarbeiten
+      // WICHTIG: Alle Gebäude sind gleichwertig - kein "Haupt" vs "Zusatz"!
+      // Bei Multi-Building wird ein Union-Polygon verwendet
+      if (geodataResponse.project_buildings.length > 0) {
+        // Bei einem Gebäude: direkt verwenden
+        // Bei mehreren: Union-Polygon berechnen (TODO: Backend sollte das liefern)
+        const firstBuilding = geodataResponse.project_buildings[0];
+        const configData = convertGeodataBuildingToConfiguratorFormat(
+          firstBuilding,
+          id,
+          loadedProject.address
+        );
+
+        if (configData) {
+          // Bei Multi-Building: Alle Gebäude-EGIDs merken für Kontext
+          if (geodataResponse.project_buildings.length > 1) {
+            console.log(`[loadProjectData] Multi-Building Projekt mit ${geodataResponse.project_buildings.length} Gebäuden`);
+            // TODO: Union-Polygon aus allen Gebäuden berechnen
+            // Aktuell: Erstes Gebäude als Repräsentant (temporär)
+          }
+
+          console.log('[loadProjectData] Using geodata from API - Architektur-Trennung aktiv');
+          setBuildingData(configData);
+          setLoadingState('success');
+          return; // Erfolgreich geladen via neue API
+        }
+      }
+
+      // 4. Fallback: Alte Methode (für Projekte ohne gespeicherte EGIDs)
+      console.log('[loadProjectData] Fallback to legacy handleProjectLoaded');
       await handleProjectLoaded(loadedProject);
+
     } catch (err) {
       console.error('Error loading project:', err);
       setError(err instanceof Error ? err.message : 'Projekt konnte nicht geladen werden');
@@ -755,7 +995,7 @@ export default function ConfiguratorPage() {
   // isRefresh: If true, don't change loadingState (for simplification changes)
   const fetchBuildingData = useCallback(async (
     selectedAddress: string,
-    existingProject?: ProjectWithGeodata | null,
+    existingProject?: ProjectWithGeruestbaudata | null,
     epsilon?: number | null,
     isRefresh: boolean = false
   ) => {
@@ -858,16 +1098,53 @@ export default function ConfiguratorPage() {
   }, [address, fetchBuildingData, project]);
 
   // Convert API response to SelectedFacade format (including coordinates for 3D)
+  // NEU 15.01.2026 BUG-024: Wendet building_walls Matching an für korrekte Höhen
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
-    return data.selected_facades.map((facade) => ({
-      id: facade.id,
-      direction: facade.direction as SelectedFacade['direction'],
-      length_m: facade.length_m,
-      height_m: facade.height_m,
-      slope_percent: facade.slope_percent,
-      start_point: facade.start_point,
-      end_point: facade.end_point,
-    }));
+    const buildingWalls = data.building_walls || [];
+
+    return data.selected_facades.map((facade) => {
+      let facadeZMin: number | undefined;
+      let facadeZMax: number | undefined;
+      let heightSource: 'building_walls' | 'global' | undefined;
+      // FIX 15.01.2026 22:30: height_m aus Wall-Match statt API
+      let heightM = facade.height_m;
+
+      // NEU 15.01.2026 BUG-024: Geometrisches Matching mit building_walls
+      // Extrahiert z-Werte für Terrain-Höhen, NICHT für Gerüsthöhe!
+      // FIX 18.01.2026 BUG-026: wall_height NICHT als Fassaden-Höhe verwenden!
+      // Giebel-Fassaden haben höhere Wände (bis First), aber das Gerüst soll
+      // bei "Fassadenarbeit" nur bis zur TRAUFE gehen.
+      if (buildingWalls.length > 0 && facade.start_point && facade.end_point) {
+        const matchResult = matchFacadeToWall(
+          facade.start_point,
+          facade.end_point,
+          buildingWalls
+        );
+
+        if (matchResult) {
+          facadeZMin = matchResult.polygon_z_min;
+          facadeZMax = matchResult.polygon_z_max;
+          // FIX 18.01.2026: NICHT wall_height verwenden!
+          // Die Gerüsthöhe basiert auf facade.height_m (= Traufhöhe aus API)
+          // wall_height enthält Giebel-Dreiecke und wäre zu hoch.
+          // ENTFERNT: heightM = matchResult.wall_height;
+          heightSource = 'building_walls';
+        }
+      }
+
+      return {
+        id: facade.id,
+        direction: facade.direction as SelectedFacade['direction'],
+        length_m: facade.length_m,
+        height_m: heightM,
+        slope_percent: facade.slope_percent,
+        start_point: facade.start_point,
+        end_point: facade.end_point,
+        facade_z_min: facadeZMin,
+        facade_z_max: facadeZMax,
+        height_source: heightSource,
+      };
+    });
   };
 
   // Render address search form
@@ -885,11 +1162,16 @@ export default function ConfiguratorPage() {
         </header>
 
         <div className="max-w-lg mx-auto p-4 space-y-6">
-          {/* Project info if loaded - NEU 14.01.2026: BuildingDataCard verwenden */}
-          {project && project.geodata && (
-            <BuildingDataCard geodata={project.geodata} egid={project.egid} />
-          )}
-          {project && !project.geodata && (
+          {/* Project info if loaded - NEU 18.01.2026: BuildingDataCard mit GeruestbauData */}
+          {project && (() => {
+            // Priorität: geruestbaudata → geodata konvertiert → null
+            const geruestbauData = project.geruestbaudata
+              || (project.geodata ? convertGeodataToGeruestbaudata(project.geodata) : null)
+            return geruestbauData ? (
+              <BuildingDataCard data={geruestbauData} />
+            ) : null
+          })()}
+          {project && !project.geruestbaudata && !project.geodata && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <h3 className="font-medium text-green-800">Projekt: {project.name}</h3>
               <p className="text-sm text-green-600">{project.address}</p>
@@ -1121,12 +1403,53 @@ export default function ConfiguratorPage() {
     console.log('=== convertRoofData ===', {
       hasRoof: !!data.roof,
       roofData: data.roof,
+      buildingRoofs: data.building_roofs?.length ?? 0,
     });
 
     if (!data.roof) {
       console.warn('WARNING: No roof data in buildingData!');
       return undefined;
     }
+
+    // NEU 15.01.2026 23:45: building_roofs.coords_3d für echte 3D-Dachgeometrie
+    // Falls building_roofs vorhanden, extrahiere coords_3d als roof_geometry_coords
+    let roofGeometryCoords = data.roof.roof_geometry_coords;
+    let hasRoofGeometry = data.roof.has_roof_geometry;
+    let roofDachMinM = data.roof.roof_dach_min_m;
+    let roofDachMaxM = data.roof.roof_dach_max_m;
+
+    if (data.building_roofs && data.building_roofs.length > 0) {
+      // Extrahiere coords_3d aus dem ersten building_roof (oder alle kombinieren)
+      const firstRoof = data.building_roofs[0];
+
+      if (firstRoof.coords_3d && firstRoof.geometry_type) {
+        // MultiPolygon: coords_3d ist [[[Polygon1]], [[Polygon2]], ...]
+        // Polygon: coords_3d ist [[[Ring1], [Hole1], ...]]
+        if (firstRoof.geometry_type === 'MultiPolygon') {
+          // Flatten: Extrahiere alle Polygone (nur exterior rings)
+          roofGeometryCoords = (firstRoof.coords_3d as number[][][][]).map(
+            (polygon) => polygon[0] // Nur exterior ring
+          );
+        } else if (firstRoof.geometry_type === 'Polygon') {
+          // Einzelnes Polygon: coords_3d ist [[[x,y,z], ...]]
+          roofGeometryCoords = [firstRoof.coords_3d[0]] as number[][][];
+        }
+        hasRoofGeometry = true;
+        console.log('[BUILDING-ROOFS] Verwende coords_3d aus building_roofs', {
+          type: firstRoof.geometry_type,
+          polygons: roofGeometryCoords?.length ?? 0,
+        });
+      }
+
+      // dach_min/dach_max aus building_roofs übernehmen wenn vorhanden
+      if (firstRoof.dach_min != null) {
+        roofDachMinM = firstRoof.dach_min;
+      }
+      if (firstRoof.dach_max != null) {
+        roofDachMaxM = firstRoof.dach_max;
+      }
+    }
+
     return {
       roof_type: data.roof.roof_type,
       roof_angle_deg: data.roof.roof_angle_deg,
@@ -1138,11 +1461,16 @@ export default function ConfiguratorPage() {
       roof_overhang_m: data.roof.roof_overhang_m,
       // Use traufhoehe from roof data (calculated by backend), fallback to building data
       traufhoehe_m: data.roof.traufhoehe_m ?? data.building.trauf_height_m,
-      // NEU 14.01.2026: Echte 3D-Dachgeometrie für präzise Visualisierung
-      roof_geometry_coords: data.roof.roof_geometry_coords,
-      has_roof_geometry: data.roof.has_roof_geometry,
-      roof_dach_min_m: data.roof.roof_dach_min_m,
-      roof_dach_max_m: data.roof.roof_dach_max_m,
+      // NEU 15.01.2026 23:45: Echte 3D-Dachgeometrie aus building_roofs (Prio) oder roof_geometry_coords
+      roof_geometry_coords: roofGeometryCoords,
+      has_roof_geometry: hasRoofGeometry,
+      roof_dach_min_m: roofDachMinM,
+      roof_dach_max_m: roofDachMaxM,
+      // NEU 16.01.2026 14:50: Niedrigste Terrain-Höhe für konsistente Gebäude/Dach-Berechnung
+      // Wird in ScaffoldScene verwendet um buildingHeight = dach_min - terrain_z_min zu berechnen
+      terrain_z_min: data.facade_z_min
+        ? Math.min(...Object.values(data.facade_z_min))
+        : undefined,
     };
   };
 
@@ -1207,6 +1535,8 @@ export default function ConfiguratorPage() {
         // NEU 14.01.2026 21:30 - Fassaden-Höhen für Hanglage (pro Himmelsrichtung)
         facadeZMin={project?.geodata?.facade_z_min}
         facadeZMax={project?.geodata?.facade_z_max}
+        // NEU 15.01.2026 BUG-024: BuildingWall für koordinatenbasiertes Matching
+        buildingWalls={buildingData.building_walls}
         onBack={() => {
           setBuildingData(null);
           setLoadingState('idle');

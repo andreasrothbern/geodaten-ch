@@ -6,7 +6,7 @@ import StepIndicator from '../components/ui/StepIndicator'
 import { ImportStep, ReviewStep, GeodataStep } from '../components/projects/import'
 import type {
   ExtractedProjectData,
-  Geodata,
+  GeruestbauData,
   BuildingEntry,
   OcrExtractionResult,
 } from '../types/project'
@@ -70,76 +70,29 @@ export default function NewProjectPage() {
     []
   )
 
-  // Load geodata preview for address (optional preview)
-  const loadGeodata = useCallback(
-    async (address: string): Promise<Geodata | null> => {
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL || ''}/api/v1/smart-building/data?address=${encodeURIComponent(address)}`
-        )
-        if (!response.ok) return null
-        const data = await response.json()
-
-        // Map to Geodata format (flat structure from SmartBuildingService)
-        // Terrain-Daten aus bundle.terrain extrahieren
-        const terrain = data.terrain || {}
-
-        return {
-          egid: data.egid || '',
-          address: data.address_matched || address,
-          traufhoehe_m: data.traufhoehe_m,
-          firsthoehe_m: data.firsthoehe_m,
-          gebaeudehoehe_m: data.gebaeudehoehe_m || data.firsthoehe_m,
-          area_m2: data.footprint_area_m2 || data.gwr_area_m2,
-          perimeter_m: data.perimeter_m,
-          coord_e: data.lv95_e,
-          coord_n: data.lv95_n,
-          polygon: data.polygon,
-          polygon_simplified: data.polygon_simplified,
-          // Enrichment-Daten
-          terrain_height_m: terrain.reference_height_m,
-          slope_m: terrain.slope_m,
-          slope_class: terrain.slope_class,
-          // Zonen (bei komplexen Gebäuden)
-          zones: data.zones,
-          // Datenherkunft für UI-Feedback
-          research_source: data.research_source,
-          building_name: data.building_name,
-          complexity: data.complexity,
-        }
-      } catch (error) {
-        console.error('Fehler beim Laden der Geodaten:', error)
-        return null
-      }
-    },
-    []
-  )
-
-  // Create project and enrich with geodata
+  // Create project and enrich with GeruestbauData
+  // NEU 18.01.2026: Parameter umgestellt von Geodata auf GeruestbauData
+  // FIX 18.01.2026: geruestbaudata wird jetzt mitgesendet (kombiniert bei Multi-Building)
   const handleSubmit = useCallback(
-    async (geodataPreview: Geodata | null, buildings?: BuildingEntry[]) => {
+    async (geruestbauData: GeruestbauData | null, buildings?: BuildingEntry[]) => {
       if (!projectData.project_name || !projectData.address) return
 
       setLoading(true)
 
       try {
-        // 1. Create project with basic data (including buildings for multi-address)
-        // Bei Single-Address: EGID aus geodataPreview übergeben (bereits geladen!)
-        const project = await geruestbauApi.createProject({
+        // NEU 18.01.2026: geruestbaudata mitsenden
+        // Bei Single-Building: Einzelgebäude-Daten
+        // Bei Multi-Building: Das KOMBINIERTE Objekt (Union-Polygon + äußere Fassaden)
+        await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
-          egid: geodataPreview?.egid, // EGID bereits aus SmartBuildingService geladen
-          buildings: buildings, // Multi-Building Support (already has EGID, heights, coords)
+          egid: geruestbauData?.building.egid, // Bei Multi: "123+456+789"
+          buildings: buildings, // Einzelne Gebäude für Details
+          geruestbaudata: geruestbauData ?? undefined, // NEU: Das kombinierte Objekt
           client_name: projectData.client_name,
           client_contact: projectData.client_contact,
           deadline: projectData.submission_deadline,
         })
-
-        // 2. Enrich NUR wenn keine Geodaten vorhanden (sollte selten sein)
-        // Die Daten wurden bereits in GeodataStep geladen und gecacht
-        if (!geodataPreview?.egid && (!buildings || buildings.length === 0)) {
-          await geruestbauApi.enrichProject(project.id)
-        }
 
         // Navigate to projects list
         navigate('/projects')
@@ -204,7 +157,7 @@ export default function NewProjectPage() {
         <GeodataStep
           data={projectData}
           source={source}
-          loadGeodata={loadGeodata}
+          // loadGeodata entfernt - SSE-Streaming wird verwendet
           onBack={() => {
             setEnrichmentComplete(false)
             setCurrentStep(2)

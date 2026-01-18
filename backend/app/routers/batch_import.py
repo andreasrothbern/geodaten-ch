@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.services.tile_cache import get_tile_cache
@@ -612,3 +612,151 @@ async def get_import_metrics_endpoint():
     """
     from app.services.tile_prefetch import get_import_metrics
     return get_import_metrics()
+
+
+@router.get("/performance/compare")
+async def compare_data_loading_performance(
+    egid: str = Query(..., description="EGID zum Testen"),
+    address: str = Query(None, description="Adresse für SmartBuildingService (optional)")
+):
+    """
+    NEU 18.01.2026: Performance-Vergleich SQLite vs. API-Call.
+
+    Vergleicht die Ladezeiten für Gebäudedaten aus verschiedenen Quellen:
+    1. building_3d.db (DuckDB) - vorverarbeitete 3D-Daten
+    2. SmartBuildingService - API-Calls (Geocoding, GWR, Tiles)
+
+    Nützlich um zu entscheiden ob Daten in der DB gespeichert oder
+    on-demand via API geladen werden sollten.
+
+    Args:
+        egid: EGID des Gebäudes zum Testen
+        address: Adresse für SmartBuildingService (falls nicht aus DB ermittelbar)
+
+    Returns:
+        Timing-Vergleich mit Empfehlung
+    """
+    import time
+    results = {
+        "egid": egid,
+        "timestamp": datetime.utcnow().isoformat(),
+        "timings": {},
+        "data_sizes": {},
+        "recommendation": None
+    }
+
+    # ==========================================
+    # 1. building_3d.db Lookup (DuckDB)
+    # ==========================================
+    db_start = time.time()
+    db_building = None
+    try:
+        building_service = get_building_3d_service()
+        db_building = building_service.get_by_egid(egid)
+        db_ms = (time.time() - db_start) * 1000
+
+        results["timings"]["building_3d_db_ms"] = round(db_ms, 2)
+        results["data_sizes"]["building_3d_db"] = {
+            "has_polygon": db_building.get("polygon") is not None if db_building else False,
+            "has_heights": (
+                db_building.get("traufhoehe_m") is not None or
+                db_building.get("firsthoehe_m") is not None
+            ) if db_building else False,
+            "polygon_points": len(db_building.get("polygon", [])) if db_building and db_building.get("polygon") else 0
+        }
+    except Exception as e:
+        results["timings"]["building_3d_db_ms"] = None
+        results["timings"]["building_3d_db_error"] = str(e)
+
+    # ==========================================
+    # 2. Walls + Roofs aus DB
+    # ==========================================
+    layers_start = time.time()
+    walls_count = 0
+    roofs_count = 0
+    try:
+        from app.services.layer_fetcher import get_layer_fetcher_service
+        layer_fetcher = get_layer_fetcher_service()
+
+        walls = layer_fetcher.get_walls_for_building(egid)
+        walls_count = len(walls) if walls else 0
+
+        roofs = layer_fetcher.get_roofs_for_building(egid)
+        roofs_count = len(roofs) if roofs else 0
+
+        layers_ms = (time.time() - layers_start) * 1000
+        results["timings"]["layers_db_ms"] = round(layers_ms, 2)
+        results["data_sizes"]["layers_db"] = {
+            "walls_count": walls_count,
+            "roofs_count": roofs_count
+        }
+    except Exception as e:
+        results["timings"]["layers_db_ms"] = None
+        results["timings"]["layers_db_error"] = str(e)
+
+    # ==========================================
+    # 3. SmartBuildingService (API-Calls)
+    # ==========================================
+    smart_ms = None
+    if address:
+        smart_start = time.time()
+        try:
+            from app.services.smart_building import get_smart_building_service
+            smart_service = get_smart_building_service()
+
+            bundle = await smart_service.collect_all_data(
+                address=address,
+                force_refresh=True,  # Keine Caches nutzen für echte Messung
+                include_research=False,  # Ohne Claude-Recherche (kostet Zeit + Geld)
+                include_zones_analysis=False,
+                include_terrain=True
+            )
+
+            smart_ms = (time.time() - smart_start) * 1000
+            results["timings"]["smart_building_api_ms"] = round(smart_ms, 2)
+            results["data_sizes"]["smart_building_api"] = {
+                "has_polygon": bundle.polygon is not None if bundle else False,
+                "has_heights": (
+                    bundle.traufhoehe_m is not None or
+                    bundle.firsthoehe_m is not None
+                ) if bundle else False,
+                "has_terrain": bundle.terrain is not None if bundle else False,
+                "polygon_points": len(bundle.polygon) if bundle and bundle.polygon else 0
+            }
+        except Exception as e:
+            results["timings"]["smart_building_api_ms"] = None
+            results["timings"]["smart_building_api_error"] = str(e)
+
+    # ==========================================
+    # 4. Analyse & Empfehlung
+    # ==========================================
+    db_total_ms = (
+        (results["timings"].get("building_3d_db_ms") or 0) +
+        (results["timings"].get("layers_db_ms") or 0)
+    )
+    results["timings"]["db_total_ms"] = round(db_total_ms, 2)
+
+    if smart_ms:
+        speedup = smart_ms / db_total_ms if db_total_ms > 0 else float('inf')
+        results["speedup_factor"] = round(speedup, 1)
+
+        if speedup > 10:
+            results["recommendation"] = "DB-Speicherung stark empfohlen (>10x schneller)"
+        elif speedup > 3:
+            results["recommendation"] = "DB-Speicherung empfohlen (3-10x schneller)"
+        else:
+            results["recommendation"] = "DB-Speicherung optional (<3x Unterschied)"
+    else:
+        results["recommendation"] = "Keine API-Messung (address Parameter fehlt)"
+
+    # ==========================================
+    # 5. Speicher-Analyse
+    # ==========================================
+    results["storage_analysis"] = {
+        "description": "Geschätzte Speichergrössen pro Gebäude",
+        "building_3d_db": "~2-5 KB (Polygon + Höhen + Metadaten)",
+        "walls_roofs_db": f"~1-10 KB ({walls_count} Walls, {roofs_count} Roofs)",
+        "api_overhead": "~5-15 KB JSON Response + Netzwerk-Latenz"
+    }
+
+    return results

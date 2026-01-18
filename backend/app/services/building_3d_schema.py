@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Haupttabelle: buildings_3d
+# HINWEIS 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
+# Diese Werte werden aus GELAENDEPUNKT berechnet (Schätzung, bei Hanglagen ~1-2m ungenau).
+# Für das Hauptgebäude erfolgt exakte Berechnung via Terrain-Sampling.
+# Für Nachbarn reicht die Schätzung aus swissBUILDINGS3D.
+# NEU 17.01.2026: Terrain-Felder für prefetch_neighbors() Enrichment
 BUILDINGS_3D_TABLE = """
 CREATE TABLE IF NOT EXISTS buildings_3d (
     egid INTEGER PRIMARY KEY,
@@ -52,7 +57,12 @@ CREATE TABLE IF NOT EXISTS buildings_3d (
     roof_form {text_type},
     roof_form_confidence {float_type},
     roof_orientation {text_type},
-    has_3d_layers INTEGER DEFAULT 0
+    has_3d_layers INTEGER DEFAULT 0,
+    -- NEU 17.01.2026: Terrain-Sampling Felder (via swissALTI3D)
+    terrain_z_min {float_type},
+    terrain_z_max {float_type},
+    terrain_slope_m {float_type},
+    terrain_sampled_at TIMESTAMP
 )
 """
 
@@ -111,11 +121,13 @@ CREATE TABLE IF NOT EXISTS import_log (
 
 # Indizes
 # NEU 13.01.2026 19:15: gebaeudeeinheit ist jetzt PRIMARY KEY, kein Index nötig
+# NEU 17.01.2026: idx_buildings_3d_enrichment für prefetch_neighbors() Abfragen
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords ON buildings_3d(center_e, center_n)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile ON buildings_3d(tile_id)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_objektart ON buildings_3d(objektart)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_gebaeudeeinheit ON buildings_3d(gebaeudeeinheit)",
+    "CREATE INDEX IF NOT EXISTS idx_buildings_3d_enrichment ON buildings_3d(terrain_sampled_at, has_3d_layers)",
     "CREATE INDEX IF NOT EXISTS idx_roofs_egid ON building_roofs(egid)",
     "CREATE INDEX IF NOT EXISTS idx_walls_egid ON building_walls(egid)",
     "CREATE INDEX IF NOT EXISTS idx_floors_egid ON building_floors(egid)",

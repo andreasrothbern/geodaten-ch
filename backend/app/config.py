@@ -85,6 +85,11 @@ IMPORT_ALL_LAYERS = os.getenv("IMPORT_ALL_LAYERS", "true").lower() != "false"
 # Bei false: GDB-Dateien bleiben in tiles/ erhalten
 CLEANUP_TILES_AFTER_IMPORT = os.getenv("CLEANUP_TILES_AFTER_IMPORT", "true").lower() != "false"
 
+# NEU 18.01.2026 23:15: Standard-Suchradius für Nachbar-Gebäude
+# Default: 100m - wird für SQL BBox-Query verwendet
+# Kann via API überschrieben werden (radius_m Parameter)
+NEIGHBOR_SEARCH_RADIUS_M = float(os.getenv("NEIGHBOR_SEARCH_RADIUS_M", "100"))
+
 # =============================================================================
 # DATENBANK-PFADE
 # =============================================================================

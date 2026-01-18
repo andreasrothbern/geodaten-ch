@@ -12,11 +12,14 @@ import {
   Settings,
   Cuboid,  // NEU 12.01.2026 23:00 - Icon für 3D-Daten
 } from 'lucide-react'
-import type { Geodata, ZoneInfo } from '../../types/project'
+import type { GeruestbauData, GeruestbauFassade, ZoneInfo } from '../../types/project'
 
+/**
+ * Props für BuildingDataCard
+ * NEU 18.01.2026: Verwendet GeruestbauData statt Geodata
+ */
 interface BuildingDataCardProps {
-  geodata: Geodata
-  egid?: string  // Optional override (z.B. aus Projekt-Daten)
+  data: GeruestbauData
 }
 
 // Research Source Badge - zeigt woher die Daten stammen
@@ -55,37 +58,46 @@ function ResearchSourceBadge({ source }: { source?: string }) {
   }
 }
 
-// NEU 14.01.2026 17:45 - Höhen-Qualitäts-Badge (verbessert)
+// NEU 18.01.2026 - Höhen-Qualitäts-Badge (aus facades[] oder heights.source)
 // Zeigt die Qualität der Höhendaten basierend auf der Quelle
+// FIX 18.01.2026: Auch heights.source prüfen für Legacy/Multi-Building Projekte
 function Data3DQualityBadge({
   has3DLayers,
-  facadeHeightsSource
+  facades,
+  heightsSource
 }: {
   has3DLayers?: boolean
-  facadeHeightsSource?: string
+  facades?: GeruestbauFassade[]
+  heightsSource?: string  // NEU: heights.source für Legacy-Projekte
 }) {
+  // Prüfe height_source der ersten Fassade
+  const firstSource = facades?.[0]?.height_source
+
   // Stufe 1: Echte 3D-Layer (höchste Präzision ±0.1m)
-  if (has3DLayers === true || facadeHeightsSource === 'wall_layer') {
+  // - has3DLayers gesetzt ODER
+  // - facade height_source = wall_layer ODER
+  // - heights.source = swissBUILDINGS3D (Legacy)
+  if (has3DLayers === true || firstSource === 'wall_layer' || heightsSource === 'swissBUILDINGS3D') {
     return (
       <span
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
         title="Echte 3D-Daten aus swissBUILDINGS3D (±0.1m Genauigkeit)"
       >
         <Cuboid className="w-3 h-3" />
-        3D-Daten ✓
+        3D-Daten
       </span>
     )
   }
 
   // Stufe 2: Terrain-Sampling (gute Präzision ±0.5m)
-  if (facadeHeightsSource === 'terrain_sampled') {
+  if (firstSource === 'terrain_sampled') {
     return (
       <span
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
         title="Höhen aus swissALTI3D Terrain-Modell (±0.5m Genauigkeit)"
       >
         <Mountain className="w-3 h-3" />
-        Terrain ✓
+        Terrain
       </span>
     )
   }
@@ -118,58 +130,42 @@ function getPositionLabel(position?: string) {
   }
 }
 
-// NEU 14.01.2026 (T4) - Fassaden-Höhen Anzeige
-// Zeigt Fassaden-Höhen aus Wall-Layer wenn verfügbar
-// FIX 14.01.2026 22:30 - 2 Dezimalstellen + Hanglage-Erkennung
-function FacadeHeightsInfo({
-  facadeZMin,
-  facadeZMax,
-  source
-}: {
-  facadeZMin?: Record<string, number>
-  facadeZMax?: Record<string, number>
-  source?: string
-}) {
-  if (!facadeZMin || Object.keys(facadeZMin).length === 0) return null
+// NEU 18.01.2026 - Fassaden-Höhen Anzeige (aus facades[])
+// Zeigt Fassaden-Höhen mit Hanglage-Erkennung
+function FacadeHeightsGrid({ facades }: { facades?: GeruestbauFassade[] }) {
+  if (!facades || facades.length === 0) return null
 
+  // Sortiere nach Richtung
+  const directionOrder = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  const sortedFacades = [...facades].sort(
+    (a, b) => directionOrder.indexOf(a.direction) - directionOrder.indexOf(b.direction)
+  )
+
+  // Quelle für Badge
+  const source = sortedFacades[0]?.height_source || 'global'
   const sourceLabel = {
     'wall_layer': '3D-Layer',
     'terrain_sampled': 'Terrain',
-    'global': 'Global'
-  }[source || 'global'] || 'Global'
+    'global': 'Global',
+    'building_global': 'Global'
+  }[source] || 'Global'
 
   const sourceColor = {
     'wall_layer': 'text-green-600 bg-green-50',
     'terrain_sampled': 'text-blue-600 bg-blue-50',
-    'global': 'text-gray-600 bg-gray-50'
-  }[source || 'global'] || 'text-gray-600 bg-gray-50'
-
-  // Sortiere Richtungen: N, NE, E, SE, S, SW, W, NW
-  const directionOrder = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-  const sortedDirections = Object.keys(facadeZMin).sort(
-    (a, b) => directionOrder.indexOf(a) - directionOrder.indexOf(b)
-  )
-
-  // Berechne Höhen und erkenne Hanglage
-  const heights: { dir: string; height: number | null; zMin: number }[] = sortedDirections.map((dir) => {
-    const zMin = facadeZMin[dir]
-    const zMax = facadeZMax?.[dir]
-    const height = zMax && zMin ? zMax - zMin : null
-    return { dir, height, zMin }
-  })
+    'global': 'text-gray-600 bg-gray-50',
+    'building_global': 'text-gray-600 bg-gray-50'
+  }[source] || 'text-gray-600 bg-gray-50'
 
   // Hanglage-Erkennung: Terrain-Differenz > 0.5m
-  const zMinValues = heights.map(h => h.zMin).filter(v => v !== undefined)
-  const minTerrain = Math.min(...zMinValues)
-  const maxTerrain = Math.max(...zMinValues)
+  const terrainValues = sortedFacades.map(f => Math.min(f.terrain_z_min, f.terrain_z_max))
+  const minTerrain = Math.min(...terrainValues)
+  const maxTerrain = Math.max(...terrainValues)
   const terrainDiff = maxTerrain - minTerrain
   const hasSlope = terrainDiff > 0.5
 
-  // Höhen-Differenz (unterschiedliche Gerüsthöhen)
-  const heightValues = heights.map(h => h.height).filter((v): v is number => v !== null)
-  const minHeight = Math.min(...heightValues)
-  const maxHeight = Math.max(...heightValues)
-  const heightDiff = maxHeight - minHeight
+  // Höchste Fassade finden
+  const maxHeight = Math.max(...sortedFacades.map(f => f.height_m))
 
   return (
     <div className="col-span-2 mt-2 pt-2 border-t border-green-200">
@@ -183,40 +179,42 @@ function FacadeHeightsInfo({
         </span>
       </div>
       <div className="grid grid-cols-4 gap-1 text-xs">
-        {heights.map(({ dir, height }) => {
+        {sortedFacades.map((facade) => {
           // Markiere höchste Fassade bei Hanglage
-          const isMax = hasSlope && height !== null && height === maxHeight
+          const isMax = hasSlope && facade.height_m === maxHeight
 
           return (
             <div
-              key={dir}
+              key={facade.index}
               className={`flex flex-col items-center p-1.5 bg-white rounded border ${
                 isMax ? 'border-orange-300 bg-orange-50' : 'border-green-100'
-              }`}
+              } ${facade.is_blocked ? 'opacity-50' : ''}`}
             >
               <span className={`font-medium ${isMax ? 'text-orange-700' : 'text-green-700'}`}>
-                {dir}
+                {facade.direction}
               </span>
               <span className={isMax ? 'text-orange-600' : 'text-gray-500'}>
-                {height !== null ? `${height.toFixed(2)}m` : '–'}
+                {facade.height_m.toFixed(2)}m
               </span>
+              {facade.is_blocked && (
+                <span className="text-[9px] text-red-500">blockiert</span>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Hanglage-Hinweis mit Ausnivellierung */}
-      {hasSlope && heightDiff > 0.3 && (
+      {/* Hanglage-Hinweis */}
+      {hasSlope && (
         <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs">
           <div className="flex items-center gap-1.5 text-orange-700 font-medium">
-            <span>⚠️ Hanglage erkannt</span>
+            <span>Hanglage erkannt</span>
           </div>
           <div className="text-orange-600 mt-1">
-            Terrain-Differenz: {terrainDiff.toFixed(2)}m |
-            Höhen-Differenz: {heightDiff.toFixed(2)}m
+            Terrain-Differenz: {terrainDiff.toFixed(2)}m
           </div>
           <div className="text-orange-700 mt-1 font-medium">
-            → Gerüst am Grund ausnivellieren erforderlich
+            Gerüst am Grund ausnivellieren erforderlich
           </div>
         </div>
       )}
@@ -274,12 +272,57 @@ function ZonesList({ zones }: { zones: ZoneInfo[] }) {
 /**
  * BuildingDataCard - Zeigt Gebäudedaten in einer grünen Karte an
  *
+ * NEU 18.01.2026: Verwendet GeruestbauData statt Geodata
+ *
  * Verwendung:
  * - GeodataStep.tsx: Nach erfolgreichem Laden der Gebäudedaten
  * - ProjectDetailPage.tsx: Anzeige der gespeicherten Gebäudedaten
+ * - ConfiguratorPage.tsx: Projekt-Info Anzeige
  */
-export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProps) {
-  const displayEgid = egid || geodata.egid
+export default function BuildingDataCard({ data }: BuildingDataCardProps) {
+  const { building, facades, terrain, zones, complexity, research_source, heights } = data
+
+  // Berechne Traufhöhe: Prioritäts-Reihenfolge
+  // 1. facades[] → minHeight (beste Quelle)
+  // 2. heights.traufhoehe_m (bereits berechnet - Legacy/Multi-Building)
+  // 3. building.roof_dach_min_m - terrain.min_m (Rohdaten)
+  const calcTraufhoehe = (): string => {
+    // 1. Aus facades[] (NEU 18.01.2026)
+    if (facades && facades.length > 0) {
+      const minHeight = Math.min(...facades.map(f => f.height_m))
+      return minHeight.toFixed(1)
+    }
+    // 2. Aus heights (Legacy/Multi-Building Projekte) - FIX 18.01.2026
+    if (heights?.traufhoehe_m && heights.traufhoehe_m > 0) {
+      return heights.traufhoehe_m.toFixed(1)
+    }
+    // 3. Aus Rohdaten berechnen
+    if (building.roof_dach_min_m && terrain?.min_m) {
+      return (building.roof_dach_min_m - terrain.min_m).toFixed(1)
+    }
+    return '–'
+  }
+
+  // Berechne Firsthöhe: Prioritäts-Reihenfolge
+  // 1. heights.firsthoehe_m (bereits berechnet - Legacy/Multi-Building)
+  // 2. building.roof_dach_max_m - terrain.min_m (Rohdaten)
+  // 3. facades[] maxHeight * 1.2 (Schätzung)
+  const calcFirsthoehe = (): string => {
+    // 1. Aus heights (Legacy/Multi-Building Projekte) - FIX 18.01.2026
+    if (heights?.firsthoehe_m && heights.firsthoehe_m > 0) {
+      return heights.firsthoehe_m.toFixed(1)
+    }
+    // 2. Aus Rohdaten berechnen
+    if (building.roof_dach_max_m && terrain?.min_m) {
+      return (building.roof_dach_max_m - terrain.min_m).toFixed(1)
+    }
+    // 3. Aus facades[] schätzen
+    if (facades && facades.length > 0) {
+      const maxHeight = Math.max(...facades.map(f => f.height_m))
+      return (maxHeight * 1.2).toFixed(1) // Schätzung +20% für Dach
+    }
+    return '–'
+  }
 
   return (
     <div className="card border-green-200 bg-green-50">
@@ -287,10 +330,10 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="font-medium text-green-800 flex items-center gap-2">
-            {geodata.building_name ? (
+            {building.name ? (
               <>
                 <Landmark className="w-5 h-5" />
-                {geodata.building_name}
+                {building.name}
               </>
             ) : (
               <>
@@ -299,100 +342,93 @@ export default function BuildingDataCard({ geodata, egid }: BuildingDataCardProp
               </>
             )}
           </h3>
-          {geodata.complexity === 'complex' && (
+          {complexity === 'complex' && (
             <span className="text-xs text-green-600 mt-0.5">Komplexes Gebäude</span>
           )}
         </div>
-        {/* NEU 12.01.2026 23:00 - Badges nebeneinander */}
+        {/* Badges */}
         <div className="flex items-center gap-2">
-          <Data3DQualityBadge has3DLayers={geodata.has_3d_layers} facadeHeightsSource={geodata.facade_heights_source} />
-          <ResearchSourceBadge source={geodata.research_source} />
+          <Data3DQualityBadge has3DLayers={building.has_3d_layers} facades={facades} heightsSource={heights?.source} />
+          <ResearchSourceBadge source={research_source} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
-        {displayEgid && (
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-green-600" />
-            <div>
-              <span className="text-green-700">EGID:</span>{' '}
-              <strong>{displayEgid}</strong>
-            </div>
+        {/* EGID */}
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-green-600" />
+          <div>
+            <span className="text-green-700">EGID:</span>{' '}
+            <strong>{building.egid}</strong>
           </div>
-        )}
+        </div>
 
-        {geodata.traufhoehe_m && (
-          <div className="flex items-center gap-2">
-            <Ruler className="w-4 h-4 text-green-600" />
-            <div>
-              <span className="text-green-700">Traufhöhe:</span>{' '}
-              <strong>{geodata.traufhoehe_m.toFixed(1)} m</strong>
-            </div>
+        {/* Traufhöhe */}
+        <div className="flex items-center gap-2">
+          <Ruler className="w-4 h-4 text-green-600" />
+          <div>
+            <span className="text-green-700">Traufhöhe:</span>{' '}
+            <strong>{calcTraufhoehe()} m</strong>
           </div>
-        )}
+        </div>
 
-        {geodata.firsthoehe_m && (
-          <div className="flex items-center gap-2">
-            <Ruler className="w-4 h-4 text-green-600" />
-            <div>
-              <span className="text-green-700">Firsthöhe:</span>{' '}
-              <strong>{geodata.firsthoehe_m.toFixed(1)} m</strong>
-            </div>
+        {/* Firsthöhe */}
+        <div className="flex items-center gap-2">
+          <Ruler className="w-4 h-4 text-green-600" />
+          <div>
+            <span className="text-green-700">Firsthöhe:</span>{' '}
+            <strong>{calcFirsthoehe()} m</strong>
           </div>
-        )}
+        </div>
 
-        {geodata.area_m2 && (
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-green-600" />
-            <div>
-              <span className="text-green-700">Fläche:</span>{' '}
-              <strong>{geodata.area_m2.toFixed(0)} m²</strong>
-            </div>
+        {/* Fläche */}
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-green-600" />
+          <div>
+            <span className="text-green-700">Fläche:</span>{' '}
+            <strong>{building.area_m2.toFixed(0)} m²</strong>
           </div>
-        )}
+        </div>
 
-        {geodata.perimeter_m && (
-          <div className="flex items-center gap-2">
-            <Ruler className="w-4 h-4 text-green-600" />
-            <div>
-              <span className="text-green-700">Umfang:</span>{' '}
-              <strong>{geodata.perimeter_m.toFixed(1)} m</strong>
-            </div>
+        {/* Umfang */}
+        <div className="flex items-center gap-2">
+          <Ruler className="w-4 h-4 text-green-600" />
+          <div>
+            <span className="text-green-700">Umfang:</span>{' '}
+            <strong>{building.perimeter_m.toFixed(1)} m</strong>
           </div>
-        )}
+        </div>
 
-        {geodata.terrain_height_m && (
+        {/* Geländehöhe */}
+        {terrain && (
           <div className="flex items-center gap-2">
             <Mountain className="w-4 h-4 text-green-600" />
             <div>
               <span className="text-green-700">Geländehöhe:</span>{' '}
-              <strong>{geodata.terrain_height_m.toFixed(1)} m ü.M.</strong>
+              <strong>{terrain.height_m.toFixed(1)} m ü.M.</strong>
             </div>
           </div>
         )}
 
-        {geodata.slope_class && (
+        {/* Hanglage */}
+        {terrain?.slope_class && (
           <div className="flex items-center gap-2">
             <Mountain className="w-4 h-4 text-green-600" />
             <div>
               <span className="text-green-700">Hanglage:</span>{' '}
               <strong>
-                {geodata.slope_class}
-                {geodata.slope_m !== undefined && ` (${geodata.slope_m.toFixed(1)}m)`}
+                {terrain.slope_class}
+                {terrain.slope_m !== undefined && ` (${terrain.slope_m.toFixed(1)}m)`}
               </strong>
             </div>
           </div>
         )}
 
-        {/* Fassaden-Höhen (NEU 14.01.2026 T4) */}
-        <FacadeHeightsInfo
-          facadeZMin={geodata.facade_z_min}
-          facadeZMax={geodata.facade_z_max}
-          source={geodata.facade_heights_source}
-        />
+        {/* Fassaden-Höhen Grid (aus facades[]) */}
+        <FacadeHeightsGrid facades={facades} />
 
         {/* Zonen */}
-        {geodata.zones && <ZonesList zones={geodata.zones} />}
+        {zones && <ZonesList zones={zones} />}
       </div>
     </div>
   )

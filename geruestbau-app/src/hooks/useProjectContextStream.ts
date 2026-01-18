@@ -46,14 +46,17 @@ export interface CentroidData {
   building_count: number;
 }
 
+// FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
 export interface ProjectBuildingData {
   egid: string;
   polygon: number[][] | null;
   center_e: number | null;
   center_n: number | null;
-  traufhoehe_m: number | null;
-  firsthoehe_m: number | null;
   gebaeudehoehe_m: number | null;
+  // Rohdaten für Höhenberechnung (NEU 16.01.2026)
+  roof_dach_min_m?: number | null;
+  roof_dach_max_m?: number | null;
+  terrain_z_min?: number | null;
 }
 
 export interface BlockerInfo {
@@ -72,6 +75,7 @@ export interface BlockedFacadesData {
   };
 }
 
+// FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
 export interface NeighborBuilding {
   egid: string;
   polygon: number[][] | null;
@@ -79,8 +83,11 @@ export interface NeighborBuilding {
   direction: string | null;
   center_e: number | null;
   center_n: number | null;
-  traufhoehe_m: number | null;
-  firsthoehe_m: number | null;
+  gebaeudehoehe_m?: number | null;
+  // Rohdaten für Höhenberechnung
+  roof_dach_min_m?: number | null;
+  roof_dach_max_m?: number | null;
+  terrain_z_min?: number | null;
 }
 
 export interface NeighborsData {

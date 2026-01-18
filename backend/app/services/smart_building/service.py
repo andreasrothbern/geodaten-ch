@@ -948,6 +948,9 @@ class SmartBuildingService:
                     if bundle.terrain.facade_heights_source == "wall_layer":
                         self._save_terrain_to_environment(bundle)
                         logger.info(f"[FACADE_HEIGHTS] Cache upgraded to wall_layer for EGID {bundle.egid}")
+
+                # NEU 18.01.2026: facades[] Array auch bei Cache-Hit aufbauen
+                self._build_facades_array(bundle)
                 return
 
         try:
@@ -1003,6 +1006,9 @@ class SmartBuildingService:
                 # NEU 14.01.2026: Fassaden-Höhen aus Wall-Layer (T2)
                 # Fallback-Kette: 1. Wall-Layer → 2. Terrain-Sampling → 3. Global
                 await self._collect_facade_heights(bundle)
+
+                # NEU 18.01.2026: facades[] Array aufbauen (kombiniert sides + terrain)
+                self._build_facades_array(bundle)
 
                 # Terrain in building_environment speichern (persistenter Cache pro EGID)
                 if bundle.egid:
@@ -1073,6 +1079,12 @@ class SmartBuildingService:
 
     async def _collect_facade_heights(self, bundle: BuildingDataBundle):
         """NEU 14.01.2026 (T2): Sammelt Fassaden-Höhen aus Wall-Layer.
+
+        DEPRECATED 15.01.2026 (BUG-024):
+            Diese Funktion verwendet wall_facade_matcher welcher nur ~20% der
+            Fassaden korrekt matcht. Wall-Segmente werden jetzt direkt ans
+            Frontend gesendet (wall_segments in API-Response).
+            Siehe: docs/architecture/3D_LAYER_USAGE_3D_VIEW.md → BUG-024
 
         Fallback-Kette:
         1. Wall-Layer (höchste Präzision) - wenn has_3d_layers=True
@@ -1177,6 +1189,108 @@ class SmartBuildingService:
                 bundle.terrain.facade_z_max[direction] = absolute_dach_hoehe
 
         logger.info(f"[FACADE-HEIGHTS] Global-Fallback für {len(bundle.sides)} Fassaden")
+
+    def _build_facades_array(self, bundle: BuildingDataBundle):
+        """
+        NEU 18.01.2026: Baut das facades[] Array für GeruestbauData.
+
+        Kombiniert:
+        - sides[] mit direction, start_point, end_point, length_m
+        - terrain.facade_z_min/max pro Fassaden-Richtung
+
+        FIX 18.01.2026:
+        - height_m = KONSTANTE Traufhöhe (für Gerüst-Höhe)
+        - is_gable = True für Giebel-Fassaden (brauchen mehr Gerüst bis First)
+        - terrain_z_min, slope_m = NUR für Stellspindeln/Nivelierung
+        """
+        if not bundle.sides:
+            logger.warning("[FACADES] Keine sides[] vorhanden - facades[] bleibt leer")
+            return
+
+        facades = []
+
+        # Giebel-Richtungen aus roof_orientation ermitteln
+        # roof_orientation beschreibt wohin das Dach ZEIGT (Neigungsrichtung)
+        # Giebel sind SENKRECHT dazu (First verläuft senkrecht zur Neigung)
+        gable_directions = self._get_gable_directions(bundle.roof_orientation)
+
+        for idx, side in enumerate(bundle.sides):
+            direction = side.get("direction", "?")
+
+            # Terrain-Höhen aus TerrainProfile (falls vorhanden)
+            terrain_z_min = None
+            if bundle.terrain:
+                terrain_z_min = bundle.terrain.facade_z_min.get(direction)
+                # Fallback auf Reference-Height wenn nicht vorhanden
+                if terrain_z_min is None:
+                    terrain_z_min = bundle.terrain.reference_height_m
+
+            # FIX 18.01.2026: height_m = KONSTANTE Traufhöhe
+            # Die Gerüsthöhe ist für alle Fassaden gleich (bis Traufe)
+            # Giebel-Fassaden brauchen zusätzliches Gerüst bis zum First
+            height_m = bundle.traufhoehe_m
+
+            # is_gable: True wenn diese Fassade ein Giebel ist
+            # Giebel-Fassaden haben über der Traufe noch das Giebel-Dreieck
+            is_gable = direction in gable_directions
+
+            # slope_m: Terrain-Gefälle für diese Fassade (für Stellspindeln)
+            slope_m = 0.0
+            if bundle.terrain and bundle.terrain.slope_m:
+                slope_m = bundle.terrain.slope_m
+
+            facade = {
+                "index": idx,
+                "direction": direction,
+                "start_point": side.get("start_point"),
+                "end_point": side.get("end_point"),
+                "length_m": side.get("length_m"),
+                "height_m": height_m,           # KONSTANT (Traufhöhe)
+                "is_gable": is_gable,           # NEU: Giebel-Seite?
+                "terrain_z_min": terrain_z_min, # Für Stellspindeln
+                "slope_m": slope_m,             # Für Nivelierung
+            }
+
+            facades.append(facade)
+
+        bundle.facades = facades
+        gable_count = sum(1 for f in facades if f.get("is_gable"))
+        logger.info(f"[FACADES] {len(facades)} Fassaden aufgebaut, davon {gable_count} Giebel-Fassaden")
+
+    def _get_gable_directions(self, roof_orientation: str) -> set:
+        """
+        Ermittelt die Giebel-Richtungen basierend auf roof_orientation.
+
+        roof_orientation beschreibt wohin das Dach ZEIGT (Neigungsrichtung).
+        Der First verläuft SENKRECHT zur Neigung.
+        Giebel sind an den ENDEN des Firsts (senkrecht zur Neigung).
+
+        Beispiel:
+        - roof_orientation = "O-W" → Dach neigt nach Ost und West
+          → First verläuft Nord-Süd
+          → Giebel auf N und S
+
+        - roof_orientation = "N-S" → Dach neigt nach Nord und Süd
+          → First verläuft Ost-West
+          → Giebel auf E und W (bzw. O)
+        """
+        if not roof_orientation:
+            return set()  # Keine Giebel-Info verfügbar
+
+        orientation = roof_orientation.upper().replace("E", "O")  # Normalize E → O
+
+        # Mapping: Neigungsrichtung → Giebel-Richtungen
+        gable_map = {
+            "O-W": {"N", "S"},      # Neigung Ost-West → Giebel Nord/Süd
+            "E-W": {"N", "S"},      # Alternative Schreibweise
+            "N-S": {"O", "E", "W"}, # Neigung Nord-Süd → Giebel Ost/West
+            "NO-SW": {"NW", "SO"},  # Diagonal
+            "NW-SO": {"NO", "SW"},  # Diagonal
+            "NE-SW": {"NW", "SE"},  # Alternative Schreibweise
+            "NW-SE": {"NE", "SW"},  # Alternative Schreibweise
+        }
+
+        return gable_map.get(orientation, set())
 
     async def _calculate_roof_data(self, bundle: BuildingDataBundle):
         """Schritt 6: Dach-Analyse (berechnet) - NUR ALS FALLBACK!

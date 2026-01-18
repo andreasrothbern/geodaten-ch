@@ -352,11 +352,13 @@ class Roof3DService:
         start = time.time()
 
         # 1. Tile-ID aus building_3d holen
+        # FIX 18.01.2026: EGID als Integer übergeben (DB-Schema: INTEGER)
+        egid_int = int(egid) if egid else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT tile_id, gebaeudeeinheit FROM buildings_3d WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
             row = cursor.fetchone()
 
             if not row:
@@ -467,11 +469,13 @@ class Roof3DService:
         }
 
         # 1. Tile-ID und gebaeudeeinheit aus building_3d holen
+        # FIX 18.01.2026: EGID als Integer übergeben (DB-Schema: INTEGER)
+        egid_int = int(egid) if egid else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT tile_id, gebaeudeeinheit FROM buildings_3d WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
             row = cursor.fetchone()
 
             if not row:
@@ -589,6 +593,8 @@ class Roof3DService:
 
     def _save_all_layers_to_db(self, egid: str, gebaeudeeinheit: str | None, data: dict):
         """Speichert alle geladenen Layer in die entsprechenden Tabellen."""
+        # FIX 18.01.2026 22:15: EGID als Integer für DB-Schema
+        egid_int = int(egid) if egid else None
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -631,7 +637,7 @@ class Roof3DService:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, current_timestamp, 'on_demand_complex')
                     """, (
                         gebaeudeeinheit or f"egid_{egid}",
-                        egid,
+                        egid_int,  # FIX 18.01.2026 22:15
                         roof_props.get('dach_min'),
                         roof_props.get('dach_max'),
                         roof_form,
@@ -651,7 +657,7 @@ class Roof3DService:
                         VALUES (?, ?, ?, ?, ?, current_timestamp)
                     """, (
                         gebaeudeeinheit or f"egid_{egid}",
-                        egid,
+                        egid_int,  # FIX 18.01.2026 22:15
                         wall_props.get('z_min'),
                         wall_props.get('z_max'),
                         data['wall']
@@ -660,7 +666,7 @@ class Roof3DService:
                 # FIX 12.01.2026: has_3d_layers Flag setzen
                 cursor.execute("""
                     UPDATE buildings_3d SET has_3d_layers = 1 WHERE egid = ?
-                """, (egid,))
+                """, (egid_int,))  # FIX 18.01.2026 22:15
 
                 conn.commit()
                 logger.debug(f"[ALL_LAYERS] Saved to DB: EGID {egid}")

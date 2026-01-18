@@ -1,8 +1,10 @@
 # 3D-Layer Verwendung: 3D-View & Nachbarn
 
-> **Stand 14.01.2026 17:30**
+> **Stand 18.01.2026 19:00**
 > **Status:** ✅ IMPLEMENTIERT
+> **NEU 18.01.2026:** `facades[]` Array mit konstanter Traufhöhe + `is_gable` Flag
 >
+> **NEU 15.01.2026 23:50:** `building_roofs` in API integriert - echte 3D-Dachgeometrie aus DB
 > **FIX 14.01.2026 17:30:** Zoom-Funktion im 3D-Viewer repariert (camera.controls.enabled + CSS)
 > **NEU 14.01.2026 13:35:** 3D-Dachgeometrie wird jetzt für ALLE Gebäude gerendert
 > (nicht nur für simple Gebäude ohne Spezialzonen)
@@ -641,11 +643,473 @@ Gefährdungszonen:
 
 | Phase | Features | Status |
 |-------|----------|--------|
-| **Phase 1** | P1: Wall-Layer Höhen | ✅ ERLEDIGT (14.01.2026) |
+| **Phase 1** | P1: Wall-Layer Höhen | ⚠️ FEHLERHAFT (siehe BUG-024) |
 | **Phase 2** | P2a: Dachform-Erkennung | ✅ ERLEDIGT (14.01.2026) |
 | **Phase 2** | P2b: 3D-Dachform im Viewer | ✅ ERLEDIGT (14.01.2026) |
 | **Phase 3** | P3a: Zugangs-Vorschläge, P3b: Gefährdungszonen | ⏳ Geplant |
 | **Phase 4** | Transport, Schatten, Export | 📋 Backlog |
+
+---
+
+## BUG-024: Wall-Layer Implementation fehlerhaft (Stand 15.01.2026)
+
+### Status: 🔴 KRITISCH - Architektur-Problem
+
+**Erkannt:** 15.01.2026 10:00
+
+### Problem-Beschreibung
+
+Die P1-Implementation "Wall-Layer Fassaden-Höhen" ist als ✅ ERLEDIGT markiert, aber die
+tatsächliche Implementation ist **fundamentally fehlerhaft**. Die Terrain-Differenz von
+1.8m (Knospenweg 4, Bern) kommt NICHT aus den Wall-Layer-Daten, sondern aus einer
+unvollständigen Fallback-Berechnung.
+
+### Symptome
+
+**API-Test für Knospenweg 4, Bern:**
+```json
+{
+  "terrain": {
+    "slope_m": 1.8,
+    "facade_z_min": {"E": 557.46},
+    "facade_z_max": {"E": 560.0},
+    "facade_heights_source": "wall_layer"
+  }
+}
+```
+
+**Probleme:**
+1. `facade_z_min` enthält NUR Richtung "E" (Ost) - 4 von 5 Fassaden fehlen!
+2. `slope_m: 1.8m` kommt aus Terrain-Sampling an Polygon-Ecken (swissALTI3D), NICHT aus Wall-Layer
+3. Die fehlenden Richtungen (N, S, W, NW) haben keine z_min/z_max-Daten
+
+### Root Cause Analyse
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              AKTUELLER (FEHLERHAFTER) DATENFLUSS                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Wall-Layer in DB (building_walls)                           │
+│     └─ Enthält ~50-100 Wand-Segmente pro Gebäude               │
+│     └─ Jedes Segment hat: z_min, z_max, azimuth, geometry_wkb  │
+│                                                                 │
+│  2. wall_facade_matcher.py (505 Zeilen!)                        │
+│     └─ Versucht vereinfachte Fassaden (5 Stück nach DP)        │
+│        auf Wall-Segmente zu matchen                            │
+│     └─ Matching-Kriterien: Azimut-Ähnlichkeit, Distanz, Overlap│
+│     └─ PROBLEM: Findet nur 1 von 5 Fassaden (20% Match-Rate!)  │
+│                                                                 │
+│  3. service.py:_collect_facade_heights() (Zeile 1074-1180)      │
+│     └─ Ruft wall_facade_matcher auf                            │
+│     └─ BUG Zeile 1115: RETURN nach ANY Wall-Match!             │
+│        if facade_heights:                                       │
+│            return  # ← Skipt Terrain-Fallback für Restliche!   │
+│     └─ Fassaden ohne Match haben NULL als z_min/z_max          │
+│                                                                 │
+│  4. service.py:_collect_terrain_data() (Zeile 979-980)          │
+│     └─ slope_m = max(heights) - min(heights)                   │
+│     └─ heights = swissALTI3D Höhen an Polygon-Ecken            │
+│     └─ Das ist TERRAIN-Höhe, nicht FASSADEN-Höhe!              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Kritische Code-Stelle (service.py:1115):**
+```python
+if facade_heights:
+    for direction, fh in facade_heights.items():
+        bundle.terrain.facade_z_min[direction] = fh.z_min
+        bundle.terrain.facade_z_max[direction] = fh.z_max
+    bundle.terrain.facade_heights_source = "wall_layer"
+    return  # ← BUG! Returns auch wenn nur 1/5 Fassaden gematcht!
+```
+
+### Warum die aktuelle Lösung konzeptionell falsch ist
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 ARCHITEKTUR-PROBLEM                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Wall-Layer enthält EXAKTE Daten:                               │
+│    - z_min, z_max pro Wand-Segment (±0.1m Genauigkeit)         │
+│    - 3D-Geometrie der Wand als WKB                             │
+│    - ~50-100 Segmente pro Gebäude                              │
+│                                                                 │
+│  ABER: Backend versucht AGGREGATION nach Himmelsrichtung:       │
+│    - Fasst Segmente zu N/E/S/W zusammen                        │
+│    - Verwendet komplexes Matching (505 Zeilen Code!)           │
+│    - Verliert dabei Präzision und Vollständigkeit              │
+│                                                                 │
+│  RICHTIGE Lösung (wie in P1 dokumentiert):                      │
+│    "Wall-Layer direkt nutzen (building_walls.z_min/z_max)"     │
+│    "Exakte Höhe PRO WAND-SEGMENT mit ±0.1m Genauigkeit"        │
+│                                                                 │
+│  ➜ Wall-Segmente DIREKT ans Frontend senden!                   │
+│  ➜ Frontend matcht geometrisch (Überlappung mit Fassade)       │
+│  ➜ Kein Azimut-basiertes Matching nötig                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Lösungsplan
+
+**Ziel:** Wall-Layer-Daten direkt ans Frontend senden, dort geometrisches Matching.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   NEUER DATENFLUSS                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Backend:                                                       │
+│  ═════════                                                      │
+│  1. Lade building_walls für EGID                                │
+│  2. Konvertiere geometry_wkb → Koordinaten-Array               │
+│  3. Sende als wall_segments[] in API-Response:                 │
+│     {                                                           │
+│       "wall_segments": [                                        │
+│         {"z_min": 555.0, "z_max": 560.0, "coords": [[E,N],...]}│
+│         {"z_min": 553.2, "z_max": 558.2, "coords": [[E,N],...]}│
+│         ...                                                     │
+│       ]                                                         │
+│     }                                                           │
+│                                                                 │
+│  Frontend:                                                      │
+│  ═════════                                                      │
+│  1. Für jede vereinfachte Fassade (aus Douglas-Peucker):       │
+│  2. Finde überlappende Wall-Segmente (geometrisch)             │
+│  3. Berechne z_min/z_max für diese Fassade                     │
+│  4. Nutze für Stellspindel-Visualisierung                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Todo-Liste (BUG-024)
+
+**Backend-Änderungen:**
+
+- [ ] `geruestbau.py` - Neues Feld `wall_segments` in `/configurator/facades` Response
+- [ ] `service.py` - `_load_wall_segments()` Funktion erstellen
+- [ ] `service.py:_collect_facade_heights()` - Aggregation/Matching entfernen
+- [ ] `wall_facade_matcher.py` - Kann nach Migration gelöscht werden (505 Zeilen!)
+
+**Frontend-Änderungen:**
+
+- [ ] `scaffold.types.ts` - `WallSegment` Interface definieren
+- [ ] `polygonSimplifier.ts` - Geometrisches Matching für Wall-Segmente
+- [ ] `sidesToFacades()` - z_min/z_max aus gematchten Segmenten berechnen
+
+**Aufräumen (nach Migration):**
+
+- [ ] `facade_z_min`, `facade_z_max` in TerrainProfile als deprecated markieren
+- [ ] Alte Terrain-Sampling Logik für z_min/z_max entfernen
+- [ ] `wall_facade_matcher.py` entfernen
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/routers/geruestbau.py` | `wall_segments` in Response hinzufügen |
+| `backend/app/services/smart_building/service.py` | `_load_wall_segments()` + Cleanup |
+| `backend/app/services/smart_building/wall_facade_matcher.py` | Nach Migration löschen |
+| `geruestbau-app/src/types/scaffold.types.ts` | `WallSegment` Interface |
+| `geruestbau-app/src/.../polygonSimplifier.ts` | Geometrisches Wall-Matching |
+
+### Warum slope_m korrekt ist
+
+`slope_m` (1.8m bei Knospenweg 4) ist **KORREKT** - es misst die Terrain-Höhendifferenz
+an den Polygon-Ecken (swissALTI3D). Das ist relevant für:
+- Stellspindel-Ausnivellierung (Terrain unter dem Gerüst)
+- Fundament-Planung
+
+Das Problem ist, dass `facade_z_min`/`facade_z_max` NICHT aus den Wall-Layer-Daten
+befüllt werden, sondern entweder:
+- Nur für 1/5 Fassaden (wenn Wall-Matching partiell klappt)
+- Gar nicht (wenn Wall-Matching komplett fehlschlägt)
+
+---
+
+## BUG-024 FIX: Per-Polygon z-Werte (Stand 15.01.2026 21:00)
+
+### Status: ✅ GEFIXT
+
+**Implementiert:** 15.01.2026 21:00
+
+### Problemanalyse
+
+Das ursprüngliche Problem war, dass **alle Fassaden die gleiche Wandhöhe** bekamen,
+obwohl bei einem Satteldach die Giebel-Seiten höher sind als die Trauf-Seiten.
+
+```
+                    ┌────────────────────── First (565.04m)
+                   /│\
+                  / │ \  ← Dach (2.04m)
+                 /  │  \
+               ─────┼───── Traufe (563.0m)
+               │    │    │
+               │    │    │  ← Wand-Oberteil (2.04m)
+               │    │    │
+     GIEBEL →  │    │    │
+               │    │    │
+               │    │    │
+               │    │    │
+               │    │    │
+               └────┴────┘──── Terrain (557.46m)
+
+    Giebelseite:     Traufseite:
+    Wand = 7.58m     Wand = 5.54m
+```
+
+### Datenquellen-Analyse (Knospenweg 4, Bern)
+
+| Datenquelle | Wert | Bedeutung | Status |
+|-------------|------|-----------|--------|
+| `buildings_3d.traufhoehe_m` | 5.54m | DACH_MIN - GELAENDEPUNKT | ⚠️ Nur Traufhöhe |
+| `buildings_3d.firsthoehe_m` | 7.58m | DACH_MAX - GELAENDEPUNKT | ✅ Firsthöhe |
+| `building_walls.z_min` | 557.46m | Terrain (absolut) | ✅ 3D-Layer |
+| `building_walls.z_max` | 565.04m | Wandoberkante (absolut) | ✅ 3D-Layer |
+| `building_walls` (global) | 7.58m | z_max - z_min | ⚠️ MAX Wandhöhe |
+| `selected_facades.height_m` | 5.54m | Vorher: = traufhoehe_m | ❌ War FALSCH |
+
+### Root Cause
+
+Die `building_walls` Tabelle enthält ein **MultiPolygon** mit mehreren Wand-Segmenten.
+Jedes Segment hat eigene z-Koordinaten:
+
+```json
+{
+  "geometry_type": "MultiPolygon",
+  "z_min": 557.46,    // GLOBAL - MIN über alle Polygone
+  "z_max": 565.04,    // GLOBAL - MAX über alle Polygone
+  "coords_3d": [
+    [[[x1,y1,z_bottom], [x2,y2,z_top], ...]],  // Polygon 1 (z.B. Nordwand)
+    [[[x3,y3,z_bottom], [x4,y4,z_top], ...]],  // Polygon 2 (z.B. Ostwand)
+    ...
+  ]
+}
+```
+
+**Das Problem:** Die alte `matchFacadeToWall()` Funktion gab das gesamte `BuildingWall`
+Objekt zurück und verwendete dann die **globalen** `z_min`/`z_max` - die identisch
+sind für alle Fassaden.
+
+### Lösung: Per-Polygon z-Extraktion
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   NEUER DATENFLUSS                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. building_walls.coords_3d laden (MultiPolygon mit z-Werten) │
+│                                                                 │
+│  2. Für jede Fassade:                                          │
+│     ├─ Finde überlappendes Polygon (2D-Matching)               │
+│     ├─ Extrahiere z_min/z_max aus DIESEM Polygon              │
+│     └─ Berechne wall_height = polygon_z_max - polygon_z_min   │
+│                                                                 │
+│  3. Ergebnis pro Fassade:                                      │
+│     ├─ Giebelseite (N/S): wall_height ≈ 7.5m (bis First)      │
+│     └─ Traufseite (E/W): wall_height ≈ 5.5m (bis Traufe)      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementierte Änderungen
+
+**`polygonSimplifier.ts`:**
+
+1. **Neues Interface `WallMatchResult`:**
+```typescript
+export interface WallMatchResult {
+  wall: BuildingWall;
+  polygon_z_min: number;  // Min z aus dem gematchten Polygon
+  polygon_z_max: number;  // Max z aus dem gematchten Polygon
+  wall_height: number;    // polygon_z_max - polygon_z_min
+}
+```
+
+2. **Neue Funktion `extractWallRingsWithZ()`:**
+   - Extrahiert 2D- UND 3D-Koordinaten aus BuildingWall
+   - Behält z-Werte für spätere Extraktion
+
+3. **Neue Funktion `extractZFromRing()`:**
+   - Extrahiert min/max z aus einem spezifischen 3D-Ring
+
+4. **Erweiterte `matchFacadeToWall()`:**
+   - Gibt jetzt `WallMatchResult` zurück
+   - Enthält z-Werte aus dem **spezifischen gematchten Polygon**
+   - Fallback auf globale Wall-z-Werte wenn keine 3D-Koordinaten
+
+5. **Aktualisierte `sidesToFacadesWithWalls()`:**
+   - Verwendet `matchResult.wall_height` für `height_m`
+   - Giebel-Seiten bekommen jetzt korrekt höhere Wände
+
+**`ConfiguratorPage.tsx`:**
+- Aktualisiert für neues `WallMatchResult` Interface
+
+### Erwartetes Verhalten
+
+**Vorher (falsch):**
+```
+Alle Fassaden → globale z_min/z_max (565.04m - 557.46m = 7.58m)
+                → Gerüst immer gleich hoch
+```
+
+**Nachher (korrekt):**
+```
+Giebelseite (N/S) → z aus Giebel-Polygon → ~7.5m Wand
+Traufseite (E/W)  → z aus Trauf-Polygon  → ~5.5m Wand
+```
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `geruestbau-app/src/features/.../polygonSimplifier.ts` | Neue Funktionen, WallMatchResult Interface |
+| `geruestbau-app/src/pages/ConfiguratorPage.tsx` | Angepasst für neues Interface |
+
+### Test
+
+Nach dem Fix sollte für **Knospenweg 4, Bern**:
+- Nord/Süd Fassaden (Giebelseiten): ~7.5m Wandhöhe
+- Ost/West Fassaden (Traufseiten): ~5.5m Wandhöhe
+- Gerüst ragt nicht mehr über das Dach hinaus
+
+---
+
+## BUG-024c: Nachfolge-Fix - Exzellente Daten-Analyse (Stand 15.01.2026 22:30)
+
+### Status: ✅ GEFIXT
+
+**Problem:** Der erste Fix (BUG-024) funktionierte noch nicht korrekt.
+
+### Erkenntnisse aus der Daten-Analyse
+
+**Die building_walls Daten sind exzellent!** Das MultiPolygon enthält **19 separate Wand-Polygone**
+mit unterschiedlichen Höhen:
+
+```
+=== building_walls für EGID 1243790 (Knospenweg 4) ===
+
+MultiPolygon mit 19 Polygonen:
+
+| Höhe (m) | Polygone           | Bedeutung              |
+|----------|--------------------|-----------------------|
+| ~3.0m    | P9, P11            | Kleine Segmente (Fenster?) |
+| ~6.2m    | P17                | Mittlere Höhe          |
+| ~9.1-9.3m| P1,2,3,8,10,15,16,17,18,19 | **TRAUF-WÄNDE** |
+| ~10.7m   | P4,5,6,7,12,13,14  | **GIEBEL-WÄNDE**       |
+```
+
+### Drei Probleme gefunden und gefixt
+
+#### 1. Matching-Toleranz zu niedrig (2.0m → 3.0m)
+
+Das Gebäude-Polygon (aus dem die Fassaden berechnet werden) hat einen **Offset von ~0.5m**
+zu den Wall-Polygonen:
+
+```
+Fassade E:    E = 2596297.5
+Wall-Polygon: E = 2596297.0
+Offset:       ~0.5m
+```
+
+Mit Toleranz 2.0m wurden nur N-Fassaden gemacht, nicht E/S/W.
+
+**Fix:** Toleranz auf 3.0m erhöht.
+
+#### 2. Falsches Polygon gewählt (Distanz → MAX HEIGHT)
+
+Bei mehreren Matches wurde das Polygon mit der **kürzesten Distanz** gewählt.
+Das führte dazu, dass Fassade E mit Polygon P11 (3.03m - Fenster!) gematcht wurde
+statt mit P18 (9.26m - Hauptwand).
+
+```
+VORHER (falsch):
+Fassade E → P11 (3.03m) ← nächstes Polygon
+           P18 (9.26m)  ← richtige Hauptwand, aber weiter weg
+
+NACHHER (korrekt):
+Fassade E → P18 (9.26m) ← größte Höhe = Hauptwand
+```
+
+**Fix:** MAX HEIGHT Strategie - bei mehreren Matches wird das Polygon mit der
+**größten Höhe** gewählt (Hauptwand statt Fenster/Vorsprünge).
+
+#### 3. Falsche Annahme: "Gerüst immer bis Traufe"
+
+**Meine erste Annahme war FALSCH:** Ich dachte, das Gerüst sollte immer nur bis zur
+Traufhöhe reichen, und habe `height = matchResult.wall_height` entfernt.
+
+**Korrektur:** Bei einem Satteldach brauchen verschiedene Fassaden **unterschiedliche**
+Gerüsthöhen:
+- **Trauf-Fassaden (E/W):** Gerüst bis Traufe (~9.1m Wandhöhe)
+- **Giebel-Fassaden (N/S):** Gerüst bis First (~10.7m Wandhöhe)
+
+Die Wall-Layer-Daten enthalten genau diese Information!
+
+### Korrigierter Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   KORREKTER DATENFLUSS                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. building_walls.coords_3d laden (MultiPolygon, 19 Polygone)  │
+│                                                                 │
+│  2. Für jede Fassade:                                           │
+│     ├─ Finde ALLE überlappenden Polygone (Toleranz 3.0m)       │
+│     ├─ Wähle Polygon mit GRÖSSTER HÖHE (Hauptwand!)            │
+│     └─ Extrahiere wall_height aus diesem Polygon               │
+│                                                                 │
+│  3. Ergebnis (Knospenweg 4):                                    │
+│     ├─ E (Trauf): P18 → 9.26m                                  │
+│     ├─ S (Giebel): P4 → 10.71m                                 │
+│     ├─ W (Trauf): P15 → 9.11m                                  │
+│     └─ N (Giebel): P6/P12 → 10.71m                             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementierte Änderungen
+
+**`polygonSimplifier.ts:matchFacadeToWall()`:**
+```typescript
+// FIX 15.01.2026 22:30
+tolerance: number = 3.0  // Erhöht von 2.0m
+
+// Sammle ALLE Matches, dann sortiere nach Höhe
+allMatches.sort((a, b) => {
+  if (Math.abs(a.height - b.height) > 0.5) {
+    return b.height - a.height; // Größte Höhe zuerst
+  }
+  return a.avgDist - b.avgDist; // Bei ähnlicher Höhe: kürzeste Distanz
+});
+```
+
+**`polygonSimplifier.ts:sidesToFacadesWithWalls()` und `ConfiguratorPage.tsx:convertToSelectedFacades()`:**
+```typescript
+// FIX 15.01.2026 22:30: Wandhöhe aus gematchtem Polygon verwenden!
+height = matchResult.wall_height;
+```
+
+### Erwartetes Ergebnis
+
+| Fassade | Typ | Wall-Polygon | Wandhöhe |
+|---------|-----|--------------|----------|
+| E | Trauf | P18 | **9.26m** |
+| S | Giebel | P4 | **10.71m** |
+| W | Trauf | P15 | **9.11m** |
+| N | Giebel | P6,P12 | **10.71m** |
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `polygonSimplifier.ts:matchFacadeToWall()` | Toleranz 3.0m, MAX HEIGHT Strategie |
+| `polygonSimplifier.ts:sidesToFacadesWithWalls()` | height = wall_height |
+| `ConfiguratorPage.tsx:convertToSelectedFacades()` | heightM = wall_height |
 
 ---
 
@@ -1081,3 +1545,214 @@ controls.update(deltaTime);
 
 - [ThatOpen SimpleCamera Docs](https://docs.thatopen.com/api/@thatopen/components/classes/SimpleCamera)
 - [yomotsu/camera-controls API](https://yomotsu.github.io/camera-controls/classes/CameraControls)
+
+---
+
+## NEU: building_roofs Integration (15.01.2026 23:50)
+
+### Übersicht
+
+Analog zu `building_walls` werden jetzt auch `building_roofs` direkt aus der DB geladen
+und ans Frontend gesendet. Die echten 3D-Dachkoordinaten werden für das Dach-Rendering verwendet.
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    BUILDING_ROOFS DATENFLUSS                                    │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  building_3d.duckdb                                                             │
+│  └── building_roofs Tabelle                                                     │
+│      ├── gebaeudeeinheit (PRIMARY KEY)                                          │
+│      ├── egid (Gebäude-Referenz)                                                │
+│      ├── dach_min (Trauf-Höhe m ü.M.)                                           │
+│      ├── dach_max (First-Höhe m ü.M.)                                           │
+│      ├── roof_form (satteldach, flachdach, ...)                                 │
+│      ├── roof_angle_deg (Dachneigung)                                           │
+│      ├── roof_orientation (N-S, O-W, ...)                                       │
+│      └── geometry_wkb (MultiPolygonZ)                                           │
+│                                      │                                          │
+│                                      ▼                                          │
+│  layer_fetcher.py:get_roofs_for_building(egid)                                  │
+│                                      │                                          │
+│                                      ▼                                          │
+│  geruestbau.py: WKB → coords_3d Konvertierung                                   │
+│  (Alle Polygone bei MultiPolygon)                                               │
+│                                      │                                          │
+│                                      ▼                                          │
+│  API Response: building_roofs[]                                                 │
+│  └── { gebaeudeeinheit, egid, dach_min, dach_max,                               │
+│        roof_form, roof_angle_deg, roof_orientation,                             │
+│        geometry_type, coords_3d }                                               │
+│                                      │                                          │
+│                                      ▼                                          │
+│  ConfiguratorPage.tsx:convertRoofData()                                         │
+│  └── Extrahiert coords_3d → roof_geometry_coords                                │
+│  └── Setzt dach_min → roof_dach_min_m                                           │
+│  └── Setzt dach_max → roof_dach_max_m                                           │
+│                                      │                                          │
+│                                      ▼                                          │
+│  ScaffoldScene.tsx:createRoofFrom3DGeometry()                                   │
+│  └── Rendert echte 3D-Dachflächen aus coords_3d                                 │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `layer_fetcher.py:420-454` | `get_roofs_for_building()` Funktion |
+| `geruestbau.py:469-530` | building_roofs Laden + WKB-Konvertierung |
+| `geruestbau.py:566` | `building_roofs` in API-Response |
+| `project.ts:102-119` | `BuildingRoof` Interface |
+| `project.ts:84-86` | `building_roofs` in `Geodata` Interface |
+| `ConfiguratorPage.tsx:20` | Import von `BuildingRoof` |
+| `ConfiguratorPage.tsx:56-57` | `building_roofs` in `ConfiguratorBuildingData` |
+| `ConfiguratorPage.tsx:1178-1208` | `convertRoofData()` - coords_3d Extraktion |
+
+### BuildingRoof Interface
+
+```typescript
+export interface BuildingRoof {
+  gebaeudeeinheit: string       // PRIMARY KEY aus swissBUILDINGS3D
+  egid: number | null           // Gebäude-Referenz
+  dach_min: number | null       // Trauf-Höhe (m ü.M.)
+  dach_max: number | null       // First-Höhe (m ü.M.)
+  roof_form: string | null      // satteldach, flachdach, walmdach, etc.
+  roof_angle_deg: number | null // Dachneigung in Grad
+  roof_orientation: string | null  // N-S, O-W, NW-SO, etc.
+  geometry_type: 'Polygon' | 'MultiPolygon' | 'LineString' | null
+  coords_3d: number[][][] | number[][][][] | number[][] | null
+}
+```
+
+### Koordinaten-Format
+
+Die `coords_3d` enthalten die vollen 3D-Koordinaten:
+
+- **Polygon**: `[[[x,y,z], [x,y,z], ...]]` (Array mit 1 Ring)
+- **MultiPolygon**: `[[[[x,y,z], ...]], [[[x,y,z], ...]]]` (Array von Polygonen)
+
+Für das 3D-Rendering werden nur die exterior rings verwendet (keine Löcher).
+
+### Priorisierung im 3D-View
+
+```typescript
+// ConfiguratorPage.tsx:convertRoofData()
+if (data.building_roofs && data.building_roofs.length > 0) {
+  // 1. PRIO: building_roofs.coords_3d verwenden
+  roofGeometryCoords = extractCoordsFromBuildingRoofs(data.building_roofs);
+} else {
+  // 2. FALLBACK: roof.roof_geometry_coords (alte Methode)
+  roofGeometryCoords = data.roof.roof_geometry_coords;
+}
+```
+
+### Logging
+
+Im Browser Console:
+```
+[BUILDING-ROOFS] Verwende coords_3d aus building_roofs { type: "MultiPolygon", polygons: 12 }
+[3D-ROOF] Echte Dachgeometrie gerendert: 12 Polygone
+```
+
+### Vergleich: building_walls vs building_roofs
+
+| Aspekt | building_walls | building_roofs |
+|--------|----------------|----------------|
+| DB-Tabelle | `building_walls` | `building_roofs` |
+| Höhen-Felder | `z_min`, `z_max` | `dach_min`, `dach_max` |
+| Zusätzliche Felder | - | `roof_form`, `roof_angle_deg`, `roof_orientation` |
+| Verwendung | Fassaden-Höhen Matching | 3D-Dach-Rendering |
+| Frontend-Matching | `matchFacadeToWall()` | `convertRoofData()` |
+
+---
+
+## NEU: facades[] Array (18.01.2026)
+
+### Verwendung in 3D-View
+
+Das `facades[]` Array enthält für jede Fassade die Gerüst-relevanten Daten:
+
+```typescript
+interface Facade {
+  index: number;        // Fassaden-Index
+  direction: string;    // "N", "E", "S", "W", etc.
+  height_m: number;     // KONSTANTE Gerüsthöhe (= Traufhöhe)
+  is_gable: boolean;    // True für Giebel-Fassaden
+  terrain_z_min: number;  // Terrain-Höhe für Stellspindeln
+  slope_m: number;      // Terrain-Gefälle für Nivelierung
+}
+```
+
+### 3D-View Rendering mit facades[]
+
+```typescript
+// ScaffoldScene.tsx - Gerüst-Rendering
+
+facades.forEach(facade => {
+  // Konstante Gerüsthöhe für alle Fassaden
+  const scaffoldHeight = facade.height_m;
+
+  // Giebel-Fassaden: Zusätzliches Gerüst für Dachbereich
+  if (facade.is_gable) {
+    // Hier könnte Giebel-Gerüst hinzugefügt werden
+    console.log(`Giebel-Fassade ${facade.direction}: Extra-Gerüst bis First`);
+  }
+
+  // Terrain-Ausgleich via Stellspindeln
+  const levelingOffset = facade.terrain_z_min - minTerrain;
+
+  createScaffoldFacade({
+    height: scaffoldHeight,
+    levelingOffset,
+    isGable: facade.is_gable
+  });
+});
+```
+
+### Wichtige Unterscheidung
+
+| Daten | Verwendung | Quelle |
+|-------|------------|--------|
+| `facade.height_m` | Gerüst-Höhe (bis Traufe) | SmartBuildingService |
+| `facade.is_gable` | Giebel-Erkennung | roof_orientation |
+| `wall.z_min/z_max` | 3D-Wand-Geometrie | building_walls |
+| `facade.terrain_z_min` | Stellspindel-Berechnung | swissALTI3D |
+
+### Zusammenspiel mit building_walls
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 FACADES vs WALLS                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  facades[] (SmartBuildingService)                                │
+│  ════════════════════════════════                                │
+│  • height_m = konstante Traufhöhe (für Gerüst-Kalkulation)      │
+│  • is_gable = Giebel-Info aus roof_orientation                  │
+│  • terrain_z_min = für Stellspindeln                            │
+│                                                                  │
+│  building_walls[] (3D-Layer)                                     │
+│  ═══════════════════════════                                     │
+│  • z_min/z_max = exakte 3D-Koordinaten (±0.1m)                  │
+│  • geometry_wkb = 3D-Polygone für echtes Wand-Rendering         │
+│  • Matching mit matchFacadeToWall() für Detail-Analyse          │
+│                                                                  │
+│  Zusammen:                                                       │
+│  • facades[] für Gerüst-Planung (konstante Höhe)                │
+│  • building_walls[] für 3D-Visualisierung (exakte Geometrie)    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Betroffene Dateien
+
+| Datei | Funktion |
+|-------|----------|
+| `service.py:_build_facades_array()` | facades[] aufbauen |
+| `service.py:_get_gable_directions()` | Giebel-Richtungen ermitteln |
+| `ConfiguratorPage.tsx` | facades[] an 3D-View übergeben |
+| `ScaffoldScene.tsx` | Gerüst mit facades[] rendern |

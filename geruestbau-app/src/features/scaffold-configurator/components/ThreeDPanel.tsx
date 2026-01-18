@@ -9,6 +9,7 @@ import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldC
 import { formatNumber } from '../utils/calculations';
 import type { View3D, BuildingZone, ScaffoldFacade } from '../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../api/geruestbau';
+import type { BuildingWall } from '../../../types/project';
 import { ScaffoldScene } from './threeDView';
 
 // NEU 15.01.2026: Types für Materialliste
@@ -47,9 +48,11 @@ interface ThreeDPanelProps {
   additionalBuildings?: MultiBuildingData[];
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
+  // NEU 18.01.2026: Echte 3D-Wandgeometrie aus swissBUILDINGS3D
+  buildingWalls?: BuildingWall[];
 }
 
-export default function ThreeDPanel({ neighbors = [], blockedSides = [], additionalBuildings = [], zones = [], complexity = 'simple' }: ThreeDPanelProps) {
+export default function ThreeDPanel({ neighbors = [], blockedSides = [], additionalBuildings = [], zones = [], complexity = 'simple', buildingWalls = [] }: ThreeDPanelProps) {
   const { setCurrentTab, configuration } = useScaffoldConfig();
   const totals = useTotals();
   const settings = useSettings();
@@ -156,6 +159,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], additio
               additionalBuildings={additionalBuildings}
               zones={zones}
               complexity={complexity}
+              buildingWalls={buildingWalls}
             />
           </Suspense>
 

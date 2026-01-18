@@ -175,6 +175,12 @@ class BuildingDataBundle:
     perimeter_m: Optional[float] = None
     footprint_area_m2: Optional[float] = None
 
+    # NEU 18.01.2026: Fassaden mit Höhen pro Fassade (für GeruestbauData)
+    # Kombiniert sides[] + terrain.facade_z_min/max
+    # Jede Fassade hat: index, direction, start_point, end_point, length_m,
+    #                   terrain_z_min, terrain_z_max, wall_z_max, height_m, slope_m
+    facades: Optional[List[Dict[str, Any]]] = None
+
     # Bounding Box
     bbox_width_m: Optional[float] = None
     bbox_depth_m: Optional[float] = None

@@ -10,6 +10,7 @@
  */
 
 import type { FacadeDirection } from '../types/scaffold.types';
+import type { BuildingWall } from '../../../types/project';
 
 export interface Point {
   x: number;
@@ -346,7 +347,7 @@ export function sidesToFacades(
   // NEU: Fassaden-spezifische Höhen-Metadaten
   facade_z_min?: number;
   facade_z_max?: number;
-  height_source?: 'wall_layer' | 'terrain_sampled' | 'global';
+  height_source?: 'wall_layer' | 'terrain_sampled' | 'global' | 'building_walls';
 }> {
   return sides.map((side, idx) => {
     // Fassaden-spezifische Höhe wenn verfügbar
@@ -360,10 +361,12 @@ export function sidesToFacades(
       const dirZMax = facadeZMax[side.direction];
 
       if (dirZMin !== undefined && dirZMax !== undefined && dirZMax > dirZMin) {
-        height = dirZMax - dirZMin;
+        // FIX 15.01.2026 BUG-023: height bleibt defaultHeight (Traufhöhe)!
+        // Die Terrain-Differenz wird über terrain_diff_m für Stellspindeln abgebildet,
+        // NICHT über unterschiedliche Gerüsthöhen pro Fassade.
+        // ENTFERNT: height = dirZMax - dirZMin;
         zMin = dirZMin;
         zMax = dirZMax;
-        // Quelle bestimmen (vereinfacht: wenn Daten da sind, dann aus 3D-Layer)
         heightSource = 'terrain_sampled';
       }
     }
@@ -380,6 +383,300 @@ export function sidesToFacades(
       facade_z_min: zMin,
       facade_z_max: zMax,
       height_source: heightSource,
+    };
+  });
+}
+
+// ============================================================================
+// NEU 15.01.2026 BUG-024: Geometrisches Matching für BuildingWall
+// ============================================================================
+
+/**
+ * Berechnet minimale Distanz zwischen einem Punkt und einem Linien-Segment
+ */
+function pointToSegmentDistance(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) {
+    return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+  }
+
+  // Projektion auf Linie
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const nearX = x1 + t * dx;
+  const nearY = y1 + t * dy;
+
+  return Math.sqrt((px - nearX) ** 2 + (py - nearY) ** 2);
+}
+
+/**
+ * Prüft ob zwei Linien-Segmente sich überlappen (mit Toleranz)
+ *
+ * @param s1 Fassaden-Segment (start, end)
+ * @param s2 Wall-Segment (start, end)
+ * @param tolerance Maximale Distanz für Matching (in Meter)
+ * @returns true wenn Überlappung erkannt
+ */
+function segmentsOverlap(
+  s1Start: [number, number], s1End: [number, number],
+  s2Start: [number, number], s2End: [number, number],
+  tolerance: number = 2.0
+): boolean {
+  // Prüfe ob Endpunkte von s1 nahe an s2 liegen
+  const d1 = pointToSegmentDistance(s1Start[0], s1Start[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
+  const d2 = pointToSegmentDistance(s1End[0], s1End[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
+
+  // Prüfe auch umgekehrt: Endpunkte von s2 nahe an s1
+  const d3 = pointToSegmentDistance(s2Start[0], s2Start[1], s1Start[0], s1Start[1], s1End[0], s1End[1]);
+  const d4 = pointToSegmentDistance(s2End[0], s2End[1], s1Start[0], s1Start[1], s1End[0], s1End[1]);
+
+  // Mindestens 2 Punkte müssen nahe sein für Überlappung
+  const closeCount = [d1, d2, d3, d4].filter(d => d < tolerance).length;
+  return closeCount >= 2;
+}
+
+/**
+ * Ergebnis des Wall-Matchings mit per-Polygon z-Werten
+ * NEU 15.01.2026: Per-Polygon z-Werte statt globale Wall z_min/z_max
+ */
+export interface WallMatchResult {
+  wall: BuildingWall;
+  polygon_z_min: number;  // Min z aus dem gematchten Polygon
+  polygon_z_max: number;  // Max z aus dem gematchten Polygon
+  wall_height: number;    // polygon_z_max - polygon_z_min
+}
+
+/**
+ * Extrahiert 2D-Koordinaten UND 3D-Koordinaten aus BuildingWall
+ * NEU 15.01.2026: Erweitert um 3D-Koordinaten für z-Wert Extraktion
+ */
+function extractWallRingsWithZ(wall: BuildingWall): Array<{
+  coords2d: [number, number][];
+  coords3d: number[][];  // Original 3D-Koordinaten für z-Wert Extraktion
+}> {
+  const result: Array<{ coords2d: [number, number][]; coords3d: number[][] }> = [];
+
+  if (!wall.coords_3d || !wall.geometry_type) return result;
+
+  if (wall.geometry_type === 'Polygon') {
+    const rings = wall.coords_3d as number[][][];
+    for (const ring of rings) {
+      result.push({
+        coords2d: ring.map((c) => [c[0], c[1]] as [number, number]),
+        coords3d: ring,
+      });
+    }
+  } else if (wall.geometry_type === 'MultiPolygon') {
+    const polygons = wall.coords_3d as number[][][][];
+    for (const polygon of polygons) {
+      for (const ring of polygon) {
+        result.push({
+          coords2d: ring.map((c) => [c[0], c[1]] as [number, number]),
+          coords3d: ring,
+        });
+      }
+    }
+  } else if (wall.geometry_type === 'LineString') {
+    const coords = wall.coords_3d as number[][];
+    result.push({
+      coords2d: coords.map((c) => [c[0], c[1]] as [number, number]),
+      coords3d: coords,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Extrahiert z_min und z_max aus einem 3D-Ring
+ */
+function extractZFromRing(coords3d: number[][]): { z_min: number; z_max: number } {
+  let z_min = Infinity;
+  let z_max = -Infinity;
+
+  for (const coord of coords3d) {
+    if (coord.length >= 3) {
+      const z = coord[2];
+      if (z < z_min) z_min = z;
+      if (z > z_max) z_max = z;
+    }
+  }
+
+  return { z_min, z_max };
+}
+
+/**
+ * Findet die beste BuildingWall-Übereinstimmung für eine Fassade
+ * und extrahiert z-Werte aus dem spezifischen gematchten Polygon
+ *
+ * NEU 15.01.2026: Erweitert um per-Polygon z-Werte
+ * FIX 15.01.2026 22:30: Toleranz 3.0m, MAX HEIGHT Strategie
+ *
+ * Bei mehreren Matches wird die Wand mit der GRÖSSTEN HÖHE gewählt,
+ * da kleine Wandsegmente (Fenster, Vorsprünge) niedrigere Höhen haben.
+ *
+ * @param facadeStart Startpunkt der Fassade [E, N]
+ * @param facadeEnd Endpunkt der Fassade [E, N]
+ * @param buildingWalls Alle verfügbaren BuildingWall-Daten
+ * @param tolerance Matching-Toleranz in Metern (default: 3.0m - erhöht wegen Offset zwischen Gebäude- und Wall-Polygon)
+ * @returns WallMatchResult mit per-Polygon z-Werten oder undefined
+ */
+export function matchFacadeToWall(
+  facadeStart: [number, number],
+  facadeEnd: [number, number],
+  buildingWalls: BuildingWall[],
+  tolerance: number = 3.0  // FIX: Erhöht von 2.0m wegen Koordinaten-Offset
+): WallMatchResult | undefined {
+  // Sammle ALLE Matches
+  const allMatches: Array<{
+    wall: BuildingWall;
+    coords3d: number[][];
+    height: number;
+    avgDist: number;
+  }> = [];
+
+  for (const wall of buildingWalls) {
+    const rings = extractWallRingsWithZ(wall);
+
+    for (const { coords2d, coords3d } of rings) {
+      // Berechne Höhe dieses Polygons
+      const { z_min, z_max } = extractZFromRing(coords3d);
+      const polyHeight = isFinite(z_max) && isFinite(z_min) ? z_max - z_min : 0;
+
+      // Prüfe jedes Segment im Ring
+      for (let i = 0; i < coords2d.length - 1; i++) {
+        const wallStart = coords2d[i];
+        const wallEnd = coords2d[i + 1];
+
+        if (segmentsOverlap(facadeStart, facadeEnd, wallStart, wallEnd, tolerance)) {
+          // Berechne durchschnittliche Distanz
+          const d1 = pointToSegmentDistance(facadeStart[0], facadeStart[1], wallStart[0], wallStart[1], wallEnd[0], wallEnd[1]);
+          const d2 = pointToSegmentDistance(facadeEnd[0], facadeEnd[1], wallStart[0], wallStart[1], wallEnd[0], wallEnd[1]);
+          const avgDist = (d1 + d2) / 2;
+
+          allMatches.push({ wall, coords3d, height: polyHeight, avgDist });
+          break; // Nur ein Match pro Ring nötig
+        }
+      }
+    }
+  }
+
+  if (allMatches.length === 0) return undefined;
+
+  // FIX: Wähle das Match mit der GRÖSSTEN HÖHE (Hauptwand statt Fenster)
+  // Bei gleicher Höhe: kürzeste Distanz
+  allMatches.sort((a, b) => {
+    if (Math.abs(a.height - b.height) > 0.5) {
+      return b.height - a.height; // Grösste Höhe zuerst
+    }
+    return a.avgDist - b.avgDist; // Bei ähnlicher Höhe: kürzeste Distanz
+  });
+
+  const bestMatch = allMatches[0];
+
+  // Extrahiere z-Werte aus dem gematchten Polygon
+  const { z_min, z_max } = extractZFromRing(bestMatch.coords3d);
+
+  if (!isFinite(z_min) || !isFinite(z_max)) {
+    // Fallback auf globale Wall-Werte wenn keine z-Koordinaten im Ring
+    if (bestMatch.wall.z_min !== null && bestMatch.wall.z_max !== null) {
+      return {
+        wall: bestMatch.wall,
+        polygon_z_min: bestMatch.wall.z_min,
+        polygon_z_max: bestMatch.wall.z_max,
+        wall_height: bestMatch.wall.z_max - bestMatch.wall.z_min,
+      };
+    }
+    return undefined;
+  }
+
+  return {
+    wall: bestMatch.wall,
+    polygon_z_min: z_min,
+    polygon_z_max: z_max,
+    wall_height: z_max - z_min,
+  };
+}
+
+/**
+ * Konvertiert vereinfachte Seiten zum Frontend-Format MIT BuildingWall-Matching
+ *
+ * NEU 15.01.2026 BUG-024: Ersetzt alte facadeZMin/facadeZMax Logik durch
+ * geometrisches Matching mit building_walls aus der DB.
+ *
+ * @param sides - Vereinfachte Polygon-Seiten
+ * @param defaultHeight - Globale Traufhöhe (Fallback)
+ * @param buildingWalls - BuildingWall[] direkt aus building_walls DB-Tabelle
+ */
+export function sidesToFacadesWithWalls(
+  sides: Side[],
+  defaultHeight: number,
+  buildingWalls: BuildingWall[] = []
+): Array<{
+  id: string;
+  direction: FacadeDirection;
+  length_m: number;
+  height_m: number;
+  slope_percent: number;
+  start_point: [number, number];
+  end_point: [number, number];
+  facade_z_min?: number;
+  facade_z_max?: number;
+  height_source: 'building_walls' | 'global';
+  matched_wall?: {
+    gebaeudeeinheit: string;
+    geometry_type: string | null;
+  };
+}> {
+  return sides.map((side, idx) => {
+    let height = defaultHeight;
+    let zMin: number | undefined;
+    let zMax: number | undefined;
+    let heightSource: 'building_walls' | 'global' = 'global';
+    let matchedWall: { gebaeudeeinheit: string; geometry_type: string | null } | undefined;
+
+    // Versuche Wall-Matching wenn buildingWalls vorhanden
+    if (buildingWalls.length > 0) {
+      const facadeStart: [number, number] = [side.start.x, side.start.y];
+      const facadeEnd: [number, number] = [side.end.x, side.end.y];
+
+      const matchResult = matchFacadeToWall(facadeStart, facadeEnd, buildingWalls);
+
+      if (matchResult) {
+        // Wall gefunden mit per-Polygon z-Werten (für Terrain-Höhen)
+        zMin = matchResult.polygon_z_min;
+        zMax = matchResult.polygon_z_max;
+        // FIX 18.01.2026 BUG-026: NICHT wall_height als Fassaden-Höhe verwenden!
+        // Giebel-Fassaden haben höhere Wände (bis First), aber das Gerüst soll
+        // bei "Fassadenarbeit" nur bis zur TRAUFE gehen.
+        // Die Gerüsthöhe bleibt defaultHeight (= Traufhöhe aus API).
+        // ENTFERNT: height = matchResult.wall_height;
+        heightSource = 'building_walls';
+        matchedWall = {
+          gebaeudeeinheit: matchResult.wall.gebaeudeeinheit,
+          geometry_type: matchResult.wall.geometry_type,
+        };
+      }
+    }
+
+    return {
+      id: `facade-${idx + 1}`,
+      direction: side.direction as FacadeDirection,
+      length_m: side.length_m,
+      height_m: height,
+      slope_percent: 0,
+      start_point: [side.start.x, side.start.y],
+      end_point: [side.end.x, side.end.y],
+      facade_z_min: zMin,
+      facade_z_max: zMax,
+      height_source: heightSource,
+      matched_wall: matchedWall,
     };
   });
 }

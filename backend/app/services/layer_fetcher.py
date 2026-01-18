@@ -344,11 +344,13 @@ class LayerFetcherService:
         cursor = conn.cursor()
 
         try:
+            # FIX 18.01.2026 22:10: EGID als Integer übergeben (DB-Schema: INTEGER)
+            egid_int = int(egid) if egid else None
             cursor.execute("""
                 UPDATE buildings_3d
                 SET has_3d_layers = 1
                 WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
 
             conn.commit()
 
@@ -365,10 +367,12 @@ class LayerFetcherService:
         cursor = conn.cursor()
 
         try:
+            # FIX 18.01.2026 22:10: EGID als Integer übergeben (DB-Schema: INTEGER)
+            egid_int = int(egid) if egid else None
             cursor.execute("""
                 SELECT gebaeudeeinheit, egid, z_min, z_max, geometry_wkb
                 FROM building_walls WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
 
             results = []
             for row in cursor.fetchall():
@@ -395,10 +399,12 @@ class LayerFetcherService:
         cursor = conn.cursor()
 
         try:
+            # FIX 18.01.2026 22:10: EGID als Integer übergeben (DB-Schema: INTEGER)
+            egid_int = int(egid) if egid else None
             cursor.execute("""
                 SELECT gebaeudeeinheit, egid, gelaendepunkt, geometry_wkb
                 FROM building_floors WHERE egid = ?
-            """, (egid,))
+            """, (egid_int,))
 
             results = []
             for row in cursor.fetchall():
@@ -409,6 +415,44 @@ class LayerFetcherService:
                         'egid': row[1],
                         'gelaendepunkt': row[2],
                         'geometry_wkb': row[3]
+                    })
+                else:
+                    results.append(dict(row))
+            return results
+
+        finally:
+            conn.close()
+
+    def get_roofs_for_building(self, egid: str) -> List[Dict]:
+        """Holt Roof-Daten für ein Gebäude.
+
+        NEU 15.01.2026 23:30 - Analog zu get_walls_for_building()
+        """
+        conn = get_building_3d_connection()
+        cursor = conn.cursor()
+
+        try:
+            # FIX 18.01.2026 22:10: EGID als Integer übergeben (DB-Schema: INTEGER)
+            egid_int = int(egid) if egid else None
+            cursor.execute("""
+                SELECT gebaeudeeinheit, egid, dach_min, dach_max,
+                       roof_form, roof_angle_deg, roof_orientation, geometry_wkb
+                FROM building_roofs WHERE egid = ?
+            """, (egid_int,))
+
+            results = []
+            for row in cursor.fetchall():
+                # DuckDB gibt Tuple zurück, SQLite mit row_factory gibt Row zurück
+                if isinstance(row, tuple):
+                    results.append({
+                        'gebaeudeeinheit': row[0],
+                        'egid': row[1],
+                        'dach_min': row[2],
+                        'dach_max': row[3],
+                        'roof_form': row[4],
+                        'roof_angle_deg': row[5],
+                        'roof_orientation': row[6],
+                        'geometry_wkb': row[7]
                     })
                 else:
                     results.append(dict(row))

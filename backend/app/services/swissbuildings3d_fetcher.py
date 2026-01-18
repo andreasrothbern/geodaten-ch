@@ -385,16 +385,18 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, A
                 terrain_f = float(gelaendepunkt) if gelaendepunkt is not None else None
                 gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
 
-                # Calculate relative heights
+                # FIX 16.01.2026 16:00: traufhoehe/firsthoehe NICHT mehr aus GELAENDEPUNKT berechnen!
+                # GELAENDEPUNKT ist ein einzelner Terrain-Punkt (meist Gebäudezentrum),
+                # der bei Hanglagen NICHT das niedrigste Terrain ist.
+                #
+                # Die korrekte Berechnung erfolgt in geruestbau.py aus:
+                # - dach_min/dach_max (m ü.M.) aus building_roofs
+                # - min(facade_z_min) aus swissALTI3D Terrain-Sampling
+                #
+                # Hier speichern wir nur die absolute gebaeudehoehe (GESAMTHOEHE).
                 traufhoehe = None
                 firsthoehe = None
                 gebaeudehoehe = gesamt_f
-
-                if terrain_f is not None:
-                    if dach_min_f is not None:
-                        traufhoehe = round(dach_min_f - terrain_f, 2)
-                    if dach_max_f is not None:
-                        firsthoehe = round(dach_max_f - terrain_f, 2)
 
                 # If no GESAMTHOEHE, calculate from firsthoehe
                 if gebaeudehoehe is None and firsthoehe is not None:
@@ -418,33 +420,19 @@ def parse_gdb_for_heights(gdb_path: Path) -> Tuple[list, list, list, Dict[str, A
                                         z_values.extend([c[2] for c in g.exterior.coords if len(c) >= 3])
                                 if z_values:
                                     gebaeudehoehe = round(max(z_values) - min(z_values), 2)
-                                    # Also estimate trauf/first from Z distribution
-                                    z_sorted = sorted(set(z_values))
-                                    if len(z_sorted) >= 2:
-                                        min_z = z_sorted[0]
-                                        max_z = z_sorted[-1]
-                                        # Traufe is typically the second-highest common Z level
-                                        if len(z_sorted) >= 3:
-                                            # Estimate traufe as 80% of building height
-                                            traufhoehe = round((max_z - min_z) * 0.8, 2)
-                                        firsthoehe = gebaeudehoehe
+                                    # FIX 16.01.2026 16:00: Keine Schätzung von trauf/first mehr
+                                    # Die 80%-Heuristik war unzuverlässig
                         except Exception as e:
                             debug_info["geometry_errors"] = debug_info.get("geometry_errors", 0) + 1
 
-                # Validate: at least one valid height
-                if gebaeudehoehe is None and firsthoehe is None and traufhoehe is None:
+                # FIX 16.01.2026 16:00: Validierung nur noch auf gebaeudehoehe
+                # traufhoehe und firsthoehe sind jetzt immer None (siehe oben)
+                if gebaeudehoehe is None:
                     debug_info["null_height_count"] += 1
                     continue
 
-                # Select main height (prefer gebaeudehoehe, then firsthoehe, then traufhoehe)
-                # Don't use 'or' chain as it fails for 0.0 values
-                main_height = None
-                if gebaeudehoehe is not None and gebaeudehoehe > 0:
-                    main_height = gebaeudehoehe
-                elif firsthoehe is not None and firsthoehe > 0:
-                    main_height = firsthoehe
-                elif traufhoehe is not None and traufhoehe > 0:
-                    main_height = traufhoehe
+                # main_height ist jetzt immer gebaeudehoehe
+                main_height = gebaeudehoehe if gebaeudehoehe and gebaeudehoehe > 0 else None
 
                 # Skip if no valid height or NaN
                 if main_height is None:
@@ -780,7 +768,8 @@ async def fetch_building_polygon_for_coordinates(
                 center_e = result.get("coord_e") or e
                 center_n = result.get("coord_n") or n
 
-                schedule_prefetch_with_neighbors(
+                # REFACTORED 17.01.2026: schedule_prefetch_with_neighbors ist jetzt async
+                await schedule_prefetch_with_neighbors(
                     tile_id=tile_id,
                     gdb_path=cached_path,
                     center_e=center_e,
@@ -845,7 +834,8 @@ async def fetch_building_polygon_for_coordinates(
                 center_e = result.get("coord_e") or e
                 center_n = result.get("coord_n") or n
 
-                immediate_count, background_started = schedule_prefetch_with_neighbors(
+                # REFACTORED 17.01.2026: schedule_prefetch_with_neighbors ist jetzt async
+                immediate_count, background_started = await schedule_prefetch_with_neighbors(
                     tile_id=tile_id,
                     gdb_path=cached_path,
                     center_e=center_e,
@@ -1060,14 +1050,10 @@ def parse_gdb_for_building_polygon(
         dach_min_f = float(dach_min) if dach_min is not None else None
         gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
 
+        # FIX 16.01.2026 16:00: traufhoehe/firsthoehe NICHT mehr aus GELAENDEPUNKT berechnen!
+        # Siehe Kommentar oben (Zeile 388) - die korrekte Berechnung erfolgt in geruestbau.py.
         traufhoehe = None
         firsthoehe = None
-
-        if terrain_f is not None:
-            if dach_min_f is not None:
-                traufhoehe = round(dach_min_f - terrain_f, 2)
-            if dach_max_f is not None:
-                firsthoehe = round(dach_max_f - terrain_f, 2)
 
         return {
             # Polygon is ALWAYS the original from swissBUILDINGS3D
@@ -1485,23 +1471,18 @@ def _extract_building_data(footprint, row, distance: float) -> Dict[str, Any]:
     dach_min_f = float(dach_min) if dach_min is not None else None
     gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
 
+    # FIX 16.01.2026 16:00: traufhoehe/firsthoehe NICHT mehr aus GELAENDEPUNKT berechnen!
+    # Siehe Kommentar oben (Zeile 388) - die korrekte Berechnung erfolgt in geruestbau.py.
     traufhoehe = None
     firsthoehe = None
 
-    if terrain_f is not None:
-        if dach_min_f is not None:
-            traufhoehe = round(dach_min_f - terrain_f, 2)
-        if dach_max_f is not None:
-            firsthoehe = round(dach_max_f - terrain_f, 2)
-
-    # Classify building type based on height ratio
+    # Classify building type based on area (height ratio not reliable without terrain sampling)
     building_type = "hauptgebaeude"
-    if firsthoehe and traufhoehe:
-        height_ratio = firsthoehe / traufhoehe if traufhoehe > 0 else 1
-        if height_ratio > 3:
-            building_type = "turm"
-        elif area < 50:
-            building_type = "nebengebaeude"
+    if area < 50:
+        building_type = "nebengebaeude"
+    elif gesamt_f and gesamt_f > 30:
+        # Hohe Gebäude (>30m GESAMTHOEHE) könnten Türme sein
+        building_type = "turm"
 
     return {
         # Polygon is ALWAYS the original from swissBUILDINGS3D

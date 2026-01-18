@@ -10,6 +10,7 @@ import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import type { ScaffoldConfiguration, ScaffoldFacade, ScaffoldCorner, View3D, BuildingZone } from '../../types/scaffold.types';
 import type { NeighborBuilding, MultiBuildingData } from '../../../../api/geruestbau';
+import type { BuildingWall } from '../../../../types/project';
 import { createSatteldachGeometry, type Point2D } from '../../utils/roofGeometry';
 
 // FIX 11.01.2026 02:40 - Dach-Orientierung aus Polygon berechnen
@@ -55,6 +56,8 @@ interface ScaffoldSceneProps {
   additionalBuildings?: MultiBuildingData[];
   zones?: BuildingZone[];
   complexity?: 'simple' | 'moderate' | 'complex';
+  // NEU 18.01.2026: Echte 3D-Wandgeometrie aus swissBUILDINGS3D
+  buildingWalls?: BuildingWall[];
 }
 
 // Camera position presets for different views
@@ -139,6 +142,109 @@ function createBuildingFromPolygon(polygon: [number, number][], height: number):
   mesh.receiveShadow = true;
 
   return mesh;
+}
+
+// NEU 18.01.2026: Echte 3D-Wandgeometrie aus swissBUILDINGS3D rendern
+// Rendert alle Wand-Polygone mit ihren echten Z-Koordinaten
+function createBuildingFrom3DWalls(
+  walls: BuildingWall[],
+  bboxCenter: [number, number],
+  terrainZMin: number
+): THREE.Group {
+  const group = new THREE.Group();
+
+  if (!walls || walls.length === 0) {
+    console.log('[3D-WALLS] Keine building_walls vorhanden');
+    return group;
+  }
+
+  console.log(`[3D-WALLS] Rendere ${walls.length} Wände`);
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x8b5cf6, // Purple (same as main building)
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+
+  walls.forEach((wall, wallIndex) => {
+    if (!wall.coords_3d) {
+      console.log(`[3D-WALLS] Wall ${wallIndex}: keine coords_3d`);
+      return;
+    }
+
+    // coords_3d Format:
+    // - Polygon: [[[x,y,z], ...]] (Array of rings, first is exterior)
+    // - MultiPolygon: [[[[x,y,z], ...]]] (Array of polygons)
+    const geometryType = wall.geometry_type || 'Polygon';
+
+    // Polygone extrahieren basierend auf Geometrie-Typ
+    let polygons: number[][][][] = [];
+
+    if (geometryType === 'MultiPolygon') {
+      // MultiPolygon: [[[[x,y,z], ...]]]
+      polygons = wall.coords_3d as number[][][][];
+    } else if (geometryType === 'Polygon') {
+      // Polygon: [[[x,y,z], ...]] - wrap in array for uniform handling
+      polygons = [wall.coords_3d as number[][][]];
+    } else {
+      console.log(`[3D-WALLS] Wall ${wallIndex}: Unbekannter Typ ${geometryType}`);
+      return;
+    }
+
+    polygons.forEach((polygon, polyIndex) => {
+      if (!polygon || polygon.length === 0) return;
+
+      // Erster Ring ist das Exterior
+      const exteriorRing = polygon[0];
+      if (!exteriorRing || exteriorRing.length < 3) return;
+
+      // 3D-Vertices aus dem Ring extrahieren
+      const vertices: number[] = [];
+      const indices: number[] = [];
+
+      exteriorRing.forEach((coord) => {
+        // coord = [E, N, Z] in LV95
+        const e = coord[0];
+        const n = coord[1];
+        const z = coord[2];
+
+        // Konvertiere zu Three.js Koordinaten (relativ zum bboxCenter)
+        // THREE.js: X = E-center, Y = Z-terrain, Z = -(N-center)
+        const x = e - bboxCenter[0];
+        const y = z - terrainZMin;  // Höhe relativ zum Terrain
+        const zCoord = -(n - bboxCenter[1]);
+
+        vertices.push(x, y, zCoord);
+      });
+
+      // Triangulation: Einfache Fan-Triangulation für konvexe Polygone
+      // Für komplexe Polygone wäre earcut.js besser, aber für Wände reicht das meist
+      const vertexCount = exteriorRing.length;
+      for (let i = 1; i < vertexCount - 1; i++) {
+        indices.push(0, i, i + 1);
+      }
+
+      // BufferGeometry erstellen
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      group.add(mesh);
+
+      if (polyIndex === 0 && wallIndex < 3) {
+        console.log(`[3D-WALLS] Wall ${wallIndex} Poly ${polyIndex}: ${vertexCount} vertices, z_min=${wall.z_min?.toFixed(1)}, z_max=${wall.z_max?.toFixed(1)}`);
+      }
+    });
+  });
+
+  console.log(`[3D-WALLS] ${group.children.length} Meshes erstellt`);
+  return group;
 }
 
 // Zone colors based on zone type
@@ -539,21 +645,50 @@ function createRoofFrom3DGeometry(
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-    } else {
-      // Komplexeres Polygon - verwende ShapeGeometry
-      const shape = new THREE.Shape();
-      shape.moveTo(transformedPoints[0].x, transformedPoints[0].z);
-      for (let i = 1; i < transformedPoints.length - 1; i++) {
-        shape.lineTo(transformedPoints[i].x, transformedPoints[i].z);
-      }
-      shape.closePath();
+    } else if (polygon.length === 5) {
+      // Quadrilateral (5 Punkte = 4 Eckpunkte + 1 Schlusspunkt)
+      // Teile in 2 Dreiecke: [0,1,2] und [0,2,3]
+      const vertices = new Float32Array([
+        transformedPoints[0].x, transformedPoints[0].y, transformedPoints[0].z,
+        transformedPoints[1].x, transformedPoints[1].y, transformedPoints[1].z,
+        transformedPoints[2].x, transformedPoints[2].y, transformedPoints[2].z,
+        transformedPoints[3].x, transformedPoints[3].y, transformedPoints[3].z,
+      ]);
 
-      const geometry = new THREE.ShapeGeometry(shape);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.setIndex([0, 1, 2, 0, 2, 3]);  // Zwei Dreiecke
+      geometry.computeVertexNormals();
+
       const mesh = new THREE.Mesh(geometry, roofMaterial);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    } else {
+      // FIX 16.01.2026: Komplexere Polygone mit Fan-Triangulation
+      // ShapeGeometry war FALSCH - es flacht alle Y-Werte ab!
+      // Stattdessen: BufferGeometry mit korrekten 3D-Koordinaten
+      const numVertices = transformedPoints.length - 1;  // Letzter Punkt = Schlusspunkt
+      const vertices = new Float32Array(numVertices * 3);
 
-      // Rotiere für horizontale Ausrichtung und setze Y-Position
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.y = transformedPoints[0].y;  // Verwende die Höhe des ersten Punkts
+      for (let i = 0; i < numVertices; i++) {
+        vertices[i * 3] = transformedPoints[i].x;
+        vertices[i * 3 + 1] = transformedPoints[i].y;
+        vertices[i * 3 + 2] = transformedPoints[i].z;
+      }
+
+      // Fan-Triangulation: Alle Dreiecke vom Zentrum (Punkt 0) ausgehend
+      const indices: number[] = [];
+      for (let i = 1; i < numVertices - 1; i++) {
+        indices.push(0, i, i + 1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(geometry, roofMaterial);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
@@ -749,6 +884,106 @@ function createScaffoldFacadeAlongEdge(
   return group;
 }
 
+// NEU 18.01.2026 BUG-027: Helper für Gerüst auf Zusatzgebäuden
+// Einfachere Version ohne ScaffoldFacade-Typ
+function createScaffoldForMultiBuilding(
+  facade: { start_point: [number, number]; end_point: [number, number]; length_m: number; height_m: number },
+  buildingCenter: [number, number],
+  mainCenter: [number, number],
+  fieldWidth: number,
+  levelHeight: number,
+  scaffoldGap: number = 0.5
+): THREE.Group {
+  const group = new THREE.Group();
+  const cellDepth = 0.73;
+  const colorHex = 0x22c55e; // Green for additional building scaffolds
+
+  // Check if we have actual coordinates
+  if (!facade.start_point || !facade.end_point) {
+    return group;
+  }
+
+  // Calculate fields and levels from facade dimensions
+  const fields = Math.max(1, Math.ceil(facade.length_m / fieldWidth));
+  const levels = Math.max(1, Math.ceil(facade.height_m / levelHeight));
+
+  // Normalize coordinates relative to building center, then add offset to main center
+  const offsetX = buildingCenter[0] - mainCenter[0];
+  const offsetZ = -(buildingCenter[1] - mainCenter[1]);
+
+  // Swap start/end to match polygon winding order (same as createScaffoldFacadeAlongEdge)
+  const startX = (facade.end_point[0] - buildingCenter[0]) + offsetX;
+  const startZ = -(facade.end_point[1] - buildingCenter[1]) + offsetZ;
+  const endX = (facade.start_point[0] - buildingCenter[0]) + offsetX;
+  const endZ = -(facade.start_point[1] - buildingCenter[1]) + offsetZ;
+
+  // Calculate facade direction vector
+  const dx = endX - startX;
+  const dz = endZ - startZ;
+  const length = Math.sqrt(dx * dx + dz * dz);
+
+  if (length < 0.01) return group;
+
+  // Normalize direction
+  const dirX = dx / length;
+  const dirZ = dz / length;
+
+  // Perpendicular direction (outward from building)
+  const perpX = -dirZ;
+  const perpZ = dirX;
+
+  // Offset scaffolds outward from building edge
+  const scaffoldOffsetX = perpX * (scaffoldGap + cellDepth / 2);
+  const scaffoldOffsetZ = perpZ * (scaffoldGap + cellDepth / 2);
+
+  // Inset scaffolds slightly at corners
+  const cornerInset = 0.5 / fields;
+
+  for (let level = 0; level < levels; level++) {
+    for (let field = 0; field < fields; field++) {
+      // Position along the facade edge
+      const tRaw = (field + 0.5) / fields;
+      const t = cornerInset + tRaw * (1 - 2 * cornerInset);
+      const cellX = startX + dx * t + scaffoldOffsetX;
+      const cellZ = startZ + dz * t + scaffoldOffsetZ;
+      const cellY = level * levelHeight + levelHeight / 2;
+
+      const cellWidth = fieldWidth * 0.95;
+      const cellHeight = levelHeight * 0.95;
+
+      // Create cell geometry
+      const cellGroup = new THREE.Group();
+      const geometry = new THREE.BoxGeometry(cellWidth, cellHeight, cellDepth);
+      const material = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.75,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+
+      // Wireframe
+      const edges = new THREE.EdgesGeometry(geometry);
+      const line = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({ color: 0x166534 }) // Dark green
+      );
+
+      cellGroup.add(mesh);
+      cellGroup.add(line);
+
+      // Position and rotate to align with facade
+      cellGroup.position.set(cellX, cellY, cellZ);
+      const angle = Math.atan2(dirZ, dirX);
+      cellGroup.rotation.y = -angle;
+
+      group.add(cellGroup);
+    }
+  }
+
+  return group;
+}
+
 // Helper to create scaffold facade (legacy - fallback)
 function createScaffoldFacade(
   facade: ScaffoldFacade,
@@ -910,6 +1145,7 @@ export default function ScaffoldScene({
   additionalBuildings = [],
   zones = [],
   complexity = 'simple',
+  buildingWalls = [],
 }: ScaffoldSceneProps) {
   // Log neighbors for debugging (will be used for rendering in Phase 2.3)
   if (neighbors.length > 0) {
@@ -1096,22 +1332,53 @@ export default function ScaffoldScene({
       const maxY = Math.max(...polygon3D!.map(p => p[1]));
       const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
-      // Calculate building height: use actual traufhoehe if available, otherwise estimate from facades or default
-      const maxFacadeHeight = enabledFacades.length > 0
-        ? enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10)
-        : 10;
-      // Traufhöhe = Gebäudehöhe bis Dachansatz (wo das Dach startet)
-      // Priority: config.roof.traufhoehe_m > facade height estimate > default 8m
-      const buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - (config.roof?.trauf_to_first_m || 0));
-
-      // Add building from actual polygon
-      parent.add(createBuildingFromPolygon(normalized, buildingHeight));
-
       // NEU 14.01.2026 13:35: Echte 3D-Dachgeometrie IMMER priorisieren, unabhängig von Komplexität
       const hasReal3DGeometry = config.roof?.has_roof_geometry &&
                                  config.roof?.roof_geometry_coords &&
                                  config.roof.roof_geometry_coords.length > 0 &&
                                  config.roof?.roof_dach_min_m;
+
+      // FIX 16.01.2026 14:50: Konsistente Höhenberechnung für Gebäude und Dach
+      // Wenn echte 3D-Dachgeometrie vorhanden, berechne buildingHeight aus dach_min - terrain
+      // Dies stellt sicher, dass das Dach korrekt auf dem Gebäude sitzt
+      let buildingHeight: number;
+      if (hasReal3DGeometry && config.roof?.terrain_z_min !== undefined) {
+        // Echte Traufhöhe aus 3D-Daten: dach_min (m ü.M.) - terrain (m ü.M.)
+        buildingHeight = config.roof.roof_dach_min_m! - config.roof.terrain_z_min;
+        console.log('[3D-ROOF] Verwende konsistente Höhenberechnung', {
+          dachMin: config.roof.roof_dach_min_m,
+          terrainZMin: config.roof.terrain_z_min,
+          buildingHeight: buildingHeight.toFixed(2),
+          alteTraufhoehe: config.roof?.traufhoehe_m,
+        });
+      } else {
+        // Fallback: Alte Berechnung
+        const maxFacadeHeight = enabledFacades.length > 0
+          ? enabledFacades.reduce((max, f) => Math.max(max, f.target_height_m || f.levels * levelHeight), 10)
+          : 10;
+        buildingHeight = config.roof?.traufhoehe_m || Math.max(8, maxFacadeHeight - (config.roof?.trauf_to_first_m || 0));
+      }
+
+      // NEU 18.01.2026: Echte 3D-Wände wenn verfügbar, sonst Extrusion als Fallback
+      const has3DWalls = buildingWalls && buildingWalls.length > 0 &&
+        buildingWalls.some(w => w.coords_3d && w.coords_3d.length > 0);
+
+      if (has3DWalls) {
+        // Echte 3D-Wandgeometrie aus swissBUILDINGS3D - zeigt echte Turmformen, Anbauten, etc.
+        const terrainZ = config.roof?.terrain_z_min ?? 0;
+        console.log('[3D-WALLS] Verwende echte 3D-Wandgeometrie', {
+          wallCount: buildingWalls.length,
+          terrainZ: terrainZ.toFixed(1),
+          complexity: buildingComplexity,
+        });
+        parent.add(createBuildingFrom3DWalls(buildingWalls, bboxCenter, terrainZ));
+      } else {
+        // Fallback: 2D-Polygon Extrusion (alle Wände gleiche Höhe)
+        console.log('[3D-WALLS] Fallback: 2D-Extrusion (keine 3D-Wände)', {
+          buildingHeight: buildingHeight.toFixed(2),
+        });
+        parent.add(createBuildingFromPolygon(normalized, buildingHeight));
+      }
 
       if (hasReal3DGeometry) {
         // Echte 3D-Geometrie aus swissBUILDINGS3D - IMMER verwenden wenn verfügbar
@@ -1250,8 +1517,14 @@ export default function ScaffoldScene({
             [p[0] - buildingCenterE, p[1] - buildingCenterN] as [number, number]
           );
 
+          // FIX 16.01.2026 17:00: Korrekte Höhenberechnung aus Rohdaten
           // Create building mesh with full opacity (blue-purple tint for additional buildings)
-          const addBuildingHeight = building.traufhoehe_m || 10;
+          let addBuildingHeight = 10; // Fallback
+          if (building.roof_dach_min_m != null && building.terrain_z_min != null) {
+            addBuildingHeight = building.roof_dach_min_m - building.terrain_z_min;
+          } else if (building.gebaeudehoehe_m != null) {
+            addBuildingHeight = building.gebaeudehoehe_m;
+          }
           const buildingMesh = createBuildingFromPolygon(normalizedBuilding, addBuildingHeight);
 
           // Apply distinct color for additional buildings
@@ -1271,13 +1544,33 @@ export default function ScaffoldScene({
 
           // Add roof for additional buildings
           // FIX 11.01.2026 02:40 - Dach-Typ und Orientierung pro Gebäude berechnen
-          const addRoofHeight = (building.firsthoehe_m || addBuildingHeight + 3) - addBuildingHeight;
+          // FIX 16.01.2026 17:00: Korrekte Dachhöhenberechnung aus Rohdaten
+          let addFirstHeight = addBuildingHeight + 3; // Fallback
+          if (building.roof_dach_max_m != null && building.terrain_z_min != null) {
+            addFirstHeight = building.roof_dach_max_m - building.terrain_z_min;
+          }
+          const addRoofHeight = addFirstHeight - addBuildingHeight;
           // Dachtyp aus Höhendifferenz: < 0.5m = flachdach, sonst satteldach
           const addRoofType = addRoofHeight < 0.5 ? 'flachdach' : 'satteldach';
           const addRoofOrientation = calculatePolygonRoofOrientation(building.polygon);
           const additionalRoof = createRoofFromPolygon(normalizedBuilding, addBuildingHeight, addRoofHeight, addRoofType, addRoofOrientation);
           additionalRoof.position.set(offsetX, 0, offsetZ);
           parent.add(additionalRoof);
+
+          // NEU 18.01.2026 BUG-027: Gerüst für Zusatzgebäude rendern
+          if (building.facades && building.facades.length > 0) {
+            building.facades.forEach((facade) => {
+              const scaffoldGroup = createScaffoldForMultiBuilding(
+                facade,
+                building.center,
+                mainCenter,
+                fieldWidth,
+                levelHeight
+              );
+              parent.add(scaffoldGroup);
+            });
+            console.log(`Added scaffolds for additional building ${building.address}: ${building.facades.length} facades`);
+          }
 
           console.log(`Added additional building ${index + 1}/${multiBuildingData.length}: ${building.address} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
         });

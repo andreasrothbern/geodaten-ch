@@ -83,7 +83,335 @@ Siehe Abschnitt "⚠️ KRITISCH: Blockierte Fassaden - Schwellenwert" oben.
 
 ---
 
+### BUG-026: Gerüst zu hoch bei 'Fassadenarbeit' - wall_height statt Traufhöhe (GEFIXT)
+
+**Status:** ✅ Gefixt am 18.01.2026 04:35
+
+**Problem:**
+Bei Auswahl von "Fassadenarbeit" (facade work type) ragte das Gerüst über das Dach hinaus,
+obwohl es nur bis zur Traufe (Dachansatz) gehen sollte.
+
+**Beispiel Knospenweg 4-6:**
+```
+VOR dem Fix:                         NACH dem Fix:
+┌─────────────────┐                  ┌─────────────────┐
+│    /\   Dach    │                  │    /\   Dach    │
+│   /  \          │                  │   /  \          │
+│══/════\═════════│ ← Gerüst        │  /    \         │
+│ /      \        │    zu hoch!     │══════════════════│ ← Gerüst
+│/        \       │                  │ /      \        │    korrekt!
+│══════════════════│                 │/        \       │
+│   Gebäude       │                  │══════════════════│
+│                 │                  │   Gebäude       │
+└─────────────────┘                  └─────────────────┘
+```
+
+**Ursache:**
+Die `matchFacadeToWall()` Funktion in `polygonSimplifier.ts` berechnete `wall_height = z_max - z_min`
+aus dem gematchten 3D-Wand-Polygon. Bei Giebel-Fassaden (E, W bei O-W Dach) enthält dies das
+Giebel-Dreieck bis zum First!
+
+```typescript
+// ConfiguratorPage.tsx:990-992 (VOR dem Fix)
+if (matchResult) {
+  heightM = matchResult.wall_height;  // FALSCH!
+  // Giebel-Fassade: wall_height ≈ 10.7m (bis First)
+  // Trauf-Fassade: wall_height ≈ 9m (bis Traufe)
+}
+```
+
+Bei "Fassadenarbeit" sollte das Gerüst aber NUR bis zur TRAUFE gehen, nicht bis zum Giebel-First.
+
+**Fix:**
+`wall_height` wird NICHT mehr als Fassaden-Höhe verwendet. Stattdessen wird die Gebäude-Traufhöhe
+(`facade.height_m` aus der API) beibehalten:
+
+```typescript
+// ConfiguratorPage.tsx:990-996 (NACH dem Fix)
+if (matchResult) {
+  facadeZMin = matchResult.polygon_z_min;
+  facadeZMax = matchResult.polygon_z_max;
+  // FIX 18.01.2026: NICHT wall_height verwenden!
+  // Die Gerüsthöhe basiert auf facade.height_m (= Traufhöhe aus API)
+  // ENTFERNT: heightM = matchResult.wall_height;
+  heightSource = 'building_walls';
+}
+```
+
+**Betroffene Dateien:**
+- `geruestbau-app/src/pages/ConfiguratorPage.tsx:978-999`
+- `geruestbau-app/src/features/scaffold-configurator/utils/polygonSimplifier.ts:651-665`
+
+**Wichtig:** Das Wall-Matching liefert weiterhin `z_min` und `z_max` für Terrain-Höhen
+(Stellspindel-Berechnung), aber NICHT mehr die Gerüsthöhe.
+
+---
+
+### BUG-023: TerrainProfile - Fassaden-Höhen falsch berechnet (GEFIXT)
+
+**Status:** ✅ Gefixt am 15.01.2026 09:45
+
+**Problem:**
+Bei Gebäuden am Hang wurden die Fassaden-Höhen unterschiedlich berechnet. Das Gerüst
+ragte auf der tieferen Terrain-Seite über das Dach hinaus.
+
+**Ursache:**
+```typescript
+// polygonSimplifier.ts:362-363 (VOR dem Fix)
+height = dirZMax - dirZMin;  // FALSCH!
+// N: 555.0 - 543.0 = 12.0m
+// S: 555.0 - 540.0 = 15.0m ← 3m höheres Gerüst auf Südseite!
+```
+
+Die Terrain-Differenz wurde zur Gerüsthöhe addiert statt am Boden durch Stellspindeln
+ausgeglichen zu werden.
+
+**Fix:**
+Zeile `height = dirZMax - dirZMin` entfernt. Die Variable `height` bleibt jetzt
+bei `defaultHeight` (Traufhöhe), konstant für alle Fassaden.
+
+```typescript
+// polygonSimplifier.ts:362-370 (NACH dem Fix)
+if (dirZMin !== undefined && dirZMax !== undefined && dirZMax > dirZMin) {
+  // FIX 15.01.2026 BUG-023: height bleibt defaultHeight (Traufhöhe)!
+  // ENTFERNT: height = dirZMax - dirZMin;
+  zMin = dirZMin;
+  zMax = dirZMax;
+  heightSource = 'terrain_sampled';
+}
+```
+
+**Betroffene Datei:**
+- `geruestbau-app/src/features/scaffold-configurator/utils/polygonSimplifier.ts:362-370`
+
+**Verifiziert mit:**
+- Knospenweg 4, Bern: Alle Fassaden haben jetzt gleiche Gerüsthöhe (5.54m)
+- Terrain-Differenz (1.8m) wird weiterhin für Stellspindeln-Visualisierung verwendet
+
+---
+
+### BUG-025: traufhoehe_m aus GELAENDEPUNKT falsch bei Hanglagen (GEFIXT)
+
+**Status:** ✅ Gefixt am 16.01.2026 16:00
+
+**Problem:**
+Die Traufhöhe (`traufhoehe_m`) wurde im Backend falsch berechnet. Bei Hanglagen war das
+Gebäude in der 3D-Ansicht zu niedrig, und das Dach "schwebte" über dem Gebäude.
+
+**Beispiel Knospenweg 9:**
+```
+GELAENDEPUNKT (swissBUILDINGS3D): 557.45 m ü.M. (Gebäudezentrum)
+min(facade_z_min) (swissALTI3D):  555.80 m ü.M. (niedrigstes Terrain)
+dach_min (building_roofs):        562.94 m ü.M. (Traufhöhe absolut)
+
+ALT (FALSCH): traufhoehe = 562.94 - 557.45 = 5.49m
+NEU (KORREKT): traufhoehe = 562.94 - 555.80 = 7.14m
+```
+
+**Ursache:**
+`swissbuildings3d_fetcher.py` berechnete `traufhoehe = DACH_MIN - GELAENDEPUNKT`.
+GELAENDEPUNKT ist aber ein **einzelner** Terrain-Punkt (meist Gebäudezentrum), der bei
+Hanglagen **nicht** das niedrigste Terrain ist.
+
+**Fix (3 Teile):**
+
+1. **Backend API (geruestbau.py:558-589):**
+   - Korrekte Berechnung: `traufhoehe = dach_min - min(facade_z_min)`
+   - Überschreibt alte Werte im Response
+   - Liefert `terrain_z_min` im roof-Objekt
+
+2. **Fetcher (swissbuildings3d_fetcher.py):**
+   - Legacy-Berechnung entfernt (3 Stellen)
+   - `traufhoehe_m` wird jetzt als `None` gespeichert
+   - Nur noch `gebaeudehoehe` (GESAMTHOEHE) wird gespeichert
+
+3. **Datenfluss vereinfacht:**
+   - Rohdaten: `dach_min`, `dach_max` in `building_roofs` (m ü.M.)
+   - Terrain: `facade_z_min` aus swissALTI3D Sampling
+   - Berechnung: Zentral in `geruestbau.py`
+
+**Betroffene Dateien:**
+- `backend/app/routers/geruestbau.py:558-618` - Korrekte Berechnung + Response
+- `backend/app/services/swissbuildings3d_fetcher.py:388-435, 1065-1068, 1486-1497` - Legacy entfernt
+
+**Verifiziert mit:**
+- Knospenweg 9: traufhoehe_m = 7.14m (vorher 5.49m)
+- 3D-Ansicht: Gebäude und Dach sind jetzt korrekt ausgerichtet
+
+---
+
 ## Offene Bugs
+
+### BUG-027: Multi-Building-Projekte: Gerüst nur auf Hauptgebäude (NEU)
+
+**Status:** 🔴 Offen (erkannt 18.01.2026 05:00)
+
+**Problem:**
+Bei Multi-Building-Projekten (z.B. "Knospenweg 4-6") zeigt die 3D-Ansicht das Gerüst
+**NUR** auf dem Hauptgebäude. Die zusätzlichen Gebäude werden zwar mit Gebäude + Dach
+gerendert, aber **ohne Gerüst**.
+
+**Beispiel Knospenweg 4-6:**
+```
+VOR dem Fix (aktuell):
+┌──────────────────────────────────────────────────┐
+│                                                  │
+│  ┌─────────┐          ┌─────────┐               │
+│  │░░░░░░░░░│          │         │               │
+│  │░░Kno 4░░│          │  Kno 6  │  ← KEIN      │
+│  │░░(Gerüst)│         │ (nur    │    GERÜST!   │
+│  │░░░░░░░░░│          │ Gebäude)│               │
+│  └─────────┘          └─────────┘               │
+│                                                  │
+│  Legende: ░ = Gerüst vorhanden                  │
+└──────────────────────────────────────────────────┘
+```
+
+**Ursache:**
+- `ScaffoldScene.tsx:1219-1221`: Gerüst wird nur für `enabledFacades` erstellt
+- `enabledFacades` kommt nur vom **Hauptgebäude** (über `configuration.elements`)
+- `additionalBuildings` werden in Zeilen 1276-1337 nur als **Gebäude + Dach** gerendert
+
+**Relevante Stellen:**
+```typescript
+// ScaffoldScene.tsx:1219-1221 - NUR Hauptgebäude-Gerüst
+enabledFacades.forEach((facade) => {
+  parent.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter));
+});
+
+// ScaffoldScene.tsx:1276-1337 - Zusatzgebäude OHNE Gerüst
+multiBuildingData.forEach((building, index) => {
+  // ... nur buildingMesh und roof werden erstellt
+  // FEHLT: createScaffoldFacadeAlongEdge für dieses Gebäude
+});
+```
+
+**Erforderliche Änderungen:**
+1. **Frontend Interface:** `MultiBuildingData` um `facades[]` erweitern
+2. **Frontend Laden:** Fassaden für alle Gebäude im Projekt berechnen
+3. **3D-Renderer:** Für jedes Gebäude in `additionalBuildings` Gerüste erstellen
+
+---
+
+#### Schema-Änderungen (18.01.2026)
+
+**1. MultiBuildingData erweitern** (`geruestbau.ts:49-59`):
+```typescript
+export interface MultiBuildingData {
+  egid: string
+  address: string
+  polygon: [number, number][]
+  center: [number, number]
+  roof_dach_min_m?: number
+  roof_dach_max_m?: number
+  terrain_z_min?: number
+  gebaeudehoehe_m?: number
+
+  // NEU 18.01.2026 BUG-027: Fassaden für Gerüst
+  facades?: Array<{
+    id: string
+    direction: string
+    length_m: number
+    height_m: number
+    start_point: [number, number]
+    end_point: [number, number]
+  }>
+}
+```
+
+**Keine DB-Änderungen nötig!** Fassaden werden aus Polygon berechnet (wie beim Hauptgebäude).
+
+---
+
+#### Data-Flow E2E (18.01.2026)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     NEUER DATA-FLOW                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  1. Projekt laden (ConfiguratorPage.tsx)                               │
+│     ├─ Hauptgebäude: buildingData mit selected_facades                 │
+│     └─ Zusatzgebäude: buildings_data[egid] aus Projekt                 │
+│                                                                         │
+│  2. Fassaden berechnen (NEU - für jedes Zusatzgebäude)                 │
+│     ├─ polygon → polygonToSides() → sides[]                            │
+│     └─ sides[] + traufhoehe → facades[]                                │
+│                                                                         │
+│  3. MultiBuildingData befüllen                                         │
+│     ├─ egid, address, polygon, center                                  │
+│     ├─ roof_dach_min_m, roof_dach_max_m, terrain_z_min                │
+│     └─ facades[] ← NEU!                                                │
+│                                                                         │
+│  4. ScaffoldScene.tsx rendern                                          │
+│     └─ multiBuildingData.forEach((building) => {                       │
+│          // Gebäude + Dach (existiert)                                 │
+│          createBuildingFromPolygon(...)                                │
+│          createRoofFromPolygon(...)                                    │
+│                                                                         │
+│          // Gerüst (NEU!)                                              │
+│          building.facades?.forEach((facade) => {                       │
+│            createScaffoldForAdditionalBuilding(facade, building, ...)  │
+│          })                                                            │
+│        })                                                              │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Implementierungsplan (18.01.2026)
+
+| Schritt | Datei | Änderung |
+|---------|-------|----------|
+| 1 | `geruestbau.ts` | `MultiBuildingData.facades` Interface hinzufügen |
+| 2 | `ConfiguratorPage.tsx` | Fassaden aus Polygon berechnen beim Laden |
+| 3 | `ScaffoldScene.tsx` | Gerüste für `additionalBuildings` rendern |
+
+**Betroffene Dateien:**
+- `geruestbau-app/src/api/geruestbau.ts:49-59` - Interface erweitern
+- `geruestbau-app/src/pages/ConfiguratorPage.tsx:762-788` - Fassaden berechnen
+- `geruestbau-app/src/features/scaffold-configurator/components/threeDView/ScaffoldScene.tsx:1276-1337` - Gerüste rendern
+
+**Workaround (bis Fix):**
+Jedes Gebäude einzeln als separates Projekt anlegen.
+
+---
+
+### BUG-024: Wall-Layer Daten werden nicht korrekt ans Frontend gesendet
+
+**Status:** 🟡 In Bearbeitung (erkannt 15.01.2026 10:00)
+
+**Problem:**
+Die P1-Implementation "Wall-Layer Fassaden-Höhen" ist fehlerhaft. Der `wall_facade_matcher.py`
+findet nur ~20% der Fassaden (z.B. nur "E" von 5 Richtungen bei Knospenweg 4).
+
+**Symptome:**
+- `facade_z_min` enthält nur 1 von 5 Fassaden
+- `service.py:1115` kehrt nach ANY Match zurück (Bug!)
+- `slope_m` kommt aus Terrain-Sampling, nicht aus Wall-Layer
+
+**Lösung implementiert (15.01.2026):**
+- ✅ `building_walls[]` in API-Response `/configurator/facades` hinzugefügt
+  - Naming exakt wie DB-Tabelle (`building_walls`)
+  - Volle 3D-Geometrie (`coords_3d`) - ALLE Polygone bei MultiPolygon!
+  - Felder: `gebaeudeeinheit`, `egid`, `z_min`, `z_max`, `geometry_type`, `coords_3d`
+- ✅ `BuildingWall` Interface im Frontend erstellt (DB-Naming!)
+- ✅ Alte Endpunkte als deprecated markiert
+- ✅ `wall_facade_matcher.py` als deprecated markiert
+
+**Noch offen:**
+- [ ] Frontend: Geometrisches Matching für BuildingWall implementieren
+- [ ] Frontend: z_min/z_max aus gematchten Wänden berechnen
+
+**Betroffene Dateien:**
+- `backend/app/routers/geruestbau.py` - `building_walls` hinzugefügt
+- `backend/app/services/smart_building/wall_facade_matcher.py` - DEPRECATED
+- `geruestbau-app/src/types/project.ts` - `BuildingWall` Interface
+
+**Details:** Siehe `docs/architecture/3D_LAYER_USAGE_3D_VIEW.md` → BUG-024
+
+---
 
 ### BUG-017: Fassaden bei Knospenweg 1 falsch dargestellt
 

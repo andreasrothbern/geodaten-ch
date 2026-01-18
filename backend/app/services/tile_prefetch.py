@@ -98,14 +98,18 @@ def prefetch_tile_buildings(
     exclude_egids: Optional[Set[int]] = None
 ) -> int:
     """
+    DEPRECATED 17.01.2026: Diese Sync-Version verursacht OOM-Fehler!
+
+    Nutze stattdessen: prefetch_tile_buildings_async() (Parquet-Pipeline)
+
+    Diese Funktion nutzt bulk_save() welches bei grossen Tiles den
+    DuckDB Memory-Limit (512MB) überschreitet.
+
     Speichert alle Gebäude aus einem Tile in building_3d.db.
 
     REFACTORED 11.01.2026: exclude_egid → exclude_egids (Set)
     - Vereint prefetch_tile_buildings + prefetch_tile_buildings_excluding
     - Macht IMMER Roof_solid Parsing
-
-    NEU 14.01.2026 21:30: Sync-Version für ThreadPool-Aufrufe (schedule_prefetch).
-    Für async-Kontext: prefetch_tile_buildings_async() nutzen (parallelisiertes Parsing).
 
     Args:
         tile_id: Tile-Referenz (z.B. "1088-22")
@@ -115,6 +119,13 @@ def prefetch_tile_buildings(
     Returns:
         Anzahl gespeicherter Gebäude
     """
+    import warnings
+    warnings.warn(
+        "prefetch_tile_buildings() ist deprecated und verursacht OOM. "
+        "Nutze prefetch_tile_buildings_async() mit Parquet-Pipeline.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Check ob bereits ein Prefetch für dieses Tile läuft
     with _prefetch_lock:
         if tile_id in _prefetch_in_progress:
@@ -615,6 +626,10 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                 dach_min_f = float(dach_min) if dach_min is not None else None
                 gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
 
+                # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
+                # Schätzung aus GELAENDEPUNKT (bei Hanglagen ~1-2m ungenau).
+                # Für Hauptgebäude erfolgt exakte Berechnung via Terrain-Sampling.
+                # Für Nachbarn reicht diese Schätzung für 3D-Visualisierung.
                 traufhoehe = None
                 firsthoehe = None
 
@@ -624,7 +639,6 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                     if dach_max_f is not None:
                         firsthoehe = round(dach_max_f - terrain_f, 2)
 
-                # NEU 11.01.2026: Erweiterte Attribute für 3D-Layer
                 buildings.append({
                     "egid": egid_int,
                     "polygon": polygon,
@@ -973,17 +987,27 @@ def _update_buildings_with_roof_data(
 
 def schedule_prefetch(tile_id: str, gdb_path: Path, exclude_egid: Optional[str] = None):
     """
+    DEPRECATED 17.01.2026: Nutzt sync prefetch_tile_buildings → OOM!
+
+    Nutze stattdessen: schedule_prefetch_with_neighbors() (async, Parquet-Pipeline)
+
     Plant einen Prefetch-Job im Hintergrund.
 
     Fire-and-forget: Kehrt sofort zurück, Job läuft in ThreadPool.
     REFACTORED 11.01.2026: Konvertiert exclude_egid zu exclude_egids Set.
-    FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → ThreadPool statt asyncio.
 
     Args:
         tile_id: Tile-Referenz
         gdb_path: Pfad zum gecachten GDB
         exclude_egid: EGID die nicht geladen werden soll (Rückwärtskompatibilität)
     """
+    import warnings
+    warnings.warn(
+        "schedule_prefetch() ist deprecated. "
+        "Nutze schedule_prefetch_with_neighbors() (async, Parquet-Pipeline).",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Konvertiere zu Set für neue API
     exclude_egids = {int(exclude_egid)} if exclude_egid else None
 
@@ -1126,6 +1150,8 @@ def find_immediate_neighbors(
                                   for c in geom.exterior.coords]
 
                     # Höhen extrahieren
+                    # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
+                    # Schätzung aus GELAENDEPUNKT (wie in _parse_all_buildings_from_gdb)
                     dach_max = props.get('DACH_MAX')
                     dach_min = props.get('DACH_MIN')
                     gelaendepunkt = props.get('GELAENDEPUNKT')
@@ -1136,6 +1162,7 @@ def find_immediate_neighbors(
                     dach_min_f = float(dach_min) if dach_min is not None else None
                     gesamt_f = float(gesamthoehe) if gesamthoehe is not None else None
 
+                    # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
                     traufhoehe = None
                     firsthoehe = None
 
@@ -1154,7 +1181,6 @@ def find_immediate_neighbors(
                             for i in range(len(polygon) - 1)
                         ), 2)
 
-                    # NEU 11.01.2026: Erweiterte Attribute für 3D-Layer
                     neighbors.append({
                         "egid": egid_int,
                         "polygon": polygon,
@@ -1232,7 +1258,7 @@ def load_neighbors_and_save(
     return saved, egids
 
 
-def schedule_prefetch_with_neighbors(
+async def schedule_prefetch_with_neighbors(
     tile_id: str,
     gdb_path: Path,
     center_e: float,
@@ -1244,8 +1270,12 @@ def schedule_prefetch_with_neighbors(
     NEUE ARCHITEKTUR: Lädt direkte Nachbarn sofort, Rest async.
 
     Ablauf:
-    1. SYNCHRON: Direkte Nachbarn (5m) laden und speichern
-    2. ASYNC: Prefetch für restliche Gebäude im Hintergrund starten
+    1. ASYNC: Direkte Nachbarn (5m) laden und speichern (in Thread)
+    2. ASYNC: Prefetch für restliche Gebäude im Hintergrund (Parquet-Pipeline)
+
+    REFACTORED 17.01.2026: Umgestellt auf async + Parquet-Pipeline
+    - Vorher: Sync prefetch_tile_buildings() im Thread → OOM bei grossen Tiles
+    - Nachher: Async prefetch_tile_buildings_async() mit Parquet → kein RAM-Overhead
 
     Args:
         tile_id: Tile-Referenz
@@ -1261,9 +1291,10 @@ def schedule_prefetch_with_neighbors(
     immediate_count = 0
     background_started = 0
 
-    # 1. SYNCHRON: Direkte Nachbarn laden
+    # 1. Direkte Nachbarn laden (in Thread um Event-Loop nicht zu blockieren)
     if center_e and center_n:
-        immediate_count, neighbor_egids = load_neighbors_and_save(
+        immediate_count, neighbor_egids = await asyncio.to_thread(
+            load_neighbors_and_save,
             gdb_path=gdb_path,
             center_e=center_e,
             center_n=center_n,
@@ -1275,29 +1306,19 @@ def schedule_prefetch_with_neighbors(
             f"[IMMEDIATE] {immediate_count} Nachbarn im {immediate_radius_m}m Radius geladen"
         )
 
-    # FIX 12.01.2026: exclude_egids NICHT mehr setzen!
-    # Prefetch soll alle Gebäude MIT roof_form speichern, inkl. main_egid und Nachbarn.
-    # INSERT OR REPLACE aktualisiert bestehende Einträge mit roof_form.
-
-    # 2. ASYNC: Background-Prefetch für ALLE Gebäude (keine Ausschlüsse mehr)
-    # REFACTORED 11.01.2026 21:50: Nutzt jetzt prefetch_tile_buildings (vereint)
-    # FIX 14.01.2026: prefetch_tile_buildings ist jetzt sync → direkter Aufruf
-    def _background_prefetch():
-        """Läuft in separatem Thread."""
-        try:
-            prefetch_tile_buildings(
+    # 2. Background-Prefetch mit Parquet-Pipeline (async, fire-and-forget)
+    # REFACTORED 17.01.2026: Nutzt jetzt prefetch_tile_buildings_async (Parquet)
+    # statt sync prefetch_tile_buildings (DuckDB bulk_save → OOM!)
+    try:
+        asyncio.create_task(
+            prefetch_tile_buildings_async(
                 tile_id=tile_id,
                 gdb_path=gdb_path,
-                exclude_egids=None  # FIX 12.01.2026: Keine Ausschlüsse mehr
+                exclude_egids=None
             )
-        except Exception as e:
-            logger.error(f"Background-Prefetch-Fehler: {e}")
-
-    # Background-Job starten (fire-and-forget)
-    try:
-        _background_executor.submit(_background_prefetch)
+        )
         background_started = 1
-        logger.info(f"[ASYNC] Background-Prefetch gestartet für {tile_id}")
+        logger.info(f"[ASYNC] Parquet-Pipeline Background-Prefetch gestartet für {tile_id}")
     except Exception as e:
         logger.error(f"Konnte Background-Prefetch nicht starten: {e}")
 

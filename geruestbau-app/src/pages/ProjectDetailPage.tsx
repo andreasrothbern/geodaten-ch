@@ -12,7 +12,8 @@ import {
 } from 'lucide-react'
 import BuildingDataCard from '../components/ui/BuildingDataCard'
 import { geruestbauApi } from '../api/geruestbau'
-import type { ProjectWithGeodata } from '../types/project'
+import type { ProjectWithGeruestbaudata } from '../types/project'
+import { getBuildingEgids } from '../types/project'
 
 // Progress step configuration - 4 steps (Fassaden + Geruest combined)
 const PROGRESS_STEPS = [
@@ -88,7 +89,7 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [project, setProject] = useState<ProjectWithGeodata | null>(null)
+  const [project, setProject] = useState<ProjectWithGeruestbaudata | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -170,9 +171,18 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Gebäudedaten - Shared Component */}
-      {project.geodata && (
-        <BuildingDataCard geodata={project.geodata} egid={project.egid} />
-      )}
+      {/* NEU 18.01.2026: BuildingDataCard mit GeruestbauData direkt */}
+      {(() => {
+        const egids = getBuildingEgids(project);
+        const firstEgid = egids[0] || project.egid;
+        const buildingData = firstEgid && project.buildings_data?.[firstEgid];
+        // Legacy-Fallback: geruestbaudata direkt verwenden
+        const geruestbaudata = buildingData || project.geruestbaudata;
+
+        return geruestbaudata ? (
+          <BuildingDataCard data={geruestbaudata} />
+        ) : null;
+      })()}
 
       {/* Aktionen */}
       <div className="grid grid-cols-2 gap-3">

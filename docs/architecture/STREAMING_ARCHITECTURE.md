@@ -1,7 +1,7 @@
 # Streaming Architecture
 
-> **Version:** 3.11 (15.01.2026)
-> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅ | Fassaden-Höhen ✅
+> **Version:** 3.12 (16.01.2026)
+> **Status:** Cache-Lookup ✅ | Response-Streaming ✅ | Building-Data-Streaming ✅ | Tile-Prefetch ✅ | 3D-Layer ✅ | Reaktive Architektur 🔲
 
 ---
 
@@ -18,8 +18,9 @@
 9. [Teil I: Blocking-Architektur Refactoring](#teil-i-blocking-architektur-refactoring-todo) (TODO)
 10. [Teil J: Storage-Strategie (Railway Pro)](#teil-j-storage-strategie-railway-pro) (TODO)
 11. [Teil K: Projektspezifische 3D-Daten](#teil-k-projektspezifische-3d-daten) (TODO)
-12. [Services für Streaming](#services-für-streaming)
-13. [Implementierungsplan](#implementierungsplan)
+12. **[Teil L: Reaktive SSE-Architektur](#teil-l-reaktive-architektur-ziel) (ZIEL-ARCHITEKTUR)**
+13. [Services für Streaming](#services-für-streaming)
+14. [Implementierungsplan](#implementierungsplan)
 
 ---
 
@@ -36,6 +37,7 @@ Diese Architektur besteht aus mehreren Teilen:
 | **E: Tile-Prefetch** | MINIMAL + ON-DEMAND Architektur | ✅ Implementiert |
 | **F: Frontend Service-Aufrufe** | Analyse der ConfiguratorPage Calls | ✅ Dokumentiert |
 | **G: 3D Layer Architecture** | Roof_solid Integration für echte Dach-Daten | ✅ Implementiert |
+| **L: Reaktive Architektur** | SSE statt REST - Ziel-Architektur | 🔲 **TODO** |
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -2608,10 +2610,761 @@ WHERE egid NOT IN (SELECT DISTINCT egid FROM projects WHERE egid IS NOT NULL);
 
 ---
 
+# Teil L: Reaktive Architektur (ZIEL)
+
+> **NEU 16.01.2026:** Ziel-Architektur - SSE statt REST für alle relevanten Daten
+> **Prinzip:** Reaktive Applikation mit SSE-Streams für optimale User Experience
+
+## L.1 Problem: Aktueller Mischmasch
+
+Die aktuelle Architektur verwendet **sowohl REST als auch SSE**, was zu Inkonsistenzen führt:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              AKTUELL: MISCH-ARCHITEKTUR (Wildwuchs)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  REST-ENDPOINTS (blockierend):                                 │
+│  ══════════════════════════════                                 │
+│  • GET /smart-building/data      → Alle Daten auf einmal       │
+│  • GET /configurator/facades     → Fassaden + building_walls   │
+│  • GET /building/{egid}/neighbors → Nachbar-Gebäude            │
+│                                                                 │
+│  SSE-ENDPOINTS (reaktiv):                                      │
+│  ═════════════════════════                                      │
+│  • GET /building/data/stream     → Progressive Datenladung     │
+│  • GET /project/{id}/context/stream → Projekt-Kontext          │
+│                                                                 │
+│  PROBLEME:                                                      │
+│  ─────────                                                      │
+│  • Frontend muss beide Arten handhaben                         │
+│  • REST blockiert UI bis Response komplett                     │
+│  • Inkonsistente Fehlerbehandlung                              │
+│  • Keine Progress-Indikatoren bei REST                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## L.2 Ziel: Reaktive SSE-Architektur
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              ZIEL: REAKTIVE SSE-ARCHITEKTUR                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SSE-ENDPOINTS (alle reaktiv):                                 │
+│  ══════════════════════════════                                 │
+│                                                                 │
+│  1. /building/stream (HAUPT-ENDPOINT)                          │
+│     ├─ event: geocoding      → Adresse aufgelöst               │
+│     ├─ event: gwr            → GWR-Daten                       │
+│     ├─ event: polygon        → Gebäude-Polygon                 │
+│     ├─ event: heights        → Höhendaten                      │
+│     ├─ event: terrain        → Hanglage                        │
+│     ├─ event: walls          → building_walls[] (3D)           │
+│     ├─ event: roofs          → building_roofs[] (3D)           │
+│     ├─ event: zones          → Zonen-Analyse                   │
+│     ├─ event: facades        → Vereinfachte Fassaden           │
+│     └─ event: complete       → Alle Daten geladen              │
+│                                                                 │
+│  2. /project/{id}/context/stream (bestehend)                   │
+│     ├─ event: centroid       → Projekt-Mittelpunkt             │
+│     ├─ event: buildings      → Projekt-Gebäude                 │
+│     ├─ event: blocked_facades → Blockierte Fassaden            │
+│     └─ event: neighbors      → Nachbar-Gebäude (progressiv)    │
+│                                                                 │
+│  REST-ENDPOINTS (nur für einfache Operationen):                │
+│  ═══════════════════════════════════════════════                │
+│  • POST /projects            → Projekt erstellen               │
+│  • PUT /projects/{id}        → Projekt aktualisieren           │
+│  • DELETE /projects/{id}     → Projekt löschen                 │
+│  • GET /health               → Health-Check                    │
+│                                                                 │
+│  VORTEILE:                                                      │
+│  ─────────                                                      │
+│  ✅ Sofortiges Feedback (Time to First Byte ~50ms)             │
+│  ✅ Progressive UI-Updates                                      │
+│  ✅ Einheitliche Fehlerbehandlung                               │
+│  ✅ Abbruch jederzeit möglich                                   │
+│  ✅ Konsistente Frontend-Integration                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## L.3 Migration: REST → SSE
+
+| REST-Endpoint | SSE-Ersatz | Status |
+|---------------|------------|--------|
+| `GET /smart-building/data` | `/building/stream` | 🔲 TODO |
+| `GET /configurator/facades` | `/building/stream` (events: facades, walls, roofs) | 🔲 TODO |
+| `GET /building/{egid}/neighbors` | `/project/{id}/context/stream` (event: neighbors) | ✅ Existiert |
+| `GET /building/{egid}/blocked-facades` | `/project/{id}/context/stream` (event: blocked_facades) | ✅ Existiert |
+
+## L.4 Event-Schema für /building/stream
+
+```typescript
+// Gebäude-Daten-Stream Events
+interface BuildingStreamEvents {
+  // Phase 1: Geocoding
+  geocoding: {
+    matched_address: string;
+    egid: string;
+    coordinates: { lv95_e: number; lv95_n: number };
+    duration_ms: number;
+  };
+
+  // Phase 2: GWR
+  gwr: {
+    floors: number | null;
+    area_m2: number | null;
+    category: string | null;
+    year_built: number | null;
+    duration_ms: number;
+  };
+
+  // Phase 3: 3D-Daten
+  polygon: {
+    polygon: number[][];
+    sides: FacadeSide[];
+    perimeter_m: number;
+    area_m2: number;
+    cache_hit: boolean;
+    duration_ms: number;
+  };
+
+  heights: {
+    traufhoehe_m: number | null;
+    firsthoehe_m: number | null;
+    gebaeudehoehe_m: number | null;
+    source: string;
+    has_3d_layers: boolean;
+    duration_ms: number;
+  };
+
+  // Phase 4: 3D-Layer (NEU)
+  walls: {
+    building_walls: BuildingWall[];  // Volle 3D-Geometrie
+    count: number;
+    duration_ms: number;
+  };
+
+  roofs: {
+    building_roofs: BuildingRoof[];  // Volle 3D-Geometrie
+    count: number;
+    duration_ms: number;
+  };
+
+  // Phase 5: Enrichment
+  terrain: {
+    terrain_height_m: number;
+    slope_m: number;
+    slope_class: string;
+    duration_ms: number;
+  };
+
+  zones: {
+    zones: ZoneInfo[];
+    complexity: string;
+    source: string;
+    duration_ms: number;
+  };
+
+  // Phase 6: Fassaden
+  facades: {
+    facades: SimplifiedFacade[];  // Vereinfacht mit Höhen
+    corners: Corner[];
+    duration_ms: number;
+  };
+
+  // Abschluss
+  complete: {
+    status: 'ok' | 'partial' | 'error';
+    duration_ms: number;
+    summary: {
+      has_polygon: boolean;
+      has_heights: boolean;
+      has_3d_layers: boolean;
+      has_terrain: boolean;
+      zones_count: number;
+      facades_count: number;
+    };
+  };
+
+  // Fehler (kann jederzeit kommen)
+  error: {
+    code: string;
+    message: string;
+    phase: string;
+    recoverable: boolean;
+  };
+}
+```
+
+## L.5 Implementierungsplan
+
+### Phase 1: Neuen SSE-Endpoint erstellen
+
+```python
+# geruestbau.py - Neuer Endpoint
+@router.get("/building/stream", response_class=EventSourceResponse)
+async def stream_building_data(
+    address: str = Query(...),
+    include_3d_layers: bool = Query(True),
+    include_terrain: bool = Query(True),
+    include_zones: bool = Query(True),
+):
+    """
+    SSE-Stream für alle Gebäude-Daten.
+    Ersetzt: /smart-building/data und /configurator/facades
+    """
+    async def event_generator():
+        # Phase 1: Geocoding
+        yield create_sse_event("geocoding", {...})
+
+        # Phase 2: GWR (parallel mit 3D)
+        # Phase 3: Polygon + Höhen
+        # Phase 4: 3D-Layer (walls, roofs)
+        # Phase 5: Terrain, Zones
+        # Phase 6: Fassaden (vereinfacht mit Höhen-Matching)
+        # Abschluss
+
+    return EventSourceResponse(event_generator())
+```
+
+### Phase 2: Frontend-Hook erstellen
+
+```typescript
+// useBuildingStream.ts
+export function useBuildingStream(options: BuildingStreamOptions) {
+  const [state, setState] = useState<BuildingStreamState>({
+    isLoading: false,
+    currentPhase: null,
+    geocoding: null,
+    polygon: null,
+    heights: null,
+    walls: null,
+    roofs: null,
+    terrain: null,
+    facades: null,
+    error: null,
+  });
+
+  const start = useCallback((address: string) => {
+    const eventSource = new EventSource(
+      `/api/v1/geruestbau/building/stream?address=${encodeURIComponent(address)}`
+    );
+
+    eventSource.addEventListener('geocoding', (e) => {
+      const data = JSON.parse(e.data);
+      setState(prev => ({ ...prev, geocoding: data, currentPhase: 'geocoding' }));
+    });
+
+    eventSource.addEventListener('walls', (e) => {
+      const data = JSON.parse(e.data);
+      setState(prev => ({ ...prev, walls: data.building_walls, currentPhase: 'walls' }));
+    });
+
+    // ... weitere Events ...
+
+    eventSource.addEventListener('complete', (e) => {
+      setState(prev => ({ ...prev, isLoading: false }));
+      eventSource.close();
+    });
+  }, []);
+
+  return { ...state, start };
+}
+```
+
+### Phase 3: Alte Endpoints als deprecated markieren
+
+```python
+@router.get("/smart-building/data")
+@deprecated("Use /building/stream instead")
+async def get_smart_building_data(...):
+    """
+    DEPRECATED: Verwende /building/stream für reaktive Datenladung.
+    Dieser Endpoint wird in Version 4.0 entfernt.
+    """
+    ...
+```
+
+## L.6 Verfeinerte Szenario-Analyse
+
+### Szenario 1: Neue Adresse eingeben (COLD - EXISTIERT BEREITS ✅)
+
+```
+User gibt Adresse ein → SSE-Stream existiert!
+───────────────────────────────────────────────
+GET /building/data/stream?address=...
+
+├─ event: geocoding     (API-Call swisstopo, ~500ms)
+├─ event: gwr           (API-Call swisstopo, ~300ms)
+├─ event: polygon       (DB oder STAC API, 1ms-5s)
+├─ event: heights       (aus DB, ~1ms)
+├─ event: terrain       (API-Call swissALTI3D, ~200ms)
+├─ event: zones         (berechnet/Claude, ~100ms)
+└─ event: complete      (Signal)
+
+→ SEQUENTIELL mit Feedback weil APIs langsam
+→ Daten werden in DuckDB geschrieben
+→ SSE ist hier RICHTIG ✅ (bereits implementiert)
+```
+
+### Szenario 2: Projekt öffnen (WARM CACHE - OPTIMIERBAR)
+
+```
+User öffnet existierendes Projekt
+────────────────────────────────────────────────
+
+AKTUELL (suboptimal):
+┌─────────────────────────────────────────────┐
+│  GET /projects/{id}                         │
+│       │                                     │
+│       ▼                                     │
+│  geodata.polygon vorhanden?                 │
+│       │                                     │
+│  JA   │   NEIN                              │
+│  ↓    │   ↓                                 │
+│  Fast │   GET /configurator/facades         │
+│  Path │   (BLOCKIEREND, ~200-500ms)         │
+│       │                                     │
+│  ⚠️ PROBLEM: Fast Path hat KEINE           │
+│     building_walls / building_roofs!        │
+└─────────────────────────────────────────────┘
+
+ZIEL (optimiert):
+┌─────────────────────────────────────────────┐
+│  GET /projects/{id}                         │
+│       │                                     │
+│       ▼                                     │
+│  Alle Daten aus DuckDB PARALLEL laden:      │
+│  ┌─ polygon       ─┐                        │
+│  ├─ heights       ─┤                        │
+│  ├─ building_walls ─┼─→ ~10-50ms TOTAL     │
+│  ├─ building_roofs ─┤                       │
+│  ├─ terrain       ─┤                        │
+│  └─ facades       ─┘                        │
+│                                             │
+│  → Alles aus Cache = SCHNELL               │
+│  → Kein SSE nötig (REST reicht)            │
+│  → ABER: building_walls/roofs müssen       │
+│          im Project-Cache sein!             │
+└─────────────────────────────────────────────┘
+```
+
+### Szenario 3: Projekt öffnen + Daten fehlen (PARTIAL CACHE)
+
+```
+Einige Daten fehlen (z.B. building_walls noch nicht geladen)
+────────────────────────────────────────────────────────────
+
+ZIEL:
+┌─────────────────────────────────────────────┐
+│  GET /projects/{id}                         │
+│       │                                     │
+│       ▼                                     │
+│  Cache-Check: Was fehlt?                    │
+│       │                                     │
+│       ├─ polygon ✅ (aus Cache)             │
+│       ├─ heights ✅ (aus Cache)             │
+│       ├─ building_walls ❌ (fehlt!)         │
+│       ├─ building_roofs ❌ (fehlt!)         │
+│       └─ terrain ✅ (aus Cache)             │
+│                                             │
+│  → Fehlende Daten nachladen:               │
+│    SSE-Event "loading_3d_layers"            │
+│    → walls + roofs parallel aus GDB         │
+│    → In DB schreiben                        │
+│    SSE-Event "3d_layers_complete"           │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+## L.7 Naming-Refactoring: `geodata` → `geruestbaudata`
+
+### Problem: Unklares Naming
+
+**Aktuell:** `project.geodata` - generischer Name, unklare Struktur
+
+**Neu:** `project.geruestbaudata` - domänenspezifisch, klare Struktur
+
+### Neues Datenmodell: `GeruestbauData`
+
+```typescript
+// project.ts - NEU
+interface GeruestbauData {
+  // === GEBÄUDE (aus SmartBuildingService) ===
+  building: {
+    egid: string;
+    address: string;
+    polygon: number[][];           // Original aus swissBUILDINGS3D
+    polygon_simplified?: number[][]; // Vereinfacht für Fassaden
+    center_e: number;
+    center_n: number;
+    perimeter_m: number;
+    area_m2: number;
+  };
+
+  // === HÖHEN (aus swissBUILDINGS3D) ===
+  heights: {
+    traufhoehe_m: number;          // Traufhöhe relativ zu Terrain
+    firsthoehe_m: number;          // Firsthöhe relativ zu Terrain
+    gebaeudehoehe_m: number;       // Gesamthöhe
+    terrain_height_m: number;      // Terrain-Höhe (m ü.M.)
+    source: 'swissBUILDINGS3D' | 'gwr_estimated' | 'manual';
+  };
+
+  // === 3D-LAYER (aus swissBUILDINGS3D Wall/Roof) ===
+  walls: BuildingWall[];           // Alle Wand-Polygone mit z_min/z_max
+  roofs: BuildingRoof[];           // Alle Dach-Polygone mit dach_min/max
+
+  // === TERRAIN (aus swissALTI3D) ===
+  terrain: {
+    height_m: number;              // Zentrale Terrain-Höhe
+    min_m: number;                 // Tiefster Punkt (Polygon-Ecken)
+    max_m: number;                 // Höchster Punkt
+    slope_m: number;               // Höhendifferenz
+    slope_class: 'eben' | 'leicht' | 'mittel' | 'stark';
+    requires_level_compensation: boolean;
+  };
+
+  // === ZONEN (aus SmartBuildingService) ===
+  zones: ZoneInfo[];               // Gebäudezonen (Hauptgebäude, Turm, etc.)
+
+  // === STRASSEN/ZUFAHRT (GEPLANT - aus swisstopo TLM) ===
+  astra?: {
+    nearest_road_m: number;        // Distanz zur nächsten Strasse
+    road_type: string;             // Quartierstrasse, Hauptstrasse, etc.
+    access_points: AccessPoint[];  // Mögliche Zufahrten
+  };
+
+  // === META ===
+  fetched_at: string;              // Wann wurden Daten geladen
+  data_quality: 'complete' | 'partial' | 'minimal';
+  missing_data?: string[];         // Was fehlt noch
+}
+```
+
+### Mapping Alt → Neu
+
+| Alt (`geodata.xxx`) | Neu (`geruestbaudata.xxx`) |
+|---------------------|----------------------------|
+| `polygon` | `building.polygon` |
+| `traufhoehe_m` | `heights.traufhoehe_m` |
+| `firsthoehe_m` | `heights.firsthoehe_m` |
+| `terrain_height_m` | `terrain.height_m` |
+| `slope_m` | `terrain.slope_m` |
+| `building_walls` | `walls` |
+| `building_roofs` | `roofs` |
+| `zones` | `zones` |
+| *(neu)* | `astra` |
+
+## L.8 Datenfluss-Optimierung
+
+### Prinzip: SmartBuildingService liefert ORIGINAL-Daten
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATENFLUSS-ARCHITEKTUR                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SZENARIO 1: Neue Adresse (SSE)                                │
+│  ═══════════════════════════════                                │
+│                                                                 │
+│  User gibt Adresse ein                                          │
+│       │                                                         │
+│       ▼                                                         │
+│  SmartBuildingService.collect_all_data()                       │
+│       │                                                         │
+│       ├─► swisstopo API (Geocoding, GWR)                       │
+│       ├─► swissBUILDINGS3D (Polygon, Höhen, Walls, Roofs)      │
+│       ├─► swissALTI3D (Terrain)                                │
+│       └─► Claude API (Zonen bei komplexen Gebäuden)            │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  ORIGINAL-DATEN (unverändert von APIs)                  │   │
+│  │  → In DuckDB speichern (building_3d.duckdb)             │   │
+│  │  → Via SSE ans Frontend streamen                        │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│       │                                                         │
+│       ▼                                                         │
+│  Frontend (geruestbau-app)                                     │
+│       │                                                         │
+│       ├─► Polygon vereinfachen (Douglas-Peucker)               │
+│       ├─► Fassaden-Höhen matchen (walls ↔ sides)               │
+│       ├─► 3D-Visualisierung rendern                            │
+│       └─► Gerüst-Konfiguration berechnen                       │
+│       │                                                         │
+│       ▼                                                         │
+│  User klickt "Projekt erstellen"                               │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  PROJEKT SPEICHERN (geruestbau.db)                      │   │
+│  │  → project.geruestbaudata = ALLE Original-Daten         │   │
+│  │  → project.config = User-Einstellungen                  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SZENARIO 2: Projekt öffnen (WARM CACHE)                       │
+│  ═══════════════════════════════════════                        │
+│                                                                 │
+│  User öffnet Projekt                                            │
+│       │                                                         │
+│       ▼                                                         │
+│  GET /projects/{id}                                            │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  project.geruestbaudata VORHANDEN?                      │   │
+│  │                                                         │   │
+│  │  JA → Alle Daten sofort verfügbar:                      │   │
+│  │       • building (polygon, center, area)                │   │
+│  │       • heights (trauf, first, terrain)                 │   │
+│  │       • walls[] (3D-Geometrie)                          │   │
+│  │       • roofs[] (3D-Geometrie)                          │   │
+│  │       • terrain (slope, compensation)                   │   │
+│  │       • zones[]                                         │   │
+│  │       → KEIN API-Call nötig!                            │   │
+│  │       → ~10-50ms Ladezeit                               │   │
+│  │                                                         │   │
+│  │  NEIN (Legacy-Projekt) → Daten nachladen:               │   │
+│  │       → SSE-Stream für fehlende Daten                   │   │
+│  │       → In project.geruestbaudata speichern             │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Vorteile dieser Architektur
+
+| Aspekt | Aktuell | Neu |
+|--------|---------|-----|
+| **Projekt öffnen** | 200-500ms (API-Call) | **10-50ms** (aus DB) |
+| **3D-Daten** | Fehlen im Cache | ✅ Vollständig |
+| **Offline-fähig** | Nein | Ja (alles im Projekt) |
+| **Konsistenz** | Daten können sich ändern | Snapshot beim Erstellen |
+| **Naming** | `geodata` (unklar) | `geruestbaudata` (klar) |
+
+### Multi-Adresse SSE (NEU 18.01.2026)
+
+**Refaktorierung:** Single- und Multi-Adressen verwenden denselben SSE-Endpunkt
+mit EINER Methode `stream_building_data()`.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│             MULTI-ADRESSE SSE ARCHITECTURE                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Adresse eingeben: "Knospenweg 4-6, Bern"                      │
+│       │                                                         │
+│       ▼                                                         │
+│  Frontend: startStream(address)                                 │
+│       │                                                         │
+│       ▼                                                         │
+│  Backend: stream_building_data(address)                        │
+│       │                                                         │
+│       ├─► _is_multi_address() → true (4-6 erkannt)             │
+│       │                                                         │
+│       ├─► AddressParser.parse() → ["Knospenweg 4", "Knospenweg 6"] │
+│       │                                                         │
+│       └─► Für JEDE Adresse:                                     │
+│           ├─► Geocoding + GWR                                   │
+│           ├─► Polygon + Höhen                                   │
+│           ├─► Terrain                                           │
+│           ├─► Zonen                                             │
+│           └─► Research                                          │
+│       │                                                         │
+│       ▼                                                         │
+│  SSE Events:                                                    │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Single:                                                 │   │
+│  │    {matched_address: "...", egid: "...", polygon: [...]} │   │
+│  │                                                         │   │
+│  │  Multi:                                                  │   │
+│  │    {buildings: [{...}, {...}], building_count: 2}       │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│       │                                                         │
+│       ▼                                                         │
+│  Frontend prüft: if (data.buildings) → Multi else → Single     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Geänderte Dateien:**
+
+| Datei | Änderung |
+|-------|----------|
+| `building_data_stream.py` | EINE Methode `stream_building_data()` für Single+Multi |
+| `GeodataStep.tsx` | Immer `startStream()` verwenden (kein `loadMultiAddress`) |
+| `useBuildingDataStream.ts` | `CompleteData.buildings[]` Interface hinzugefügt |
+| `project.ts` | `BuildingEntry` mit vollen 3D-Daten |
+
+**Vorteile:**
+- Kein Code-Duplizierung mehr (vorher: `_stream_multi_building_data`)
+- Einheitliches Event-Format erkennt Single/Multi automatisch
+- Alle Gebäude bekommen volle 3D-Daten (Polygon, Höhen, Walls, Roofs)
+
+## L.9 Implementierungsplan
+
+### Phase 1: Datenmodell (P0)
+
+```typescript
+// 1. Neues Interface definieren
+interface GeruestbauData { ... }
+
+// 2. Migrations-Helper für alte Projekte
+function migrateGeodataToGeruestbaudata(geodata: Geodata): GeruestbauData
+
+// 3. Project-Interface erweitern
+interface Project {
+  // ... bestehende Felder ...
+  geodata?: Geodata;                    // DEPRECATED
+  geruestbaudata?: GeruestbauData;      // NEU
+}
+```
+
+### Phase 2: Backend-Anpassungen (P1)
+
+```python
+# geruestbau.py
+
+# 1. Beim Projekt-Erstellen: Alle Daten speichern
+@router.post("/projects")
+async def create_project(...):
+    # SmartBuildingService liefert Original-Daten
+    building_data = await smart_building_service.collect_all_data(address)
+
+    # In geruestbaudata-Format konvertieren
+    geruestbaudata = {
+        "building": { ... },
+        "heights": { ... },
+        "walls": building_data.building_walls,
+        "roofs": building_data.building_roofs,
+        "terrain": { ... },
+        "zones": building_data.zones,
+        "fetched_at": datetime.now().isoformat(),
+        "data_quality": "complete"
+    }
+
+    # Projekt mit allen Daten speichern
+    project.geruestbaudata = geruestbaudata
+    save_project(project)
+
+# 2. Beim Projekt-Laden: Daten aus DB
+@router.get("/projects/{id}")
+async def get_project(id: str):
+    project = load_project(id)
+
+    # Alte Projekte migrieren
+    if project.geodata and not project.geruestbaudata:
+        project.geruestbaudata = migrate_geodata(project.geodata)
+        save_project(project)  # Migration persistieren
+
+    return project
+```
+
+### Phase 3: Frontend-Anpassungen (P1)
+
+```typescript
+// ConfiguratorPage.tsx
+
+const handleProjectLoaded = async (project: ProjectWithGeodata) => {
+  // NEU: geruestbaudata hat Priorität
+  if (project.geruestbaudata) {
+    console.log('Using geruestbaudata from project cache');
+
+    // Alle Daten direkt verfügbar!
+    setBuildingData({
+      building: project.geruestbaudata.building,
+      heights: project.geruestbaudata.heights,
+      walls: project.geruestbaudata.walls,
+      roofs: project.geruestbaudata.roofs,
+      terrain: project.geruestbaudata.terrain,
+      zones: project.geruestbaudata.zones,
+    });
+
+    setLoadingState('success');
+    return;
+  }
+
+  // FALLBACK: Alte Projekte mit geodata
+  if (project.geodata?.polygon) {
+    // Migration im Frontend
+    const geruestbaudata = migrateGeodataToGeruestbaudata(project.geodata);
+    // ... Rest wie bisher
+  }
+
+  // FALLBACK: Kein Cache → API-Call
+  await fetchBuildingData(project.address, project);
+};
+```
+
+## L.10 Priorisierte TODO-Liste (aktualisiert)
+
+| # | Task | Beschreibung | Priorität |
+|---|------|--------------|-----------|
+| 1 | **GeruestbauData Interface** | Neues Datenmodell definieren | **P0** |
+| 2 | **Migration geodata → geruestbaudata** | Alte Projekte konvertieren | **P0** |
+| 3 | Projekt-Erstellen anpassen | Alle Daten in geruestbaudata speichern | P1 |
+| 4 | Projekt-Laden anpassen | geruestbaudata nutzen wenn vorhanden | P1 |
+| 5 | SSE-Stream für fehlende Daten | Nur nachladen was fehlt | P2 |
+| 6 | ASTRA-Integration | Strassen/Zufahrt-Daten | P3 |
+
+## L.11 Altlasten & Prüfpunkte (VOR Implementierung prüfen!)
+
+**⚠️ WICHTIG:** Nichts kaputt machen was im aktuellen Branch funktioniert!
+
+### 1. Heights-Berechnung (Altlast)
+
+**Aktuell:** `heights.traufhoehe_m`, `heights.firsthoehe_m` werden aus swissBUILDINGS3D **direkt** geladen (DACH_MIN, DACH_MAX).
+
+**Problem:** Diese globalen Höhen sind oft **falsch** für komplexe Gebäude (z.B. Bundeshaus: 14.5m ist nur Arkaden-Höhe!).
+
+**Ziel:** Heights sollten **aus den `walls` berechnet** werden:
+- `traufhoehe_m` = min(wall.z_max) - terrain_height (niedrigste Wandoberkante)
+- `firsthoehe_m` = max(roof.dach_max) - terrain_height (höchste Dachoberktane)
+
+**Prüfen vor Änderung:**
+- [ ] Wo werden heights aktuell berechnet/geladen? (SmartBuildingService?)
+- [ ] Welche Komponenten nutzen diese Werte?
+- [ ] Gibt es Fallbacks wenn keine walls vorhanden?
+- [ ] Was passiert bei Gebäuden ohne 3D-Layer?
+
+### 2. Aktuelle Implementierung (Branch-Stand)
+
+Was funktioniert aktuell im Branch:
+- ✅ `building_walls` und `building_roofs` werden aus DB geladen
+- ✅ 3D-Dach-Rendering mit `createRoofFrom3DGeometry()`
+- ✅ `/configurator/facades` liefert walls und roofs
+- ✅ `BuildingWall` und `BuildingRoof` Interfaces definiert
+
+**Nicht ändern ohne Prüfung:**
+- `ScaffoldScene.tsx` - 3D-Rendering funktioniert
+- `polygonSimplifier.ts` - Fassaden-Vereinfachung
+- `/configurator/facades` Endpoint - liefert alle Daten
+
+### 3. Naming-Konsistenz prüfen
+
+| Ort | Aktuelles Naming | Ziel-Naming |
+|-----|------------------|-------------|
+| DB-Tabelle | `building_walls` | `building_walls` ✅ |
+| API-Response | `building_walls` | `walls` (in geruestbaudata) |
+| TypeScript | `BuildingWall` | `BuildingWall` ✅ |
+| `geodata.xxx` | `building_walls` | `geruestbaudata.walls` |
+
+---
+
 # Änderungshistorie
 
 | Datum | Version | Änderung |
 |-------|---------|----------|
+| 18.01.2026 | 3.14 | facades[] Array mit konstanter Traufhöhe + is_gable Flag (FIX Gerüsthöhen-Berechnung) |
+| 18.01.2026 | 3.13 | SSE Multi-Adresse: EINE Methode für Single+Multi (stream_building_data refaktoriert) |
+| 16.01.2026 | 3.12 | Teil L: Reaktive SSE-Architektur (Ziel-Architektur) |
 | 15.01.2026 | 3.11 | Teil I: Blocking-Architektur Refactoring, Teil J: Storage-Strategie, Teil K: Projektspezifische 3D-Daten |
 | 14.01.2026 | 3.10 | T1-T4 Fassaden-Höhen End-to-End implementiert |
 | 12.01.2026 | 3.9 | Teil H: Terrain/Hanglage Architecture mit TODOs |

@@ -19,9 +19,9 @@ Schema:
     buildings_3d (
         egid INTEGER PRIMARY KEY,
         polygon JSON,           -- [[e,n], [e,n], ...]
-        traufhoehe_m REAL,
-        firsthoehe_m REAL,
-        gebaeudehoehe_m REAL,
+        traufhoehe_m REAL,      -- DACH_MIN - GELAENDEPUNKT (Schätzung)
+        firsthoehe_m REAL,      -- DACH_MAX - GELAENDEPUNKT (Schätzung)
+        gebaeudehoehe_m REAL,   -- GESAMTHOEHE aus swissBUILDINGS3D
         area_m2 REAL,
         perimeter_m REAL,
         center_e REAL,          -- LV95 Zentroid
@@ -29,7 +29,6 @@ Schema:
         tile_id TEXT,           -- Quell-Tile für Debugging
         imported_at TIMESTAMP,
         source TEXT,            -- 'swissBUILDINGS3D_3.0'
-        -- NEU 11.01.2026: Erweiterte Attribute
         objektart TEXT,         -- Gebäudetyp aus swissBUILDINGS3D
         name_komplett TEXT,     -- Gebäudename (wenn vorhanden)
         gebaeude_nutzung TEXT,  -- Nutzungsart
@@ -39,6 +38,11 @@ Schema:
         roof_orientation TEXT,  -- First-Verlauf (N-S, O-W, etc.)
         has_3d_layers INTEGER   -- Flag für erweiterte 3D-Daten
     )
+
+    HINWEIS 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
+    Berechnung: DACH_MIN/DACH_MAX - GELAENDEPUNKT (Schätzung, ~1-2m ungenau bei Hanglagen).
+    Für Hauptgebäude: Exakte Berechnung via Terrain-Sampling (swissALTI3D).
+    Für Nachbarn: Schätzung aus swissBUILDINGS3D reicht für 3D-Visualisierung.
 
     building_roofs (id, gebaeudeeinheit, egid, dach_min, dach_max,
                     roof_form, roof_angle_deg, roof_orientation, z_levels,
@@ -60,7 +64,7 @@ Verwendung:
     building = service.get_by_egid(1243792)
     if building:
         polygon = building['polygon']
-        traufhoehe = building['traufhoehe_m']
+        gebaeudehoehe = building['gebaeudehoehe_m']
 """
 
 import json
@@ -543,6 +547,7 @@ class Building3DService:
         if polygon and not isinstance(polygon, str):
             polygon = json.dumps(polygon)
 
+        # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt (Schätzung für Nachbarn)
         params = (
             egid,
             polygon,
@@ -584,9 +589,13 @@ class Building3DService:
 
         NEU 14.01.2026: UPSERT-Logik - nur Gebäude OHNE 3D-Layer werden aktualisiert!
         Gebäude mit has_3d_layers=1 behalten ihre detaillierten Daten.
+
+        FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
+        Schätzung aus GELAENDEPUNKT für Nachbar-Gebäude.
         """
         if self._prepared_insert is None:
             # UPSERT: INSERT neue Gebäude, UPDATE nur wenn has_3d_layers=0
+            # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wieder dabei (19 Spalten)
             self._prepared_insert = """
                 INSERT INTO buildings_3d
                 (egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
@@ -738,6 +747,7 @@ class Building3DService:
             if polygon and not isinstance(polygon, str):
                 polygon = json.dumps(polygon)
 
+            # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt
             prepared_data.append((
                 egid,
                 polygon,
@@ -750,7 +760,6 @@ class Building3DService:
                 building.get('center_n') or building.get('coord_n'),
                 tile_id or building.get('tile_id'),
                 building.get('source', 'swissBUILDINGS3D_3.0'),
-                # Erweiterte Attribute (11.01.2026)
                 building.get('objektart'),
                 building.get('name_komplett'),
                 building.get('gebaeude_nutzung'),
@@ -1042,11 +1051,13 @@ if __name__ == "__main__":
         building = service.get_by_egid(args.lookup)
         if building:
             print(f"Found building EGID {args.lookup}:")
-            print(f"  Traufhoehe: {building.get('traufhoehe_m')}m")
-            print(f"  Firsthoehe: {building.get('firsthoehe_m')}m")
+            print(f"  Gebaeudehoehe: {building.get('gebaeudehoehe_m')}m")
             print(f"  Area: {building.get('area_m2')}m2")
             print(f"  Tile: {building.get('tile_id')}")
+            print(f"  has_3d_layers: {building.get('has_3d_layers')}")
             if building.get('polygon'):
                 print(f"  Polygon: {len(building['polygon'])} points")
+            # Hinweis: traufhoehe/firsthoehe kommen aus building_roofs
+            print(f"  Hinweis: Trauf-/Firsthöhe aus building_roofs.dach_min/dach_max")
         else:
             print(f"Building EGID {args.lookup} not found")

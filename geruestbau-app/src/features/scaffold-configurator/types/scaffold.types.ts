@@ -32,7 +32,8 @@ export interface SelectedFacade {
   // NEU 14.01.2026 21:15: Fassaden-spezifische Höhen für Hanglage-Gebäude
   facade_z_min?: number;      // Terrain-Höhe an dieser Fassade (m ü.M.)
   facade_z_max?: number;      // Wandoberkante an dieser Fassade (m ü.M.)
-  height_source?: 'wall_layer' | 'terrain_sampled' | 'global';
+  // NEU 15.01.2026 BUG-024: 'building_walls' für koordinatenbasiertes Matching
+  height_source?: 'wall_layer' | 'terrain_sampled' | 'global' | 'building_walls';
 }
 
 export type FacadeDirection = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -79,6 +80,8 @@ export interface RoofData {
   // Absolute Höhen für Transformation (m ü.M.)
   roof_dach_min_m?: number;  // Traufhöhe absolut
   roof_dach_max_m?: number;  // Firsthöhe absolut
+  // NEU 16.01.2026 14:50: Niedrigste Terrain-Höhe für konsistente 3D-Berechnung
+  terrain_z_min?: number;    // Niedrigstes Terrain (m ü.M.) aus facade_z_min
 }
 
 // Zone data for complex buildings (from known_buildings or Claude API)

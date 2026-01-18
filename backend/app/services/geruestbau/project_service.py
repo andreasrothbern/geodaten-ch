@@ -81,7 +81,12 @@ class ProjectService:
             'buildings': 'TEXT',        # Multi-Building Support (JSON array)
             'geruestbaudata': 'TEXT',   # DEPRECATED - Single-Building Format
             # NEU 16.01.2026: buildings_data als Record<EGID, GeruestbauData>
-            'buildings_data': 'TEXT',   # Multi-Building fähig: {"egid1": {...}, "egid2": {...}}
+            'buildings_data': 'TEXT',   # DEPRECATED 19.01.2026 - Geodaten per API laden!
+            # NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
+            # Siehe: docs/architecture/ARCHITECTURE.md
+            'center_e': 'REAL',         # Projekt-Zentrum LV95 E
+            'center_n': 'REAL',         # Projekt-Zentrum LV95 N
+            'project_egids': 'TEXT',    # JSON array: ["egid1", "egid2", ...]
         }
 
         for col_name, col_type in migrations.items():
@@ -120,6 +125,10 @@ class ProjectService:
 
         # FIX 10.01.2026 21:30 - Multi-Building Support: buildings als JSON speichern
         buildings_json = None
+        project_egids = []  # NEU 19.01.2026: Alle EGIDs sammeln
+        center_e = None  # NEU 19.01.2026: Projekt-Zentrum
+        center_n = None
+
         if hasattr(data, 'buildings') and data.buildings:
             buildings_list = [b.model_dump() if hasattr(b, 'model_dump') else b for b in data.buildings]
             buildings_json = json.dumps(buildings_list)
@@ -127,11 +136,42 @@ class ProjectService:
             if not egid and len(data.buildings) > 0:
                 first_building = data.buildings[0]
                 egid = first_building.egid if hasattr(first_building, 'egid') else first_building.get('egid')
+            # NEU 19.01.2026: Alle EGIDs sammeln
+            for b in data.buildings:
+                b_egid = b.egid if hasattr(b, 'egid') else b.get('egid')
+                if b_egid and b_egid not in project_egids:
+                    project_egids.append(b_egid)
+                # Koordinaten für Zentrum sammeln
+                b_coords = b.coordinates if hasattr(b, 'coordinates') else b.get('coordinates')
+                if b_coords and not center_e:
+                    center_e = b_coords.get('lv95_e') or b_coords.get('e')
+                    center_n = b_coords.get('lv95_n') or b_coords.get('n')
+
+        # NEU 19.01.2026: center_e/center_n aus geruestbaudata extrahieren
+        if hasattr(data, 'geruestbaudata') and data.geruestbaudata:
+            building_info = data.geruestbaudata.get('building', {})
+            if not center_e and building_info.get('center_e'):
+                center_e = building_info.get('center_e')
+                center_n = building_info.get('center_n')
+            # EGID aus geruestbaudata
+            if building_info.get('egid') and building_info.get('egid') not in project_egids:
+                # Multi-EGID Format: "123+456+789"
+                egid_str = str(building_info.get('egid'))
+                for e in egid_str.split('+'):
+                    if e and e not in project_egids:
+                        project_egids.append(e)
+
+        # Falls nur eine EGID bekannt, diese hinzufügen
+        if egid and egid not in project_egids:
+            project_egids.append(egid)
+
+        project_egids_json = json.dumps(project_egids) if project_egids else None
 
         cursor.execute('''
             INSERT INTO projects (id, name, address, status, egid, client_name,
-                                  client_contact, deadline, description, building_data, buildings, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  client_contact, deadline, description, building_data, buildings,
+                                  center_e, center_n, project_egids, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             project_id,
             data.name,
@@ -144,15 +184,41 @@ class ProjectService:
             description,
             building_data_json,
             buildings_json,
+            center_e,
+            center_n,
+            project_egids_json,
             now, now
         ))
 
         conn.commit()
         conn.close()
 
-        # NEU 16.01.2026: GeruestbauData automatisch speichern (inkl. 3D-Layer)
-        # Das macht das Projekt-Öffnen schneller (Fast Path in get_project_with_data)
-        if egid and data.address:
+        # NEU 18.01.2026: Wenn geruestbaudata vom Frontend mitgesendet wurde, direkt speichern
+        # Das ist der Fall bei:
+        # - Multi-Building: Frontend berechnet Union-Polygon und kombinierte Fassaden
+        # - Single-Building: Frontend hat bereits die Daten aus SSE-Streaming
+        if hasattr(data, 'geruestbaudata') and data.geruestbaudata:
+            try:
+                # EGID aus den Daten extrahieren (bei Multi-Building: "123+456+789")
+                egid_key = data.geruestbaudata.get('building', {}).get('egid', egid) or egid or 'combined'
+                buildings_data = {egid_key: data.geruestbaudata}
+
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE projects SET buildings_data = ?, updated_at = ? WHERE id = ?
+                ''', (
+                    json.dumps(buildings_data),
+                    datetime.utcnow().isoformat(),
+                    project_id
+                ))
+                conn.commit()
+                conn.close()
+                logger.info(f"[PROJECT] Frontend geruestbaudata direkt gespeichert für {project_id} (EGID: {egid_key})")
+            except Exception as e:
+                logger.warning(f"[PROJECT] Fehler beim Speichern von Frontend geruestbaudata: {e}")
+        # Fallback: Daten vom SmartBuildingService laden (nur wenn kein geruestbaudata vorhanden)
+        elif egid and data.address:
             try:
                 await self.save_geruestbaudata_to_project(project_id, egid, data.address)
                 logger.info(f"[PROJECT] GeruestbauData automatisch gespeichert für {project_id}")
@@ -375,6 +441,10 @@ class ProjectService:
                 "slope_m": bundle.terrain.slope_m if bundle.terrain else 0,
                 "slope_class": bundle.terrain.slope_class if bundle.terrain else "eben",
                 "requires_level_compensation": (bundle.terrain.slope_m or 0) > 0.5 if bundle.terrain else False,
+                # NEU 16.01.2026: Fassaden-spezifische Höhen für Hanglage-Berechnung
+                # Siehe docs/architecture/3D_LAYER_USAGE_SCAFFOLDING.md
+                "facade_z_min": bundle.terrain.facade_z_min if bundle.terrain else {},
+                "facade_z_max": bundle.terrain.facade_z_max if bundle.terrain else {},
             } if bundle.terrain else {
                 "height_m": 0,
                 "min_m": 0,
@@ -382,6 +452,8 @@ class ProjectService:
                 "slope_m": 0,
                 "slope_class": "eben",
                 "requires_level_compensation": False,
+                "facade_z_min": {},
+                "facade_z_max": {},
             },
             "zones": [
                 {
@@ -481,13 +553,21 @@ class ProjectService:
 
         NEU 16.01.2026: buildings_data als Record<EGID, GeruestbauData>.
         Unterstützt Single- und Multi-Building Projekte.
+
+        NEU 18.01.2026: Performance-Logging für Baseline-Messung.
         """
+        import time
+        total_start = time.time()
+
         project = await self.get_project(project_id)
         if not project:
             return None
 
         buildings_data = None
         geruestbaudata = None  # Legacy Fallback
+
+        # NEU 18.01.2026: DB-Query Timing
+        db_query_start = time.time()
 
         # buildings_data aus Projekt laden (NEU)
         conn = sqlite3.connect(self.db_path)
@@ -497,11 +577,19 @@ class ProjectService:
         row = cursor.fetchone()
         conn.close()
 
+        db_query_ms = (time.time() - db_query_start) * 1000
+
+        # NEU 18.01.2026: JSON Parse Timing
+        json_parse_start = time.time()
+        data_size_bytes = 0
+
         if row:
             # Neues Format: buildings_data (Record mit EGID als Key)
             if row['buildings_data']:
                 try:
-                    buildings_data = json.loads(row['buildings_data'])
+                    raw_json = row['buildings_data']
+                    data_size_bytes = len(raw_json) if raw_json else 0
+                    buildings_data = json.loads(raw_json)
                     egid_count = len(buildings_data)
                     logger.info(f"[PROJECT] buildings_data geladen für {project_id} ({egid_count} Gebäude)")
                 except json.JSONDecodeError:
@@ -510,7 +598,9 @@ class ProjectService:
             # Legacy Fallback: geruestbaudata (Single-Building)
             if not buildings_data and row['geruestbaudata']:
                 try:
-                    geruestbaudata = json.loads(row['geruestbaudata'])
+                    raw_json = row['geruestbaudata']
+                    data_size_bytes = len(raw_json) if raw_json else 0
+                    geruestbaudata = json.loads(raw_json)
                     # Migration: Legacy zu buildings_data konvertieren
                     if geruestbaudata and geruestbaudata.get('building', {}).get('egid'):
                         egid = geruestbaudata['building']['egid']
@@ -518,6 +608,17 @@ class ProjectService:
                         logger.info(f"[PROJECT] Legacy geruestbaudata zu buildings_data migriert für {project_id}")
                 except json.JSONDecodeError:
                     logger.warning(f"[PROJECT] geruestbaudata JSON ungültig für {project_id}")
+
+        json_parse_ms = (time.time() - json_parse_start) * 1000
+        total_ms = (time.time() - total_start) * 1000
+
+        # NEU 18.01.2026: Performance-Log
+        data_size_kb = data_size_bytes / 1024
+        logger.info(
+            f"[PERF] Projekt laden: {total_ms:.1f}ms total | "
+            f"DB-Query: {db_query_ms:.1f}ms | JSON-Parse: {json_parse_ms:.1f}ms | "
+            f"Daten: {data_size_kb:.1f}KB"
+        )
 
         return ProjectWithGeruestbaudata(
             **project.model_dump(),
@@ -667,6 +768,9 @@ class ProjectService:
     def _row_to_project(self, row) -> Project:
         """SQLite Row zu Project Model konvertieren.
 
+        NEU 19.01.2026: center_e, center_n, project_egids hinzugefügt.
+        Geodaten werden beim Projekt-Öffnen per API geladen (nicht mehr in buildings_data).
+
         HINWEIS: building_data wird nicht mehr im Project gespeichert.
         Enrichment-Daten (Terrain, Hanglage) sind in building_contexts.db → building_environment.
         """
@@ -681,6 +785,19 @@ class ProjectService:
             except (json.JSONDecodeError, TypeError, Exception) as e:
                 print(f"[Gerüstbau] Fehler beim Parsen von buildings: {e}")
 
+        # NEU 19.01.2026: project_egids aus JSON parsen
+        project_egids = []
+        project_egids_json = row['project_egids'] if 'project_egids' in row.keys() else None
+        if project_egids_json:
+            try:
+                project_egids = json.loads(project_egids_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # NEU 19.01.2026: center_e, center_n aus DB
+        center_e = row['center_e'] if 'center_e' in row.keys() else None
+        center_n = row['center_n'] if 'center_n' in row.keys() else None
+
         return Project(
             id=row['id'],
             name=row['name'],
@@ -688,6 +805,9 @@ class ProjectService:
             status=ProjectStatus(row['status']),
             egid=row['egid'],
             buildings=buildings,
+            center_e=center_e,
+            center_n=center_n,
+            project_egids=project_egids,
             client_name=row['client_name'],
             client_contact=row['client_contact'],
             deadline=datetime.fromisoformat(row['deadline']) if row['deadline'] else None,

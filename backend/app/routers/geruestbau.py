@@ -20,7 +20,9 @@ from ..services.swisstopo import SwisstopoService
 from ..services.roof import get_roof_service
 from ..services.address_parser import get_address_parser
 from ..services.parzellen_service import get_parzellen_service
-from ..services.neighbors_service import get_neighbors_service
+# FIX 19.01.2026: get_neighbors_service Import entfernt - nutze GeodatenClient stattdessen
+# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+from ..config import NEIGHBOR_SEARCH_RADIUS_M
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["GerÃ¼stbau"])
 
@@ -143,11 +145,109 @@ async def save_geruestbaudata(
         return {"success": False, "message": "Fehler beim Speichern der GeruestbauData"}
 
 
+# NEU 19.01.2026: Geodaten per API laden (Architektur-Trennung)
+@router.get("/projects/{project_id}/geodata", response_model=Dict[str, Any])
+async def get_project_geodata(
+    project_id: str,
+    radius_m: float = Query(100, ge=1, le=500, description="Suchradius in Metern"),
+    include_walls: bool = Query(True, description="3D-Wall-Daten mitliefern"),
+    include_roofs: bool = Query(True, description="3D-Roof-Daten mitliefern")
+):
+    """
+    NEU 19.01.2026: Lädt Geodaten für ein Projekt per GeodatenClient.
+
+    Diese Methode ersetzt das Speichern von buildings_data im Projekt.
+    Stattdessen werden die Geodaten beim Öffnen des Projekts per API geladen.
+
+    Datenfluss:
+    1. Projekt laden → center_e, center_n, project_egids
+    2. GeodatenClient.get_buildings_in_area() → Alle Gebäude im Umkreis
+    3. Kategorisierung: project_egids → Projekt-Gebäude, Rest → Nachbarn
+
+    Returns:
+        {
+            "project_buildings": [...],  # Gebäude die zum Projekt gehören
+            "neighbors": [...],           # Nachbar-Gebäude
+            "center": {"e": ..., "n": ...},
+            "radius_m": 100,
+            "query_time_ms": 1.2
+        }
+
+    Siehe: docs/architecture/ARCHITECTURE.md → "Koordinaten-basierte API Strategie"
+    """
+    from app.services.geodaten_client import get_geodaten_client
+
+    # 1. Projekt laden
+    project = await project_service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+
+    # 2. Koordinaten und EGIDs aus Projekt
+    center_e = project.center_e
+    center_n = project.center_n
+    project_egids = project.project_egids or []
+
+    # Fallback: EGIDs aus buildings[] (für ältere Projekte ohne project_egids)
+    if not project_egids and project.buildings:
+        project_egids = [b.egid for b in project.buildings if b.egid]
+
+    # Auch das einzelne egid-Feld berücksichtigen
+    if project.egid and project.egid not in project_egids:
+        # Multi-EGID Format: "1243790+1243792" aufteilen
+        for egid in project.egid.split('+'):
+            if egid and egid not in project_egids:
+                project_egids.append(egid)
+
+    # Fallback: Falls keine Koordinaten gespeichert, aus erstem Building
+    if not center_e and project.buildings:
+        first_building = project.buildings[0]
+        if first_building.coordinates:
+            center_e = first_building.coordinates.get('lv95_e') or first_building.coordinates.get('e')
+            center_n = first_building.coordinates.get('lv95_n') or first_building.coordinates.get('n')
+
+    if not center_e or not center_n:
+        raise HTTPException(
+            status_code=400,
+            detail="Projekt hat keine Koordinaten. Bitte Projekt mit Adresse erstellen."
+        )
+
+    # 3. Geodaten per API laden
+    client = get_geodaten_client()
+    area_response = await client.get_buildings_in_area(
+        e=center_e,
+        n=center_n,
+        radius_m=radius_m,
+        include_walls=include_walls,
+        include_roofs=include_roofs
+    )
+
+    # 4. Kategorisierung: Projekt-Gebäude vs. Nachbarn
+    project_buildings = []
+    neighbors = []
+
+    for building in area_response.buildings:
+        building_dict = building.to_dict() if hasattr(building, 'to_dict') else building
+        if building.egid in project_egids:
+            project_buildings.append(building_dict)
+        else:
+            neighbors.append(building_dict)
+
+    return {
+        "project_buildings": project_buildings,
+        "neighbors": neighbors,
+        "center": area_response.center,
+        "radius_m": area_response.radius_m,
+        "buildings_count": area_response.buildings_count,
+        "project_egids": project_egids,
+        "query_time_ms": area_response.query_time_ms
+    }
+
+
 @router.post("/projects/{project_id}/export")
 async def export_project(project_id: str, format: str = "pdf"):
     """Projekt exportieren (pdf, ifc, dxf, xlsx)."""
     if format not in ["pdf", "xlsx", "ifc", "dxf"]:
-        raise HTTPException(status_code=400, detail="UngÃ¼ltiges Format")
+        raise HTTPException(status_code=400, detail="Ungültiges Format")
     return await project_service.export_project(project_id, format)
 
 
@@ -356,11 +456,13 @@ async def get_facade_data_for_configurator(
 
     try:
         # SmartBuildingService liefert zones, building_name, complexity, research_source
+        # NEU 16.01.2026: include_terrain=True für fassaden-spezifische Höhen
         bundle = await smart_service.collect_all_data(
             address=address,
             force_refresh=False,
             include_research=True,
-            include_zones_analysis=False,  # Nur bekannte GebÃ¤ude, keine neue Claude-Analyse
+            include_zones_analysis=False,  # Nur bekannte Gebäude, keine neue Claude-Analyse
+            include_terrain=True,  # Fassaden-Höhen aus Terrain-Sampling
         )
 
         if bundle.zones:
@@ -447,14 +549,24 @@ async def get_facade_data_for_configurator(
                         geom = shapely_wkb.loads(wall_wkb)
                         geometry_type = geom.geom_type
 
-                        # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
-                        # Frontend erwartet: coords_3d[polygon][point] = [E, N, Z]
+                        # FIX 16.01.2026 21:30: OGC-Standard Ring-Struktur BEIBEHALTEN!
+                        # MultiPolygon[Polygon[Ring[Point]]] für U-Form, Löcher, Innenhöfe
+                        # Polygon: coords_3d[ring_index][point_index] = [E, N, Z]
+                        # MultiPolygon: coords_3d[polygon_index][ring_index][point_index] = [E, N, Z]
                         if geom.geom_type == 'Polygon':
-                            coords_3d = [[list(c) for c in geom.exterior.coords]]
+                            # Alle Rings: exterior + interiors (Löcher)
+                            coords_3d = [
+                                [list(c) for c in ring.coords]
+                                for ring in [geom.exterior] + list(geom.interiors)
+                            ]
 
                         elif geom.geom_type == 'MultiPolygon':
+                            # Jedes Polygon mit allen seinen Rings
                             coords_3d = [
-                                [list(c) for c in poly.exterior.coords]
+                                [
+                                    [list(c) for c in ring.coords]
+                                    for ring in [poly.exterior] + list(poly.interiors)
+                                ]
                                 for poly in geom.geoms
                             ]
 
@@ -499,14 +611,24 @@ async def get_facade_data_for_configurator(
                         geom = shapely_wkb.loads(roof_wkb)
                         geometry_type = geom.geom_type
 
-                        # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
-                        # Frontend erwartet: coords_3d[polygon][point] = [E, N, Z]
+                        # FIX 16.01.2026 21:30: OGC-Standard Ring-Struktur BEIBEHALTEN!
+                        # MultiPolygon[Polygon[Ring[Point]]] für U-Form, Löcher, Innenhöfe
+                        # Polygon: coords_3d[ring_index][point_index] = [E, N, Z]
+                        # MultiPolygon: coords_3d[polygon_index][ring_index][point_index] = [E, N, Z]
                         if geom.geom_type == 'Polygon':
-                            coords_3d = [[list(c) for c in geom.exterior.coords]]
+                            # Alle Rings: exterior + interiors (Löcher)
+                            coords_3d = [
+                                [list(c) for c in ring.coords]
+                                for ring in [geom.exterior] + list(geom.interiors)
+                            ]
 
                         elif geom.geom_type == 'MultiPolygon':
+                            # Jedes Polygon mit allen seinen Rings
                             coords_3d = [
-                                [list(c) for c in poly.exterior.coords]
+                                [
+                                    [list(c) for c in ring.coords]
+                                    for ring in [poly.exterior] + list(poly.interiors)
+                                ]
                                 for poly in geom.geoms
                             ]
 
@@ -533,6 +655,39 @@ async def get_facade_data_for_configurator(
         except Exception as roof_err:
             logger.warning(f"Building roofs konnten nicht geladen werden: {roof_err}")
 
+    # FIX 16.01.2026 15:30: Korrekte Traufhöhen-Berechnung bei Hanglagen
+    # Das alte traufhoehe_m aus swissBUILDINGS3D verwendet GELAENDEPUNKT (ein einzelner Punkt),
+    # der bei Hanglagen NICHT das niedrigste Terrain ist.
+    #
+    # Korrekte Berechnung: dach_min (m ü.M.) - min(facade_z_min) (niedrigstes Terrain)
+    #
+    # Beispiel Knospenweg 9:
+    #   ALT:  traufhoehe_m = 562.94 - 557.45 = 5.49m (GELAENDEPUNKT)
+    #   NEU:  traufhoehe_m = 562.94 - 555.80 = 7.14m (min(facade_z_min))
+    #
+    # Die korrigierten Werte werden im roof-Objekt als 'traufhoehe_m' und 'firsthoehe_m' geliefert.
+    # Das Frontend verwendet diese für die konsistente 3D-Darstellung.
+    if bundle and bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.facade_z_min:
+        min_terrain = min(bundle.terrain.facade_z_min.values())
+        corrected_trauf = round(bundle.roof_dach_min_m - min_terrain, 2)
+
+        # Auch firsthoehe korrigieren wenn verfügbar
+        corrected_first = None
+        if bundle.roof_dach_max_m:
+            corrected_first = round(bundle.roof_dach_max_m - min_terrain, 2)
+
+        # Log zur Diagnose
+        logger.info(
+            f"[HEIGHT-FIX] Traufhöhe korrigiert: {trauf_height:.2f}m → {corrected_trauf:.2f}m "
+            f"(dach_min={bundle.roof_dach_min_m:.2f}, min_terrain={min_terrain:.2f})"
+        )
+
+        # Überschreibe die alten Werte
+        trauf_height = corrected_trauf
+        if corrected_first:
+            first_height = corrected_first
+            logger.info(f"[HEIGHT-FIX] Firsthöhe korrigiert: → {corrected_first:.2f}m")
+
     # 8. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
 
@@ -550,12 +705,16 @@ async def get_facade_data_for_configurator(
         },
         "selected_facades": selected_facades,
         "roof": {
-            **roof_data.to_dict(),
+            # FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m aus roof_data.to_dict() ENTFERNT!
+            # Stattdessen nur Rohdaten liefern - Frontend berechnet selbst.
+            **{k: v for k, v in roof_data.to_dict().items() if k not in ('traufhoehe_m', 'firsthoehe_m')},
             # NEU 14.01.2026: Echte 3D-Dachgeometrie aus swissBUILDINGS3D
             "roof_geometry_coords": roof_geometry_coords,
             "has_roof_geometry": roof_geometry_coords is not None and len(roof_geometry_coords) > 0,
+            # Rohdaten für Höhenberechnung (Frontend: trauf = dach_min - terrain_z_min)
             "roof_dach_min_m": bundle.roof_dach_min_m if bundle else None,
             "roof_dach_max_m": bundle.roof_dach_max_m if bundle else None,
+            "terrain_z_min": min(bundle.terrain.facade_z_min.values()) if bundle and bundle.terrain and bundle.terrain.facade_z_min else None,
         },
         # Zonen-Daten für komplexe GebÃ¤ude (NEU 05.01.2026)
         "zones": zones_data,
@@ -568,6 +727,22 @@ async def get_facade_data_for_configurator(
         # NEU 15.01.2026 23:30: Building Roofs direkt aus DB (DB-Naming!)
         # Analog zu building_walls: volle 3D-Geometrie für Dach-Rendering
         "building_roofs": building_roofs,
+        # NEU 16.01.2026 21:45: Fassaden-spezifische Höhen aus Terrain-Sampling
+        # Siehe docs/architecture/3D_LAYER_USAGE_SCAFFOLDING.md
+        "facade_z_min": bundle.terrain.facade_z_min if bundle and bundle.terrain else None,
+        "facade_z_max": bundle.terrain.facade_z_max if bundle and bundle.terrain else None,
+        # FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT vom Top-Level!
+        # Korrekte Höhen aus Rohdaten berechnen: roof_dach_min_m - terrain_z_min
+        # Die Rohdaten sind: roof.roof_dach_min_m, roof.roof_dach_max_m, roof.terrain_z_min
+        "sides": [
+            {
+                "direction": s.get("direction"),
+                "length_m": s.get("length_m"),
+                "start": s.get("start"),
+                "end": s.get("end"),
+            }
+            for s in building.sides
+        ] if building.sides else [],
         "metadata": {
             "source": "swissBUILDINGS3D_composite",
             "polygon_points": len(building.polygon),
@@ -609,50 +784,41 @@ async def search_addresses(q: str = Query(..., min_length=3)):
 
 
 # ============ NEIGHBORS API ============
+# FIX 19.01.2026: Architektur-Trennung - nutzt jetzt GeodatenClient
+# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
 
-@router.get("/building/{egid}/neighbors", response_model=Dict[str, Any])
+@router.get("/building/{egid}/neighbors", response_model=Dict[str, Any],
+            deprecated=True,
+            summary="[DEPRECATED] Nutze /api/v1/building/neighbors/{egid} stattdessen")
 async def get_building_neighbors(
     egid: str,
     radius_m: float = Query(10.0, ge=0, le=100, description="Suchradius in Metern (0=angrenzend, max 100m)"),
     include_polygons: bool = Query(True, description="Polygone der Nachbarn mitliefern")
 ):
     """
-    Findet alle NachbargebÃ¤ude im Umkreis.
+    **DEPRECATED:** Nutze `/api/v1/building/neighbors/{egid}` stattdessen!
 
-    FÃ¼r GerÃ¼stbau: Erkennt angrenzende GebÃ¤ude die Fassaden blockieren.
-    Bei ReihenhÃ¤usern (z.B. Knospenweg 2,4,6,8,10) wird erkannt,
-    dass nur 2 von 4 Seiten eingerÃ¼stet werden kÃ¶nnen.
+    Dieser Endpunkt ist für Rückwärtskompatibilität vorhanden und leitet
+    an die neue Geodaten-API weiter.
+
+    NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
+    - Gerüstbau-Backend hat KEINEN direkten DuckDB-Zugriff mehr
+    - Ruft intern GeodatenClient auf
 
     Args:
-        egid: EGID des ZielgebÃ¤udes
+        egid: EGID des Zielgebäudes
         radius_m: Suchradius (0=nur direkt angrenzend, 5=nah, 10=Kontext)
         include_polygons: Polygone für 3D-View mitliefern
 
     Returns:
-        - target: ZielgebÃ¤ude mit Polygon
+        - target: Zielgebäude mit Polygon
         - neighbors: Liste der Nachbarn mit Distanz und Richtung
         - blocked_sides: Liste der blockierten Fassadenrichtungen
-
-    Beispiel Response:
-    ```json
-    {
-        "target_egid": "123456",
-        "target_polygon": [[x1,y1], ...],
-        "neighbors": [
-            {
-                "egid": "123457",
-                "distance_m": 0.0,
-                "direction": "E",
-                "polygon": [[x,y], ...]
-            }
-        ],
-        "blocked_sides": ["E", "W"],
-        "query_time_ms": 5.2
-    }
-    ```
     """
-    neighbors_service = get_neighbors_service()
-    result = neighbors_service.get_neighbors(
+    from app.services.geodaten_client import get_geodaten_client
+
+    client = get_geodaten_client()
+    result = await client.get_neighbors(
         egid=egid,
         radius_m=radius_m,
         include_polygons=include_polygons
@@ -661,25 +827,79 @@ async def get_building_neighbors(
     if not result:
         raise HTTPException(
             status_code=404,
-            detail=f"GebÃ¤ude mit EGID {egid} nicht im smart_building_cache gefunden. "
-                   "Bitte zuerst Ã¼ber SmartBuildingService laden."
+            detail=f"Gebäude mit EGID {egid} nicht gefunden. "
+                   "Bitte zuerst über SmartBuildingService laden."
         )
 
-    # Blockierte Seiten aus Nachbarn ableiten
-    # FIX 14.01.2026 18:15 - Schwellenwert von 0.5m auf 2.0m erhöht
-    # 0.5m war zu streng - Nachbargebäude innerhalb von 2m blockieren Gerüstaufbau
-    # Dieser Wert muss mit BLOCKING_THRESHOLD_M im Frontend übereinstimmen!
-    BLOCKING_THRESHOLD_M = 2.0
-    blocked_sides = []
-    for neighbor in result.neighbors:
-        if neighbor.distance_m < BLOCKING_THRESHOLD_M:
-            if neighbor.direction and neighbor.direction not in blocked_sides:
-                blocked_sides.append(neighbor.direction)
+    return result
 
-    response = result.to_dict()
-    response["blocked_sides"] = blocked_sides
 
-    return response
+# NEU 18.01.2026: Koordinaten-basierte Nachbar-Suche
+# FIX 19.01.2026: Verwendet jetzt GeodatenClient statt direktem DuckDB-Zugriff
+# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+@router.get("/neighbors/by-coordinates", response_model=Dict[str, Any],
+            deprecated=True,
+            summary="[DEPRECATED] Nutze /api/v1/building/area stattdessen")
+async def get_neighbors_by_coordinates(
+    e: float = Query(..., description="LV95 Easting (z.B. 2596299.9)"),
+    n: float = Query(..., description="LV95 Northing (z.B. 1199805.0)"),
+    radius_m: float = Query(10.0, ge=1, le=100, description="Suchradius in Metern"),
+    include_polygons: bool = Query(True, description="Polygone mitliefern")
+):
+    """
+    **DEPRECATED:** Nutze `/api/v1/building/area` stattdessen!
+
+    Dieser Endpunkt ist für Rückwärtskompatibilität vorhanden und leitet
+    an die neue Geodaten-API weiter.
+
+    NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
+    - Gerüstbau-Backend hat KEINEN direkten DuckDB-Zugriff mehr
+    - Ruft intern GeodatenClient auf
+
+    Args:
+        e: LV95 Easting (Ost-Koordinate)
+        n: LV95 Northing (Nord-Koordinate)
+        radius_m: Suchradius (1-100m)
+        include_polygons: Polygone für 3D-View mitliefern
+
+    Returns:
+        - center: Suchzentrum
+        - buildings: Liste aller Gebäude im Radius
+        - query_time_ms: Abfragezeit
+    """
+    from app.services.geodaten_client import get_geodaten_client
+
+    client = get_geodaten_client()
+    result = await client.get_buildings_in_area(
+        e=e,
+        n=n,
+        radius_m=radius_m,
+        include_walls=False,
+        include_roofs=False
+    )
+
+    # Response-Format für Rückwärtskompatibilität anpassen
+    buildings = []
+    for b in result.buildings:
+        building_dict = {
+            "egid": b.egid,
+            "center_e": b.center_e,
+            "center_n": b.center_n,
+            "distance_m": b.distance_m,
+            "traufhoehe_m": b.traufhoehe_m,
+            "firsthoehe_m": b.firsthoehe_m,
+            "gebaeudehoehe_m": b.gebaeudehoehe_m,
+            "polygon": b.polygon if include_polygons else None
+        }
+        buildings.append(building_dict)
+
+    return {
+        "center": result.center,
+        "radius_m": result.radius_m,
+        "buildings_count": result.buildings_count,
+        "buildings": buildings,
+        "query_time_ms": result.query_time_ms
+    }
 
 
 # ============ ADDRESS RANGE API ============
@@ -881,7 +1101,7 @@ from ..services.project_context_stream import get_project_context_stream_service
 @router.get("/projects/{project_id}/context/stream")
 async def stream_project_context(
     project_id: str,
-    max_radius_m: float = Query(100.0, ge=0, le=500, description="Maximaler Radius für Nachbar-Suche"),
+    max_radius_m: float = Query(default=NEIGHBOR_SEARCH_RADIUS_M, ge=0, le=500, description="Suchradius für Nachbarn (Default aus Config)"),
     include_blocked_facades: bool = Query(True, description="Blockierte Fassaden berechnen"),
     include_neighbors: bool = Query(True, description="Nachbarn laden")
 ):

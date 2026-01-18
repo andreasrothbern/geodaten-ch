@@ -19,10 +19,12 @@ class ProjectStatus(str, Enum):
 # =============================================================================
 
 class ProjectOverrides(BaseModel):
-    """Projekt-spezifische Ueberschreibungen der Geodaten."""
+    """Projekt-spezifische Ueberschreibungen der Geodaten.
+
+    FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
+    Korrekte Höhen aus building_roofs.dach_min/dach_max und terrain_z_min.
+    """
     polygon: Optional[List[List[float]]] = None  # Falls manuell angepasst
-    traufhoehe_m: Optional[float] = None
-    firsthoehe_m: Optional[float] = None
     simplify_epsilon: Optional[float] = None  # Douglas-Peucker Parameter
     simplify_angle_tolerance: Optional[float] = None
 
@@ -158,11 +160,13 @@ class PhotoUpdate(BaseModel):
 # =============================================================================
 
 class BuildingEntry(BaseModel):
-    """Ein Gebaeude innerhalb eines Multi-Building Projekts."""
+    """Ein Gebaeude innerhalb eines Multi-Building Projekts.
+
+    FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
+    Höhen kommen aus building_roofs.dach_min/dach_max (via building_3d.db).
+    """
     egid: str
     address: str
-    traufhoehe_m: Optional[float] = None
-    firsthoehe_m: Optional[float] = None
     coordinates: Optional[Dict[str, float]] = None  # lv95_e, lv95_n
     egid_source: str = "swissBUILDINGS3D"
 
@@ -171,11 +175,14 @@ class ProjectCreate(BaseModel):
     """Daten fuer Projekt-Erstellung.
 
     Felder koennen aus SIMAP-Import befuellt werden (PDF/Link Extraktion).
+    NEU 18.01.2026: geruestbaudata hinzugefuegt fuer Single/Multi-Building.
     """
     name: str
     address: str
     egid: Optional[str] = None
     buildings: List[BuildingEntry] = Field(default_factory=list)  # Multi-Building Support
+    # NEU 18.01.2026: Kombinierte Gebaeudedaten (bei Multi-Building: Union-Polygon)
+    geruestbaudata: Optional[Dict[str, Any]] = None
     client_name: Optional[str] = None
     client_contact: Optional[str] = None
     deadline: Optional[str] = None
@@ -196,15 +203,22 @@ class ProjectUpdate(BaseModel):
 class Project(BaseModel):
     """Vollstaendiges Projekt-Model.
 
-    WICHTIG: Enrichment-Daten (Terrain, Hanglage, Zonen) werden NICHT hier
-    gespeichert, sondern in building_contexts.db → building_environment (pro EGID).
-    Das Projekt speichert nur Referenzen (EGID) und Einstellungen (scaffold_config).
+    NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
+    - Geodaten (Polygon, Höhen, Walls, Roofs) werden NICHT mehr gespeichert
+    - Stattdessen: center_e, center_n, project_egids als Referenzen
+    - Beim Öffnen werden Geodaten per API vom Geodaten-Backend geladen
+
+    Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
     """
     id: str
     name: str
     address: str
     egid: Optional[str] = None
     buildings: List[BuildingEntry] = Field(default_factory=list)  # Multi-Building Support
+    # NEU 19.01.2026: Koordinaten-Referenz statt volle Daten
+    center_e: Optional[float] = None  # Projekt-Zentrum LV95 E
+    center_n: Optional[float] = None  # Projekt-Zentrum LV95 N
+    project_egids: List[str] = Field(default_factory=list)  # Alle EGIDs im Projekt
     status: ProjectStatus = ProjectStatus.DRAFT
     config: Optional[ScaffoldConfig] = None
     client_name: Optional[str] = None
@@ -216,8 +230,29 @@ class Project(BaseModel):
 
 
 class ProjectWithGeodata(Project):
-    """Projekt mit Geodaten aus Cache."""
-    geodata: Optional[Dict[str, Any]] = None  # BuildingGeodata as dict
+    """DEPRECATED: Projekt mit Geodaten aus Cache. Verwende ProjectWithGeruestbaudata."""
+    geodata: Optional[Dict[str, Any]] = None
+
+
+class ProjectWithGeruestbaudata(Project):
+    """Projekt mit GeruestbauData (NEU 16.01.2026).
+
+    buildings_data ist ein Dict mit EGID als Key:
+    - Single-Building: Ein Eintrag {"egid": GeruestbauData}
+    - Multi-Building: Mehrere Einträge {"egid1": ..., "egid2": ...}
+
+    GeruestbauData enthält pro Gebäude:
+    - building: Gebäude-Grunddaten (EGID, Polygon, Koordinaten)
+    - heights: Höhendaten (Trauf-, First-, Gebäudehöhe)
+    - walls: 3D-Layer Wände
+    - roofs: 3D-Layer Dächer
+    - terrain: Terrain-/Hanglage-Daten
+    - zones: Zonen bei komplexen Gebäuden
+    """
+    # NEU 16.01.2026: EGID als Key für Single- und Multi-Building
+    buildings_data: Optional[Dict[str, Dict[str, Any]]] = None
+    # Deprecated: Legacy single-building Format
+    geruestbaudata: Optional[Dict[str, Any]] = None
 
 
 # =============================================================================
@@ -239,12 +274,14 @@ class TenderData(BaseModel):
 
 
 class BuildingDataInput(BaseModel):
-    """Gebaeudedaten aus SmartBuildingService (Legacy)."""
+    """Gebaeudedaten aus SmartBuildingService (Legacy).
+
+    FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT!
+    Höhen kommen aus building_roofs.dach_min/dach_max (via building_3d.db).
+    """
     egid: Optional[str] = None
     coordinates: Optional[dict] = None
     polygon: Optional[List[List[float]]] = None
-    traufhoehe_m: Optional[float] = None
-    firsthoehe_m: Optional[float] = None
     gebaeudehoehe_m: Optional[float] = None
     height_source: Optional[str] = None
     floors: Optional[int] = None
