@@ -40,13 +40,13 @@ logger = logging.getLogger(__name__)
 
 def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
     """
-    NEU 19.01.2026: Berechnet polygon_object - das Objekt-Polygon für Gerüstplanung.
+    Berechnet das Objekt-Polygon für Gerüstplanung.
 
     Ein Projekt = Ein Objekt. Das Objekt-Polygon ist:
     - Single-Building: Das Polygon des einen Gebäudes
     - Multi-Building: Union aller Gebäude-Polygone (äussere Kontur)
 
-    Das Frontend verwendet polygon_object für:
+    Das Frontend verwendet "polygon" für:
     - SVG-Visualisierung
     - 2D-Fassadenansicht
     - 3D-Gerüstplanung
@@ -58,7 +58,7 @@ def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
         bundles: Liste von BuildingDataBundle Objekten (1 oder mehr)
 
     Returns:
-        Dict mit polygon_object, facades_object, roof_object, projectBuildings, etc.
+        Dict mit polygon, facades_object, roof_object, projectBuildings, etc.
         oder None bei Fehler
     """
     if not bundles:
@@ -158,8 +158,8 @@ def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
             }
 
         return {
-            # NEU 19.01.2026: Einheitliches Naming - polygon_object ist IMMER vorhanden
-            "polygon_object": object_polygon,
+            # FIX 19.01.2026: Einheitliches Naming - "polygon" statt "polygon_object"
+            "polygon": object_polygon,
             "facades_object": outer_facades,
             "roof_object": roof_object,
             "projectBuildings": project_buildings,  # Metadaten aller Gebäude
@@ -773,7 +773,7 @@ class BuildingDataStreamService:
                 })
 
             # NEU 19.01.2026: object_data wird IMMER berechnet (Single + Multi)
-            # Ein Projekt = Ein Objekt. Das Frontend verwendet polygon_object für alles.
+            # Ein Projekt = Ein Objekt. Das Frontend verwendet "polygon" für alles.
             object_data = _calculate_object_data(bundles)
 
             if is_multi:

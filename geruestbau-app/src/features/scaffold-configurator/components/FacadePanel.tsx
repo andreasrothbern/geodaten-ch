@@ -144,17 +144,16 @@ export default function FacadePanel({
     return minDist;
   }, [pointToSegmentDistance]);
 
-  // FIX 11.01.2026 01:15 - Blockierte Richtungen vom ersten Projekt-Gebäude
-  // Beide Gebäude sind TEIL EINES OBJEKTS (z.B. "Knospenweg 4-6")
-  // Wir zeigen aktuell Fassaden vom ersten Gebäude, daher dessen blockierte Richtungen
+  // FIX 19.01.2026: Blockierte Richtungen aus ALLEN Projekt-Gebäuden
+  // Bei Objekt-basierter Architektur: Union-Polygon = ALLE Gebäude
+  // → Blockierte Richtungen aus allen Gebäuden sammeln
   const blockedDirectionsFromSSE = useMemo(() => {
     if (!blockedFacadesData) return new Set<string>();
 
     const directions = new Set<string>();
-    // Erstes Projekt-Gebäude (dessen Fassaden aktuell angezeigt werden)
-    const firstBuildingEgid = Object.keys(blockedFacadesData)[0];
-    if (firstBuildingEgid) {
-      const egidData = blockedFacadesData[firstBuildingEgid];
+    // ALLE Projekt-Gebäude durchgehen (nicht nur erstes!)
+    for (const egid of Object.keys(blockedFacadesData)) {
+      const egidData = blockedFacadesData[egid];
       if (egidData && egidData.blockers) {
         for (const blocker of egidData.blockers) {
           if (blocker.direction) {

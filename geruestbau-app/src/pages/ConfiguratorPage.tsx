@@ -15,7 +15,7 @@ import BuildingDataCard from '../components/ui/BuildingDataCard';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../components/ui/AddressAutocomplete';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
-import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type GeodataBuilding, type ObjectData } from '../api/geruestbau';
+import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type GeodataBuilding, type ObjectData, type ProjectGeodataResponse } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
 import type { ProjectWithGeruestbaudata, Geodata, BuildingWall, BuildingRoof } from '../types/project';
 import { convertGeruestbaudataToGeodata, convertGeodataToGeruestbaudata, getBuildingEgids } from '../types/project';
@@ -61,7 +61,7 @@ interface ConfiguratorBuildingData {
   facade_z_min?: Record<string, number>;  // Terrain-Höhe pro Himmelsrichtung (m ü.M.)
   facade_z_max?: Record<string, number>;  // Oberkante pro Himmelsrichtung (m ü.M.)
   // NEU 19.01.2026: Objekt-Daten (Ein Projekt = Ein Objekt)
-  // polygon_object ist IMMER vorhanden (Single- und Multi-Building)
+  // "polygon" ist IMMER vorhanden (Single- und Multi-Building)
   object_data?: ObjectData;
   metadata: {
     source: string;
@@ -218,31 +218,52 @@ function invalidateStoreIfProjectChanged(projectId: string | null) {
 // Call immediately on module load (before Zustand hydrates)
 invalidateStoreIfNewSelection();
 
-// NEU 19.01.2026: Konvertiert GeodataBuilding (von API) zu ConfiguratorBuildingData
-// Diese Funktion ersetzt die alten buildings_data/geruestbaudata Konvertierungen
-function convertGeodataBuildingToConfiguratorFormat(
-  geodataBuilding: GeodataBuilding,
+// NEU 19.01.2026: Konvertiert ProjectGeodataResponse zu ConfiguratorBuildingData
+// Ein Projekt = Ein Objekt. Verwendet das Union-Polygon aus der API.
+function convertGeodataResponseToConfiguratorFormat(
+  geodataResponse: ProjectGeodataResponse,
   projectId: string,
   address: string
 ): ConfiguratorBuildingData | null {
-  if (!geodataBuilding.polygon || geodataBuilding.polygon.length < 3) {
-    console.warn('[convertGeodataBuilding] No valid polygon');
+  // Das Union-Polygon ist IMMER das Projekt-Polygon
+  if (!geodataResponse.polygon || geodataResponse.polygon.length < 3) {
+    console.warn('[convertGeodataResponse] No valid polygon from API');
     return null;
   }
 
-  const polygon = geodataBuilding.polygon as [number, number][];
+  const polygon = geodataResponse.polygon as [number, number][];
+  const projectBuildings = geodataResponse.project_buildings;
 
-  // Höhen berechnen (Priorität: trauf/first > gebaeude > default)
-  const traufHeight = geodataBuilding.traufhoehe_m ?? geodataBuilding.gebaeudehoehe_m ?? 8;
-  const firstHeight = geodataBuilding.firsthoehe_m ?? (traufHeight + 2);
+  // Höhen aggregieren aus allen Projekt-Gebäuden
+  // Bei Multi-Building: Max-Werte verwenden (höchstes Gebäude bestimmt Gerüsthöhe)
+  let traufHeight = 8;  // Default
+  let firstHeight = 10; // Default
 
-  // Fassaden aus Polygon berechnen
+  if (projectBuildings.length > 0) {
+    const traufValues = projectBuildings
+      .map((b: GeodataBuilding) => b.traufhoehe_m ?? b.gebaeudehoehe_m)
+      .filter((v: number | undefined): v is number => v !== null && v !== undefined);
+    const firstValues = projectBuildings
+      .map((b: GeodataBuilding) => b.firsthoehe_m)
+      .filter((v: number | undefined): v is number => v !== null && v !== undefined);
+
+    if (traufValues.length > 0) {
+      traufHeight = Math.max(...traufValues);
+    }
+    if (firstValues.length > 0) {
+      firstHeight = Math.max(...firstValues);
+    } else {
+      firstHeight = traufHeight + 2;
+    }
+  }
+
+  // Fassaden aus Union-Polygon berechnen
   const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
   const facades = sidesToFacades(simplifyResult.sides, traufHeight);
 
-  // Zentrum berechnen (falls nicht vorhanden)
-  const centerE = geodataBuilding.center_e ?? polygon.reduce((sum, p) => sum + p[0], 0) / polygon.length;
-  const centerN = geodataBuilding.center_n ?? polygon.reduce((sum, p) => sum + p[1], 0) / polygon.length;
+  // Zentrum berechnen
+  const centerE = polygon.reduce((sum, p) => sum + p[0], 0) / polygon.length;
+  const centerN = polygon.reduce((sum, p) => sum + p[1], 0) / polygon.length;
 
   // Perimeter und Fläche berechnen
   const perimeter = simplifyResult.sides.reduce((sum, s) => sum + s.length_m, 0);
@@ -254,10 +275,27 @@ function convertGeodataBuildingToConfiguratorFormat(
   const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
   const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
 
+  // Walls und Roofs aus allen Projekt-Gebäuden zusammenfassen
+  const allWalls: BuildingWall[] = projectBuildings.flatMap((b: GeodataBuilding) =>
+    (b.walls ?? []).map((w: { z_min: number; z_max: number; coords_3d?: number[][][] }, idx: number) => ({
+      gebaeudeeinheit: `${b.egid}_wall_${idx}`,
+      egid: parseInt(b.egid) || null,
+      z_min: w.z_min,
+      z_max: w.z_max,
+      geometry_type: 'Polygon' as const,
+      coords_3d: w.coords_3d ?? null,
+    }))
+  );
+
+  // EGID: Bei Multi-Building alle EGIDs kombinieren
+  const combinedEgid = geodataResponse.project_egids.join('+');
+
+  console.log(`[convertGeodataResponse] Union-Polygon mit ${polygon.length} Punkten, ${projectBuildings.length} Gebäude(n), Höhe=${traufHeight}m`);
+
   return {
     project_id: projectId,
     building: {
-      egid: geodataBuilding.egid,
+      egid: combinedEgid,
       address: address,
       name: address,
       polygon: polygon,
@@ -284,12 +322,7 @@ function convertGeodataBuildingToConfiguratorFormat(
       confidence: 0.7,
       traufhoehe_m: traufHeight,
     },
-    // Walls und Roofs aus der API (können leer sein)
-    building_walls: geodataBuilding.walls?.map(w => ({
-      z_min: w.z_min,
-      z_max: w.z_max,
-      coords_3d: w.coords_3d,
-    })) as BuildingWall[] | undefined,
+    building_walls: allWalls.length > 0 ? allWalls : undefined,
     metadata: {
       source: 'geodata_api',
       polygon_points: polygon.length,
@@ -298,7 +331,7 @@ function convertGeodataBuildingToConfiguratorFormat(
       area_m2: Math.round(area * 10) / 10,
       roof_type: roofType,
       roof_surfaces_count: 0,
-      height_source: geodataBuilding.traufhoehe_m ? 'swissBUILDINGS3D' : 'estimated',
+      height_source: traufHeight !== 8 ? 'swissBUILDINGS3D' : 'estimated',
       confidence: 0.7,
     },
   };
@@ -531,7 +564,7 @@ export default function ConfiguratorPage() {
 
   // Multi-Building State (Phase 3)
   // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
-  // object_data enthält polygon_object (Union aller Gebäude) und projectBuildings (Metadaten)
+  // object_data enthält "polygon" (Union aller Gebäude) und projectBuildings (Metadaten)
   const [addressRangeData, setAddressRangeData] = useState<AddressRangeResponse | null>(null);
   const [selectedBuildings, setSelectedBuildings] = useState<AddressRangeBuilding[]>([]);
   const [isMultiMode, setIsMultiMode] = useState(false);
@@ -624,37 +657,61 @@ export default function ConfiguratorPage() {
   }, [sseData.projectBuildings]);
 
   // NEU 10.01.2026 21:45 - SSE-Daten auf buildingData anwenden (verzögert)
+  // FIX 19.01.2026: Bei Multi-Building Höhen aggregieren (max values)
   useEffect(() => {
     if (!sseProjectBuildings || sseProjectBuildings.length === 0) return;
     if (!buildingData) return;
 
-    const firstBuilding = sseProjectBuildings[0];
     const updatedBuilding = { ...buildingData.building };
     let hasChanges = false;
 
-    // FIX 16.01.2026 17:00: Korrekte Höhenberechnung aus Rohdaten
-    if (firstBuilding.roof_dach_min_m != null && firstBuilding.terrain_z_min != null) {
-      const calculatedTrauf = firstBuilding.roof_dach_min_m - firstBuilding.terrain_z_min;
+    // FIX 19.01.2026: Höhen aus ALLEN Gebäuden aggregieren (höchste Werte)
+    // Bei Multi-Building: Die höchsten Werte bestimmen die Gerüsthöhe
+    let maxTrauf: number | null = null;
+    let maxFirst: number | null = null;
+    let minTerrainZ: number | null = null;
+
+    for (const building of sseProjectBuildings) {
+      if (building.terrain_z_min != null) {
+        if (minTerrainZ === null || building.terrain_z_min < minTerrainZ) {
+          minTerrainZ = building.terrain_z_min;
+        }
+      }
+      if (building.roof_dach_min_m != null) {
+        if (maxTrauf === null || building.roof_dach_min_m > maxTrauf) {
+          maxTrauf = building.roof_dach_min_m;
+        }
+      }
+      if (building.roof_dach_max_m != null) {
+        if (maxFirst === null || building.roof_dach_max_m > maxFirst) {
+          maxFirst = building.roof_dach_max_m;
+        }
+      }
+    }
+
+    // Relative Höhen berechnen (absolut - Terrain)
+    if (maxTrauf != null && minTerrainZ != null) {
+      const calculatedTrauf = maxTrauf - minTerrainZ;
       if (calculatedTrauf !== updatedBuilding.trauf_height_m) {
         updatedBuilding.trauf_height_m = calculatedTrauf;
         hasChanges = true;
       }
     }
-    if (firstBuilding.roof_dach_max_m != null && firstBuilding.terrain_z_min != null) {
-      const calculatedFirst = firstBuilding.roof_dach_max_m - firstBuilding.terrain_z_min;
+    if (maxFirst != null && minTerrainZ != null) {
+      const calculatedFirst = maxFirst - minTerrainZ;
       if (calculatedFirst !== updatedBuilding.first_height_m) {
         updatedBuilding.first_height_m = calculatedFirst;
         hasChanges = true;
       }
     }
-    if (firstBuilding.polygon && firstBuilding.polygon.length >= 3) {
-      updatedBuilding.polygon = firstBuilding.polygon as [number, number][];
-      hasChanges = true;
-    }
-    if (firstBuilding.egid && firstBuilding.egid !== updatedBuilding.egid) {
-      updatedBuilding.egid = firstBuilding.egid;
-      hasChanges = true;
-    }
+
+    // Polygon NICHT mehr aus SSE übernehmen - kommt vom /geodata API als Union
+    // FIX 19.01.2026: Das Polygon ist bereits das korrekte Union-Polygon
+
+    // EGID: NICHT mehr aus SSE überschreiben!
+    // FIX 19.01.2026: Das EGID wird beim Laden via /geodata korrekt gesetzt
+    // (kombiniertes EGID wie "1234+5678" bei Multi-Building)
+    // SSE-Daten sind NUR für Höhen-Updates, nicht für EGID
 
     if (hasChanges) {
       const newTraufHeight = updatedBuilding.trauf_height_m;
@@ -818,7 +875,7 @@ export default function ConfiguratorPage() {
 
         // NEU 19.01.2026: Objekt-Architektur
         // object_data wird vom Backend geliefert und enthält:
-        // - polygon_object: Das Objekt-Polygon (IMMER vorhanden)
+        // - polygon: Das Objekt-Polygon (IMMER vorhanden)
         // - projectBuildings: Metadaten aller Gebäude
         // - facades_object: Fassaden des Objekt-Polygons
         if (configData.object_data) {
@@ -854,32 +911,24 @@ export default function ConfiguratorPage() {
       const geodataResponse = await geruestbauApi.getProjectGeodata(id, 100, true, true);
       console.log(`[loadProjectData] Geodata loaded: ${geodataResponse.project_buildings.length} project buildings, ${geodataResponse.neighbors.length} neighbors`);
 
-      // 3. Projekt-Gebäude verarbeiten
-      // WICHTIG: Alle Gebäude sind gleichwertig - kein "Haupt" vs "Zusatz"!
-      // Bei Multi-Building wird ein Union-Polygon verwendet
-      if (geodataResponse.project_buildings.length > 0) {
-        // Bei einem Gebäude: direkt verwenden
-        // Bei mehreren: Union-Polygon berechnen (TODO: Backend sollte das liefern)
-        const firstBuilding = geodataResponse.project_buildings[0];
-        const configData = convertGeodataBuildingToConfiguratorFormat(
-          firstBuilding,
-          id,
-          loadedProject.address
-        );
+      // 3. Projekt-Polygon verarbeiten
+      // NEU 19.01.2026: Ein Projekt = Ein Objekt. Das Union-Polygon kommt vom Backend.
+      // Kein "Hauptgebäude" vs "Zusatzgebäude" - nur EIN Objekt-Polygon.
+      const configData = convertGeodataResponseToConfiguratorFormat(
+        geodataResponse,
+        id,
+        loadedProject.address
+      );
 
-        if (configData) {
-          // Bei Multi-Building: Alle Gebäude-EGIDs merken für Kontext
-          if (geodataResponse.project_buildings.length > 1) {
-            console.log(`[loadProjectData] Multi-Building Projekt mit ${geodataResponse.project_buildings.length} Gebäuden`);
-            // TODO: Union-Polygon aus allen Gebäuden berechnen
-            // Aktuell: Erstes Gebäude als Repräsentant (temporär)
-          }
-
-          console.log('[loadProjectData] Using geodata from API - Architektur-Trennung aktiv');
-          setBuildingData(configData);
-          setLoadingState('success');
-          return; // Erfolgreich geladen via neue API
+      if (configData) {
+        if (geodataResponse.project_buildings.length > 1) {
+          console.log(`[loadProjectData] Multi-Building Projekt: ${geodataResponse.project_buildings.length} Gebäude → 1 Union-Polygon`);
         }
+
+        console.log('[loadProjectData] Using geodata from API - Objekt-basierte Architektur aktiv');
+        setBuildingData(configData);
+        setLoadingState('success');
+        return; // Erfolgreich geladen via neue API
       }
 
       // 4. Fallback: Alte Methode (für Projekte ohne gespeicherte EGIDs)
@@ -1200,7 +1249,7 @@ export default function ConfiguratorPage() {
                 <button
                   onClick={async () => {
                     // NEU 19.01.2026: Objekt-Architektur
-                    // Multi-Building verwendet jetzt das Backend für polygon_object (Union)
+                    // Multi-Building verwendet jetzt das Backend für "polygon" (Union)
                     setIsMultiMode(false);
                     setLoadingMultiBuilding(true);
 
@@ -1210,7 +1259,7 @@ export default function ConfiguratorPage() {
                         await fetchBuildingData(selectedBuildings[0].address, project);
                       } else if (selectedBuildings.length > 1) {
                         // Multi-Building: Lade mit kombinierter Adresse
-                        // Backend berechnet automatisch object_data mit polygon_object
+                        // Backend berechnet automatisch object_data mit "polygon"
                         const combinedAddress = selectedBuildings.map(b => b.address).join(', ');
                         console.log(`[Objekt-Architektur] Lade ${selectedBuildings.length} Gebäude: ${combinedAddress}`);
                         await fetchBuildingData(selectedBuildings[0].address, project);

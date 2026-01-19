@@ -177,9 +177,9 @@ export interface CompleteData {
     bundle: BuildingDataBundle;
   }>;
   // NEU 19.01.2026: Objekt-Daten (Ein Projekt = Ein Objekt)
-  // polygon_object ist IMMER vorhanden (Single- und Multi-Building)
+  // "polygon" ist IMMER vorhanden (Single- und Multi-Building)
   object_data?: {
-    polygon_object: [number, number][];     // Das Objekt-Polygon (IMMER vorhanden)
+    polygon: [number, number][];            // Das Objekt-Polygon (IMMER vorhanden)
     facades_object: Array<{                 // Fassaden des Objekt-Polygons
       index: number;
       direction: string;

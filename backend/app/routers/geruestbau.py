@@ -159,14 +159,21 @@ async def get_project_geodata(
     Diese Methode ersetzt das Speichern von buildings_data im Projekt.
     Stattdessen werden die Geodaten beim Öffnen des Projekts per API geladen.
 
+    WICHTIG: Ein Projekt = Ein Objekt.
+    - polygon: Union-Polygon aller Projekt-Gebäude (IMMER vorhanden)
+    - Bei Single-Building: Das eine Polygon
+    - Bei Multi-Building: Union aller Polygone (äussere Kontur)
+
     Datenfluss:
     1. Projekt laden → center_e, center_n, project_egids
     2. GeodatenClient.get_buildings_in_area() → Alle Gebäude im Umkreis
     3. Kategorisierung: project_egids → Projekt-Gebäude, Rest → Nachbarn
+    4. Union-Polygon berechnen → polygon
 
     Returns:
         {
-            "project_buildings": [...],  # Gebäude die zum Projekt gehören
+            "polygon": [[x,y], ...],      # Das Projekt-Polygon (Union)
+            "project_buildings": [...],   # Details für 3D-View (walls, roofs)
             "neighbors": [...],           # Nachbar-Gebäude
             "center": {"e": ..., "n": ...},
             "radius_m": 100,
@@ -232,8 +239,16 @@ async def get_project_geodata(
         else:
             neighbors.append(building_dict)
 
+    # 5. NEU 19.01.2026: Union-Polygon berechnen
+    # Ein Projekt = Ein Objekt. polygon ist IMMER das Union-Polygon.
+    from app.utils.polygon_utils import calculate_union_polygon, extract_polygons_from_buildings
+
+    project_polygons = extract_polygons_from_buildings(project_buildings)
+    union_polygon = calculate_union_polygon(project_polygons)
+
     return {
-        "project_buildings": project_buildings,
+        "polygon": union_polygon,  # NEU: Das Projekt-Polygon (Union aller Gebäude)
+        "project_buildings": project_buildings,  # Für 3D-View (walls, roofs, etc.)
         "neighbors": neighbors,
         "center": area_response.center,
         "radius_m": area_response.radius_m,

@@ -46,12 +46,12 @@ export interface AddressRangeBuilding {
 
 // =============================================================================
 // NEU 19.01.2026: Objekt-basierte Architektur
-// Ein Projekt = Ein Objekt. polygon_object ist IMMER vorhanden.
+// Ein Projekt = Ein Objekt. "polygon" ist IMMER vorhanden.
 // =============================================================================
 
 /**
  * Metadaten eines Gebäudes im Projekt (für projectBuildings[])
- * Nur Identifikation, keine Geometrie - die kommt aus polygon_object
+ * Nur Identifikation, keine Geometrie - die kommt aus "polygon"
  */
 export interface ProjectBuildingMetadata {
   egid: string
@@ -75,12 +75,12 @@ export interface ObjectFacade {
 
 /**
  * Objekt-Daten vom Backend (object_data in SSE Response)
- * Enthält polygon_object - das Polygon für Gerüstplanung
+ * Enthält "polygon" - das Objekt-Polygon für Gerüstplanung
  * Bei Single-Building: Das eine Polygon
  * Bei Multi-Building: Union aller Polygone (äussere Kontur)
  */
 export interface ObjectData {
-  polygon_object: [number, number][]  // Das Objekt-Polygon (IMMER vorhanden)
+  polygon: [number, number][]         // Das Objekt-Polygon (IMMER vorhanden)
   facades_object: ObjectFacade[]      // Fassaden des Objekt-Polygons
   roof_object?: {
     z_min: number | null              // Tiefste Traufe (m ü.M.)
@@ -208,7 +208,10 @@ export interface GeodataBuilding {
 }
 
 export interface ProjectGeodataResponse {
-  project_buildings: GeodataBuilding[]
+  // NEU 19.01.2026: Ein Projekt = Ein Objekt
+  // polygon ist IMMER das Union-Polygon (auch bei Single-Building)
+  polygon: [number, number][] | null  // Das Projekt-Polygon (Union aller Gebäude)
+  project_buildings: GeodataBuilding[]  // Details für 3D-View (walls, roofs)
   neighbors: GeodataBuilding[]
   center: { e: number; n: number }
   radius_m: number

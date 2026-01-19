@@ -31,7 +31,7 @@ interface ScaffoldConfiguratorProps {
   // NEU 10.01.2026 19:25 - Blocked Facades per EGID (Multi-Building Support via SSE)
   blockedFacadesData?: BlockedFacadesData | null;
   // NEU 19.01.2026: Objekt-Architektur - Ein Projekt = Ein Objekt
-  // objectData enthält polygon_object (Union) und projectBuildings (Metadaten)
+  // objectData enthält "polygon" (Union) und projectBuildings (Metadaten)
   objectData?: ObjectData;
   // Zonen-Daten für komplexe Gebäude (NEU 05.01.2026)
   zones?: BuildingZone[];
