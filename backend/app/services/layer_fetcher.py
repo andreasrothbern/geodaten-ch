@@ -287,17 +287,37 @@ class LayerFetcherService:
         cursor = conn.cursor()
 
         try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO building_walls
-                (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb)
-                VALUES (?, ?, ?, ?, ?)
-            """, [
-                (w['gebaeudeeinheit'], w['egid'], w['z_min'], w['z_max'], w['geometry_wkb'])
-                for w in walls
-            ])
+            # FIX 19.01.2026: execute statt executemany für BLOB-Kompatibilität mit DuckDB
+            # executemany hat Probleme mit BLOB-Feldern (geometry_wkb bleibt NULL)
+            saved_count = 0
+            for w in walls:
+                try:
+                    # FIX 19.01.2026: EGID als Integer konvertieren (DB-Schema: INTEGER)
+                    egid_val = w['egid']
+                    try:
+                        egid_int = int(egid_val) if egid_val else None
+                    except (ValueError, TypeError):
+                        egid_int = None
+                        logger.warning(f"EGID '{egid_val}' konnte nicht zu Integer konvertiert werden")
+
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO building_walls
+                        (gebaeudeeinheit, egid, z_min, z_max, geometry_wkb, created_at)
+                        VALUES (?, ?, ?, ?, ?, current_timestamp)
+                    """, (
+                        w['gebaeudeeinheit'],
+                        egid_int,
+                        w['z_min'],
+                        w['z_max'],
+                        w['geometry_wkb']
+                    ))
+                    saved_count += 1
+                except Exception as wall_err:
+                    logger.warning(f"Wall speichern fehlgeschlagen: {wall_err}")
 
             conn.commit()
-            return len(walls)
+            logger.info(f"[LAYER_FETCHER] {saved_count}/{len(walls)} Walls gespeichert")
+            return saved_count
 
         except Exception as e:
             logger.error(f"Fehler beim Speichern der Walls: {e}")
@@ -317,17 +337,34 @@ class LayerFetcherService:
         cursor = conn.cursor()
 
         try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO building_floors
-                (gebaeudeeinheit, egid, gelaendepunkt, geometry_wkb)
-                VALUES (?, ?, ?, ?)
-            """, [
-                (f['gebaeudeeinheit'], f['egid'], f['gelaendepunkt'], f['geometry_wkb'])
-                for f in floors
-            ])
+            # FIX 19.01.2026: execute statt executemany für BLOB-Kompatibilität mit DuckDB
+            saved_count = 0
+            for f in floors:
+                try:
+                    # FIX 19.01.2026: EGID als Integer konvertieren (DB-Schema: INTEGER)
+                    egid_val = f['egid']
+                    try:
+                        egid_int = int(egid_val) if egid_val else None
+                    except (ValueError, TypeError):
+                        egid_int = None
+
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO building_floors
+                        (gebaeudeeinheit, egid, gelaendepunkt, geometry_wkb, created_at)
+                        VALUES (?, ?, ?, ?, current_timestamp)
+                    """, (
+                        f['gebaeudeeinheit'],
+                        egid_int,
+                        f['gelaendepunkt'],
+                        f['geometry_wkb']
+                    ))
+                    saved_count += 1
+                except Exception as floor_err:
+                    logger.warning(f"Floor speichern fehlgeschlagen: {floor_err}")
 
             conn.commit()
-            return len(floors)
+            logger.info(f"[LAYER_FETCHER] {saved_count}/{len(floors)} Floors gespeichert")
+            return saved_count
 
         except Exception as e:
             logger.error(f"Fehler beim Speichern der Floors: {e}")

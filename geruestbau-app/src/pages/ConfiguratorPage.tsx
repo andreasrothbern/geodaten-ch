@@ -258,8 +258,15 @@ function convertGeodataResponseToConfiguratorFormat(
   }
 
   // Fassaden aus Union-Polygon berechnen
+  // NEU 19.01.2026: originalPolygon für exakte 3D-Gerüst-Platzierung übergeben
   const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
-  const facades = sidesToFacades(simplifyResult.sides, traufHeight);
+  const facades = sidesToFacades(
+    simplifyResult.sides,
+    traufHeight,
+    undefined,  // facadeZMin
+    undefined,  // facadeZMax
+    polygon     // originalPolygon - für 3D-Platzierung
+  );
 
   // Zentrum berechnen
   const centerE = polygon.reduce((sum, p) => sum + p[0], 0) / polygon.length;
@@ -276,14 +283,15 @@ function convertGeodataResponseToConfiguratorFormat(
   const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
 
   // Walls und Roofs aus allen Projekt-Gebäuden zusammenfassen
+  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
   const allWalls: BuildingWall[] = projectBuildings.flatMap((b: GeodataBuilding) =>
-    (b.walls ?? []).map((w: { z_min: number; z_max: number; coords_3d?: number[][][] }, idx: number) => ({
+    (b.walls ?? []).map((w: { z_min: number; z_max: number; geometry?: number[][][] }, idx: number) => ({
       gebaeudeeinheit: `${b.egid}_wall_${idx}`,
       egid: parseInt(b.egid) || null,
       z_min: w.z_min,
       z_max: w.z_max,
       geometry_type: 'Polygon' as const,
-      coords_3d: w.coords_3d ?? null,
+      geometry: w.geometry ?? null,
     }))
   );
 
@@ -312,6 +320,8 @@ function convertGeodataResponseToConfiguratorFormat(
       slope_percent: 0,
       start_point: f.start_point,
       end_point: f.end_point,
+      // NEU 19.01.2026: Original-Segmente für exakte 3D-Gerüst-Platzierung
+      originalSegments: f.originalSegments,
     })),
     roof: {
       roof_type: roofType,
@@ -1356,31 +1366,32 @@ export default function ConfiguratorPage() {
       return undefined;
     }
 
-    // NEU 15.01.2026 23:45: building_roofs.coords_3d für echte 3D-Dachgeometrie
-    // Falls building_roofs vorhanden, extrahiere coords_3d als roof_geometry_coords
+    // NEU 15.01.2026 23:45: building_roofs.geometry für echte 3D-Dachgeometrie
+    // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+    // Falls building_roofs vorhanden, extrahiere geometry als roof_geometry_coords
     let roofGeometryCoords = data.roof.roof_geometry_coords;
     let hasRoofGeometry = data.roof.has_roof_geometry;
     let roofDachMinM = data.roof.roof_dach_min_m;
     let roofDachMaxM = data.roof.roof_dach_max_m;
 
     if (data.building_roofs && data.building_roofs.length > 0) {
-      // Extrahiere coords_3d aus dem ersten building_roof (oder alle kombinieren)
+      // Extrahiere geometry aus dem ersten building_roof (oder alle kombinieren)
       const firstRoof = data.building_roofs[0];
 
-      if (firstRoof.coords_3d && firstRoof.geometry_type) {
-        // MultiPolygon: coords_3d ist [[[Polygon1]], [[Polygon2]], ...]
-        // Polygon: coords_3d ist [[[Ring1], [Hole1], ...]]
+      if (firstRoof.geometry && firstRoof.geometry_type) {
+        // MultiPolygon: geometry ist [[[Polygon1]], [[Polygon2]], ...]
+        // Polygon: geometry ist [[[Ring1], [Hole1], ...]]
         if (firstRoof.geometry_type === 'MultiPolygon') {
           // Flatten: Extrahiere alle Polygone (nur exterior rings)
-          roofGeometryCoords = (firstRoof.coords_3d as number[][][][]).map(
+          roofGeometryCoords = (firstRoof.geometry as number[][][][]).map(
             (polygon) => polygon[0] // Nur exterior ring
           );
         } else if (firstRoof.geometry_type === 'Polygon') {
-          // Einzelnes Polygon: coords_3d ist [[[x,y,z], ...]]
-          roofGeometryCoords = [firstRoof.coords_3d[0]] as number[][][];
+          // Einzelnes Polygon: geometry ist [[[x,y,z], ...]]
+          roofGeometryCoords = [firstRoof.geometry[0]] as number[][][];
         }
         hasRoofGeometry = true;
-        console.log('[BUILDING-ROOFS] Verwende coords_3d aus building_roofs', {
+        console.log('[BUILDING-ROOFS] Verwende geometry aus building_roofs', {
           type: firstRoof.geometry_type,
           polygons: roofGeometryCoords?.length ?? 0,
         });

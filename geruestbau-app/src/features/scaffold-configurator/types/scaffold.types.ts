@@ -29,6 +29,13 @@ export interface SelectedFacade {
   // Coordinates for 3D positioning (LV95)
   start_point?: [number, number];
   end_point?: [number, number];
+  // NEU 19.01.2026: Original-Polygon-Segmente für exakte 3D-Gerüst-Platzierung
+  // Bei Vereinfachung: Eine Fassade kann mehrere Original-Kanten umfassen
+  // Das Gerüst folgt dann den Original-Konturen statt einer geraden Linie
+  originalSegments?: Array<{
+    start: [number, number];
+    end: [number, number];
+  }>;
   // NEU 14.01.2026 21:15: Fassaden-spezifische Höhen für Hanglage-Gebäude
   facade_z_min?: number;      // Terrain-Höhe an dieser Fassade (m ü.M.)
   facade_z_max?: number;      // Wandoberkante an dieser Fassade (m ü.M.)
@@ -145,6 +152,13 @@ export interface ScaffoldFacade {
   // Coordinates for 3D positioning (LV95)
   start_point?: [number, number];
   end_point?: [number, number];
+  // NEU 19.01.2026: Original-Polygon-Segmente für exakte 3D-Platzierung
+  // Bei Vereinfachung: Eine Fassade kann mehrere Original-Kanten umfassen
+  // Das Gerüst folgt dann den echten Konturen statt einer geraden Linie
+  originalSegments?: Array<{
+    start: [number, number];
+    end: [number, number];
+  }>;
   // NEU 14.01.2026 23:45: Terrain-Daten für Hanglage-Darstellung
   terrain_z_min?: number;   // Niedrigste Terrain-Höhe (m ü.M.)
   terrain_z_max?: number;   // Höchste Terrain-Höhe (m ü.M.)

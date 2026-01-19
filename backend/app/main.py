@@ -761,8 +761,10 @@ async def get_buildings_in_area(
         egid_list = [b["egid"] for b in buildings]
 
         if include_walls and egid_list:
+            # FIX 19.01.2026: Spalte heisst geometry_wkb (WKB), nicht coords_3d
+            # Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
             cursor.execute(f"""
-                SELECT egid, z_min, z_max, coords_3d
+                SELECT egid, z_min, z_max, geometry_wkb
                 FROM building_walls
                 WHERE egid IN ({','.join(['?' for _ in egid_list])})
             """, egid_list)
@@ -772,10 +774,22 @@ async def get_buildings_in_area(
                 wall_egid = str(wall_row[0])
                 if wall_egid not in walls_by_egid:
                     walls_by_egid[wall_egid] = []
+                # WKB zu Koordinaten konvertieren
+                geometry = None
+                if wall_row[3]:
+                    try:
+                        from shapely import wkb
+                        geom = wkb.loads(wall_row[3])
+                        if hasattr(geom, 'geoms'):
+                            geometry = [list(g.exterior.coords) for g in geom.geoms]
+                        elif hasattr(geom, 'exterior'):
+                            geometry = [list(geom.exterior.coords)]
+                    except Exception:
+                        geometry = None
                 walls_by_egid[wall_egid].append({
                     "z_min": wall_row[1],
                     "z_max": wall_row[2],
-                    "coords_3d": json.loads(wall_row[3]) if wall_row[3] else None
+                    "geometry": geometry
                 })
 
             for b in buildings:
@@ -4232,6 +4246,7 @@ async def get_smart_building_data(
     include_research: bool = Query(True, description="Claude-Recherche für Gebäude-Identifikation"),
     include_zones_analysis: bool = Query(True, description="Claude-Analyse für komplexe Gebäude"),
     include_terrain: bool = Query(True, description="Terrain-Daten (Hanglage) abrufen"),
+    include_neighbors: bool = Query(True, description="NEU 19.01.2026: Nachbarn prefetchen basierend auf Objekt-BoundingBox"),
 ):
     """
     Sammelt schrittweise alle verfügbaren Daten für ein Gebäude.
@@ -4319,6 +4334,7 @@ async def get_smart_building_data(
             include_research=include_research,
             include_zones_analysis=include_zones_analysis,
             include_terrain=include_terrain,
+            include_neighbors=include_neighbors,  # NEU 19.01.2026: Nachbar-Prefetch
         )
 
         # Polygon on-the-fly vereinfachen (falls vorhanden)

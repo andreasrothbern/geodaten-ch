@@ -557,7 +557,8 @@ async def get_facade_data_for_configurator(
             for wall in raw_walls:
                 wall_wkb = wall.get('geometry_wkb')
                 geometry_type = None
-                coords_3d = None  # Volle 3D-Koordinaten (ALLE Polygone!)
+                # FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+                geometry = None  # Volle 3D-Koordinaten (ALLE Polygone!)
 
                 if wall_wkb:
                     try:
@@ -566,18 +567,18 @@ async def get_facade_data_for_configurator(
 
                         # FIX 16.01.2026 21:30: OGC-Standard Ring-Struktur BEIBEHALTEN!
                         # MultiPolygon[Polygon[Ring[Point]]] für U-Form, Löcher, Innenhöfe
-                        # Polygon: coords_3d[ring_index][point_index] = [E, N, Z]
-                        # MultiPolygon: coords_3d[polygon_index][ring_index][point_index] = [E, N, Z]
+                        # Polygon: geometry[ring_index][point_index] = [E, N, Z]
+                        # MultiPolygon: geometry[polygon_index][ring_index][point_index] = [E, N, Z]
                         if geom.geom_type == 'Polygon':
                             # Alle Rings: exterior + interiors (Löcher)
-                            coords_3d = [
+                            geometry = [
                                 [list(c) for c in ring.coords]
                                 for ring in [geom.exterior] + list(geom.interiors)
                             ]
 
                         elif geom.geom_type == 'MultiPolygon':
                             # Jedes Polygon mit allen seinen Rings
-                            coords_3d = [
+                            geometry = [
                                 [
                                     [list(c) for c in ring.coords]
                                     for ring in [poly.exterior] + list(poly.interiors)
@@ -586,7 +587,7 @@ async def get_facade_data_for_configurator(
                             ]
 
                         elif geom.geom_type == 'LineString':
-                            coords_3d = [[list(c) for c in geom.coords]]
+                            geometry = [[list(c) for c in geom.coords]]
 
                     except Exception as wkb_err:
                         logger.debug(f"WKB-Parsing für Wall fehlgeschlagen: {wkb_err}")
@@ -598,7 +599,7 @@ async def get_facade_data_for_configurator(
                     "z_min": wall.get('z_min'),  # Terrain-Höhe (m ü.M.)
                     "z_max": wall.get('z_max'),  # Trauf-Höhe (m ü.M.)
                     "geometry_type": geometry_type,
-                    "coords_3d": coords_3d,  # Volle 3D-Geometrie
+                    "geometry": geometry,  # Volle 3D-Geometrie
                 })
 
             logger.info(f"[BUILDING-WALLS] {len(building_walls)} walls für EGID {building.egid} geladen")
@@ -619,7 +620,8 @@ async def get_facade_data_for_configurator(
             for roof in raw_roofs:
                 roof_wkb = roof.get('geometry_wkb')
                 geometry_type = None
-                coords_3d = None  # Volle 3D-Koordinaten (ALLE Polygone!)
+                # FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+                geometry = None  # Volle 3D-Koordinaten (ALLE Polygone!)
 
                 if roof_wkb:
                     try:
@@ -628,18 +630,18 @@ async def get_facade_data_for_configurator(
 
                         # FIX 16.01.2026 21:30: OGC-Standard Ring-Struktur BEIBEHALTEN!
                         # MultiPolygon[Polygon[Ring[Point]]] für U-Form, Löcher, Innenhöfe
-                        # Polygon: coords_3d[ring_index][point_index] = [E, N, Z]
-                        # MultiPolygon: coords_3d[polygon_index][ring_index][point_index] = [E, N, Z]
+                        # Polygon: geometry[ring_index][point_index] = [E, N, Z]
+                        # MultiPolygon: geometry[polygon_index][ring_index][point_index] = [E, N, Z]
                         if geom.geom_type == 'Polygon':
                             # Alle Rings: exterior + interiors (Löcher)
-                            coords_3d = [
+                            geometry = [
                                 [list(c) for c in ring.coords]
                                 for ring in [geom.exterior] + list(geom.interiors)
                             ]
 
                         elif geom.geom_type == 'MultiPolygon':
                             # Jedes Polygon mit allen seinen Rings
-                            coords_3d = [
+                            geometry = [
                                 [
                                     [list(c) for c in ring.coords]
                                     for ring in [poly.exterior] + list(poly.interiors)
@@ -648,7 +650,7 @@ async def get_facade_data_for_configurator(
                             ]
 
                         elif geom.geom_type == 'LineString':
-                            coords_3d = [[list(c) for c in geom.coords]]
+                            geometry = [[list(c) for c in geom.coords]]
 
                     except Exception as wkb_err:
                         logger.debug(f"WKB-Parsing für Roof fehlgeschlagen: {wkb_err}")
@@ -663,7 +665,7 @@ async def get_facade_data_for_configurator(
                     "roof_angle_deg": roof.get('roof_angle_deg'),
                     "roof_orientation": roof.get('roof_orientation'),
                     "geometry_type": geometry_type,
-                    "coords_3d": coords_3d,  # Volle 3D-Geometrie
+                    "geometry": geometry,  # Volle 3D-Geometrie
                 })
 
             logger.info(f"[BUILDING-ROOFS] {len(building_roofs)} roofs für EGID {building.egid} geladen")

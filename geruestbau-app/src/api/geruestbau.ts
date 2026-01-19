@@ -199,7 +199,8 @@ export interface GeodataBuilding {
   walls?: Array<{
     z_min: number
     z_max: number
-    coords_3d?: number[][][]
+    // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+    geometry?: number[][][]
   }>
   roofs?: Array<{
     dach_min: number

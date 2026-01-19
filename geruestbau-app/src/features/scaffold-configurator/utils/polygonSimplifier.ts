@@ -17,6 +17,11 @@ export interface Point {
   y: number;
 }
 
+// NEU 19.01.2026: Punkt mit Original-Index für Tracking bei Vereinfachung
+interface IndexedPoint extends Point {
+  originalIndex: number;
+}
+
 export interface Side {
   index: number;
   start: Point;
@@ -24,6 +29,9 @@ export interface Side {
   length_m: number;
   direction: string;
   azimuth_deg: number;
+  // NEU 19.01.2026: Original-Polygon-Indizes für exakte 3D-Platzierung
+  // Bei Vereinfachung: [startIdx, ...zwischenPunkte, endIdx] im Original-Polygon
+  originalIndices?: number[];
 }
 
 export interface SimplificationResult {
@@ -96,9 +104,10 @@ function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): 
 }
 
 /**
- * Douglas-Peucker Algorithmus
+ * Douglas-Peucker Algorithmus (mit Index-Tracking für Original-Segmente)
+ * NEU 19.01.2026: Behält originalIndex für exakte 3D-Platzierung bei
  */
-function douglasPeucker(points: Point[], epsilon: number): Point[] {
+function douglasPeucker(points: IndexedPoint[], epsilon: number): IndexedPoint[] {
   if (points.length < 3) return points;
 
   // Finde Punkt mit maximaler Distanz
@@ -119,7 +128,7 @@ function douglasPeucker(points: Point[], epsilon: number): Point[] {
     const right = douglasPeucker(points.slice(maxIdx), epsilon);
     return [...left.slice(0, -1), ...right];
   } else {
-    // Alle Zwischenpunkte entfernen
+    // Alle Zwischenpunkte entfernen - aber Original-Indizes behalten!
     return [points[0], points[points.length - 1]];
   }
 }
@@ -140,9 +149,10 @@ function angleDifference(a1: number, a2: number): number {
 }
 
 /**
- * Verschmilzt kollineare Segmente
+ * Verschmilzt kollineare Segmente (mit Index-Tracking)
+ * NEU 19.01.2026: Behält originalIndex für exakte 3D-Platzierung bei
  */
-function mergeCollinearSegments(points: Point[], angleToleranceDeg: number): Point[] {
+function mergeCollinearSegments(points: IndexedPoint[], angleToleranceDeg: number): IndexedPoint[] {
   if (points.length < 4) return points;
 
   // Prüfen ob geschlossen
@@ -151,7 +161,7 @@ function mergeCollinearSegments(points: Point[], angleToleranceDeg: number): Poi
 
   const workPoints = closed ? points.slice(0, -1) : points;
 
-  const result: Point[] = [workPoints[0]];
+  const result: IndexedPoint[] = [workPoints[0]];
   let currentAngle = segmentAngle(workPoints[0], workPoints[1]);
 
   for (let i = 1; i < workPoints.length - 1; i++) {
@@ -198,8 +208,11 @@ function azimuthToDirection(azimuth: number): string {
  *
  * Bei GIS-Polygonen (gegen Uhrzeigersinn für äussere Ringe) ist die äussere Normale
  * 90° nach rechts gedreht zur Kantenrichtung.
+ *
+ * NEU 19.01.2026: Berechnet originalIndices für exakte 3D-Gerüst-Platzierung.
+ * Wenn IndexedPoint[] übergeben wird, werden die Original-Indizes für jede Seite gespeichert.
  */
-function calculateSides(points: Point[]): Side[] {
+function calculateSides(points: Point[] | IndexedPoint[]): Side[] {
   const sides: Side[] = [];
 
   for (let i = 0; i < points.length - 1; i++) {
@@ -218,6 +231,20 @@ function calculateSides(points: Point[]): Side[] {
     // Bei GIS-Polygonen gegen Uhrzeigersinn zeigt dies nach aussen
     let facadeAzimuth = (edgeAzimuth + 90) % 360;
 
+    // NEU 19.01.2026: Original-Indizes berechnen wenn verfügbar
+    let originalIndices: number[] | undefined;
+    const ip1 = p1 as IndexedPoint;
+    const ip2 = p2 as IndexedPoint;
+    if (typeof ip1.originalIndex === 'number' && typeof ip2.originalIndex === 'number') {
+      // Sammle alle Indizes von startIdx bis endIdx (einschließlich)
+      const startIdx = ip1.originalIndex;
+      const endIdx = ip2.originalIndex;
+      originalIndices = [];
+      for (let j = startIdx; j <= endIdx; j++) {
+        originalIndices.push(j);
+      }
+    }
+
     sides.push({
       index: i,
       start: p1,
@@ -225,6 +252,7 @@ function calculateSides(points: Point[]): Side[] {
       length_m: Math.round(length * 100) / 100,
       azimuth_deg: Math.round(facadeAzimuth * 10) / 10,
       direction: azimuthToDirection(facadeAzimuth),
+      originalIndices,
     });
   }
 
@@ -255,14 +283,18 @@ export interface SimplifyOptions {
 /**
  * Hauptfunktion: Vereinfacht ein Polygon für Fassaden-Auswahl
  *
+ * NEU 19.01.2026: Speichert Original-Polygon-Referenz für exakte 3D-Gerüst-Platzierung.
+ * Jede vereinfachte Seite enthält `originalIndices` mit den Indizes aller Original-Punkte,
+ * die zu dieser Seite gehören. Das ermöglicht das Gerüst entlang der echten Konturen zu platzieren.
+ *
  * @param polygon Array von [x, y] Koordinaten (LV95)
  * @param options Epsilon und Winkeltoleranz
- * @returns Vereinfachtes Polygon mit Fassaden
+ * @returns Vereinfachtes Polygon mit Fassaden (inkl. Original-Referenzen)
  */
 export function simplifyPolygon(
   polygon: [number, number][],
   options: SimplifyOptions = {}
-): SimplificationResult {
+): SimplificationResult & { originalPolygon?: [number, number][] } {
   if (!polygon || polygon.length < 3) {
     return {
       originalPoints: polygon?.length || 0,
@@ -274,39 +306,44 @@ export function simplifyPolygon(
     };
   }
 
-  // Convert to Point format
-  const points: Point[] = polygon.map(([x, y]) => ({ x, y }));
-  const originalCount = points.length;
+  // NEU 19.01.2026: Convert to IndexedPoint format (mit Original-Index)
+  const indexedPoints: IndexedPoint[] = polygon.map(([x, y], index) => ({
+    x,
+    y,
+    originalIndex: index,
+  }));
+  const originalCount = indexedPoints.length;
 
   // Epsilon bestimmen
   let epsilon = options.epsilon;
   if (epsilon === null || epsilon === undefined) {
-    epsilon = calculateDynamicEpsilon(points);
+    epsilon = calculateDynamicEpsilon(indexedPoints);
   }
 
   // epsilon === 0 means NO simplification (Original)
   if (epsilon === 0) {
-    const sides = calculateSides(points);
+    const sides = calculateSides(indexedPoints);
     return {
       originalPoints: originalCount,
-      simplifiedPoints: points.length,
-      polygon: points,
+      simplifiedPoints: indexedPoints.length,
+      polygon: indexedPoints,
       sides,
       epsilon: 0,
       angleToleranceDeg: 0,
+      originalPolygon: polygon,
     };
   }
 
   // Winkeltoleranz bestimmen
   const angleToleranceDeg = options.angleTolerance ?? getAngleToleranceForEpsilon(epsilon);
 
-  // 1. Douglas-Peucker
-  let simplified = douglasPeucker(points, epsilon);
+  // 1. Douglas-Peucker (behält Original-Indizes bei)
+  let simplified = douglasPeucker(indexedPoints, epsilon);
 
-  // 2. Kollineare Segmente verschmelzen
+  // 2. Kollineare Segmente verschmelzen (behält Original-Indizes bei)
   simplified = mergeCollinearSegments(simplified, angleToleranceDeg);
 
-  // 3. Fassaden berechnen
+  // 3. Fassaden berechnen (mit Original-Indizes)
   const sides = calculateSides(simplified);
 
   return {
@@ -316,6 +353,7 @@ export function simplifyPolygon(
     sides,
     epsilon,
     angleToleranceDeg,
+    originalPolygon: polygon,  // NEU: Original-Polygon für 3D-Platzierung
   };
 }
 
@@ -326,16 +364,22 @@ export function simplifyPolygon(
  * Bei Gebäuden am Hang haben verschiedene Fassaden unterschiedliche Höhen.
  * facadeZMin/facadeZMax enthalten die Terrain- und Wandhöhen pro Richtung.
  *
- * @param sides - Vereinfachte Polygon-Seiten
+ * NEU 19.01.2026: originalSegments für exakte 3D-Gerüst-Platzierung.
+ * Wenn originalPolygon und originalIndices vorhanden sind, werden die echten
+ * Polygon-Kanten für die 3D-Platzierung berechnet (statt vereinfachter Linien).
+ *
+ * @param sides - Vereinfachte Polygon-Seiten (mit originalIndices)
  * @param defaultHeight - Globale Traufhöhe (Fallback)
  * @param facadeZMin - Terrain-Höhen pro Richtung (m ü.M.), z.B. {"N": 543.0, "S": 540.0}
  * @param facadeZMax - Wandoberkanten pro Richtung (m ü.M.), z.B. {"N": 555.0, "S": 555.0}
+ * @param originalPolygon - Original-Polygon für 3D-Platzierung (optional)
  */
 export function sidesToFacades(
   sides: Side[],
   defaultHeight: number,
   facadeZMin?: Record<string, number>,
-  facadeZMax?: Record<string, number>
+  facadeZMax?: Record<string, number>,
+  originalPolygon?: [number, number][]
 ): Array<{
   id: string;
   direction: FacadeDirection;
@@ -344,6 +388,8 @@ export function sidesToFacades(
   slope_percent: number;
   start_point: [number, number];
   end_point: [number, number];
+  // NEU 19.01.2026: Original-Polygon-Segmente für exakte 3D-Platzierung
+  originalSegments?: Array<{ start: [number, number]; end: [number, number] }>;
   // NEU: Fassaden-spezifische Höhen-Metadaten
   facade_z_min?: number;
   facade_z_max?: number;
@@ -371,6 +417,22 @@ export function sidesToFacades(
       }
     }
 
+    // NEU 19.01.2026: Original-Segmente aus originalIndices berechnen
+    let originalSegments: Array<{ start: [number, number]; end: [number, number] }> | undefined;
+    if (originalPolygon && side.originalIndices && side.originalIndices.length >= 2) {
+      originalSegments = [];
+      for (let i = 0; i < side.originalIndices.length - 1; i++) {
+        const startIdx = side.originalIndices[i];
+        const endIdx = side.originalIndices[i + 1];
+        if (startIdx < originalPolygon.length && endIdx < originalPolygon.length) {
+          originalSegments.push({
+            start: originalPolygon[startIdx],
+            end: originalPolygon[endIdx],
+          });
+        }
+      }
+    }
+
     return {
       id: `facade-${idx + 1}`,
       direction: side.direction as FacadeDirection,
@@ -379,6 +441,7 @@ export function sidesToFacades(
       slope_percent: 0,
       start_point: [side.start.x, side.start.y],
       end_point: [side.end.x, side.end.y],
+      originalSegments,  // NEU: Für 3D-Gerüst-Platzierung
       // NEU: Metadaten für UI-Anzeige
       facade_z_min: zMin,
       facade_z_max: zMax,
@@ -462,10 +525,11 @@ function extractWallRingsWithZ(wall: BuildingWall): Array<{
 }> {
   const result: Array<{ coords2d: [number, number][]; coords3d: number[][] }> = [];
 
-  if (!wall.coords_3d || !wall.geometry_type) return result;
+  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+  if (!wall.geometry || !wall.geometry_type) return result;
 
   if (wall.geometry_type === 'Polygon') {
-    const rings = wall.coords_3d as number[][][];
+    const rings = wall.geometry as number[][][];
     for (const ring of rings) {
       result.push({
         coords2d: ring.map((c) => [c[0], c[1]] as [number, number]),
@@ -473,7 +537,7 @@ function extractWallRingsWithZ(wall: BuildingWall): Array<{
       });
     }
   } else if (wall.geometry_type === 'MultiPolygon') {
-    const polygons = wall.coords_3d as number[][][][];
+    const polygons = wall.geometry as number[][][][];
     for (const polygon of polygons) {
       for (const ring of polygon) {
         result.push({
@@ -483,7 +547,7 @@ function extractWallRingsWithZ(wall: BuildingWall): Array<{
       }
     }
   } else if (wall.geometry_type === 'LineString') {
-    const coords = wall.coords_3d as number[][];
+    const coords = wall.geometry as number[][];
     result.push({
       coords2d: coords.map((c) => [c[0], c[1]] as [number, number]),
       coords3d: coords,

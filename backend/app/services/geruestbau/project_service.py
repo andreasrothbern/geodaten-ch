@@ -296,9 +296,10 @@ class ProjectService:
                 layer_fetcher = get_layer_fetcher_service()
 
                 # Walls laden
+                # FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
                 walls_raw = layer_fetcher.get_walls_for_building(bundle.egid)
                 for wall in walls_raw:
-                    coords_3d = None
+                    geometry = None
                     wkb = wall.get('geometry_wkb')
                     if wkb:
                         try:
@@ -307,14 +308,14 @@ class ProjectService:
                             # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
                             # Frontend erwartet: [polygon][point] = [E, N, Z]
                             if hasattr(geom, 'geoms'):  # MultiPolygon
-                                coords_3d = [
+                                geometry = [
                                     list(g.exterior.coords)
                                     for g in geom.geoms
                                 ]
                             elif hasattr(geom, 'exterior'):  # Polygon
-                                coords_3d = [list(geom.exterior.coords)]
+                                geometry = [list(geom.exterior.coords)]
                             elif hasattr(geom, 'coords'):  # LineString
-                                coords_3d = [list(geom.coords)]
+                                geometry = [list(geom.coords)]
                         except Exception:
                             pass
 
@@ -324,13 +325,13 @@ class ProjectService:
                         "z_min": wall.get('z_min'),
                         "z_max": wall.get('z_max'),
                         "geometry_type": wall.get('geometry_type'),
-                        "coords_3d": coords_3d,
+                        "geometry": geometry,
                     })
 
                 # Roofs laden
                 roofs_raw = layer_fetcher.get_roofs_for_building(bundle.egid)
                 for roof in roofs_raw:
-                    coords_3d = None
+                    geometry = None
                     wkb = roof.get('geometry_wkb')
                     if wkb:
                         try:
@@ -339,14 +340,14 @@ class ProjectService:
                             # FIX 16.01.2026: Nur exterior rings, keine Ring-Verschachtelung
                             # Frontend erwartet: [polygon][point] = [E, N, Z]
                             if hasattr(geom, 'geoms'):  # MultiPolygon
-                                coords_3d = [
+                                geometry = [
                                     list(g.exterior.coords)
                                     for g in geom.geoms
                                 ]
                             elif hasattr(geom, 'exterior'):  # Polygon
-                                coords_3d = [list(geom.exterior.coords)]
+                                geometry = [list(geom.exterior.coords)]
                             elif hasattr(geom, 'coords'):  # LineString
-                                coords_3d = [list(geom.coords)]
+                                geometry = [list(geom.coords)]
                         except Exception:
                             pass
 
@@ -359,7 +360,7 @@ class ProjectService:
                         "roof_angle_deg": roof.get('roof_angle_deg'),
                         "roof_orientation": roof.get('roof_orientation'),
                         "geometry_type": roof.get('geometry_type'),
-                        "coords_3d": coords_3d,
+                        "geometry": geometry,
                     })
 
                 logger.info(f"[PROJECT] 3D-Layer geladen: {len(building_walls)} walls, {len(building_roofs)} roofs")
@@ -515,6 +516,7 @@ class ProjectService:
                 roofs_raw = layer_fetcher.get_roofs_for_building(egid)
 
                 # Walls verarbeiten
+                # FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
                 for wall in walls_raw:
                     building_walls.append({
                         "gebaeudeeinheit": wall.get('gebaeudeeinheit', ''),
@@ -522,7 +524,7 @@ class ProjectService:
                         "z_min": wall.get('z_min'),
                         "z_max": wall.get('z_max'),
                         "geometry_type": wall.get('geometry_type'),
-                        "coords_3d": None,  # Vereinfacht für Multi-Building
+                        "geometry": None,  # Vereinfacht für Multi-Building
                     })
 
                 # Roofs verarbeiten
@@ -536,7 +538,7 @@ class ProjectService:
                         "roof_angle_deg": roof.get('roof_angle_deg'),
                         "roof_orientation": roof.get('roof_orientation'),
                         "geometry_type": roof.get('geometry_type'),
-                        "coords_3d": None,  # Vereinfacht für Multi-Building
+                        "geometry": None,  # Vereinfacht für Multi-Building
                     })
             except Exception as e:
                 logger.warning(f"[PROJECT] 3D-Layer für EGID {egid}: {e}")

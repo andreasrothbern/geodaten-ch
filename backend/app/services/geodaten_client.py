@@ -240,7 +240,8 @@ class GeodatenClient:
             egid_list = [b.egid for b in buildings]
 
             if include_walls and egid_list:
-                # FIX 19.01.2026: Spalte heisst geometry_wkb (WKB), nicht coords_3d (JSON)
+                # FIX 19.01.2026: Spalte heisst geometry_wkb (WKB)
+                # Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
                 cursor.execute(f"""
                     SELECT egid, z_min, z_max, geometry_wkb
                     FROM building_walls
@@ -254,23 +255,23 @@ class GeodatenClient:
                         walls_by_egid[wall_egid] = []
 
                     # WKB zu Koordinaten konvertieren (falls vorhanden)
-                    coords_3d = None
+                    geometry = None
                     if wall_row[3]:
                         try:
                             from shapely import wkb
                             geom = wkb.loads(wall_row[3])
                             # MultiPolygon oder Polygon zu Koordinaten
                             if hasattr(geom, 'geoms'):
-                                coords_3d = [list(g.exterior.coords) for g in geom.geoms]
+                                geometry = [list(g.exterior.coords) for g in geom.geoms]
                             elif hasattr(geom, 'exterior'):
-                                coords_3d = [list(geom.exterior.coords)]
+                                geometry = [list(geom.exterior.coords)]
                         except Exception:
-                            coords_3d = None
+                            geometry = None
 
                     walls_by_egid[wall_egid].append({
                         "z_min": wall_row[1],
                         "z_max": wall_row[2],
-                        "coords_3d": coords_3d
+                        "geometry": geometry
                     })
 
                 for b in buildings:

@@ -111,11 +111,12 @@ export interface BuildingWall {
   z_min: number | null          // Terrain-Höhe (m ü.M.) - Bodenniveau der Wand
   z_max: number | null          // Trauf-Höhe (m ü.M.) - Oberkante der Wand
   geometry_type: 'Polygon' | 'MultiPolygon' | 'LineString' | null
-  // Volle 3D-Koordinaten aus geometry_wkb:
+  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+  // Volle 3D-Koordinaten aus geometry_wkb konvertiert:
   // - Polygon: [[[x,y,z], ...], [[hole], ...]]  (Array of rings)
   // - MultiPolygon: [[[[x,y,z], ...]], [...]]   (Array of polygons, each with rings)
   // - LineString: [[x,y,z], ...]
-  coords_3d: number[][][] | number[][][][] | number[][] | null
+  geometry: number[][][] | number[][][][] | number[][] | null
 }
 
 // NEU 15.01.2026 23:30: Building Roof aus building_roofs Tabelle
@@ -130,11 +131,12 @@ export interface BuildingRoof {
   roof_angle_deg: number | null // Dachneigung in Grad
   roof_orientation: string | null  // First-Richtung: 'N-S', 'O-W', 'NW-SO', etc.
   geometry_type: 'Polygon' | 'MultiPolygon' | 'LineString' | null
-  // Volle 3D-Koordinaten aus geometry_wkb:
+  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+  // Volle 3D-Koordinaten aus geometry_wkb konvertiert:
   // - Polygon: [[[x,y,z], ...], [[hole], ...]]  (Array of rings)
   // - MultiPolygon: [[[[x,y,z], ...]], [...]]   (Array of polygons, each with rings)
   // - LineString: [[x,y,z], ...]
-  coords_3d: number[][][] | number[][][][] | number[][] | null
+  geometry: number[][][] | number[][][][] | number[][] | null
 }
 
 // Zone eines Gebäudes (aus building_contexts.db)

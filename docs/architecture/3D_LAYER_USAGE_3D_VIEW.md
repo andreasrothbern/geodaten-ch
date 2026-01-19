@@ -1,7 +1,8 @@
 # 3D-Layer Verwendung: 3D-View & Nachbarn
 
-> **Stand 18.01.2026 19:00**
+> **Stand 19.01.2026 12:00**
 > **Status:** ✅ IMPLEMENTIERT
+> **NEU 19.01.2026:** Vollständige Datenfluss-Analyse `geometry` Feld (ehemals `coords_3d`)
 > **NEU 18.01.2026:** `facades[]` Array mit konstanter Traufhöhe + `is_gable` Flag
 >
 > **NEU 15.01.2026 23:50:** `building_roofs` in API integriert - echte 3D-Dachgeometrie aus DB
@@ -1756,3 +1757,239 @@ facades.forEach(facade => {
 | `service.py:_get_gable_directions()` | Giebel-Richtungen ermitteln |
 | `ConfiguratorPage.tsx` | facades[] an 3D-View übergeben |
 | `ScaffoldScene.tsx` | Gerüst mit facades[] rendern |
+
+## Vollständige Datenfluss-Analyse: geometry Feld (19.01.2026)
+
+> **FIX 19.01.2026:** Umbenennung `coords_3d` → `geometry` durchgeführt (konsistent mit DB `geometry_wkb`)
+
+Diese Analyse dokumentiert den vollständigen Datenfluss der 3D-Geometrie-Daten von der Datenbank
+bis zur 3D-View-Rendering-Entscheidung im Frontend.
+
+### Übersicht: Status ✅ Architektur korrekt implementiert
+
+| Komponente | Status | Details |
+|------------|--------|---------|
+| `geometry` Feld in DB | ✅ | Spalte `geometry_wkb` in `building_walls` und `building_roofs` |
+| Backend WKB → `geometry` | ✅ | Konvertierung in `geruestbau.py`, `geodaten_client.py` |
+| API Response `geometry` | ✅ | `building_walls[].geometry` und `building_roofs[].geometry` |
+| Frontend Types | ✅ | `BuildingWall.geometry` und `BuildingRoof.geometry` |
+| ScaffoldScene Check | ✅ | `buildingWalls.some(w => w.geometry && w.geometry.length > 0)` |
+| Fallback 2D-Extrusion | ✅ | Wenn keine 3D-Daten verfügbar |
+
+### Datenfluss: Wand-Geometrie (building_walls)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                  WAND-GEOMETRIE DATENFLUSS                                       │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  1. DATENBANK (building_3d.duckdb)                                               │
+│  ══════════════════════════════════                                              │
+│  building_walls Tabelle:                                                         │
+│    ├─ egid (VARCHAR)                                                             │
+│    ├─ z_min, z_max (DOUBLE) - Höhen in m ü.M.                                   │
+│    ├─ geometry_type (VARCHAR) - 'Polygon' | 'MultiPolygon' | 'LineString'       │
+│    └─ geometry_wkb (BLOB) - WKB-codierte 3D-Geometrie                           │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  2. BACKEND API (geruestbau.py:555-668)                                         │
+│  ═════════════════════════════════════                                          │
+│  WKB → Koordinaten Konvertierung:                                               │
+│    from shapely import wkb                                                       │
+│    geom = wkb.loads(wall_row['geometry_wkb'])                                   │
+│    geometry = [list(g.exterior.coords) for g in geom.geoms]                     │
+│                                                                                  │
+│  API Response:                                                                   │
+│    {                                                                             │
+│      "building_walls": [                                                        │
+│        {                                                                         │
+│          "egid": "2242547",                                                      │
+│          "z_min": 541.29,                                                        │
+│          "z_max": 603.86,                                                        │
+│          "geometry_type": "MultiPolygon",                                       │
+│          "geometry": [[[[E,N,Z], [E,N,Z], ...]]]  // ← Koordinaten-Array       │
+│        }                                                                         │
+│      ]                                                                           │
+│    }                                                                             │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  3. FRONTEND TYPES (project.ts:108-120)                                         │
+│  ══════════════════════════════════════                                          │
+│  export interface BuildingWall {                                                 │
+│    gebaeudeeinheit: string                                                       │
+│    egid: number | null                                                           │
+│    z_min: number | null                                                          │
+│    z_max: number | null                                                          │
+│    geometry_type: 'Polygon' | 'MultiPolygon' | 'LineString' | null              │
+│    geometry: number[][][] | number[][][][] | number[][] | null  // ← FIX 19.01 │
+│  }                                                                               │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  4. CONFIGURATOR PAGE (ConfiguratorPage.tsx:1487)                               │
+│  ════════════════════════════════════════════════                                │
+│  <ScaffoldConfigurator                                                           │
+│    buildingWalls={buildingData.building_walls}  // ← Direkt weitergeleitet     │
+│  />                                                                              │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  5. SCAFFOLD SCENE (ScaffoldScene.tsx:1244-1255)                                │
+│  ═══════════════════════════════════════════════                                 │
+│  3D-Check:                                                                       │
+│    const has3DWalls = buildingWalls && buildingWalls.length > 0 &&              │
+│      buildingWalls.some(w => w.geometry && w.geometry.length > 0);              │
+│                                                                                  │
+│    if (has3DWalls) {                                                             │
+│      // Echte 3D-Wandgeometrie aus swissBUILDINGS3D                             │
+│      parent.add(createBuildingFrom3DWalls(buildingWalls, bboxCenter, terrainZ));│
+│    } else {                                                                      │
+│      // Fallback: 2D-Polygon Extrusion                                          │
+│      parent.add(createBuildingFromPolygon(normalized, buildingHeight));         │
+│    }                                                                             │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Datenfluss: Dach-Geometrie (building_roofs)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                  DACH-GEOMETRIE DATENFLUSS                                       │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  1. DATENBANK (building_3d.duckdb)                                               │
+│  ══════════════════════════════════                                              │
+│  building_roofs Tabelle:                                                         │
+│    ├─ egid (VARCHAR)                                                             │
+│    ├─ dach_min, dach_max (DOUBLE) - Trauf-/Firsthöhe in m ü.M.                 │
+│    ├─ geometry_type (VARCHAR) - 'Polygon' | 'MultiPolygon'                      │
+│    └─ geometry_wkb (BLOB) - WKB-codierte 3D-Dachgeometrie                       │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  2. BACKEND API (geruestbau.py)                                                  │
+│  ══════════════════════════════                                                  │
+│  WKB → Koordinaten Konvertierung (analog zu Wänden)                             │
+│                                                                                  │
+│  API Response:                                                                   │
+│    {                                                                             │
+│      "building_roofs": [                                                         │
+│        {                                                                         │
+│          "egid": "2242547",                                                      │
+│          "dach_min": 569.75,    // Traufhöhe ü.M.                               │
+│          "dach_max": 571.05,    // Firsthöhe ü.M.                               │
+│          "geometry_type": "MultiPolygon",                                       │
+│          "geometry": [[[[E,N,Z], [E,N,Z], ...]]]  // ← 3D-Dachform             │
+│        }                                                                         │
+│      ]                                                                           │
+│    }                                                                             │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  3. CONFIGURATOR PAGE (ConfiguratorPage.tsx:1368-1398)                          │
+│  ═════════════════════════════════════════════════════                           │
+│  Extraktion:                                                                     │
+│    if (data.building_roofs && data.building_roofs.length > 0) {                 │
+│      const firstRoof = data.building_roofs[0];                                  │
+│      if (firstRoof.geometry && firstRoof.geometry_type) {                       │
+│        if (firstRoof.geometry_type === 'MultiPolygon') {                        │
+│          roofGeometryCoords = firstRoof.geometry.map(p => p[0]);  // Exteriors │
+│        } else if (firstRoof.geometry_type === 'Polygon') {                      │
+│          roofGeometryCoords = [firstRoof.geometry[0]];                          │
+│        }                                                                         │
+│        hasRoofGeometry = true;                                                   │
+│      }                                                                           │
+│    }                                                                             │
+│                                                                                  │
+│  Übergabe an RoofData:                                                           │
+│    {                                                                             │
+│      roof_geometry_coords: roofGeometryCoords,  // ← Für ScaffoldScene         │
+│      has_roof_geometry: hasRoofGeometry,                                        │
+│      roof_dach_min_m: roofDachMinM,                                             │
+│      roof_dach_max_m: roofDachMaxM,                                             │
+│    }                                                                             │
+│                                                                                  │
+│                              │                                                   │
+│                              ▼                                                   │
+│  4. SCAFFOLD SCENE (ScaffoldScene.tsx:1216-1278)                                │
+│  ═══════════════════════════════════════════════                                 │
+│  3D-Check:                                                                       │
+│    const hasReal3DGeometry = config.roof?.has_roof_geometry &&                  │
+│      config.roof?.roof_geometry_coords &&                                        │
+│      config.roof.roof_geometry_coords.length > 0 &&                             │
+│      config.roof?.roof_dach_min_m;                                              │
+│                                                                                  │
+│    if (hasReal3DGeometry) {                                                      │
+│      // Echte 3D-Dachgeometrie aus swissBUILDINGS3D                             │
+│      parent.add(createRoofFrom3DGeometry(                                       │
+│        config.roof.roof_geometry_coords,                                        │
+│        bboxCenter[0], bboxCenter[1],                                            │
+│        config.roof.roof_dach_min_m,                                             │
+│        buildingHeight                                                            │
+│      ));                                                                         │
+│    } else {                                                                      │
+│      // Fallback: Heuristisches Dach aus Polygon                                │
+│      parent.add(createRoofFromPolygon(...));                                    │
+│    }                                                                             │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Gebäude-Polygon: Original vs. Simplified
+
+**Wichtig:** Die 3D-View verwendet das **Original-Polygon**, NICHT `polygon_simplified`:
+
+```typescript
+// ConfiguratorPage.tsx:1469
+<ScaffoldConfigurator
+  buildingPolygon={buildingData.building.polygon}  // ✅ Original-Polygon
+  ...
+/>
+```
+
+| Polygon-Typ | Verwendung | Quelle |
+|-------------|------------|--------|
+| `building.polygon` | 3D-View Basis, Fallback-Extrusion | swissBUILDINGS3D (Original) |
+| `polygon_simplified` | Fassaden-Vereinfachung (Douglas-Peucker) | On-the-fly berechnet |
+
+### Voraussetzungen für komplexe Gebäude
+
+Damit Türme, Kirchen und andere komplexe Gebäude korrekt in 3D gerendert werden:
+
+| Voraussetzung | Prüfung | SQL |
+|---------------|---------|-----|
+| 3D-Layer importiert | `has_3d_layers = 1` | `SELECT has_3d_layers FROM buildings_3d WHERE egid = ?` |
+| Wand-Daten vorhanden | `building_walls` nicht leer | `SELECT COUNT(*) FROM building_walls WHERE egid = ?` |
+| Dach-Daten vorhanden | `building_roofs` nicht leer | `SELECT COUNT(*) FROM building_roofs WHERE egid = ?` |
+| Geometrie konvertiert | `geometry` nicht NULL | `SELECT geometry_wkb FROM building_walls WHERE egid = ?` |
+
+### Console-Logs zur Diagnose
+
+Das Frontend loggt bei jedem 3D-Rendering:
+
+```javascript
+// Wenn 3D-Wände verwendet werden:
+[3D-WALLS] Verwende echte 3D-Wandgeometrie { wallCount: 5, terrainZ: 543.1, complexity: 'complex' }
+
+// Wenn Fallback verwendet wird:
+[3D-WALLS] Fallback: 2D-Extrusion (keine 3D-Wände) { buildingHeight: 12.50 }
+
+// Wenn 3D-Dach verwendet wird:
+[3D-ROOF] Verwende echte 3D-Dachgeometrie { polygons: 3, dachMin: 569.75, dachMax: 571.05 }
+```
+
+### Betroffene Dateien (FIX 19.01.2026)
+
+| Datei | Änderung |
+|-------|----------|
+| `project.ts:108-140` | `BuildingWall.coords_3d` → `BuildingWall.geometry` |
+| `geruestbau.ts:199-204` | `GeodataBuilding.walls[].coords_3d` → `geometry` |
+| `ConfiguratorPage.tsx:278-289, 1360-1389` | Wall/Roof mapping auf `geometry` |
+| `polygonSimplifier.ts:465-492` | `extractWallPolygons()` nutzt `wall.geometry` |
+| `ScaffoldScene.tsx:141-165, 1243-1245` | 3D-Check auf `w.geometry` |
+| `geruestbau.py:555-668` | WKB → `geometry` Konvertierung |
+| `geodaten_client.py:242-275` | WKB → `geometry` Konvertierung |
+| `main.py:763-793` | Fix: Spalte `geometry_wkb` (nicht `coords_3d`) |

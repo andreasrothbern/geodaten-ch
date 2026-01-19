@@ -169,6 +169,8 @@ const createFacadeElement = (
     // Include coordinates for 3D positioning
     start_point: facade.start_point,
     end_point: facade.end_point,
+    // NEU 19.01.2026: Original-Polygon-Segmente für exakte 3D-Platzierung
+    originalSegments: facade.originalSegments,
     // NEU 14.01.2026: Terrain-Daten für Hanglage-Darstellung
     terrain_z_min: facade.facade_z_min,
     terrain_z_max: facade.facade_z_max,

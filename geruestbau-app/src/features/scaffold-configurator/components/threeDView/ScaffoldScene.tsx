@@ -138,13 +138,14 @@ function createBuildingFrom3DWalls(
     side: THREE.DoubleSide,
   });
 
+  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
   walls.forEach((wall, wallIndex) => {
-    if (!wall.coords_3d) {
-      console.log(`[3D-WALLS] Wall ${wallIndex}: keine coords_3d`);
+    if (!wall.geometry) {
+      console.log(`[3D-WALLS] Wall ${wallIndex}: keine geometry`);
       return;
     }
 
-    // coords_3d Format:
+    // geometry Format:
     // - Polygon: [[[x,y,z], ...]] (Array of rings, first is exterior)
     // - MultiPolygon: [[[[x,y,z], ...]]] (Array of polygons)
     const geometryType = wall.geometry_type || 'Polygon';
@@ -154,10 +155,10 @@ function createBuildingFrom3DWalls(
 
     if (geometryType === 'MultiPolygon') {
       // MultiPolygon: [[[[x,y,z], ...]]]
-      polygons = wall.coords_3d as number[][][][];
+      polygons = wall.geometry as number[][][][];
     } else if (geometryType === 'Polygon') {
       // Polygon: [[[x,y,z], ...]] - wrap in array for uniform handling
-      polygons = [wall.coords_3d as number[][][]];
+      polygons = [wall.geometry as number[][][]];
     } else {
       console.log(`[3D-WALLS] Wall ${wallIndex}: Unbekannter Typ ${geometryType}`);
       return;
@@ -753,6 +754,7 @@ function createScaffoldCell(
 }
 
 // Helper to create scaffold facade along actual edge coordinates
+// NEU 19.01.2026: Unterstützt originalSegments für exakte 3D-Platzierung entlang Original-Polygon
 function createScaffoldFacadeAlongEdge(
   facade: ScaffoldFacade,
   fieldWidth: number,
@@ -764,6 +766,93 @@ function createScaffoldFacadeAlongEdge(
   const cellDepth = 0.73;
   const colorHex = parseInt((facade.color || '#6B7280').replace('#', ''), 16);
 
+  // NEU 19.01.2026: Verwende originalSegments wenn vorhanden (für exakte 3D-Platzierung)
+  // Das Gerüst folgt dann den echten Polygon-Konturen statt einer vereinfachten geraden Linie
+  if (facade.originalSegments && facade.originalSegments.length > 0) {
+    // Berechne Gesamtlänge aller Segmente
+    let totalLength = 0;
+    const segmentLengths: number[] = [];
+    facade.originalSegments.forEach(seg => {
+      const dx = seg.end[0] - seg.start[0];
+      const dy = seg.end[1] - seg.start[1];
+      const len = Math.sqrt(dx * dx + dy * dy);
+      segmentLengths.push(len);
+      totalLength += len;
+    });
+
+    // Verteile Felder proportional auf Segmente
+    let fieldOffset = 0;
+    facade.originalSegments.forEach((seg, segIdx) => {
+      const segLength = segmentLengths[segIdx];
+      const segFieldRatio = segLength / totalLength;
+      const segFields = Math.max(1, Math.round(facade.fields * segFieldRatio));
+
+      // Normalisiere Segment-Koordinaten relativ zum Center
+      // Swap start/end to match polygon winding order
+      const segStartX = seg.end[0] - center[0];
+      const segStartZ = -(seg.end[1] - center[1]);
+      const segEndX = seg.start[0] - center[0];
+      const segEndZ = -(seg.start[1] - center[1]);
+
+      // Berechne Richtung für dieses Segment
+      const dx = segEndX - segStartX;
+      const dz = segEndZ - segStartZ;
+      const length = Math.sqrt(dx * dx + dz * dz);
+      if (length < 0.01) return; // Skip sehr kurze Segmente
+
+      const dirX = dx / length;
+      const dirZ = dz / length;
+      const perpX = -dirZ;
+      const perpZ = dirX;
+      const offsetX = perpX * (scaffoldGap + cellDepth / 2);
+      const offsetZ = perpZ * (scaffoldGap + cellDepth / 2);
+
+      // Erstelle Gerüst-Zellen für dieses Segment
+      for (let level = 0; level < facade.levels; level++) {
+        for (let f = 0; f < segFields && (fieldOffset + f) < facade.fields; f++) {
+          const key = `${fieldOffset + f}-${level}`;
+          if (facade.modifications.removed_cells.has(key)) continue;
+
+          const t = (f + 0.5) / segFields;
+          const cellX = segStartX + dx * t + offsetX;
+          const cellZ = segStartZ + dz * t + offsetZ;
+          const cellY = level * levelHeight + levelHeight / 2;
+
+          const cellWidth = fieldWidth * 0.95;
+          const cellHeight = levelHeight * 0.95;
+
+          let cellColor = colorHex;
+          if (facade.modifications.lift_position === (fieldOffset + f)) {
+            cellColor = 0xfef3c7;
+          } else if (facade.modifications.stairs_position === (fieldOffset + f)) {
+            cellColor = 0xdcfce7;
+          }
+
+          const cellGroup = new THREE.Group();
+          const geometry = new THREE.BoxGeometry(cellWidth, cellHeight, cellDepth);
+          const material = new THREE.MeshStandardMaterial({
+            color: cellColor,
+            transparent: true,
+            opacity: 0.8,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+
+          cellGroup.add(mesh);
+          cellGroup.position.set(cellX, cellY, cellZ);
+          const angle = Math.atan2(dx, dz);
+          cellGroup.rotation.y = angle;
+          group.add(cellGroup);
+        }
+      }
+      fieldOffset += segFields;
+    });
+
+    console.log(`[3D-SCAFFOLD] Fassade ${facade.direction}: ${facade.originalSegments.length} Original-Segmente, ${facade.fields} Felder`);
+    return group;
+  }
+
+  // Fallback: Verwende start_point/end_point (vereinfachtes Polygon)
   // Check if we have actual coordinates
   if (!facade.start_point || !facade.end_point) {
     // Fallback: no positioning (shouldn't happen)
@@ -1239,8 +1328,9 @@ export default function ScaffoldScene({
       }
 
       // NEU 18.01.2026: Echte 3D-Wände wenn verfügbar, sonst Extrusion als Fallback
+      // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
       const has3DWalls = buildingWalls && buildingWalls.length > 0 &&
-        buildingWalls.some(w => w.coords_3d && w.coords_3d.length > 0);
+        buildingWalls.some(w => w.geometry && w.geometry.length > 0);
 
       if (has3DWalls) {
         // Echte 3D-Wandgeometrie aus swissBUILDINGS3D - zeigt echte Turmformen, Anbauten, etc.

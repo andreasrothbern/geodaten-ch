@@ -83,6 +83,65 @@ Siehe Abschnitt "⚠️ KRITISCH: Blockierte Fassaden - Schwellenwert" oben.
 
 ---
 
+### BUG-028: geometry_wkb NULL nach 3D-Layer-Import (GEFIXT)
+
+**Status:** ✅ Gefixt am 19.01.2026 18:00
+
+**Problem:**
+Nach dem Import von 3D-Layern (via `/api/v1/building/{egid}/load-3d-layers`) wurde `geometry_wkb`
+nicht in der DB gespeichert. Die API meldete `walls_count: 2`, aber die Geometrie war NULL.
+
+**Beispiel Kirche St. Peter und Paul:**
+```
+VOR dem Fix:
+  POST /load-3d-layers → {"success": true, "walls_count": 2}
+  SELECT geometry_wkb FROM building_walls WHERE egid=191821074 → NULL
+
+NACH dem Fix:
+  POST /load-3d-layers → {"success": true, "walls_count": 2}
+  SELECT geometry_wkb FROM building_walls WHERE egid=191821074 → <WKB Binary>
+  GET /3d-layers → walls[0].has_geometry_wkt = True
+```
+
+**Ursache:**
+Zwei Probleme in `layer_fetcher.py`:
+
+1. **`executemany` statt `execute`**: DuckDB hatte Probleme mit BLOB-Feldern bei `executemany`.
+   Die Geometrie wurde nicht korrekt gespeichert.
+
+2. **EGID als String statt Integer**: Das DB-Schema erwartet `egid INTEGER`, aber der Code
+   speicherte EGID als String. Beim Laden (mit Integer) wurden keine Rows gefunden.
+
+```python
+# VOR dem Fix (layer_fetcher.py:290-297)
+cursor.executemany("""
+    INSERT OR REPLACE INTO building_walls ... VALUES (?, ?, ?, ?, ?)
+""", [(w['gebaeudeeinheit'], w['egid'], ...)])  # egid war STRING!
+```
+
+**Fix:**
+1. `executemany` durch einzelne `execute`-Aufrufe ersetzt (wie in `roof_3d_service.py`)
+2. EGID zu Integer konvertiert vor dem Speichern
+
+```python
+# NACH dem Fix (layer_fetcher.py:294-314)
+for w in walls:
+    egid_int = int(w['egid']) if w['egid'] else None  # FIX!
+    cursor.execute("""
+        INSERT OR REPLACE INTO building_walls ... VALUES (?, ?, ?, ?, ?, ...)
+    """, (w['gebaeudeeinheit'], egid_int, ...))  # execute statt executemany
+```
+
+**Betroffene Dateien:**
+- `backend/app/services/layer_fetcher.py:280-320` - `_save_walls()`
+- `backend/app/services/layer_fetcher.py:330-370` - `_save_floors()`
+
+**Verifiziert mit:**
+- Kirche St. Peter und Paul (EGID: 191821074): geometry_type=MultiPolygon, 547 Polygone
+- Bundeshaus (EGID: 2242547): geometry_type=MultiPolygon
+
+---
+
 ### BUG-026: Gerüst zu hoch bei 'Fassadenarbeit' - wall_height statt Traufhöhe (GEFIXT)
 
 **Status:** ✅ Gefixt am 18.01.2026 04:35

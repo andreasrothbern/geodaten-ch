@@ -53,6 +53,10 @@ from .validation import validate_heights, validate_zone_consistency
 # BuildingContext Integration - für konsistente Zonen zwischen Frontend und Prompt
 from app.models.building_context import BuildingZone, ZoneType, BuildingContext
 
+# NEU 19.01.2026: Nachbar-Enrichment für Objekt
+import math
+from app.services.neighbor_enrichment import prefetch_neighbors
+
 logger = logging.getLogger(__name__)
 
 # Datenbank
@@ -581,6 +585,17 @@ class SmartBuildingService:
             # 4. Enrichment via _collect_* Methoden (wie Multi-Address)
             await self._collect_gwr_data(bundle)
             await self._collect_building_3d_data(bundle)
+
+            # NEU 19.01.2026: Nachbar-Prefetch basierend auf Objekt-BoundingBox
+            # Muss NACH _collect_building_3d_data laufen (braucht Polygon)
+            # Formel: effective_radius = (bbox_diagonal / 2) + 5m
+            if include_neighbors and bundle.polygon:
+                prefetch_result = await self._prefetch_object_neighbors(
+                    bundles=[bundle],
+                    base_radius_m=5.0
+                )
+                logger.info(f"[SMART_BUILDING] Nachbar-Prefetch: {prefetch_result}")
+
             if include_terrain:
                 await self._collect_terrain_data(bundle)
             await self._collect_sonnendach_data(bundle)
@@ -2042,6 +2057,15 @@ class SmartBuildingService:
             self._save_bundle_cache(cache_key, bundle)
             enriched_bundles.append(bundle)
 
+        # NEU 19.01.2026: Nachbar-Prefetch für das gesamte Objekt
+        # NACH allen Enrichments, damit alle Polygone verfügbar sind
+        if enriched_bundles:
+            prefetch_result = await self._prefetch_object_neighbors(
+                bundles=enriched_bundles,
+                base_radius_m=5.0
+            )
+            logger.info(f"[MULTI-BUILDING] Nachbar-Prefetch: {prefetch_result}")
+
         logger.info(f"[MULTI-BUILDING] {len(bundles)} Bundles erstellt")
         return bundles
 
@@ -2126,6 +2150,89 @@ class SmartBuildingService:
                 bundle.overall_quality = DataQuality.MEDIUM
             else:
                 bundle.overall_quality = DataQuality.LOW
+
+    async def _prefetch_object_neighbors(
+        self,
+        bundles: List[BuildingDataBundle],
+        base_radius_m: float = 5.0
+    ) -> Dict[str, Any]:
+        """
+        NEU 19.01.2026: Prefetched Nachbarn für das gesamte Objekt (alle Polygone).
+
+        Berechnet die BoundingBox aller Gebäude-Polygone und nutzt die Diagonale
+        als Basis für den Suchradius. So werden auch bei Multi-Building-Projekten
+        alle direkten Nachbarn gefunden.
+
+        Formel: effective_radius = (bbox_diagonal / 2) + base_radius_m
+
+        Args:
+            bundles: Liste der BuildingDataBundles (kann auch 1 Element sein)
+            base_radius_m: Basis-Radius für Nachbarn (default: 5m)
+
+        Returns:
+            Dict mit Prefetch-Statistiken
+        """
+        if not bundles:
+            return {'status': 'skipped', 'reason': 'no_bundles'}
+
+        # Sammle alle Polygon-Punkte und EGIDs
+        all_points = []
+        exclude_egids = []
+
+        for bundle in bundles:
+            if bundle.polygon:
+                all_points.extend(bundle.polygon)
+            if bundle.egid:
+                try:
+                    exclude_egids.append(int(bundle.egid))
+                except (ValueError, TypeError):
+                    pass
+
+        if not all_points:
+            return {'status': 'skipped', 'reason': 'no_polygons'}
+
+        # Berechne BoundingBox aller Polygone
+        xs = [p[0] for p in all_points]
+        ys = [p[1] for p in all_points]
+        min_e, max_e = min(xs), max(xs)
+        min_n, max_n = min(ys), max(ys)
+
+        # Diagonale und Centroid berechnen
+        bbox_width = max_e - min_e
+        bbox_depth = max_n - min_n
+        bbox_diagonal = math.sqrt(bbox_width**2 + bbox_depth**2)
+
+        centroid_e = (min_e + max_e) / 2
+        centroid_n = (min_n + max_n) / 2
+
+        # Effektiver Radius: halbe Diagonale + Basis-Radius
+        effective_radius = (bbox_diagonal / 2) + base_radius_m
+
+        logger.info(
+            f"[PREFETCH_OBJECT] BBox: {bbox_width:.1f}m x {bbox_depth:.1f}m, "
+            f"Diagonale: {bbox_diagonal:.1f}m, Centroid: ({centroid_e:.1f}, {centroid_n:.1f}), "
+            f"effective_radius: {effective_radius:.1f}m (base: {base_radius_m}m)"
+        )
+
+        # Prefetch für alle Nachbarn im effektiven Radius
+        # exclude_egid: Nur erstes Gebäude excluden (prefetch_neighbors unterstützt nur 1)
+        # Die anderen Gebäude werden durch die EGID-Prüfung im neighbors_service gefiltert
+        first_exclude = exclude_egids[0] if exclude_egids else None
+
+        try:
+            result = await prefetch_neighbors(
+                e=centroid_e,
+                n=centroid_n,
+                radius_m=effective_radius,
+                exclude_egid=first_exclude
+            )
+            result['effective_radius_m'] = effective_radius
+            result['bbox_diagonal_m'] = bbox_diagonal
+            result['object_building_count'] = len(bundles)
+            return result
+        except Exception as ex:
+            logger.error(f"[PREFETCH_OBJECT] Error: {ex}")
+            return {'status': 'error', 'error': str(ex)}
 
     def bundle_to_scaffolding_response(
         self,
