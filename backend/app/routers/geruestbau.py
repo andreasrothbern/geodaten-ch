@@ -145,7 +145,8 @@ async def save_geruestbaudata(
         return {"success": False, "message": "Fehler beim Speichern der GeruestbauData"}
 
 
-# NEU 19.01.2026: Geodaten per API laden (Architektur-Trennung)
+# NEU 19.01.2026: Einziger Einstiegspunkt für Projekt-Geodaten
+# FIX 19.01.2026 23:30: Direkter DuckDB-Zugriff statt GeodatenClient (Monolith!)
 @router.get("/projects/{project_id}/geodata", response_model=Dict[str, Any])
 async def get_project_geodata(
     project_id: str,
@@ -154,10 +155,10 @@ async def get_project_geodata(
     include_roofs: bool = Query(True, description="3D-Roof-Daten mitliefern")
 ):
     """
-    NEU 19.01.2026: Lädt Geodaten für ein Projekt per GeodatenClient.
+    Lädt Geodaten für ein Projekt direkt aus DuckDB.
 
-    Diese Methode ersetzt das Speichern von buildings_data im Projekt.
-    Stattdessen werden die Geodaten beim Öffnen des Projekts per API geladen.
+    FIX 19.01.2026: Direkter Service-Aufruf statt GeodatenClient (HTTP zu sich selbst).
+    Wir sind ein Monolith - geruestbau.py und main.py teilen sich dieselben Services!
 
     WICHTIG: Ein Projekt = Ein Objekt.
     - polygon: Union-Polygon aller Projekt-Gebäude (IMMER vorhanden)
@@ -166,7 +167,7 @@ async def get_project_geodata(
 
     Datenfluss:
     1. Projekt laden → center_e, center_n, project_egids
-    2. GeodatenClient.get_buildings_in_area() → Alle Gebäude im Umkreis
+    2. DuckDB BBox-Query → Alle Gebäude im Umkreis
     3. Kategorisierung: project_egids → Projekt-Gebäude, Rest → Nachbarn
     4. Union-Polygon berechnen → polygon
 
@@ -179,10 +180,13 @@ async def get_project_geodata(
             "radius_m": 100,
             "query_time_ms": 1.2
         }
-
-    Siehe: docs/architecture/ARCHITECTURE.md → "Koordinaten-basierte API Strategie"
     """
-    from app.services.geodaten_client import get_geodaten_client
+    import time
+    import json
+    import math
+    from app.config import get_building_3d_connection
+
+    start_time = time.time()
 
     # 1. Projekt laden
     project = await project_service.get_project(project_id)
@@ -218,43 +222,167 @@ async def get_project_geodata(
             detail="Projekt hat keine Koordinaten. Bitte Projekt mit Adresse erstellen."
         )
 
-    # 3. Geodaten per API laden
-    client = get_geodaten_client()
-    area_response = await client.get_buildings_in_area(
-        e=center_e,
-        n=center_n,
-        radius_m=radius_m,
-        include_walls=include_walls,
-        include_roofs=include_roofs
-    )
+    # LV95 Koordinaten normalisieren
+    e, n = center_e, center_n
+    if e < 2000000:
+        e += 2000000
+    if n < 1000000:
+        n += 1000000
+
+    # 3. Direkte DuckDB-Query (wie main.py:/api/v1/building/area)
+    conn = get_building_3d_connection(read_only=True)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT egid, polygon, center_e, center_n,
+               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m, gebaeudeeinheit
+        FROM buildings_3d
+        WHERE center_e BETWEEN ? AND ?
+          AND center_n BETWEEN ? AND ?
+    """, (e - radius_m, e + radius_m, n - radius_m, n + radius_m))
+
+    rows = cursor.fetchall()
+    buildings = []
+    gebaeudeeinheit_to_building = {}
+
+    for row in rows:
+        egid = str(row[0])
+        bld_center_e = row[2]
+        bld_center_n = row[3]
+        gebaeudeeinheit = row[7]
+
+        # Distanz zum Projekt-Zentrum
+        dx = bld_center_e - e
+        dy = bld_center_n - n
+        distance_m = round(math.sqrt(dx*dx + dy*dy), 2)
+
+        if distance_m > radius_m:
+            continue
+
+        # Polygon parsen
+        polygon_data = row[1]
+        polygon = None
+        if polygon_data:
+            try:
+                polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        building = {
+            "egid": egid,
+            "polygon": polygon,
+            "center_e": bld_center_e,
+            "center_n": bld_center_n,
+            "distance_m": distance_m,
+            "traufhoehe_m": row[4],
+            "firsthoehe_m": row[5],
+            "gebaeudehoehe_m": row[6]
+        }
+        buildings.append(building)
+
+        if gebaeudeeinheit:
+            gebaeudeeinheit_to_building[gebaeudeeinheit] = building
+
+    # 3D-Layer laden (walls, roofs)
+    if include_walls or include_roofs:
+        gebaeudeeinheit_list = list(gebaeudeeinheit_to_building.keys())
+
+        if include_walls and gebaeudeeinheit_list:
+            cursor.execute(f"""
+                SELECT gebaeudeeinheit, z_min, z_max, geometry_wkb
+                FROM building_walls
+                WHERE gebaeudeeinheit IN ({','.join(['?' for _ in gebaeudeeinheit_list])})
+            """, gebaeudeeinheit_list)
+
+            walls_by_ge = {}
+            for wall_row in cursor.fetchall():
+                wall_ge = wall_row[0]
+                if wall_ge not in walls_by_ge:
+                    walls_by_ge[wall_ge] = []
+                geometry = None
+                if wall_row[3]:
+                    try:
+                        from shapely import wkb
+                        geom = wkb.loads(wall_row[3])
+                        if hasattr(geom, 'geoms'):
+                            geometry = [list(g.exterior.coords) for g in geom.geoms]
+                        elif hasattr(geom, 'exterior'):
+                            geometry = [list(geom.exterior.coords)]
+                    except Exception:
+                        geometry = None
+                walls_by_ge[wall_ge].append({
+                    "z_min": wall_row[1],
+                    "z_max": wall_row[2],
+                    "geometry": geometry
+                })
+
+            for ge, bld in gebaeudeeinheit_to_building.items():
+                bld["walls"] = walls_by_ge.get(ge, [])
+
+        if include_roofs and gebaeudeeinheit_list:
+            cursor.execute(f"""
+                SELECT gebaeudeeinheit, dach_min, dach_max, geometry_wkb
+                FROM building_roofs
+                WHERE gebaeudeeinheit IN ({','.join(['?' for _ in gebaeudeeinheit_list])})
+            """, gebaeudeeinheit_list)
+
+            roofs_by_ge = {}
+            for roof_row in cursor.fetchall():
+                roof_ge = roof_row[0]
+                if roof_ge not in roofs_by_ge:
+                    roofs_by_ge[roof_ge] = []
+                geometry = None
+                if roof_row[3]:
+                    try:
+                        from shapely import wkb
+                        geom = wkb.loads(roof_row[3])
+                        if hasattr(geom, 'geoms'):
+                            geometry = [list(g.exterior.coords) for g in geom.geoms]
+                        elif hasattr(geom, 'exterior'):
+                            geometry = [list(geom.exterior.coords)]
+                    except Exception:
+                        geometry = None
+                roofs_by_ge[roof_ge].append({
+                    "dach_min": roof_row[1],
+                    "dach_max": roof_row[2],
+                    "geometry": geometry
+                })
+
+            for ge, bld in gebaeudeeinheit_to_building.items():
+                bld["roofs"] = roofs_by_ge.get(ge, [])
+
+    conn.close()
+
+    # Nach Distanz sortieren
+    buildings.sort(key=lambda x: x["distance_m"])
 
     # 4. Kategorisierung: Projekt-Gebäude vs. Nachbarn
     project_buildings = []
     neighbors = []
 
-    for building in area_response.buildings:
-        building_dict = building.to_dict() if hasattr(building, 'to_dict') else building
-        if building.egid in project_egids:
-            project_buildings.append(building_dict)
+    for building in buildings:
+        if building["egid"] in project_egids:
+            project_buildings.append(building)
         else:
-            neighbors.append(building_dict)
+            neighbors.append(building)
 
-    # 5. NEU 19.01.2026: Union-Polygon berechnen
-    # Ein Projekt = Ein Objekt. polygon ist IMMER das Union-Polygon.
+    # 5. Union-Polygon berechnen
     from app.utils.polygon_utils import calculate_union_polygon, extract_polygons_from_buildings
 
     project_polygons = extract_polygons_from_buildings(project_buildings)
     union_polygon = calculate_union_polygon(project_polygons)
 
+    query_time_ms = round((time.time() - start_time) * 1000, 2)
+
     return {
-        "polygon": union_polygon,  # NEU: Das Projekt-Polygon (Union aller Gebäude)
-        "project_buildings": project_buildings,  # Für 3D-View (walls, roofs, etc.)
+        "polygon": union_polygon,
+        "project_buildings": project_buildings,
         "neighbors": neighbors,
-        "center": area_response.center,
-        "radius_m": area_response.radius_m,
-        "buildings_count": area_response.buildings_count,
+        "center": {"e": e, "n": n},
+        "radius_m": radius_m,
+        "buildings_count": len(buildings),
         "project_egids": project_egids,
-        "query_time_ms": area_response.query_time_ms
+        "query_time_ms": query_time_ms
     }
 
 
@@ -355,7 +483,7 @@ def _azimuth_to_direction(azimuth: float) -> str:
     return "N"
 
 
-@router.get("/configurator/facades", response_model=Dict[str, Any])
+@router.get("/configurator/facades", response_model=Dict[str, Any], deprecated=True)
 async def get_facade_data_for_configurator(
     address: str = Query(..., description="Adresse des GebÃ¤udes"),
     include_roof: bool = Query(True, description="Dachanalyse einbeziehen"),
@@ -801,8 +929,7 @@ async def search_addresses(q: str = Query(..., min_length=3)):
 
 
 # ============ NEIGHBORS API ============
-# FIX 19.01.2026: Architektur-Trennung - nutzt jetzt GeodatenClient
-# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+# FIX 19.01.2026 23:30: Direkter Service-Aufruf statt GeodatenClient (Monolith!)
 
 @router.get("/building/{egid}/neighbors", response_model=Dict[str, Any],
             deprecated=True,
@@ -815,12 +942,7 @@ async def get_building_neighbors(
     """
     **DEPRECATED:** Nutze `/api/v1/building/neighbors/{egid}` stattdessen!
 
-    Dieser Endpunkt ist für Rückwärtskompatibilität vorhanden und leitet
-    an die neue Geodaten-API weiter.
-
-    NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
-    - Gerüstbau-Backend hat KEINEN direkten DuckDB-Zugriff mehr
-    - Ruft intern GeodatenClient auf
+    FIX 19.01.2026: Direkter Service-Aufruf statt GeodatenClient.
 
     Args:
         egid: EGID des Zielgebäudes
@@ -832,10 +954,10 @@ async def get_building_neighbors(
         - neighbors: Liste der Nachbarn mit Distanz und Richtung
         - blocked_sides: Liste der blockierten Fassadenrichtungen
     """
-    from app.services.geodaten_client import get_geodaten_client
+    from app.services.neighbors_service import get_neighbors_service
 
-    client = get_geodaten_client()
-    result = await client.get_neighbors(
+    service = get_neighbors_service()
+    result = service.get_neighbors(
         egid=egid,
         radius_m=radius_m,
         include_polygons=include_polygons
@@ -848,12 +970,22 @@ async def get_building_neighbors(
                    "Bitte zuerst über SmartBuildingService laden."
         )
 
-    return result
+    # Blockierte Fassaden berechnen (< 2m Distanz)
+    BLOCKING_THRESHOLD_M = 2.0
+    blocked_sides = []
+    for neighbor in result.neighbors:
+        if neighbor.distance_m < BLOCKING_THRESHOLD_M:
+            if neighbor.direction and neighbor.direction not in blocked_sides:
+                blocked_sides.append(neighbor.direction)
+
+    response = result.to_dict()
+    response["blocked_sides"] = blocked_sides
+
+    return response
 
 
 # NEU 18.01.2026: Koordinaten-basierte Nachbar-Suche
-# FIX 19.01.2026: Verwendet jetzt GeodatenClient statt direktem DuckDB-Zugriff
-# Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+# FIX 19.01.2026: Direkte DuckDB-Abfrage (Monolith-Architektur)
 @router.get("/neighbors/by-coordinates", response_model=Dict[str, Any],
             deprecated=True,
             summary="[DEPRECATED] Nutze /api/v1/building/area stattdessen")
@@ -866,12 +998,9 @@ async def get_neighbors_by_coordinates(
     """
     **DEPRECATED:** Nutze `/api/v1/building/area` stattdessen!
 
-    Dieser Endpunkt ist für Rückwärtskompatibilität vorhanden und leitet
-    an die neue Geodaten-API weiter.
+    Dieser Endpunkt ist für Rückwärtskompatibilität vorhanden.
 
-    NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
-    - Gerüstbau-Backend hat KEINEN direkten DuckDB-Zugriff mehr
-    - Ruft intern GeodatenClient auf
+    FIX 19.01.2026: Direkte DuckDB-Abfrage statt GeodatenClient (Monolith!)
 
     Args:
         e: LV95 Easting (Ost-Koordinate)
@@ -884,38 +1013,83 @@ async def get_neighbors_by_coordinates(
         - buildings: Liste aller Gebäude im Radius
         - query_time_ms: Abfragezeit
     """
-    from app.services.geodaten_client import get_geodaten_client
+    import time
+    import math
+    import json
+    from app.config import get_building_3d_connection
 
-    client = get_geodaten_client()
-    result = await client.get_buildings_in_area(
-        e=e,
-        n=n,
-        radius_m=radius_m,
-        include_walls=False,
-        include_roofs=False
-    )
+    start_time = time.time()
 
-    # Response-Format für Rückwärtskompatibilität anpassen
+    # LV95 Koordinaten normalisieren
+    if e < 2000000:
+        e += 2000000
+    if n < 1000000:
+        n += 1000000
+
+    conn = get_building_3d_connection(read_only=True)
+    cursor = conn.cursor()
+
+    # BBox-Query für Kandidaten
+    cursor.execute("""
+        SELECT egid, polygon, center_e, center_n,
+               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
+        FROM buildings_3d
+        WHERE center_e BETWEEN ? AND ?
+          AND center_n BETWEEN ? AND ?
+    """, (
+        e - radius_m, e + radius_m,
+        n - radius_m, n + radius_m
+    ))
+
+    rows = cursor.fetchall()
+    conn.close()
+
     buildings = []
-    for b in result.buildings:
-        building_dict = {
-            "egid": b.egid,
-            "center_e": b.center_e,
-            "center_n": b.center_n,
-            "distance_m": b.distance_m,
-            "traufhoehe_m": b.traufhoehe_m,
-            "firsthoehe_m": b.firsthoehe_m,
-            "gebaeudehoehe_m": b.gebaeudehoehe_m,
-            "polygon": b.polygon if include_polygons else None
-        }
-        buildings.append(building_dict)
+    for row in rows:
+        egid = str(row[0])
+        center_e = row[2]
+        center_n = row[3]
+
+        # Distanz zum Abfrage-Zentrum
+        dx = center_e - e
+        dy = center_n - n
+        distance_m = round(math.sqrt(dx*dx + dy*dy), 2)
+
+        # Nur Gebäude innerhalb des Radius
+        if distance_m > radius_m:
+            continue
+
+        # Polygon parsen
+        polygon_data = row[1]
+        polygon = None
+        if include_polygons and polygon_data:
+            try:
+                polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        buildings.append({
+            "egid": egid,
+            "center_e": center_e,
+            "center_n": center_n,
+            "distance_m": distance_m,
+            "traufhoehe_m": row[4],
+            "firsthoehe_m": row[5],
+            "gebaeudehoehe_m": row[6],
+            "polygon": polygon
+        })
+
+    # Nach Distanz sortieren
+    buildings.sort(key=lambda x: x["distance_m"])
+
+    query_time_ms = round((time.time() - start_time) * 1000, 2)
 
     return {
-        "center": result.center,
-        "radius_m": result.radius_m,
-        "buildings_count": result.buildings_count,
+        "center": {"e": e, "n": n},
+        "radius_m": radius_m,
+        "buildings_count": len(buildings),
         "buildings": buildings,
-        "query_time_ms": result.query_time_ms
+        "query_time_ms": query_time_ms
     }
 
 

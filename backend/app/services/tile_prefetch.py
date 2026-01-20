@@ -233,6 +233,10 @@ async def prefetch_tile_buildings_async(
     - Parquet → DuckDB (Bulk-Load, SIMD-optimiert)
     - ~2.88x schneller als Listen-basiertes Parsing
 
+    ÄNDERUNG 20.01.2026: Läuft IMMER, auch wenn Tile bereits importiert wurde!
+    Die Parquet-Pipeline macht UPSERT (INSERT OR REPLACE), so werden fehlende
+    Walls/Roofs nachträglich importiert.
+
     VORHER (Listen): 147s für 4901 Gebäude
     NACHHER (Parquet): 51s für 4901 Gebäude
 
@@ -244,15 +248,32 @@ async def prefetch_tile_buildings_async(
     Returns:
         Anzahl gespeicherter Gebäude
     """
+    print(f"[PREFETCH-ENTRY] prefetch_tile_buildings_async aufgerufen für {tile_id}", flush=True)
+
+    # tile_cache für mark_tile_imported() am Ende
+    from app.services.tile_cache import get_tile_cache
+    tile_cache = get_tile_cache()
+
     # Check ob bereits ein Prefetch für dieses Tile läuft
     with _prefetch_lock:
         if tile_id in _prefetch_in_progress:
-            logger.debug(f"Prefetch für {tile_id} läuft bereits, überspringe")
+            print(f"[PREFETCH-SKIP] {tile_id} läuft bereits, überspringe", flush=True)
             return 0
         _prefetch_in_progress.add(tile_id)
+    print(f"[PREFETCH-LOCK] {tile_id} in _prefetch_in_progress hinzugefügt", flush=True)
 
     try:
-        logger.info(f"[PREFETCH-ASYNC] Parquet-Pipeline gestartet für Tile {tile_id}")
+        # ÄNDERUNG 20.01.2026: Wenn GDB nicht existiert, neu herunterladen
+        print(f"[PREFETCH-CHECK] gdb_path={gdb_path}, exists={gdb_path.exists() if gdb_path else 'N/A'}", flush=True)
+        if not gdb_path or not gdb_path.exists():
+            logger.info(f"[PREFETCH-ASYNC] GDB nicht vorhanden, lade Tile {tile_id} neu...")
+            from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
+            gdb_path = await asyncio.to_thread(get_or_redownload_gdb_path_for_tile, tile_id)
+            if not gdb_path or not gdb_path.exists():
+                logger.warning(f"[PREFETCH-ASYNC] Konnte GDB für Tile {tile_id} nicht laden")
+                return 0
+
+        print(f"[PREFETCH-PIPELINE] Starte Parquet-Pipeline für {tile_id}", flush=True)
         start_time = time.time()
 
         # =====================================================================
@@ -262,11 +283,13 @@ async def prefetch_tile_buildings_async(
         from app.config import CLEANUP_TILES_AFTER_IMPORT
 
         # Parquet-Pipeline: GDB → Parquet (parallel) → DuckDB (bulk)
+        print(f"[PREFETCH-PIPELINE] Rufe import_tile_with_parquet_pipeline auf für {gdb_path}", flush=True)
         result = await import_tile_with_parquet_pipeline(
             gdb_path=gdb_path,
             tile_id=tile_id,
             cleanup_after=True  # Parquet-Dateien nach Load löschen
         )
+        print(f"[PREFETCH-PIPELINE] Pipeline abgeschlossen: {result}", flush=True)
 
         saved_count = result.get('buildings_count', 0)
         roofs_count = result.get('roofs_count', 0)
@@ -281,9 +304,16 @@ async def prefetch_tile_buildings_async(
             parse_wall_count=walls_count,
         )
 
+        # FIX 20.01.2026: Tile als 'imported' markieren BEVOR Cleanup entscheidet
+        # So wird das Tile bei erneutem Aufruf nicht nochmal geparst.
+        tile_cache.mark_tile_imported(tile_id, saved_count)
+        logger.debug(f"[PREFETCH-ASYNC] Tile {tile_id} als 'imported' markiert ({saved_count} Gebäude)")
+
         # =====================================================================
         # Tile-Cleanup (optional - GDB-Dateien löschen)
         # =====================================================================
+        # HINWEIS: mark_tile_cleaned() wird in _cleanup_tile_after_import() aufgerufen
+        # und überschreibt 'imported' → 'cleaned'
         if CLEANUP_TILES_AFTER_IMPORT:
             await asyncio.to_thread(_cleanup_tile_after_import, gdb_path, tile_id)
 
@@ -297,9 +327,9 @@ async def prefetch_tile_buildings_async(
         return saved_count
 
     except Exception as e:
-        logger.error(f"Prefetch-Fehler für {tile_id}: {e}")
+        print(f"[PREFETCH-ERROR] Fehler für {tile_id}: {e}", flush=True)
         import traceback
-        logger.error(traceback.format_exc())
+        print(traceback.format_exc(), flush=True)
         return 0
 
     finally:
@@ -1031,6 +1061,105 @@ def get_prefetch_status() -> dict:
         }
 
 
+def _find_neighbors_from_db(
+    center_e: float,
+    center_n: float,
+    radius_m: float = 5.0,
+    exclude_egid: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    Findet Nachbarn aus building_3d.db statt aus GDB.
+
+    NEU 20.01.2026: Fallback wenn GDB bereits gelöscht wurde (CLEANUP_TILES_AFTER_IMPORT=true).
+    Die Daten sind in building_3d.db verfügbar weil prefetch_tile_buildings_async()
+    ALLE Gebäude speichert BEVOR das Cleanup passiert.
+
+    Args:
+        center_e: LV95 Easting des Zentrums
+        center_n: LV95 Northing des Zentrums
+        radius_m: Suchradius in Metern
+        exclude_egid: EGID des Hauptgebäudes (ausschliessen)
+
+    Returns:
+        Liste von Nachbar-Gebäuden (Dict mit egid, polygon, höhen, etc.)
+    """
+    from app.services.building_3d_service import get_building_3d_service
+    import json
+
+    start_time = time.time()
+    service = get_building_3d_service()
+
+    # SQL-Query für Nachbarn im Radius
+    sql = """
+        SELECT egid, polygon, center_e, center_n,
+               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+               sqrt((center_e - ?) * (center_e - ?) +
+                    (center_n - ?) * (center_n - ?)) as distance_m
+        FROM buildings_3d
+        WHERE center_e BETWEEN ? AND ?
+          AND center_n BETWEEN ? AND ?
+    """
+    params = [
+        center_e, center_e, center_n, center_n,  # für Distanz-Berechnung
+        center_e - radius_m, center_e + radius_m,  # BBox E
+        center_n - radius_m, center_n + radius_m   # BBox N
+    ]
+
+    if exclude_egid:
+        sql += " AND egid != ?"
+        params.append(exclude_egid)
+
+    sql += " ORDER BY distance_m ASC LIMIT 50"
+
+    neighbors = []
+    try:
+        with service._get_connection() as conn:
+            if hasattr(conn, 'execute'):
+                # DuckDB
+                result = conn.execute(sql, params).fetchall()
+                columns = ['egid', 'polygon', 'center_e', 'center_n',
+                          'traufhoehe_m', 'firsthoehe_m', 'gebaeudehoehe_m', 'distance_m']
+                rows = [dict(zip(columns, row)) for row in result]
+            else:
+                # SQLite
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                columns = [desc[0] for desc in cursor.description]
+                rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        for row in rows:
+            dist = row.get('distance_m', 0)
+            if dist > radius_m:
+                continue
+
+            # Polygon parsen (JSON-String → Liste)
+            polygon_raw = row.get('polygon')
+            if polygon_raw and isinstance(polygon_raw, str):
+                try:
+                    row['polygon'] = json.loads(polygon_raw)
+                except json.JSONDecodeError:
+                    row['polygon'] = None
+
+            neighbors.append({
+                'egid': row.get('egid'),
+                'polygon': row.get('polygon'),
+                'center_e': row.get('center_e'),
+                'center_n': row.get('center_n'),
+                'traufhoehe_m': row.get('traufhoehe_m'),
+                'firsthoehe_m': row.get('firsthoehe_m'),
+                'gebaeudehoehe_m': row.get('gebaeudehoehe_m'),
+                'distance_m': dist
+            })
+
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"[NEIGHBORS-DB] {len(neighbors)} Nachbarn in {radius_m}m Radius aus DB ({elapsed:.0f}ms)")
+
+    except Exception as e:
+        logger.error(f"[NEIGHBORS-DB] Fehler beim Laden aus DB: {e}")
+
+    return neighbors
+
+
 # =============================================================================
 # NEUE FUNKTIONEN FÜR ON-DEMAND ARCHITEKTUR (10.01.2026)
 # =============================================================================
@@ -1048,6 +1177,9 @@ def find_immediate_neighbors(
     OPTIMIERUNG: Lädt nur Gebäude im Radius, nicht das ganze Tile.
     Verwendet Fiona-Streaming mit Koordinaten-Filter.
 
+    FIX 20.01.2026: Prüft ob GDB-Pfad existiert bevor er geöffnet wird.
+    Bei 'cleaned' Tiles existiert das GDB nicht mehr.
+
     Args:
         gdb_path: Pfad zum GDB-Verzeichnis
         center_e: LV95 Easting des Zentrums
@@ -1058,6 +1190,12 @@ def find_immediate_neighbors(
     Returns:
         Liste von Nachbar-Gebäuden (Dict mit egid, polygon, höhen, etc.)
     """
+    # FIX 20.01.2026: Wenn GDB nicht existiert, Nachbarn aus DB holen
+    # Das Tile wurde bereits importiert (status='cleaned') - Daten sind in building_3d.db
+    if not gdb_path or not gdb_path.exists():
+        logger.info(f"[NEIGHBORS] GDB existiert nicht - hole Nachbarn aus building_3d.db")
+        return _find_neighbors_from_db(center_e, center_n, radius_m, exclude_egid)
+
     try:
         import fiona
         from shapely.geometry import shape, MultiPoint
@@ -1277,6 +1415,9 @@ async def schedule_prefetch_with_neighbors(
     - Vorher: Sync prefetch_tile_buildings() im Thread → OOM bei grossen Tiles
     - Nachher: Async prefetch_tile_buildings_async() mit Parquet → kein RAM-Overhead
 
+    FIX 20.01.2026: Prüft ZUERST ob Tile bereits importiert wurde oder GDB existiert!
+    Wenn Tile bereits importiert, werden Nachbarn aus building_3d.db geholt statt GDB.
+
     Args:
         tile_id: Tile-Referenz
         gdb_path: Pfad zum GDB-Verzeichnis
@@ -1291,24 +1432,34 @@ async def schedule_prefetch_with_neighbors(
     immediate_count = 0
     background_started = 0
 
+    # ÄNDERUNG 20.01.2026: Keine Import-Status-Prüfung mehr!
+    # prefetch_tile_buildings_async() läuft IMMER und macht UPSERT.
+    # Wenn GDB nicht existiert, wird es dort automatisch neu heruntergeladen.
+    gdb_exists = gdb_path.exists() if gdb_path else False
+
     # 1. Direkte Nachbarn laden (in Thread um Event-Loop nicht zu blockieren)
-    if center_e and center_n:
-        immediate_count, neighbor_egids = await asyncio.to_thread(
-            load_neighbors_and_save,
-            gdb_path=gdb_path,
-            center_e=center_e,
-            center_n=center_n,
-            radius_m=immediate_radius_m,
-            tile_id=tile_id,
-            exclude_egid=main_egid
-        )
-        logger.info(
-            f"[IMMEDIATE] {immediate_count} Nachbarn im {immediate_radius_m}m Radius geladen"
-        )
+    if center_e and center_n and gdb_exists:
+        try:
+            immediate_count, neighbor_egids = await asyncio.to_thread(
+                load_neighbors_and_save,
+                gdb_path=gdb_path,
+                center_e=center_e,
+                center_n=center_n,
+                radius_m=immediate_radius_m,
+                tile_id=tile_id,
+                exclude_egid=main_egid
+            )
+            logger.info(
+                f"[IMMEDIATE] {immediate_count} Nachbarn im {immediate_radius_m}m Radius geladen"
+            )
+        except Exception as e:
+            logger.warning(f"[IMMEDIATE] Fehler beim Laden der Nachbarn aus GDB: {e}")
+            # Nicht kritisch - Nachbarn können später aus DB geholt werden
 
     # 2. Background-Prefetch mit Parquet-Pipeline (async, fire-and-forget)
     # REFACTORED 17.01.2026: Nutzt jetzt prefetch_tile_buildings_async (Parquet)
     # statt sync prefetch_tile_buildings (DuckDB bulk_save → OOM!)
+    # FIX 20.01.2026: prefetch_tile_buildings_async() prüft selbst ob Tile bereits importiert
     try:
         asyncio.create_task(
             prefetch_tile_buildings_async(

@@ -94,6 +94,8 @@ class NeighborBuilding:
     traufhoehe_m: Optional[float] = None
     firsthoehe_m: Optional[float] = None
     gebaeudehoehe_m: Optional[float] = None
+    # FIX 20.01.2026: has_3d_layers Flag für 3D-Layer-Verfügbarkeit
+    has_3d_layers: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -314,10 +316,11 @@ class NeighborsService:
             sql_search_radius = NEIGHBOR_SEARCH_RADIUS_M
 
             # SQL mit dynamischer NOT IN Klausel für Objekt-EGIDs
+            # FIX 20.01.2026: has_3d_layers hinzugefügt
             placeholders = ','.join(['?' for _ in object_egids])
             cursor.execute(f"""
                 SELECT egid, polygon, center_e, center_n,
-                       traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
+                       traufhoehe_m, firsthoehe_m, gebaeudehoehe_m, has_3d_layers
                 FROM buildings_3d
                 WHERE center_e BETWEEN ? AND ?
                   AND center_n BETWEEN ? AND ?
@@ -365,6 +368,10 @@ class NeighborsService:
                 # Richtung vom Objektzentrum
                 direction = self._calculate_direction(object_center_e, object_center_n, neighbor_e, neighbor_n)
 
+                # FIX 20.01.2026: has_3d_layers aus DB lesen (Index 7)
+                has_3d_layers_raw = row[7] if isinstance(row, tuple) else row.get('has_3d_layers', 0)
+                has_3d_layers = bool(has_3d_layers_raw) if has_3d_layers_raw is not None else False
+
                 neighbors.append(NeighborBuilding(
                     egid=neighbor_egid,
                     polygon=neighbor_polygon if include_polygons else None,
@@ -374,7 +381,8 @@ class NeighborsService:
                     center_n=neighbor_n,
                     traufhoehe_m=row[4] if isinstance(row, tuple) else row['traufhoehe_m'],
                     firsthoehe_m=row[5] if isinstance(row, tuple) else row['firsthoehe_m'],
-                    gebaeudehoehe_m=row[6] if isinstance(row, tuple) else row['gebaeudehoehe_m']
+                    gebaeudehoehe_m=row[6] if isinstance(row, tuple) else row['gebaeudehoehe_m'],
+                    has_3d_layers=has_3d_layers
                 ))
 
             conn.close()

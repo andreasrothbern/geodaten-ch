@@ -1,36 +1,71 @@
 # Architektur-Dokumentation
 
-**Stand: 19.01.2026 14:30**
+**Stand: 19.01.2026 23:30**
 
 ## Übersicht
 
-Das System besteht aus zwei logisch getrennten Bereichen mit unterschiedlichen Verantwortlichkeiten:
+**WICHTIG: 1 Backend, 2 Frontends!**
+
+Das System ist ein **Monolith** - EIN FastAPI-Backend mit zwei React-Frontends:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           GEODATEN-CH SYSTEM                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────────────────────────┐    ┌─────────────────────────────────┐│
-│  │     GEODATEN-BACKEND            │    │     GERÜSTBAU-BACKEND           ││
-│  │     (main.py)                   │    │     (geruestbau.py)             ││
-│  │                                 │    │                                 ││
-│  │  Verantwortlich für:            │    │  Verantwortlich für:            ││
-│  │  • Gebäudedaten (Polygon, Höhe) │    │  • Projekte (CRUD)              ││
-│  │  • Nachbar-Suche                │    │  • Gerüst-Konfiguration         ││
-│  │  • 3D-Layer (Wall, Roof)        │    │  • Foto-Analyse                 ││
-│  │  • Terrain-Daten                │    │  • PDF/IFC Export               ││
-│  │  • Tile-Import & Prefetch       │    │  • Ausschreibungs-Import        ││
-│  │  • SmartBuildingService         │    │                                 ││
-│  │                                 │    │  KEIN direkter DB-Zugriff!      ││
-│  │  ══════════════════════════     │    │  Nutzt Geodaten-API             ││
-│  │  │ building_3d.duckdb     │     │    │                                 ││
-│  │  │ tiles.db               │     │    │  ══════════════════════════     ││
-│  │  │ building_contexts.db   │     │    │  │ geruestbau.db           │    ││
-│  │  ══════════════════════════     │    │  ══════════════════════════     ││
-│  └─────────────────────────────────┘    └─────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                        BACKEND (Port 8000)                              ││
+│  │                        geodaten-ch/backend/                             ││
+│  │                                                                         ││
+│  │  ┌─────────────────────────────┐  ┌─────────────────────────────┐      ││
+│  │  │  main.py                    │  │  routers/geruestbau.py      │      ││
+│  │  │  ───────────────────────────│  │  ───────────────────────────│      ││
+│  │  │  Geodaten-API Endpunkte     │  │  Gerüstbau-API Endpunkte    │      ││
+│  │  │  • /api/v1/building/*       │  │  • /api/v1/geruestbau/*     │      ││
+│  │  │  • /api/v1/smart-building/* │  │  • Projekte (CRUD)          │      ││
+│  │  │  • /api/v1/terrain/*        │  │  • Konfigurator             │      ││
+│  │  └─────────────────────────────┘  └─────────────────────────────┘      ││
+│  │                                                                         ││
+│  │  ┌─────────────────────────────┐  ┌─────────────────────────────┐      ││
+│  │  │  services/                  │  │  Datenbanken                │      ││
+│  │  │  ───────────────────────────│  │  ───────────────────────────│      ││
+│  │  │  • building_3d_service.py   │  │  • building_3d.duckdb       │      ││
+│  │  │  • neighbors_service.py     │  │  • tiles.db                 │      ││
+│  │  │  • layer_fetcher.py         │  │  • building_contexts.db     │      ││
+│  │  │  • ...                      │  │  • geruestbau.db            │      ││
+│  │  └─────────────────────────────┘  └─────────────────────────────┘      ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                            ▲                      ▲                         │
+│                            │                      │                         │
+│  ┌─────────────────────────┴───┐  ┌───────────────┴─────────────────────┐  │
+│  │  frontend/ (Port 3000)      │  │  geruestbau-app/ (Port 3001)        │  │
+│  │  ──────────────────────────│  │  ────────────────────────────────── │  │
+│  │  Geodaten-Viewer            │  │  Gerüstbau-Konfigurator             │  │
+│  │  (React)                    │  │  (React)                            │  │
+│  └─────────────────────────────┘  └─────────────────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Warum KEIN GeodatenClient?
+
+**FIX 19.01.2026:** `geodaten_client.py` ist **DEPRECATED** und wird entfernt.
+
+Im Monolith macht ein HTTP-Client zu sich selbst keinen Sinn:
+- `geruestbau.py` ist ein **Router** im selben FastAPI-Backend wie `main.py`
+- Beide haben direkten Zugriff auf dieselben Services und Datenbanken
+- Ein HTTP-Aufruf localhost:8000 → localhost:8000 ist unnötiger Overhead
+
+**Richtig:** `geruestbau.py` ruft Services direkt auf:
+```python
+# RICHTIG: Direkter Service-Aufruf
+from app.services.neighbors_service import get_neighbors_service
+service = get_neighbors_service()
+result = service.get_neighbors(egid=egid, radius_m=100)
+
+# FALSCH: HTTP zu sich selbst (was GeodatenClient machte)
+# client = GeodatenClient()
+# result = await client.get_buildings_in_area(...)  # HTTP localhost:8000 🤦
 ```
 
 ---
@@ -116,58 +151,67 @@ Das System besteht aus zwei logisch getrennten Bereichen mit unterschiedlichen V
 
 ---
 
-## Architektur-Bruch: Aktueller Zustand
+## Architektur-Klarstellung (FIX 19.01.2026)
 
-### Problem: Direkter DuckDB-Zugriff von Gerüstbau
+### Das war das Problem
 
-**Verstoss in `geruestbau.py`:**
+Die Dokumentation beschrieb fälschlicherweise eine **Microservices-Architektur** mit HTTP-Aufrufen zwischen geruestbau.py und main.py. Das führte zu Verwirrung:
+
+1. **GeodatenClient** - Ein HTTP-Client der localhost:8000 aufrief (sich selbst!)
+2. **Doppelte Implementierungen** - Gleiche Queries in main.py UND geodaten_client.py
+3. **Unklare Verantwortlichkeiten** - Wo soll welche Logik hin?
+
+### Die Realität: Es ist ein Monolith!
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  geodaten-ch/backend/ (EIN Prozess, Port 8000)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  main.py ─────────────────┐                                     │
+│                           │                                     │
+│  routers/geruestbau.py ───┼──▶ services/ ──▶ Datenbanken       │
+│                           │                                     │
+│  (Alle im SELBEN Prozess) │                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Richtige Architektur
+
+**geruestbau.py darf und SOLL Services direkt aufrufen:**
 
 ```python
-# geruestbau.py:795-808 - ARCHITEKTUR-BRUCH!
-@router.get("/neighbors/by-coordinates")
-async def get_neighbors_by_coordinates(...):
-    from app.config import get_building_3d_connection  # ← FALSCH!
-    conn = get_building_3d_connection(read_only=True)
-    cursor.execute("SELECT ... FROM buildings_3d ...")  # ← DIREKT auf DuckDB!
+# geruestbau.py - KORREKTER Zugriff auf Geodaten
+
+# 1. Nachbarn holen
+from app.services.neighbors_service import get_neighbors_service
+neighbors = get_neighbors_service().get_neighbors(egid, radius_m=100)
+
+# 2. Gebäude per Koordinaten
+from app.services.building_3d_service import get_building_3d_service
+building = get_building_3d_service().get_by_coordinates(e, n)
+
+# 3. DuckDB-Query (wenn nötig)
+from app.config import get_building_3d_connection
+conn = get_building_3d_connection(read_only=True)
 ```
 
-**Services mit DuckDB-Zugriff (importiert von geruestbau.py):**
+**KEIN HTTP-Overhead, KEINE Abstraktion nötig!**
 
-| Service | Zeile | DuckDB-Zugriff |
-|---------|-------|----------------|
-| `neighbors_service` | 23 | Direkt |
-| `address_parser` | 21 | Direkt |
-| `blocked_facades_service` | 1188 | Direkt |
-| `layer_fetcher` | 437 | Direkt |
+### Verantwortlichkeiten
 
-### Warum das ein Problem ist
+| Bereich | Zuständig | Datenbank |
+|---------|-----------|-----------|
+| **Geodaten-API** (`main.py`) | Externe Clients, Swagger-Doku | building_3d.duckdb |
+| **Gerüstbau-API** (`geruestbau.py`) | Projekt-Logik, Konfigurator | geruestbau.db |
+| **Services** (`services/`) | Wiederverwendbare Geschäftslogik | Alle DBs |
 
-1. **Doppelte Datenhaltung:** Projekte speichern `buildings_data` als JSON - dieselben Daten die in `building_3d.duckdb` liegen
-2. **Architektur-Verletzung:** Gerüstbau greift direkt auf Geodaten-DB zu statt API zu nutzen
-3. **Wartbarkeit:** Bei Änderungen muss man beide Stellen anpassen
-4. **Claude-Halluzinationen:** Claude erstellt oft doppelte Implementierungen weil die Trennung unklar ist
+### Was wurde entfernt
 
-### Lösung: API-Trennung
-
-```
-SOLL-ZUSTAND:
-─────────────
-
-geruestbau.py                     main.py (Geodaten-API)
-     │                                   │
-     │  HTTP GET                         │
-     ├──────────────────────────────────▶│
-     │  /api/v1/building/neighbors       │
-     │                                   │
-     │  JSON Response                    │
-     │◀──────────────────────────────────┤
-     │                                   │
-     │                                   ▼
-     │                          building_3d.duckdb
-     │
-     ▼
-geruestbau.db (NUR Projekte!)
-```
+| Datei | Status | Grund |
+|-------|--------|-------|
+| `geodaten_client.py` | **DEPRECATED** | HTTP zu sich selbst ist sinnlos |
+| `_direct_get_buildings_in_area()` | **DEPRECATED** | Duplizierte Logik |
 
 ---
 

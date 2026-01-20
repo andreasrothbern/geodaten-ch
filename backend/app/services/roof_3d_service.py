@@ -569,16 +569,10 @@ class Roof3DService:
             # 4. In DB speichern (auch bei EGID-basiertem Lookup!)
             self._save_all_layers_to_db(egid, gebaeudeeinheit, result)
 
-            # 5. Tile wieder löschen (Speicher sparen - NEU 14.01.2026)
-            from app.config import CLEANUP_TILES_AFTER_IMPORT
-            if CLEANUP_TILES_AFTER_IMPORT and result['loaded_layers']:
-                from app.services.tile_cache import get_tile_cache
-                import shutil
-                cache = get_tile_cache()
-                cache.mark_tile_cleaned(tile_id)
-                if gdb_path.exists():
-                    shutil.rmtree(gdb_path)
-                    logger.info(f"[ALL_LAYERS] Tile {tile_id} nach On-Demand-Import gelöscht")
+            # FIX 20.01.2026: Cleanup NICHT hier machen!
+            # Das Cleanup soll NUR in tile_prefetch.py passieren, NACHDEM
+            # der vollständige Prefetch (inkl. aller Layer) abgeschlossen ist.
+            # Vorher wurde das GDB hier gelöscht während der Prefetch noch lief!
 
             elapsed_ms = (time.time() - start) * 1000
             logger.info(

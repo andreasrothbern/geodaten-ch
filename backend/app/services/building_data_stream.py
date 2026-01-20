@@ -534,6 +534,30 @@ class BuildingDataStreamService:
                     "area_m2": bundle.footprint_area_m2,
                 })
 
+                # NEU 20.01.2026: Prefetch für alle Gebäude im Tile (inkl. Walls)
+                # Läuft im Hintergrund während User die Daten sieht
+                print(f"[SSE-DEBUG] bundle.lv95_e={bundle.lv95_e}, bundle.lv95_n={bundle.lv95_n}", flush=True)
+                if bundle.lv95_e and bundle.lv95_n:
+                    from .tile_prefetch import schedule_prefetch_with_neighbors
+                    from .tile_cache import get_tile_cache, lv95_to_tile_id
+                    from pathlib import Path
+
+                    tile_id = lv95_to_tile_id(bundle.lv95_e, bundle.lv95_n)
+                    tile_cache = get_tile_cache()
+                    gdb_path = tile_cache.get_tile_path(tile_id)
+
+                    print(f"[SSE-PREFETCH] Triggere Prefetch für Tile {tile_id}, gdb_path={gdb_path}", flush=True)
+
+                    imm, bg = await schedule_prefetch_with_neighbors(
+                        tile_id=tile_id,
+                        gdb_path=gdb_path or Path(""),
+                        center_e=bundle.lv95_e,
+                        center_n=bundle.lv95_n,
+                        main_egid=int(bundle.egid) if bundle.egid else None,
+                        immediate_radius_m=5.0
+                    )
+                    print(f"[SSE-PREFETCH] Prefetch gestartet: immediate={imm}, background={bg}", flush=True)
+
             polygon_duration = round((time.time() - step_start) * 1000, 1)
 
             if is_multi:

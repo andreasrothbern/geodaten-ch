@@ -1,20 +1,38 @@
 """
-Geodaten-Client - Client für Geodaten-API Aufrufe.
+==============================================================================
+DEPRECATED 19.01.2026 - NICHT MEHR VERWENDEN!
+==============================================================================
 
-NEU 19.01.2026: Architektur-Trennung Geodaten ↔ Gerüstbau
+Dieser Client wurde ENTFERNT aus der aktiven Codebasis.
 
-Dieser Client abstrahiert den Zugriff auf Geodaten:
-- Im Monolith (aktuell): Direkter Service-Aufruf (schnell)
-- In Microservices (später): HTTP-Aufrufe via httpx
+WARUM?
+------
+Das System ist ein MONOLITH (1 Backend, 2 Frontends), KEINE Microservices.
+GeodatenClient machte HTTP-Aufrufe von localhost:8000 → localhost:8000,
+d.h. das Backend rief sich selbst via HTTP auf. Das ist unnötiger Overhead.
 
-Verwendung in geruestbau.py:
-    from app.services.geodaten_client import get_geodaten_client
+WAS STATTDESSEN VERWENDEN?
+--------------------------
+Direkte Service-Aufrufe und DuckDB-Abfragen:
 
-    client = get_geodaten_client()
-    buildings = await client.get_buildings_in_area(e=2596300, n=1199805, radius_m=100)
+    # Statt GeodatenClient:
+    from app.config import get_building_3d_connection
+    conn = get_building_3d_connection(read_only=True)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM buildings_3d WHERE ...")
 
-WICHTIG: Dieser Client ersetzt direkte DuckDB-Zugriffe in geruestbau.py!
-Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
+    # Oder für Nachbarn:
+    from app.services.neighbors_service import get_neighbors_service
+    service = get_neighbors_service()
+    result = service.get_neighbors(egid="...", radius_m=100)
+
+SIEHE AUCH:
+-----------
+- docs/architecture/ARCHITECTURE.md → Monolith-Architektur
+- geruestbau.py → Direkte DB-Aufrufe (FIX 19.01.2026)
+
+Diese Datei bleibt nur für Rückwärtskompatibilität erhalten.
+Alle Methoden werfen DeprecationWarning.
 """
 
 import os
@@ -24,10 +42,8 @@ import time
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Optional
 
-# Konfiguration: Interner Service vs. HTTP-Client
-# Wenn GEODATEN_API_URL gesetzt ist, verwende HTTP-Client
-# Sonst: Direkter Service-Aufruf (schneller, für Monolith)
-GEODATEN_API_URL = os.getenv("GEODATEN_API_URL")  # z.B. "http://geodaten-backend:8000"
+# DEPRECATED 19.01.2026: Wird nicht mehr verwendet - Monolith-Architektur
+GEODATEN_API_URL = os.getenv("GEODATEN_API_URL", "http://localhost:8000")
 
 
 @dataclass
@@ -67,15 +83,17 @@ class GeodatenClient:
     """
     Client für Geodaten-API Aufrufe.
 
-    Abstrahiert den Zugriff auf Gebäudedaten:
-    - Monolith: Direkter DuckDB-Zugriff (schnell)
-    - Microservices: HTTP-Aufrufe (flexibel)
+    FIX 19.01.2026: Verwendet IMMER HTTP-Aufrufe an /api/v1/building/area.
+    Kein direkter DB-Zugriff mehr - eine Quelle der Wahrheit.
+
+    Default URL: http://localhost:8000 (Monolith)
+    Microservices: GEODATEN_API_URL Environment-Variable setzen
     """
 
     def __init__(self, api_url: Optional[str] = None):
         """
         Args:
-            api_url: URL der Geodaten-API (None = direkter Service-Aufruf)
+            api_url: URL der Geodaten-API (Default: localhost:8000)
         """
         self.api_url = api_url or GEODATEN_API_URL
         self._http_client = None
@@ -98,6 +116,8 @@ class GeodatenClient:
         """
         Alle Gebäude im Umkreis einer Koordinate.
 
+        FIX 19.01.2026: Verwendet immer HTTP-Aufruf an /api/v1/building/area.
+
         Args:
             e: LV95 Easting
             n: LV95 Northing
@@ -108,16 +128,9 @@ class GeodatenClient:
         Returns:
             AreaResponse mit allen Gebäuden
         """
-        if self.api_url:
-            # HTTP-Aufruf (Microservices-Modus)
-            return await self._http_get_buildings_in_area(
-                e, n, radius_m, include_walls, include_roofs
-            )
-        else:
-            # Direkter Service-Aufruf (Monolith-Modus)
-            return await self._direct_get_buildings_in_area(
-                e, n, radius_m, include_walls, include_roofs
-            )
+        return await self._http_get_buildings_in_area(
+            e, n, radius_m, include_walls, include_roofs
+        )
 
     async def _http_get_buildings_in_area(
         self,
@@ -166,11 +179,17 @@ class GeodatenClient:
         include_roofs: bool
     ) -> AreaResponse:
         """
-        Direkter DuckDB-Zugriff (Monolith-Modus).
+        DEPRECATED 19.01.2026: Nicht mehr verwendet!
 
-        Dies ist die gleiche Logik wie in main.py:/api/v1/building/area,
-        aber als direkte Funktion für Performance.
+        Verwende stattdessen HTTP-Aufruf an /api/v1/building/area.
+        Diese Methode bleibt nur für Rückwärtskompatibilität.
         """
+        import warnings
+        warnings.warn(
+            "_direct_get_buildings_in_area is deprecated. Use HTTP via /api/v1/building/area",
+            DeprecationWarning,
+            stacklevel=2
+        )
         from app.config import get_building_3d_connection
 
         start_time = time.time()
@@ -279,7 +298,7 @@ class GeodatenClient:
 
             if include_roofs and egid_list:
                 cursor.execute(f"""
-                    SELECT egid, dach_min, dach_max
+                    SELECT egid, dach_min, dach_max, geometry_wkb
                     FROM building_roofs
                     WHERE egid IN ({','.join(['?' for _ in egid_list])})
                 """, egid_list)
@@ -289,9 +308,25 @@ class GeodatenClient:
                     roof_egid = str(roof_row[0])
                     if roof_egid not in roofs_by_egid:
                         roofs_by_egid[roof_egid] = []
+
+                    # WKB zu Koordinaten konvertieren (falls vorhanden)
+                    geometry = None
+                    if roof_row[3]:
+                        try:
+                            from shapely import wkb
+                            geom = wkb.loads(roof_row[3])
+                            # MultiPolygon oder Polygon zu Koordinaten
+                            if hasattr(geom, 'geoms'):
+                                geometry = [list(g.exterior.coords) for g in geom.geoms]
+                            elif hasattr(geom, 'exterior'):
+                                geometry = [list(geom.exterior.coords)]
+                        except Exception:
+                            geometry = None
+
                     roofs_by_egid[roof_egid].append({
                         "dach_min": roof_row[1],
-                        "dach_max": roof_row[2]
+                        "dach_max": roof_row[2],
+                        "geometry": geometry
                     })
 
                 for b in buildings:
@@ -399,7 +434,24 @@ _geodaten_client: Optional[GeodatenClient] = None
 
 
 def get_geodaten_client() -> GeodatenClient:
-    """Get singleton GeodatenClient instance."""
+    """
+    DEPRECATED 19.01.2026 - NICHT MEHR VERWENDEN!
+
+    Verwende stattdessen direkte DuckDB-Abfragen:
+        from app.config import get_building_3d_connection
+        conn = get_building_3d_connection(read_only=True)
+
+    Oder für Nachbarn:
+        from app.services.neighbors_service import get_neighbors_service
+        service = get_neighbors_service()
+    """
+    import warnings
+    warnings.warn(
+        "get_geodaten_client() is deprecated. Use direct DuckDB queries or neighbors_service instead. "
+        "See: docs/architecture/ARCHITECTURE.md",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _geodaten_client
     if _geodaten_client is None:
         _geodaten_client = GeodatenClient()

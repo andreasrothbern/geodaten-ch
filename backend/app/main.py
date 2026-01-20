@@ -706,9 +706,10 @@ async def get_buildings_in_area(
     cursor = conn.cursor()
 
     # BBox-Query für Kandidaten
+    # NEU 19.01.2026: gebaeudeeinheit für 3D-Layer-Queries (wie /3d-layers API)
     cursor.execute("""
         SELECT egid, polygon, center_e, center_n,
-               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
+               traufhoehe_m, firsthoehe_m, gebaeudehoehe_m, gebaeudeeinheit
         FROM buildings_3d
         WHERE center_e BETWEEN ? AND ?
           AND center_n BETWEEN ? AND ?
@@ -720,10 +721,14 @@ async def get_buildings_in_area(
     rows = cursor.fetchall()
 
     buildings = []
+    # NEU 19.01.2026: Mapping gebaeudeeinheit → building für 3D-Layer-Queries
+    gebaeudeeinheit_to_building = {}
+
     for row in rows:
         egid = str(row[0])
         center_e = row[2]
         center_n = row[3]
+        gebaeudeeinheit = row[7]  # NEU: gebaeudeeinheit aus Query
 
         # Distanz zum Abfrage-Zentrum
         dx = center_e - e
@@ -756,24 +761,28 @@ async def get_buildings_in_area(
 
         buildings.append(building)
 
+        # NEU 19.01.2026: Mapping für 3D-Layer-Queries
+        if gebaeudeeinheit:
+            gebaeudeeinheit_to_building[gebaeudeeinheit] = building
+
     # Optional: 3D-Layer laden
+    # NEU 19.01.2026: Query per gebaeudeeinheit (wie /3d-layers API)
     if include_walls or include_roofs:
-        egid_list = [b["egid"] for b in buildings]
+        gebaeudeeinheit_list = list(gebaeudeeinheit_to_building.keys())
 
-        if include_walls and egid_list:
-            # FIX 19.01.2026: Spalte heisst geometry_wkb (WKB), nicht coords_3d
-            # Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+        if include_walls and gebaeudeeinheit_list:
+            # FIX 19.01.2026: Query per gebaeudeeinheit statt egid (zuverlässiger)
             cursor.execute(f"""
-                SELECT egid, z_min, z_max, geometry_wkb
+                SELECT gebaeudeeinheit, z_min, z_max, geometry_wkb
                 FROM building_walls
-                WHERE egid IN ({','.join(['?' for _ in egid_list])})
-            """, egid_list)
+                WHERE gebaeudeeinheit IN ({','.join(['?' for _ in gebaeudeeinheit_list])})
+            """, gebaeudeeinheit_list)
 
-            walls_by_egid = {}
+            walls_by_ge = {}
             for wall_row in cursor.fetchall():
-                wall_egid = str(wall_row[0])
-                if wall_egid not in walls_by_egid:
-                    walls_by_egid[wall_egid] = []
+                wall_ge = wall_row[0]
+                if wall_ge not in walls_by_ge:
+                    walls_by_ge[wall_ge] = []
                 # WKB zu Koordinaten konvertieren
                 geometry = None
                 if wall_row[3]:
@@ -786,34 +795,53 @@ async def get_buildings_in_area(
                             geometry = [list(geom.exterior.coords)]
                     except Exception:
                         geometry = None
-                walls_by_egid[wall_egid].append({
+                walls_by_ge[wall_ge].append({
                     "z_min": wall_row[1],
                     "z_max": wall_row[2],
                     "geometry": geometry
                 })
 
-            for b in buildings:
-                b["walls"] = walls_by_egid.get(b["egid"], [])
+            # Zuweisung über gebaeudeeinheit → building Mapping
+            for ge, building in gebaeudeeinheit_to_building.items():
+                building["walls"] = walls_by_ge.get(ge, [])
 
-        if include_roofs and egid_list:
+        if include_roofs and gebaeudeeinheit_list:
+            # FIX 19.01.2026: Query per gebaeudeeinheit statt egid (wie /3d-layers API)
+            # FIX 19.01.2026: geometry_wkb hinzugefügt (sync mit GeodatenClient)
             cursor.execute(f"""
-                SELECT egid, dach_min, dach_max
+                SELECT gebaeudeeinheit, dach_min, dach_max, geometry_wkb
                 FROM building_roofs
-                WHERE egid IN ({','.join(['?' for _ in egid_list])})
-            """, egid_list)
+                WHERE gebaeudeeinheit IN ({','.join(['?' for _ in gebaeudeeinheit_list])})
+            """, gebaeudeeinheit_list)
 
-            roofs_by_egid = {}
+            roofs_by_ge = {}
             for roof_row in cursor.fetchall():
-                roof_egid = str(roof_row[0])
-                if roof_egid not in roofs_by_egid:
-                    roofs_by_egid[roof_egid] = []
-                roofs_by_egid[roof_egid].append({
+                roof_ge = roof_row[0]
+                if roof_ge not in roofs_by_ge:
+                    roofs_by_ge[roof_ge] = []
+
+                # WKB zu Koordinaten konvertieren (wie bei walls)
+                geometry = None
+                if roof_row[3]:
+                    try:
+                        from shapely import wkb
+                        geom = wkb.loads(roof_row[3])
+                        if hasattr(geom, 'geoms'):
+                            geometry = [list(g.exterior.coords) for g in geom.geoms]
+                        elif hasattr(geom, 'exterior'):
+                            geometry = [list(geom.exterior.coords)]
+                    except Exception:
+                        geometry = None
+
+                roofs_by_ge[roof_ge].append({
                     "dach_min": roof_row[1],
-                    "dach_max": roof_row[2]
+                    "dach_max": roof_row[2],
+                    "geometry": geometry
                 })
 
-            for b in buildings:
-                b["roofs"] = roofs_by_egid.get(b["egid"], [])
+            # Zuweisung über gebaeudeeinheit → building Mapping
+            for ge, building in gebaeudeeinheit_to_building.items():
+                building["roofs"] = roofs_by_ge.get(ge, [])
 
     conn.close()
 

@@ -156,14 +156,10 @@ class LayerFetcherService:
             if walls_saved > 0 or floors_saved > 0:
                 self._update_has_3d_layers(egid)
 
-            # 7. Tile wieder löschen (Speicher sparen - NEU 14.01.2026)
-            from app.config import CLEANUP_TILES_AFTER_IMPORT
-            if CLEANUP_TILES_AFTER_IMPORT:
-                tile_cache.mark_tile_cleaned(tile_id)
-                import shutil
-                if tile_path.exists():
-                    shutil.rmtree(tile_path)
-                    logger.info(f"[3D-LAYER] Tile {tile_id} nach On-Demand-Import gelöscht")
+            # FIX 20.01.2026: Cleanup NICHT hier machen!
+            # Das Cleanup soll NUR in tile_prefetch.py passieren, NACHDEM
+            # der vollständige Prefetch (inkl. aller Layer) abgeschlossen ist.
+            # Vorher wurde das GDB hier gelöscht während der Prefetch noch lief!
 
             return {
                 "success": True,

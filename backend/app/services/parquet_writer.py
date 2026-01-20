@@ -404,6 +404,9 @@ async def parse_tile_to_parquet_parallel(
     - Unabhängige Parquet-Dateien → kein DB-Lock
     - asyncio.gather() funktioniert ohne OOM
 
+    FIX 20.01.2026: Prüft ob GDB-Pfad existiert bevor er geparst wird.
+    Bei 'cleaned' Tiles existiert das GDB nicht mehr.
+
     Args:
         gdb_path: Pfad zur GDB-Datei
         tile_id: Tile-ID
@@ -411,8 +414,19 @@ async def parse_tile_to_parquet_parallel(
 
     Returns:
         Dict mit Pfaden und Counts pro Layer
+
+    Raises:
+        FileNotFoundError: Wenn GDB-Pfad nicht existiert
     """
     import asyncio
+
+    # FIX 20.01.2026: Prüfen ob GDB-Pfad existiert BEVOR wir parsen
+    if not gdb_path or not gdb_path.exists():
+        raise FileNotFoundError(
+            f"GDB-Pfad existiert nicht: {gdb_path}. "
+            f"Tile wurde möglicherweise bereits gelöscht (CLEANUP_TILES_AFTER_IMPORT=true). "
+            f"Prüfe ob Tile bereits importiert wurde (import_status='cleaned')."
+        )
 
     if output_dir is None:
         output_dir = PARQUET_DIR
@@ -668,12 +682,24 @@ def load_parquets_to_duckdb(
             results['walls'] = parquet_count
             logger.info(f"[DUCKDB] building_walls: {results['walls']} rows loaded")
 
-        # 4. has_3d_layers Flag setzen für alle Gebäude mit Walls
-        if results['walls'] > 0:
-            conn.execute("""
-                UPDATE buildings_3d SET has_3d_layers = 1
-                WHERE egid IN (SELECT DISTINCT CAST(egid AS INTEGER) FROM building_walls WHERE egid IS NOT NULL)
-            """)
+        # 4. has_3d_layers Flag setzen für ALLE Gebäude im Tile
+        # FIX 20.01.2026: Flag für ALLE importierten Gebäude setzen!
+        # Der Prefetch hat alle 3D-Layer für das Tile importiert (Building, Roof, Wall)
+        if results['buildings'] > 0:
+            if tile_id:
+                # Setze has_3d_layers=1 für alle Gebäude im gerade importierten Tile
+                conn.execute(f"""
+                    UPDATE buildings_3d SET has_3d_layers = 1
+                    WHERE tile_id = '{tile_id}'
+                """)
+                logger.info(f"[DUCKDB] has_3d_layers=1 für Tile {tile_id} gesetzt")
+            else:
+                # Fallback: Setze für alle Gebäude ohne has_3d_layers Flag
+                conn.execute("""
+                    UPDATE buildings_3d SET has_3d_layers = 1
+                    WHERE has_3d_layers = 0 OR has_3d_layers IS NULL
+                """)
+                logger.info("[DUCKDB] has_3d_layers=1 für alle neuen Gebäude gesetzt")
 
     except Exception as e:
         logger.error(f"[DUCKDB] Bulk-Load Fehler: {e}")
@@ -701,15 +727,36 @@ async def import_tile_with_parquet_pipeline(
     2. Load Parquet → DuckDB (bulk)
     3. Cleanup Parquet (optional)
 
+    FIX 20.01.2026: Gibt leeres Ergebnis zurück wenn GDB nicht existiert.
+    Der Aufrufer (prefetch_tile_buildings_async) prüft vorher den import_status.
+
     Args:
         gdb_path: Pfad zur GDB-Datei
         tile_id: Tile-ID
         cleanup_after: Parquet-Dateien nach Load löschen
 
     Returns:
-        Dict mit Statistiken
+        Dict mit Statistiken (oder leeres Dict wenn GDB nicht existiert)
     """
     import asyncio
+
+    # FIX 20.01.2026: Früher Abbruch wenn GDB nicht existiert
+    if not gdb_path or not gdb_path.exists():
+        logger.warning(
+            f"[PARQUET-PIPELINE] GDB-Pfad existiert nicht: {gdb_path}. "
+            f"Tile {tile_id} wurde möglicherweise bereits gelöscht."
+        )
+        return {
+            'tile_id': tile_id,
+            'parse_ms': 0,
+            'load_result': {'buildings': 0, 'roofs': 0, 'walls': 0},
+            'total_ms': 0,
+            'buildings_count': 0,
+            'roofs_count': 0,
+            'walls_count': 0,
+            'skipped': True,
+            'reason': 'gdb_not_found',
+        }
 
     start_time = time.time()
 
