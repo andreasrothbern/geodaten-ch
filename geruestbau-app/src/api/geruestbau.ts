@@ -199,12 +199,19 @@ export interface GeodataBuilding {
   walls?: Array<{
     z_min: number
     z_max: number
+    // FIX 20.01.2026: geometry_type aus API
+    geometry_type?: 'Polygon' | 'MultiPolygon' | null
     // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
-    geometry?: number[][][]
+    // Polygon: [[[x,y,z], ...]] | MultiPolygon: [[[[x,y,z], ...]]]
+    geometry?: number[][][] | number[][][][]
   }>
+  // FIX 21.01.2026: geometry und geometry_type hinzufügen (wie Walls)
   roofs?: Array<{
     dach_min: number
     dach_max: number
+    geometry_type?: 'Polygon' | 'MultiPolygon' | null
+    // Polygon: [[[x,y,z], ...]] | MultiPolygon: [[[[x,y,z], ...]]]
+    geometry?: number[][][] | number[][][][]
   }>
 }
 

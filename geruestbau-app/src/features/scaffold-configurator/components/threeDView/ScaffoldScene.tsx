@@ -129,7 +129,11 @@ function createBuildingFrom3DWalls(
     return group;
   }
 
-  console.log(`[3D-WALLS] Rendere ${walls.length} Wände`);
+  // FIX 21.01.2026: terrainZMin wird jetzt von außen übergeben (= wallMinZ)
+  // Keine interne Berechnung mehr nötig - Konsistenz mit Dach gewährleistet
+  const effectiveTerrainZ = terrainZMin;
+
+  console.log(`[3D-WALLS] Rendere ${walls.length} Wände, terrainZ=${effectiveTerrainZ.toFixed(1)}`);
 
   const material = new THREE.MeshStandardMaterial({
     color: 0x8b5cf6, // Purple (same as main building)
@@ -145,37 +149,51 @@ function createBuildingFrom3DWalls(
       return;
     }
 
-    // geometry Format:
-    // - Polygon: [[[x,y,z], ...]] (Array of rings, first is exterior)
-    // - MultiPolygon: [[[[x,y,z], ...]]] (Array of polygons)
-    const geometryType = wall.geometry_type || 'Polygon';
+    // FIX 20.01.2026: Geometry-Format aus API erkennen
+    // Das API liefert eine Liste von Polygon-Ringen (Wandflächen):
+    // geometry = [[[x,y,z], ...], [[x,y,z], ...], ...]
+    // Jedes Element ist ein Ring (4+ Punkte mit [x,y,z])
 
-    // Polygone extrahieren basierend auf Geometrie-Typ
-    let polygons: number[][][][] = [];
+    const geom = wall.geometry;
 
-    if (geometryType === 'MultiPolygon') {
-      // MultiPolygon: [[[[x,y,z], ...]]]
-      polygons = wall.geometry as number[][][][];
-    } else if (geometryType === 'Polygon') {
-      // Polygon: [[[x,y,z], ...]] - wrap in array for uniform handling
-      polygons = [wall.geometry as number[][][]];
-    } else {
-      console.log(`[3D-WALLS] Wall ${wallIndex}: Unbekannter Typ ${geometryType}`);
+    // Format-Erkennung: Prüfe Tiefe der Verschachtelung
+    // Wenn geom[0][0] eine Zahl ist → Format: [[x,y,z], ...] (einzelner Ring)
+    // Wenn geom[0][0] ein Array ist → Format: [[[x,y,z], ...], ...] (Liste von Ringen)
+    let rings: number[][][] = [];
+
+    if (geom.length > 0 && Array.isArray(geom[0])) {
+      if (geom[0].length > 0 && typeof geom[0][0] === 'number') {
+        // Format: [[x,y,z], [x,y,z], ...] - einzelner Ring
+        rings = [geom as number[][]];
+      } else if (geom[0].length > 0 && Array.isArray(geom[0][0])) {
+        if (typeof geom[0][0][0] === 'number') {
+          // Format: [[[x,y,z], ...], [[x,y,z], ...]] - Liste von Ringen (unser API-Format!)
+          rings = geom as number[][][];
+        } else {
+          // Format: [[[[x,y,z], ...]]] - GeoJSON MultiPolygon (mit Polygon-Wrapper)
+          // Flatten: Extrahiere alle Ringe aus allen Polygonen
+          rings = (geom as number[][][][]).flatMap(polygon => polygon);
+        }
+      }
+    }
+
+    if (rings.length === 0) {
+      console.log(`[3D-WALLS] Wall ${wallIndex}: Konnte geometry nicht parsen`);
       return;
     }
 
-    polygons.forEach((polygon, polyIndex) => {
-      if (!polygon || polygon.length === 0) return;
+    if (wallIndex === 0) {
+      console.log(`[3D-WALLS] Wall 0: ${rings.length} Ringe erkannt`);
+    }
 
-      // Erster Ring ist das Exterior
-      const exteriorRing = polygon[0];
-      if (!exteriorRing || exteriorRing.length < 3) return;
+    rings.forEach((ring, ringIndex) => {
+      if (!ring || ring.length < 3) return;
 
       // 3D-Vertices aus dem Ring extrahieren
       const vertices: number[] = [];
       const indices: number[] = [];
 
-      exteriorRing.forEach((coord) => {
+      ring.forEach((coord) => {
         // coord = [E, N, Z] in LV95
         const e = coord[0];
         const n = coord[1];
@@ -184,7 +202,7 @@ function createBuildingFrom3DWalls(
         // Konvertiere zu Three.js Koordinaten (relativ zum bboxCenter)
         // THREE.js: X = E-center, Y = Z-terrain, Z = -(N-center)
         const x = e - bboxCenter[0];
-        const y = z - terrainZMin;  // Höhe relativ zum Terrain
+        const y = z - effectiveTerrainZ;  // FIX 21.01.2026: effectiveTerrainZ statt terrainZMin
         const zCoord = -(n - bboxCenter[1]);
 
         vertices.push(x, y, zCoord);
@@ -192,7 +210,7 @@ function createBuildingFrom3DWalls(
 
       // Triangulation: Einfache Fan-Triangulation für konvexe Polygone
       // Für komplexe Polygone wäre earcut.js besser, aber für Wände reicht das meist
-      const vertexCount = exteriorRing.length;
+      const vertexCount = ring.length;
       for (let i = 1; i < vertexCount - 1; i++) {
         indices.push(0, i, i + 1);
       }
@@ -209,8 +227,8 @@ function createBuildingFrom3DWalls(
 
       group.add(mesh);
 
-      if (polyIndex === 0 && wallIndex < 3) {
-        console.log(`[3D-WALLS] Wall ${wallIndex} Poly ${polyIndex}: ${vertexCount} vertices, z_min=${wall.z_min?.toFixed(1)}, z_max=${wall.z_max?.toFixed(1)}`);
+      if (ringIndex === 0 && wallIndex < 3) {
+        console.log(`[3D-WALLS] Wall ${wallIndex} Ring ${ringIndex}: ${vertexCount} vertices, z_min=${wall.z_min?.toFixed(1)}, z_max=${wall.z_max?.toFixed(1)}`);
       }
     });
   });
@@ -1241,14 +1259,21 @@ export default function ScaffoldScene({
     // NEU 19.01.2026: objectData statt additionalBuildings (polygon ist bereits Union)
     addSceneContent(contentGroup, configuration, neighbors, objectData, zones, complexity);
 
-    console.log('Scene content updated:', {
+    // Scene update log (minimiert)
+    // DEBUG 21.01.2026: Detailliertes Logging für 3D-Walls-Problem
+    const wallsWithGeometry = buildingWalls.filter(w => w.geometry && w.geometry.length > 0);
+    console.log('[ScaffoldScene] Scene content updated:', {
       neighbors: neighbors.length,
-      isMultiBuilding: objectData?.projectBuildings ? objectData.projectBuildings.length > 1 : false,
       facades: configuration.elements.filter(e => e.type === 'facade' && e.enabled).length,
-      zones: zones.length,
-      complexity,
+      buildingWalls: buildingWalls.length,
+      wallsWithGeometry: wallsWithGeometry.length,
     });
-  }, [configuration, neighbors, objectData, zones, complexity]);
+    if (buildingWalls.length > 0 && wallsWithGeometry.length === 0) {
+      console.log('[ScaffoldScene] DEBUG: Erste Wall OHNE geometry:', buildingWalls[0]);
+    }
+  // FIX 20.01.2026 BUG: buildingWalls fehlte im dependency array!
+  // Ohne buildingWalls wird useEffect nicht getriggert wenn 3D-Wände geladen werden
+  }, [configuration, neighbors, objectData, zones, complexity, buildingWalls]);
 
   // Update camera when view changes
   useEffect(() => {
@@ -1301,18 +1326,26 @@ export default function ScaffoldScene({
       const bboxCenter: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
 
       // NEU 14.01.2026 13:35: Echte 3D-Dachgeometrie IMMER priorisieren, unabhängig von Komplexität
+      // FIX 21.01.2026: roof_dach_min_m ist OPTIONAL - Geometrie kann auch ohne gerendert werden
       const hasReal3DGeometry = config.roof?.has_roof_geometry &&
                                  config.roof?.roof_geometry_coords &&
-                                 config.roof.roof_geometry_coords.length > 0 &&
-                                 config.roof?.roof_dach_min_m;
+                                 config.roof.roof_geometry_coords.length > 0;
+
+      console.log('[3D-ROOF] hasReal3DGeometry Check:', {
+        has_roof_geometry: config.roof?.has_roof_geometry,
+        roof_geometry_coords_length: config.roof?.roof_geometry_coords?.length,
+        roof_dach_min_m: config.roof?.roof_dach_min_m,
+        terrain_z_min: config.roof?.terrain_z_min,
+        hasReal3DGeometry,
+      });
 
       // FIX 16.01.2026 14:50: Konsistente Höhenberechnung für Gebäude und Dach
       // Wenn echte 3D-Dachgeometrie vorhanden, berechne buildingHeight aus dach_min - terrain
       // Dies stellt sicher, dass das Dach korrekt auf dem Gebäude sitzt
       let buildingHeight: number;
-      if (hasReal3DGeometry && config.roof?.terrain_z_min !== undefined) {
+      if (hasReal3DGeometry && config.roof?.roof_dach_min_m !== undefined && config.roof?.terrain_z_min !== undefined) {
         // Echte Traufhöhe aus 3D-Daten: dach_min (m ü.M.) - terrain (m ü.M.)
-        buildingHeight = config.roof.roof_dach_min_m! - config.roof.terrain_z_min;
+        buildingHeight = config.roof.roof_dach_min_m - config.roof.terrain_z_min;
         console.log('[3D-ROOF] Verwende konsistente Höhenberechnung', {
           dachMin: config.roof.roof_dach_min_m,
           terrainZMin: config.roof.terrain_z_min,
@@ -1334,53 +1367,155 @@ export default function ScaffoldScene({
 
       if (has3DWalls) {
         // Echte 3D-Wandgeometrie aus swissBUILDINGS3D - zeigt echte Turmformen, Anbauten, etc.
-        const terrainZ = config.roof?.terrain_z_min ?? 0;
+
+        // FIX 20.01.2026: Berechne wallCenter aus den 3D-Walls selbst (nicht aus Union-Polygon!)
+        // Bei Multi-Building Projekten hat das Union-Polygon ein anderes Zentrum als die Walls
+        let wallMinE = Infinity, wallMaxE = -Infinity;
+        let wallMinN = Infinity, wallMaxN = -Infinity;
+        let wallMinZ = Infinity;  // FIX 21.01.2026: Auch Z-Min für Terrain berechnen
+        buildingWalls.forEach(wall => {
+          if (!wall.geometry) return;
+          // Iteriere durch alle Koordinaten um Bbox zu finden
+          const processCoord = (coord: number[]) => {
+            if (coord.length >= 2) {
+              wallMinE = Math.min(wallMinE, coord[0]);
+              wallMaxE = Math.max(wallMaxE, coord[0]);
+              wallMinN = Math.min(wallMinN, coord[1]);
+              wallMaxN = Math.max(wallMaxN, coord[1]);
+            }
+            if (coord.length >= 3) {
+              wallMinZ = Math.min(wallMinZ, coord[2]);
+            }
+          };
+          // Rekursiv durch alle Verschachtelungsebenen
+          const processGeom = (geom: unknown) => {
+            if (Array.isArray(geom)) {
+              if (geom.length > 0 && typeof geom[0] === 'number') {
+                processCoord(geom as number[]);
+              } else {
+                geom.forEach(g => processGeom(g));
+              }
+            }
+          };
+          processGeom(wall.geometry);
+        });
+
+        const wallCenter: [number, number] = wallMinE !== Infinity
+          ? [(wallMinE + wallMaxE) / 2, (wallMinN + wallMaxN) / 2]
+          : bboxCenter;
+
+        // FIX 21.01.2026: effectiveTerrainZ für BEIDE - Wände UND Dach
+        // WICHTIG: Bei 3D-Walls IMMER wallMinZ verwenden für Konsistenz!
+        // Die API terrain_z_min kann anders sein als der niedrigste Wand-Punkt
+        // → Dach würde sonst nicht auf den Wänden sitzen
+        const effectiveTerrainZ = wallMinZ !== Infinity ? wallMinZ : (config.roof?.terrain_z_min || 0);
+
+        // FIX 21.01.2026: buildingHeight neu berechnen mit effectiveTerrainZ
+        // Damit Dach korrekt auf den Wänden sitzt
+        const effectiveBuildingHeight = hasReal3DGeometry && config.roof?.roof_dach_min_m
+          ? config.roof.roof_dach_min_m - effectiveTerrainZ
+          : buildingHeight;
+
         console.log('[3D-WALLS] Verwende echte 3D-Wandgeometrie', {
           wallCount: buildingWalls.length,
-          terrainZ: terrainZ.toFixed(1),
+          wallMinZ: wallMinZ !== Infinity ? wallMinZ.toFixed(1) : 'undefined',
+          apiTerrainZ: config.roof?.terrain_z_min?.toFixed(1) ?? 'undefined',
+          effectiveTerrainZ: effectiveTerrainZ.toFixed(1),
+          effectiveBuildingHeight: effectiveBuildingHeight.toFixed(2),
           complexity: buildingComplexity,
+          wallCenter: `${wallCenter[0].toFixed(0)}, ${wallCenter[1].toFixed(0)}`,
         });
-        parent.add(createBuildingFrom3DWalls(buildingWalls, bboxCenter, terrainZ));
+        parent.add(createBuildingFrom3DWalls(buildingWalls, wallCenter, effectiveTerrainZ));
+
+        // FIX 21.01.2026: Dach auch mit wallCenter und effectiveTerrainZ
+        // Sonst passen Wände und Dach bei Multi-Building nicht zusammen
+        if (hasReal3DGeometry) {
+          // FIX 21.01.2026: Fallback für roof_dach_min_m - aus Geometrie berechnen
+          let roofDachMinM = config.roof!.roof_dach_min_m;
+          if (roofDachMinM === undefined || roofDachMinM === null) {
+            // Berechne min Z aus der Dach-Geometrie
+            const allZValues = config.roof!.roof_geometry_coords!.flatMap(
+              polygon => polygon.map(point => point[2])  // Z ist der dritte Wert
+            );
+            roofDachMinM = Math.min(...allZValues);
+            console.log('[3D-ROOF] roof_dach_min_m aus Geometrie berechnet:', roofDachMinM.toFixed(2));
+          }
+
+          console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie (mit wallCenter)', {
+            polygons: config.roof!.roof_geometry_coords!.length,
+            dachMin: roofDachMinM,
+            dachMax: config.roof!.roof_dach_max_m,
+            effectiveBuildingHeight: effectiveBuildingHeight.toFixed(2),
+            center: `${wallCenter[0].toFixed(0)}, ${wallCenter[1].toFixed(0)}`,
+          });
+          parent.add(createRoofFrom3DGeometry(
+            config.roof!.roof_geometry_coords!,
+            wallCenter[0],  // FIX: wallCenter statt bboxCenter
+            wallCenter[1],
+            roofDachMinM,
+            effectiveBuildingHeight  // FIX: effectiveBuildingHeight statt buildingHeight
+          ));
+        } else {
+          // FIX 21.01.2026: Fallback auf heuristisches Dach wenn 3D-Walls aber keine 3D-Roof-Daten
+          const hasSpecialZones = buildingZones.some(z =>
+            z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
+          );
+          const shouldRenderHeuristicRoof = !hasSpecialZones || buildingComplexity === 'simple';
+
+          if (shouldRenderHeuristicRoof) {
+            console.log('[3D-ROOF] Fallback: Heuristisches Dach (3D-Walls ohne 3D-Roof)', {
+              effectiveBuildingHeight: effectiveBuildingHeight.toFixed(2),
+              complexity: buildingComplexity,
+            });
+            const roofType = config.roof?.roof_type || 'satteldach';
+            const roofHeight = config.roof?.trauf_to_first_m || 3;
+            const roofOrientation = config.roof?.roof_orientation || 'O-W';
+            const roofOverhang = config.roof?.roof_overhang_m || 0.4;
+            parent.add(createRoofFromPolygon(normalized, effectiveBuildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+          } else {
+            console.log('[3D-ROOF] Kein Dach: Komplexes Gebäude ohne 3D-Roof-Daten', { complexity: buildingComplexity, hasSpecialZones });
+          }
+        }
       } else {
         // Fallback: 2D-Polygon Extrusion (alle Wände gleiche Höhe)
         console.log('[3D-WALLS] Fallback: 2D-Extrusion (keine 3D-Wände)', {
           buildingHeight: buildingHeight.toFixed(2),
         });
         parent.add(createBuildingFromPolygon(normalized, buildingHeight));
-      }
 
-      if (hasReal3DGeometry) {
-        // Echte 3D-Geometrie aus swissBUILDINGS3D - IMMER verwenden wenn verfügbar
-        console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie', {
-          polygons: config.roof!.roof_geometry_coords!.length,
-          dachMin: config.roof!.roof_dach_min_m,
-          dachMax: config.roof!.roof_dach_max_m,
-          complexity: buildingComplexity,
-        });
-        parent.add(createRoofFrom3DGeometry(
-          config.roof!.roof_geometry_coords!,
-          bboxCenter[0],  // center_e (LV95)
-          bboxCenter[1],  // center_n (LV95)
-          config.roof!.roof_dach_min_m!,
-          buildingHeight
-        ));
-      } else {
-        // Fallback: Heuristisches Dach NUR für einfache Gebäude
-        // Komplexe Gebäude mit Türmen/Kuppeln bekommen kein heuristisches Dach
-        const hasSpecialZones = buildingZones.some(z =>
-          z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
-        );
-        const shouldRenderHeuristicRoof = !hasSpecialZones || buildingComplexity === 'simple';
-
-        if (shouldRenderHeuristicRoof) {
-          console.log('[3D-ROOF] Fallback: Heuristisches Dach', { complexity: buildingComplexity });
-          const roofType = config.roof?.roof_type || 'satteldach';
-          const roofHeight = config.roof?.trauf_to_first_m || 3;
-          const roofOrientation = config.roof?.roof_orientation || 'O-W';
-          const roofOverhang = config.roof?.roof_overhang_m || 0.4;
-          parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+        // Dach für 2D-Extrusion (ohne 3D-Walls)
+        if (hasReal3DGeometry) {
+          // Echte 3D-Geometrie aus swissBUILDINGS3D - IMMER verwenden wenn verfügbar
+          console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie', {
+            polygons: config.roof!.roof_geometry_coords!.length,
+            dachMin: config.roof!.roof_dach_min_m,
+            dachMax: config.roof!.roof_dach_max_m,
+            complexity: buildingComplexity,
+          });
+          parent.add(createRoofFrom3DGeometry(
+            config.roof!.roof_geometry_coords!,
+            bboxCenter[0],  // center_e (LV95)
+            bboxCenter[1],  // center_n (LV95)
+            config.roof!.roof_dach_min_m!,
+            buildingHeight
+          ));
         } else {
-          console.log('[3D-ROOF] Kein Dach: Komplexes Gebäude ohne 3D-Daten', { complexity: buildingComplexity, hasSpecialZones });
+          // Fallback: Heuristisches Dach NUR für einfache Gebäude (ohne 3D-Walls)
+          const hasSpecialZones = buildingZones.some(z =>
+            z.zone_type === 'turm' || z.zone_type === 'kuppel' || z.zone_type === 'treppenhaus'
+          );
+          const shouldRenderHeuristicRoof = !hasSpecialZones || buildingComplexity === 'simple';
+
+          if (shouldRenderHeuristicRoof) {
+            console.log('[3D-ROOF] Fallback: Heuristisches Dach (2D-Extrusion)', { complexity: buildingComplexity });
+            const roofType = config.roof?.roof_type || 'satteldach';
+            const roofHeight = config.roof?.trauf_to_first_m || 3;
+            const roofOrientation = config.roof?.roof_orientation || 'O-W';
+            const roofOverhang = config.roof?.roof_overhang_m || 0.4;
+            parent.add(createRoofFromPolygon(normalized, buildingHeight, roofHeight, roofType, roofOrientation, roofOverhang));
+          } else {
+            console.log('[3D-ROOF] Kein Dach: Komplexes Gebäude ohne 3D-Daten', { complexity: buildingComplexity, hasSpecialZones });
+          }
         }
       }
 

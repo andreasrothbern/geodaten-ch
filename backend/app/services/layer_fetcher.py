@@ -425,6 +425,35 @@ class LayerFetcherService:
         finally:
             conn.close()
 
+    # FIX 21.01.2026: Walls per gebaeudeeinheit suchen (wie Roofs)
+    def get_walls_by_gebaeudeeinheit(self, gebaeudeeinheit: str) -> List[Dict]:
+        """Holt Wall-Daten per gebaeudeeinheit."""
+        conn = get_building_3d_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT gebaeudeeinheit, egid, z_min, z_max, geometry_wkb
+                FROM building_walls WHERE gebaeudeeinheit = ?
+            """, (gebaeudeeinheit,))
+
+            results = []
+            for row in cursor.fetchall():
+                if isinstance(row, tuple):
+                    results.append({
+                        'gebaeudeeinheit': row[0],
+                        'egid': row[1],
+                        'z_min': row[2],
+                        'z_max': row[3],
+                        'geometry_wkb': row[4]
+                    })
+                else:
+                    results.append(dict(row))
+            return results
+
+        finally:
+            conn.close()
+
     def get_floors_for_building(self, egid: str) -> List[Dict]:
         """Holt Floor-Daten für ein Gebäude."""
         # NEU 13.01.2026 17:00: get_building_3d_connection() für DuckDB/SQLite

@@ -593,7 +593,7 @@ def load_parquets_to_duckdb(
                     area_m2, perimeter_m, center_e, center_n, tile_id,
                     objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
                     roof_form, roof_form_confidence, roof_orientation,
-                    0 as has_3d_layers,
+                    1 as has_3d_layers,
                     now() as imported_at,
                     source
                 FROM read_parquet('{buildings_glob}')
@@ -682,24 +682,10 @@ def load_parquets_to_duckdb(
             results['walls'] = parquet_count
             logger.info(f"[DUCKDB] building_walls: {results['walls']} rows loaded")
 
-        # 4. has_3d_layers Flag setzen für ALLE Gebäude im Tile
-        # FIX 20.01.2026: Flag für ALLE importierten Gebäude setzen!
-        # Der Prefetch hat alle 3D-Layer für das Tile importiert (Building, Roof, Wall)
-        if results['buildings'] > 0:
-            if tile_id:
-                # Setze has_3d_layers=1 für alle Gebäude im gerade importierten Tile
-                conn.execute(f"""
-                    UPDATE buildings_3d SET has_3d_layers = 1
-                    WHERE tile_id = '{tile_id}'
-                """)
-                logger.info(f"[DUCKDB] has_3d_layers=1 für Tile {tile_id} gesetzt")
-            else:
-                # Fallback: Setze für alle Gebäude ohne has_3d_layers Flag
-                conn.execute("""
-                    UPDATE buildings_3d SET has_3d_layers = 1
-                    WHERE has_3d_layers = 0 OR has_3d_layers IS NULL
-                """)
-                logger.info("[DUCKDB] has_3d_layers=1 für alle neuen Gebäude gesetzt")
+        # 4. has_3d_layers Flag - ENTFERNT (21.01.2026)
+        # FIX: Das Flag wird jetzt direkt im INSERT gesetzt (1 as has_3d_layers)
+        # Das vermeidet DuckDB write-write conflicts bei parallelen Imports
+        # (INSERT + UPDATE auf gleiche Row = Konflikt)
 
     except Exception as e:
         logger.error(f"[DUCKDB] Bulk-Load Fehler: {e}")

@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Building2, Loader2, AlertCircle } from 'lucide-react';
 import BuildingDataCard from '../components/ui/BuildingDataCard';
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
@@ -283,15 +283,30 @@ function convertGeodataResponseToConfiguratorFormat(
   const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
 
   // Walls und Roofs aus allen Projekt-Gebäuden zusammenfassen
-  // FIX 19.01.2026: Umbenennung coords_3d → geometry (konsistent mit DB geometry_wkb)
+  // FIX 20.01.2026: geometry_type aus API übernehmen (nicht hardcoden!)
   const allWalls: BuildingWall[] = projectBuildings.flatMap((b: GeodataBuilding) =>
-    (b.walls ?? []).map((w: { z_min: number; z_max: number; geometry?: number[][][] }, idx: number) => ({
+    (b.walls ?? []).map((w, idx: number) => ({
       gebaeudeeinheit: `${b.egid}_wall_${idx}`,
       egid: parseInt(b.egid) || null,
       z_min: w.z_min,
       z_max: w.z_max,
-      geometry_type: 'Polygon' as const,
+      geometry_type: w.geometry_type ?? 'Polygon',
       geometry: w.geometry ?? null,
+    }))
+  );
+
+  // FIX 21.01.2026: Auch Roofs extrahieren für echte 3D-Dachgeometrie
+  const allRoofs: BuildingRoof[] = projectBuildings.flatMap((b: GeodataBuilding) =>
+    (b.roofs ?? []).map((r, idx: number) => ({
+      gebaeudeeinheit: `${b.egid}_roof_${idx}`,
+      egid: parseInt(b.egid) || null,
+      dach_min: r.dach_min,
+      dach_max: r.dach_max,
+      roof_form: null,
+      roof_angle_deg: null,
+      roof_orientation: null,
+      geometry_type: r.geometry_type ?? null,
+      geometry: r.geometry ?? null,
     }))
   );
 
@@ -299,6 +314,44 @@ function convertGeodataResponseToConfiguratorFormat(
   const combinedEgid = geodataResponse.project_egids.join('+');
 
   console.log(`[convertGeodataResponse] Union-Polygon mit ${polygon.length} Punkten, ${projectBuildings.length} Gebäude(n), Höhe=${traufHeight}m`);
+  console.log(`[convertGeodataResponse] Walls: ${allWalls.length}, erster geometry_type: ${allWalls[0]?.geometry_type}, hat geometry: ${!!allWalls[0]?.geometry}`);
+  console.log(`[convertGeodataResponse] Roofs: ${allRoofs.length}, erster geometry_type: ${allRoofs[0]?.geometry_type}, hat geometry: ${!!allRoofs[0]?.geometry}`);
+
+  // FIX 21.01.2026: Extrahiere 3D-Dachgeometrie aus allRoofs für ScaffoldScene
+  let roofGeometryCoords: number[][][] | undefined = undefined;
+  let hasRoofGeometry = false;
+  let roofDachMinM: number | undefined = undefined;
+  let roofDachMaxM: number | undefined = undefined;
+
+  if (allRoofs.length > 0) {
+    const firstRoof = allRoofs[0];
+    if (firstRoof.geometry && firstRoof.geometry_type) {
+      if (firstRoof.geometry_type === 'MultiPolygon') {
+        // Flatten: Extrahiere alle Polygone (nur exterior rings)
+        roofGeometryCoords = (firstRoof.geometry as number[][][][]).map(
+          (polygon) => polygon[0] // Nur exterior ring
+        );
+      } else if (firstRoof.geometry_type === 'Polygon') {
+        roofGeometryCoords = [firstRoof.geometry[0]] as number[][][];
+      }
+      hasRoofGeometry = true;
+      console.log('[convertGeodataResponse] 3D-Roof-Geometrie extrahiert:', {
+        type: firstRoof.geometry_type,
+        polygons: roofGeometryCoords?.length ?? 0,
+      });
+    }
+    roofDachMinM = firstRoof.dach_min ?? undefined;
+    roofDachMaxM = firstRoof.dach_max ?? undefined;
+  }
+
+  // terrain_z_min: Niedrigste Terrain-Höhe aus Wall z_min
+  let terrainZMin: number | undefined = undefined;
+  if (allWalls.length > 0) {
+    const wallZMins = allWalls.map(w => w.z_min).filter((z): z is number => z !== null && z !== undefined);
+    if (wallZMins.length > 0) {
+      terrainZMin = Math.min(...wallZMins);
+    }
+  }
 
   return {
     project_id: projectId,
@@ -329,10 +382,18 @@ function convertGeodataResponseToConfiguratorFormat(
       roof_orientation: roofOrientation,
       trauf_to_first_m: roofHeight,
       scaffolding_height_m: firstHeight + 1,
-      confidence: 0.7,
+      confidence: hasRoofGeometry ? 0.95 : 0.7,
       traufhoehe_m: traufHeight,
+      // FIX 21.01.2026: 3D-Roof-Daten für ScaffoldScene
+      roof_geometry_coords: roofGeometryCoords,
+      has_roof_geometry: hasRoofGeometry,
+      roof_dach_min_m: roofDachMinM,
+      roof_dach_max_m: roofDachMaxM,
+      terrain_z_min: terrainZMin,
     },
     building_walls: allWalls.length > 0 ? allWalls : undefined,
+    // FIX 21.01.2026: Auch building_roofs für 3D-View
+    building_roofs: allRoofs.length > 0 ? allRoofs : undefined,
     metadata: {
       source: 'geodata_api',
       polygon_points: polygon.length,
@@ -537,7 +598,6 @@ function convertGeodataToConfiguratorFormat(
 export default function ConfiguratorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const location = useLocation();
 
   // Get projectId from URL if present
   const projectId = searchParams.get('projectId');
@@ -545,8 +605,8 @@ export default function ConfiguratorPage() {
   // NEU 14.01.2026: force_refresh aus URL lesen für Cache-Bypass
   const forceRefreshParam = searchParams.get('force_refresh') === 'true';
 
-  // Get project from Router State (passed from ProjectDetailPage)
-  const passedProject = location.state?.project as ProjectWithGeruestbaudata | undefined;
+  // FIX 21.01.2026 01:00: Router State nicht mehr verwendet - IMMER geodata API aufrufen
+  // Die API liefert building_walls für 3D-Wände, Router State hat diese nicht.
 
   // State
   const [address, setAddress] = useState(searchParams.get('address') || '');
@@ -580,21 +640,20 @@ export default function ConfiguratorPage() {
   const [isMultiMode, setIsMultiMode] = useState(false);
   const [loadingMultiBuilding, setLoadingMultiBuilding] = useState(false);
 
-  // Load project data: prefer Router State, fallback to API
+  // Load project data: ALWAYS use geodata API for building_walls
+  // FIX 21.01.2026 01:00: Router State hat keine building_walls - IMMER API aufrufen!
   useEffect(() => {
     // FIX 10.01.2026 22:30 - Cache invalidieren wenn Projekt wechselt
     invalidateStoreIfProjectChanged(projectId);
 
-    if (passedProject) {
-      // Use project from Router State (no API call needed!)
-      console.log('Using project from Router State (no API call)');
-      handleProjectLoaded(passedProject);
-    } else if (projectId) {
-      // Fallback: Load from API (for direct links, bookmarks, reload)
-      console.log('Loading project from API (fallback for direct link)');
+    if (projectId) {
+      // FIX 21.01.2026 01:00: IMMER loadProjectData aufrufen!
+      // Die geodata API liefert building_walls für 3D-Wände.
+      // Router State (passedProject) hat diese nicht, daher NICHT mehr verwenden.
+      console.log('Loading project via geodata API (includes building_walls)');
       loadProjectData(projectId);
     }
-  }, [projectId, passedProject]);
+  }, [projectId]);
 
   // REFACTORED 10.01.2026 20:30 - SSE für Projekte, REST API als Fallback für Adress-Suche
   useEffect(() => {
@@ -921,6 +980,21 @@ export default function ConfiguratorPage() {
       const geodataResponse = await geruestbauApi.getProjectGeodata(id, 100, true, true);
       console.log(`[loadProjectData] Geodata loaded: ${geodataResponse.project_buildings.length} project buildings, ${geodataResponse.neighbors.length} neighbors`);
 
+      // DEBUG 21.01.2026: Detailliertes Logging für 3D-Walls-Problem
+      const allApiWalls = geodataResponse.project_buildings.flatMap(b => b.walls ?? []);
+      const wallsWithGeometry = allApiWalls.filter(w => w.geometry && w.geometry.length > 0);
+      console.log(`[loadProjectData] DEBUG: ${allApiWalls.length} walls in API response, ${wallsWithGeometry.length} mit geometry`);
+      if (wallsWithGeometry.length > 0) {
+        console.log('[loadProjectData] DEBUG: Erste Wall mit geometry:', {
+          z_min: wallsWithGeometry[0].z_min,
+          z_max: wallsWithGeometry[0].z_max,
+          geometry_type: wallsWithGeometry[0].geometry_type,
+          geometry_len: wallsWithGeometry[0].geometry?.length
+        });
+      } else if (allApiWalls.length > 0) {
+        console.log('[loadProjectData] DEBUG: KEINE Wall hat geometry! Erste Wall:', allApiWalls[0]);
+      }
+
       // 3. Projekt-Polygon verarbeiten
       // NEU 19.01.2026: Ein Projekt = Ein Objekt. Das Union-Polygon kommt vom Backend.
       // Kein "Hauptgebäude" vs "Zusatzgebäude" - nur EIN Objekt-Polygon.
@@ -936,6 +1010,12 @@ export default function ConfiguratorPage() {
         }
 
         console.log('[loadProjectData] Using geodata from API - Objekt-basierte Architektur aktiv');
+
+        // DEBUG 21.01.2026: Prüfen ob building_walls in configData vorhanden
+        const configWalls = configData.building_walls ?? [];
+        const configWallsWithGeometry = configWalls.filter(w => w.geometry && w.geometry.length > 0);
+        console.log(`[loadProjectData] DEBUG: configData hat ${configWalls.length} walls, ${configWallsWithGeometry.length} mit geometry`);
+
         setBuildingData(configData);
         setLoadingState('success');
         return; // Erfolgreich geladen via neue API
@@ -1375,34 +1455,64 @@ export default function ConfiguratorPage() {
     let roofDachMaxM = data.roof.roof_dach_max_m;
 
     if (data.building_roofs && data.building_roofs.length > 0) {
-      // Extrahiere geometry aus dem ersten building_roof (oder alle kombinieren)
-      const firstRoof = data.building_roofs[0];
+      // FIX 21.01.2026: ALLE Dächer kombinieren (nicht nur das erste!)
+      // Bei Multi-Building-Projekten gibt es mehrere building_roofs
+      const allRoofPolygons: number[][][] = [];
+      let combinedDachMin: number | undefined;
+      let combinedDachMax: number | undefined;
 
-      if (firstRoof.geometry && firstRoof.geometry_type) {
-        // MultiPolygon: geometry ist [[[Polygon1]], [[Polygon2]], ...]
-        // Polygon: geometry ist [[[Ring1], [Hole1], ...]]
-        if (firstRoof.geometry_type === 'MultiPolygon') {
-          // Flatten: Extrahiere alle Polygone (nur exterior rings)
-          roofGeometryCoords = (firstRoof.geometry as number[][][][]).map(
-            (polygon) => polygon[0] // Nur exterior ring
-          );
-        } else if (firstRoof.geometry_type === 'Polygon') {
-          // Einzelnes Polygon: geometry ist [[[x,y,z], ...]]
-          roofGeometryCoords = [firstRoof.geometry[0]] as number[][][];
+      data.building_roofs.forEach((roof, index) => {
+        if (roof.geometry && roof.geometry_type) {
+          // MultiPolygon: geometry ist [[[Polygon1]], [[Polygon2]], ...]
+          // Polygon: geometry ist [[[Ring1], [Hole1], ...]]
+          if (roof.geometry_type === 'MultiPolygon') {
+            // Flatten: Extrahiere alle Polygone (nur exterior rings)
+            const polygons = (roof.geometry as number[][][][]).map(
+              (polygon) => polygon[0] // Nur exterior ring
+            );
+            allRoofPolygons.push(...polygons);
+          } else if (roof.geometry_type === 'Polygon') {
+            // Einzelnes Polygon: geometry ist [[[x,y,z], ...]]
+            allRoofPolygons.push(roof.geometry[0] as number[][]);
+          }
+
+          console.log(`[BUILDING-ROOFS] Dach ${index + 1}/${data.building_roofs!.length}:`, {
+            type: roof.geometry_type,
+            polygons: roof.geometry_type === 'MultiPolygon'
+              ? (roof.geometry as number[][][][]).length
+              : 1,
+          });
         }
+
+        // dach_min/dach_max: Minimum und Maximum über alle Dächer
+        if (roof.dach_min != null) {
+          combinedDachMin = combinedDachMin === undefined
+            ? roof.dach_min
+            : Math.min(combinedDachMin, roof.dach_min);
+        }
+        if (roof.dach_max != null) {
+          combinedDachMax = combinedDachMax === undefined
+            ? roof.dach_max
+            : Math.max(combinedDachMax, roof.dach_max);
+        }
+      });
+
+      if (allRoofPolygons.length > 0) {
+        roofGeometryCoords = allRoofPolygons;
         hasRoofGeometry = true;
-        console.log('[BUILDING-ROOFS] Verwende geometry aus building_roofs', {
-          type: firstRoof.geometry_type,
-          polygons: roofGeometryCoords?.length ?? 0,
+        console.log('[BUILDING-ROOFS] Kombinierte Dächer:', {
+          totalRoofs: data.building_roofs.length,
+          totalPolygons: allRoofPolygons.length,
+          dachMin: combinedDachMin,
+          dachMax: combinedDachMax,
         });
       }
 
-      // dach_min/dach_max aus building_roofs übernehmen wenn vorhanden
-      if (firstRoof.dach_min != null) {
-        roofDachMinM = firstRoof.dach_min;
+      if (combinedDachMin !== undefined) {
+        roofDachMinM = combinedDachMin;
       }
-      if (firstRoof.dach_max != null) {
-        roofDachMaxM = firstRoof.dach_max;
+      if (combinedDachMax !== undefined) {
+        roofDachMaxM = combinedDachMax;
       }
     }
 

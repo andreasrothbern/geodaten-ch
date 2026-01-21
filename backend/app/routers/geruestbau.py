@@ -300,19 +300,34 @@ async def get_project_geodata(
                 if wall_ge not in walls_by_ge:
                     walls_by_ge[wall_ge] = []
                 geometry = None
+                geometry_type = None
                 if wall_row[3]:
                     try:
                         from shapely import wkb
                         geom = wkb.loads(wall_row[3])
-                        if hasattr(geom, 'geoms'):
-                            geometry = [list(g.exterior.coords) for g in geom.geoms]
-                        elif hasattr(geom, 'exterior'):
-                            geometry = [list(geom.exterior.coords)]
+                        geometry_type = geom.geom_type
+                        # FIX 20.01.2026: OGC-Standard Format wie in /configurator/facades
+                        # Polygon: [[[x,y,z], ...]] (Array of rings)
+                        # MultiPolygon: [[[[x,y,z], ...]]] (Array of polygons with rings)
+                        if geom.geom_type == 'Polygon':
+                            geometry = [
+                                [list(c) for c in ring.coords]
+                                for ring in [geom.exterior] + list(geom.interiors)
+                            ]
+                        elif geom.geom_type == 'MultiPolygon':
+                            geometry = [
+                                [
+                                    [list(c) for c in ring.coords]
+                                    for ring in [poly.exterior] + list(poly.interiors)
+                                ]
+                                for poly in geom.geoms
+                            ]
                     except Exception:
                         geometry = None
                 walls_by_ge[wall_ge].append({
                     "z_min": wall_row[1],
                     "z_max": wall_row[2],
+                    "geometry_type": geometry_type,
                     "geometry": geometry
                 })
 
@@ -332,19 +347,34 @@ async def get_project_geodata(
                 if roof_ge not in roofs_by_ge:
                     roofs_by_ge[roof_ge] = []
                 geometry = None
+                geometry_type = None
                 if roof_row[3]:
                     try:
                         from shapely import wkb
                         geom = wkb.loads(roof_row[3])
-                        if hasattr(geom, 'geoms'):
-                            geometry = [list(g.exterior.coords) for g in geom.geoms]
-                        elif hasattr(geom, 'exterior'):
-                            geometry = [list(geom.exterior.coords)]
+                        geometry_type = geom.geom_type
+                        # FIX 20.01.2026: OGC-Standard Format wie in /configurator/facades
+                        # Polygon: [[[x,y,z], ...]] (Array of rings)
+                        # MultiPolygon: [[[[x,y,z], ...]]] (Array of polygons with rings)
+                        if geom.geom_type == 'Polygon':
+                            geometry = [
+                                [list(c) for c in ring.coords]
+                                for ring in [geom.exterior] + list(geom.interiors)
+                            ]
+                        elif geom.geom_type == 'MultiPolygon':
+                            geometry = [
+                                [
+                                    [list(c) for c in ring.coords]
+                                    for ring in [poly.exterior] + list(poly.interiors)
+                                ]
+                                for poly in geom.geoms
+                            ]
                     except Exception:
                         geometry = None
                 roofs_by_ge[roof_ge].append({
                     "dach_min": roof_row[1],
                     "dach_max": roof_row[2],
+                    "geometry_type": geometry_type,
                     "geometry": geometry
                 })
 
@@ -673,6 +703,7 @@ async def get_facade_data_for_configurator(
 
     # 6. Building Walls laden (NEU 15.01.2026 - BUG-024)
     # FIX 15.01.2026: DB-Naming (building_walls), ALLE Geometrie-Daten (nicht nur erstes Polygon)
+    # FIX 21.01.2026: Zuerst per gebaeudeeinheit suchen (wie Roofs)
     building_walls = []
     if building.egid:
         try:
@@ -680,7 +711,38 @@ async def get_facade_data_for_configurator(
             from shapely import wkb as shapely_wkb
 
             layer_fetcher = get_layer_fetcher_service()
-            raw_walls = layer_fetcher.get_walls_for_building(str(building.egid))
+
+            # FIX 21.01.2026: Zuerst per gebaeudeeinheit suchen (wie Roofs)
+            raw_walls = []
+
+            # gebaeudeeinheit aus buildings_3d laden (falls noch nicht vorhanden)
+            wall_gebaeudeeinheit = None
+            if hasattr(building, 'gebaeudeeinheit') and building.gebaeudeeinheit:
+                wall_gebaeudeeinheit = building.gebaeudeeinheit
+            else:
+                from app.config import get_building_3d_connection
+                try:
+                    conn = get_building_3d_connection(read_only=True)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT gebaeudeeinheit FROM buildings_3d WHERE egid = ?",
+                        (int(building.egid),)
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        wall_gebaeudeeinheit = row[0]
+                    conn.close()
+                except Exception as ge_err:
+                    logger.debug(f"[BUILDING-WALLS] Konnte gebaeudeeinheit nicht laden: {ge_err}")
+
+            if wall_gebaeudeeinheit:
+                raw_walls = layer_fetcher.get_walls_by_gebaeudeeinheit(wall_gebaeudeeinheit)
+                if raw_walls:
+                    logger.debug(f"[BUILDING-WALLS] {len(raw_walls)} Walls per gebaeudeeinheit gefunden: {wall_gebaeudeeinheit}")
+                else:
+                    logger.warning(f"[BUILDING-WALLS] Keine Walls für gebaeudeeinheit {wall_gebaeudeeinheit}")
+            else:
+                logger.warning(f"[BUILDING-WALLS] Keine gebaeudeeinheit für EGID {building.egid} - 3D-Walls nicht verfügbar")
 
             for wall in raw_walls:
                 wall_wkb = wall.get('geometry_wkb')
@@ -730,7 +792,14 @@ async def get_facade_data_for_configurator(
                     "geometry": geometry,  # Volle 3D-Geometrie
                 })
 
-            logger.info(f"[BUILDING-WALLS] {len(building_walls)} walls für EGID {building.egid} geladen")
+            # DEBUG 21.01.2026: Detailliertes Logging für 3D-Walls-Problem
+            walls_with_geometry = [w for w in building_walls if w.get('geometry')]
+            logger.info(f"[BUILDING-WALLS] {len(building_walls)} walls für EGID {building.egid} geladen, davon {len(walls_with_geometry)} mit geometry")
+            if walls_with_geometry:
+                first_wall = walls_with_geometry[0]
+                logger.info(f"[BUILDING-WALLS] Erste Wall: geometry_type={first_wall.get('geometry_type')}, geometry_len={len(first_wall['geometry']) if first_wall.get('geometry') else 0}")
+            else:
+                logger.warning(f"[BUILDING-WALLS] KEINE Wall hat geometry! raw_walls: {len(raw_walls)}")
         except Exception as wall_err:
             logger.warning(f"Building walls konnten nicht geladen werden: {wall_err}")
 
@@ -740,10 +809,47 @@ async def get_facade_data_for_configurator(
     if building.egid:
         try:
             from app.services.layer_fetcher import get_layer_fetcher_service
+            from app.services.roof_3d_service import get_roof_3d_service
             from shapely import wkb as shapely_wkb
 
             layer_fetcher = get_layer_fetcher_service()
-            raw_roofs = layer_fetcher.get_roofs_for_building(str(building.egid))
+            roof_service = get_roof_3d_service()
+
+            # FIX 21.01.2026: Zuerst per gebaeudeeinheit suchen (wie /3d-layers API)
+            # Die building_roofs Tabelle hat oft kein EGID, nur gebaeudeeinheit!
+            raw_roofs = []
+
+            # FIX 21.01.2026: gebaeudeeinheit aus buildings_3d laden (building-Objekt hat es nicht!)
+            gebaeudeeinheit = None
+            if hasattr(building, 'gebaeudeeinheit') and building.gebaeudeeinheit:
+                gebaeudeeinheit = building.gebaeudeeinheit
+            else:
+                # Aus DB laden per EGID
+                from app.config import get_building_3d_connection
+                try:
+                    conn = get_building_3d_connection(read_only=True)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT gebaeudeeinheit FROM buildings_3d WHERE egid = ?",
+                        (int(building.egid),)
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        gebaeudeeinheit = row[0]
+                        logger.debug(f"[BUILDING-ROOFS] gebaeudeeinheit aus DB geladen: {gebaeudeeinheit}")
+                    conn.close()
+                except Exception as ge_err:
+                    logger.warning(f"[BUILDING-ROOFS] Konnte gebaeudeeinheit nicht laden: {ge_err}")
+
+            if gebaeudeeinheit:
+                roof_by_geb = roof_service.get_by_gebaeudeeinheit(gebaeudeeinheit)
+                if roof_by_geb and roof_by_geb.get('geometry_wkb'):
+                    raw_roofs = [roof_by_geb]
+                    logger.debug(f"[BUILDING-ROOFS] Dach per gebaeudeeinheit gefunden: {gebaeudeeinheit}")
+                else:
+                    logger.warning(f"[BUILDING-ROOFS] Keine Roofs für gebaeudeeinheit {gebaeudeeinheit}")
+            else:
+                logger.warning(f"[BUILDING-ROOFS] Keine gebaeudeeinheit für EGID {building.egid} - 3D-Roofs nicht verfügbar")
 
             for roof in raw_roofs:
                 roof_wkb = roof.get('geometry_wkb')
@@ -1335,8 +1441,16 @@ async def stream_project_context(
     if project.buildings:
         project_egids = [b.egid for b in project.buildings if b.egid]
 
-    if project.egid and project.egid not in project_egids:
-        project_egids.append(project.egid)
+    # FIX 21.01.2026: Multi-EGID Format (z.B. "1243790+1243792") aufteilen
+    # NICHT als einzelne EGID hinzufügen - das verursacht int() Fehler!
+    if project.egid:
+        if '+' in project.egid:
+            # Multi-EGID: Aufteilen und einzeln hinzufügen
+            for single_egid in project.egid.split('+'):
+                if single_egid and single_egid not in project_egids:
+                    project_egids.append(single_egid)
+        elif project.egid not in project_egids:
+            project_egids.append(project.egid)
 
     print(f"[SSE] Final project_egids for stream: {project_egids}")
 
