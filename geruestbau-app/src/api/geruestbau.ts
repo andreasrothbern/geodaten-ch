@@ -7,6 +7,13 @@ export interface NeighborBuilding {
   distance_m: number
   direction: string | null
   polygon?: [number, number][]
+  center_e?: number | null
+  center_n?: number | null
+  // NEU 21.01.2026: Höhendaten für heuristisches Dach
+  gebaeudehoehe_m?: number | null
+  roof_dach_min_m?: number | null
+  roof_dach_max_m?: number | null
+  terrain_z_min?: number | null
 }
 
 export interface NeighborsResponse {

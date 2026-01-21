@@ -1558,6 +1558,7 @@ export default function ScaffoldScene({
       });
 
       // Add neighbor buildings (Phase 2.3)
+      // FIX 21.01.2026: Echte Höhe und heuristisches Dach für Nachbarn
       if (neighborBuildings.length > 0) {
         const mainCenter = bboxCenter;
         neighborBuildings.forEach((neighbor, index) => {
@@ -1579,8 +1580,24 @@ export default function ScaffoldScene({
             [p[0] - neighborCenter[0], p[1] - neighborCenter[1]] as [number, number]
           );
 
+          // FIX 21.01.2026: Echte Höhe aus Nachbar-Daten verwenden
+          // Priorität: 1) dach_min - terrain, 2) gebaeudehoehe_m, 3) Fallback 8m
+          let neighborHeight = 8; // Fallback
+          let neighborRoofHeight = 2.5; // Heuristisch: ~2.5m Dachhöhe
+
+          if (neighbor.roof_dach_min_m != null && neighbor.terrain_z_min != null) {
+            // Beste Option: Echte Traufhöhe berechnen
+            neighborHeight = neighbor.roof_dach_min_m - neighbor.terrain_z_min;
+            if (neighbor.roof_dach_max_m != null) {
+              neighborRoofHeight = neighbor.roof_dach_max_m - neighbor.roof_dach_min_m;
+            }
+          } else if (neighbor.gebaeudehoehe_m != null) {
+            // Fallback: Gesamthöhe verwenden (Trauf ≈ 70% der Gesamthöhe)
+            neighborHeight = neighbor.gebaeudehoehe_m * 0.7;
+            neighborRoofHeight = neighbor.gebaeudehoehe_m * 0.3;
+          }
+
           // Create semi-transparent building for neighbor
-          const neighborHeight = 8; // Default height for neighbors (no height data)
           const neighborMesh = createBuildingFromPolygon(normalizedNeighbor, neighborHeight);
 
           // Make it semi-transparent gray
@@ -1598,7 +1615,32 @@ export default function ScaffoldScene({
           neighborMesh.position.set(offsetX, 0, offsetZ);
           parent.add(neighborMesh);
 
-          console.log(`Added neighbor ${index + 1}/${neighborBuildings.length} at offset (${offsetX.toFixed(1)}, ${offsetZ.toFixed(1)})`);
+          // FIX 21.01.2026: Heuristisches Dach für Nachbarn hinzufügen
+          // Einfaches Satteldach mit O-W Orientierung (Standard)
+          const neighborRoof = createRoofFromPolygon(
+            normalizedNeighbor,
+            neighborHeight,
+            neighborRoofHeight,
+            'satteldach',
+            'O-W',  // Standard-Orientierung
+            0.3     // Kleiner Dachüberstand
+          );
+
+          // Dach auch semi-transparent grau machen
+          neighborRoof.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material = new THREE.MeshLambertMaterial({
+                color: 0x666666,  // Etwas dunkler als Wände
+                transparent: true,
+                opacity: 0.5,
+              });
+            }
+          });
+
+          neighborRoof.position.set(offsetX, 0, offsetZ);
+          parent.add(neighborRoof);
+
+          console.log(`Added neighbor ${index + 1}/${neighborBuildings.length}: height=${neighborHeight.toFixed(1)}m, roof=${neighborRoofHeight.toFixed(1)}m`);
         });
       }
 

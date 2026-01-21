@@ -266,7 +266,9 @@ class ProjectContextStreamService:
                                         "center_e": n.center_e,
                                         "center_n": n.center_n,
                                         "traufhoehe_m": n.traufhoehe_m,
-                                        "firsthoehe_m": n.firsthoehe_m
+                                        "firsthoehe_m": n.firsthoehe_m,
+                                        # FIX 21.01.2026: Höhendaten für heuristisches Dach im 3D-Viewer
+                                        "gebaeudehoehe_m": n.gebaeudehoehe_m,
                                     }
                                     for n in all_neighbors
                                 ]
