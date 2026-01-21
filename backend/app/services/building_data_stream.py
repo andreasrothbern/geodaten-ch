@@ -503,12 +503,16 @@ class BuildingDataStreamService:
                     }
                 )
             else:
-                # Prüfe ob Tile-Download nötig (für Progress-Event)
-                from .tile_cache import get_tile_cache
+                # FIX 21.01.2026: Prüfe Import-Status statt GDB-Pfad
+                # Wenn Tile bereits importiert (status='imported'/'cleaned'/'reloaded'),
+                # sind die Daten in der DB - kein Download nötig!
+                from .tile_cache import get_tile_cache, lv95_to_tile_id
                 tile_cache = get_tile_cache()
-                tile_path = tile_cache.get_tile_for_coordinates(bundles[0].lv95_e, bundles[0].lv95_n)
+                tile_id = lv95_to_tile_id(bundles[0].lv95_e, bundles[0].lv95_n)
+                import_status = tile_cache.get_tile_import_status(tile_id)
 
-                if not tile_path:
+                # Nur Download-Meldung zeigen wenn Tile NICHT importiert
+                if not import_status or import_status == 'pending':
                     yield SSEEvent(
                         event=StreamStep.POLYGON_PROGRESS,
                         data={
@@ -520,10 +524,20 @@ class BuildingDataStreamService:
             # Polygon + Höhen für alle Gebäude laden
             polygon_results = []
             for bundle in bundles:
+                # TIMING 21.01.2026: Messe jeden Schritt
+                t0 = time.time()
                 await smart._collect_building_3d_data(bundle)
+                t1 = time.time()
                 # FIX 18.01.2026 BUG-028: 3D-Layer on-demand laden
                 smart._fetch_roof_geometry_for_complex(bundle)
+                t2 = time.time()
                 smart._load_roof_data_from_db(bundle)
+                t3 = time.time()
+
+                print(f"[SSE-TIMING] EGID {bundle.egid}: "
+                      f"_collect_building_3d_data={round((t1-t0)*1000)}ms, "
+                      f"_fetch_roof_geometry={round((t2-t1)*1000)}ms, "
+                      f"_load_roof_data={round((t3-t2)*1000)}ms", flush=True)
 
                 polygon_results.append({
                     "egid": bundle.egid,
@@ -536,17 +550,15 @@ class BuildingDataStreamService:
 
                 # NEU 20.01.2026: Prefetch für alle Gebäude im Tile (inkl. Walls)
                 # Läuft im Hintergrund während User die Daten sieht
-                print(f"[SSE-DEBUG] bundle.lv95_e={bundle.lv95_e}, bundle.lv95_n={bundle.lv95_n}", flush=True)
+                t4 = time.time()
                 if bundle.lv95_e and bundle.lv95_n:
                     from .tile_prefetch import schedule_prefetch_with_neighbors
-                    from .tile_cache import get_tile_cache, lv95_to_tile_id
+                    from .tile_cache import lv95_to_tile_id, get_tile_cache
                     from pathlib import Path
 
                     tile_id = lv95_to_tile_id(bundle.lv95_e, bundle.lv95_n)
-                    tile_cache = get_tile_cache()
-                    gdb_path = tile_cache.get_tile_path(tile_id)
-
-                    print(f"[SSE-PREFETCH] Triggere Prefetch für Tile {tile_id}, gdb_path={gdb_path}", flush=True)
+                    tile_cache_local = get_tile_cache()
+                    gdb_path = tile_cache_local.get_tile_path(tile_id)
 
                     imm, bg = await schedule_prefetch_with_neighbors(
                         tile_id=tile_id,
@@ -556,7 +568,8 @@ class BuildingDataStreamService:
                         main_egid=int(bundle.egid) if bundle.egid else None,
                         immediate_radius_m=5.0
                     )
-                    print(f"[SSE-PREFETCH] Prefetch gestartet: immediate={imm}, background={bg}", flush=True)
+                    t5 = time.time()
+                    print(f"[SSE-TIMING] EGID {bundle.egid}: prefetch={round((t5-t4)*1000)}ms (imm={imm}, bg={bg})", flush=True)
 
             polygon_duration = round((time.time() - step_start) * 1000, 1)
 

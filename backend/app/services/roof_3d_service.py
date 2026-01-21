@@ -468,13 +468,13 @@ class Roof3DService:
             'loaded_layers': []
         }
 
-        # 1. Tile-ID und gebaeudeeinheit aus building_3d holen
+        # 1. Tile-ID, gebaeudeeinheit und has_3d_layers aus building_3d holen
         # FIX 18.01.2026: EGID als Integer übergeben (DB-Schema: INTEGER)
         egid_int = int(egid) if egid else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT tile_id, gebaeudeeinheit FROM buildings_3d WHERE egid = ?
+                SELECT tile_id, gebaeudeeinheit, has_3d_layers FROM buildings_3d WHERE egid = ?
             """, (egid_int,))
             row = cursor.fetchone()
 
@@ -486,9 +486,19 @@ class Roof3DService:
             if isinstance(row, tuple):
                 tile_id = row[0]
                 gebaeudeeinheit = row[1]
+                has_3d_layers = row[2]
             else:
                 tile_id = row['tile_id']
                 gebaeudeeinheit = row['gebaeudeeinheit']
+                has_3d_layers = row['has_3d_layers']
+
+        # FIX 21.01.2026: Wenn 3D-Layer bereits geladen, früh returnen!
+        # Die Daten sind bereits in building_roofs/building_walls in der DB.
+        # Kein erneutes GDB-Parsing nötig (spart 3-5 Sekunden!)
+        if has_3d_layers == 1:
+            logger.debug(f"[ALL_LAYERS] EGID {egid} hat bereits 3D-Layer (has_3d_layers=1), überspringe GDB-Parsing")
+            result['loaded_layers'] = ['cached']
+            return result
 
         if not tile_id:
             logger.warning(f"[ALL_LAYERS] Keine tile_id für EGID {egid}")

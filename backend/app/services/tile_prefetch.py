@@ -233,9 +233,9 @@ async def prefetch_tile_buildings_async(
     - Parquet → DuckDB (Bulk-Load, SIMD-optimiert)
     - ~2.88x schneller als Listen-basiertes Parsing
 
-    ÄNDERUNG 20.01.2026: Läuft IMMER, auch wenn Tile bereits importiert wurde!
-    Die Parquet-Pipeline macht UPSERT (INSERT OR REPLACE), so werden fehlende
-    Walls/Roofs nachträglich importiert.
+    FIX 21.01.2026: Prüft ob Tile bereits importiert (status='imported'/'cleaned').
+    Wenn ja, wird der Import übersprungen um unnötige Re-Downloads zu vermeiden.
+    Bei Bedarf kann force_reimport=True übergeben werden (noch nicht implementiert).
 
     VORHER (Listen): 147s für 4901 Gebäude
     NACHHER (Parquet): 51s für 4901 Gebäude
@@ -253,6 +253,14 @@ async def prefetch_tile_buildings_async(
     # tile_cache für mark_tile_imported() am Ende
     from app.services.tile_cache import get_tile_cache
     tile_cache = get_tile_cache()
+
+    # FIX 21.01.2026: Prüfe ob Tile bereits importiert wurde
+    # Wenn ja, überspringen um unnötige Re-Imports zu vermeiden
+    # Status-Werte: 'pending', 'imported', 'cleaned', 'reloaded'
+    import_status = tile_cache.get_tile_import_status(tile_id)
+    if import_status and import_status != 'pending':
+        print(f"[PREFETCH-SKIP] {tile_id} bereits importiert (status={import_status}), überspringe", flush=True)
+        return 0
 
     # Check ob bereits ein Prefetch für dieses Tile läuft
     with _prefetch_lock:
@@ -1432,9 +1440,9 @@ async def schedule_prefetch_with_neighbors(
     immediate_count = 0
     background_started = 0
 
-    # ÄNDERUNG 20.01.2026: Keine Import-Status-Prüfung mehr!
-    # prefetch_tile_buildings_async() läuft IMMER und macht UPSERT.
-    # Wenn GDB nicht existiert, wird es dort automatisch neu heruntergeladen.
+    # FIX 21.01.2026: Import-Status-Prüfung ist WIEDER aktiv!
+    # prefetch_tile_buildings_async() prüft selbst ob Tile schon importiert wurde.
+    # Nur wenn status nicht 'imported'/'cleaned' → Import ausführen.
     gdb_exists = gdb_path.exists() if gdb_path else False
 
     # 1. Direkte Nachbarn laden (in Thread um Event-Loop nicht zu blockieren)
