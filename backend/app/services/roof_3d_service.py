@@ -445,7 +445,13 @@ class Roof3DService:
 
     def fetch_all_layers_on_demand(self, egid: str) -> dict:
         """
-        NEU 12.01.2026: Lädt ALLE 3D-Layer (Roof_solid, Roof, Wall) für komplexe Gebäude.
+        DEPRECATED 24.01.2026: Diese Funktion wird nicht mehr aufgerufen.
+
+        Die Parquet-Pipeline (tile_prefetch.py → import_tile_with_parquet_pipeline)
+        lädt jetzt ALLE 3D-Daten (Building, Roof, Wall) beim Tile-Import.
+
+        Diese Funktion bleibt als Fallback für Edge-Cases erhalten, wird aber
+        sofort zurückkehren wenn has_3d_layers=1 (was durch die Pipeline gesetzt wird).
 
         Args:
             egid: EGID des Gebäudes
@@ -459,6 +465,13 @@ class Roof3DService:
                 'loaded_layers': ['Roof_solid', 'Wall', ...]
             }
         """
+        import warnings
+        warnings.warn(
+            "fetch_all_layers_on_demand ist deprecated seit 24.01.2026. "
+            "Die Parquet-Pipeline lädt alle Daten beim Tile-Import.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         import time
         start = time.time()
         result = {
@@ -667,10 +680,17 @@ class Roof3DService:
                         data['wall']
                     ))
 
-                # FIX 12.01.2026: has_3d_layers Flag setzen
-                cursor.execute("""
-                    UPDATE buildings_3d SET has_3d_layers = 1 WHERE egid = ?
-                """, (egid_int,))  # FIX 18.01.2026 22:15
+                # FIX 23.01.2026 BUG-030: has_3d_layers NUR setzen wenn tatsächlich Geometrie gespeichert!
+                # Vorher wurde das Flag bedingungslos gesetzt, was dazu führte dass:
+                # 1. fetch_all_layers_on_demand() aufgerufen wurde
+                # 2. Keine Geometrie gefunden/gespeichert wurde (z.B. EGID nicht im Tile)
+                # 3. has_3d_layers=1 trotzdem gesetzt wurde
+                # 4. Zukünftige Aufrufe haben früh returnt (Zeile 498-501)
+                # 5. Geometrie wurde NIE geladen!
+                if data.get('roof_solid') or data.get('wall'):
+                    cursor.execute("""
+                        UPDATE buildings_3d SET has_3d_layers = 1 WHERE egid = ?
+                    """, (egid_int,))
 
                 conn.commit()
                 logger.debug(f"[ALL_LAYERS] Saved to DB: EGID {egid}")

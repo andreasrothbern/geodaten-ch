@@ -606,13 +606,9 @@ class SmartBuildingService:
                 await self._collect_research_data(bundle, force_refresh)
             if include_zones_analysis:
                 self._create_default_zone(bundle)
-            # 3D-Geometrie für komplexe Gebäude laden
-            self._fetch_roof_geometry_for_complex(bundle)
-            # FIX 14.01.2026: Nach dem Speichern der 3D-Daten NOCHMAL laden!
-            # _fetch_roof_geometry_for_complex() speichert in DB, aber die Daten
-            # wurden VOR dem Speichern gelesen (in _collect_building_3d_data).
-            # TODO: Konsolidieren - fetch sollte Daten direkt ins Bundle schreiben
-            self._load_roof_data_from_db(bundle)
+            # FIX 24.01.2026: _fetch_roof_geometry_for_complex ENTFERNT
+            # Redundant seit Parquet-Pipeline alle 3D-Daten beim Tile-Import lädt.
+            # Dach-Daten werden bereits in _collect_building_3d_data geladen.
             self._calculate_access_points(bundle)
             self._assess_data_quality(bundle)
 
@@ -655,7 +651,19 @@ class SmartBuildingService:
 
             if buildings:
                 building = buildings[0]
-                bundle.egid = str(building.egid) if building.egid else bundle.egid
+
+                # FIX 22.01.2026 BUG-029: EGID nur setzen wenn noch nicht vorhanden
+                # Geocoding liefert nicht immer EGID → Point-in-Polygon verwenden
+                if not bundle.egid:
+                    from app.services.address_parser import _lookup_egid_by_coordinates
+                    pip_egid = _lookup_egid_by_coordinates(bundle.lv95_e, bundle.lv95_n)
+                    if pip_egid:
+                        bundle.egid = str(pip_egid)
+                        logger.info(f"GWR: EGID {pip_egid} via Point-in-Polygon")
+                    elif building.egid:
+                        bundle.egid = str(building.egid)
+                        logger.warning(f"GWR: EGID {building.egid} via Fallback (kein Point-in-Polygon Match)")
+
                 bundle.gwr_floors = building.floors
                 bundle.gwr_area_m2 = building.area_m2
                 bundle.gwr_category = building.building_category
@@ -2049,8 +2057,8 @@ class SmartBuildingService:
                 await self._collect_research_data(bundle, force_refresh)
             if include_zones_analysis:
                 self._create_default_zone(bundle)
-            # 3D-Geometrie für komplexe Gebäude laden
-            self._fetch_roof_geometry_for_complex(bundle)
+            # FIX 24.01.2026: _fetch_roof_geometry_for_complex ENTFERNT
+            # Redundant seit Parquet-Pipeline alle 3D-Daten beim Tile-Import lädt.
             self._calculate_access_points(bundle)
             self._assess_data_quality(bundle)
             cache_key = self._cache_key(bundle.address_input, bundle.egid)
@@ -2078,39 +2086,9 @@ class SmartBuildingService:
         except Exception as e:
             logger.warning(f"Tile loading failed for E={e}, N={n}: {e}")
 
-    def _fetch_roof_geometry_for_complex(self, bundle: BuildingDataBundle):
-        """NEU 14.01.2026: Lädt 3D-Layer (Roof, Wall) für ALLE angefragten Gebäude on-demand.
-
-        Wird für JEDES Gebäude aufgerufen, das über die API angefragt wird.
-        Die 3D-Geometrie wird einmalig aus dem Tile geladen und in der DB gecacht.
-
-        Geladene Layer:
-        - Roof_solid → building_roofs.geometry_wkb (echte 3D-Dachform)
-        - Wall → building_walls.geometry_wkb (Fassaden-Höhen)
-        """
-        # Nur für Gebäude mit EGID
-        if not bundle.egid:
-            return
-
-        # NEU 14.01.2026: Komplexitäts-Check ENTFERNT
-        # Jedes angefragte Gebäude bekommt echte 3D-Geometrie
-
-        try:
-            from app.services.roof_3d_service import get_roof_3d_service
-
-            roof_service = get_roof_3d_service()
-            # NEU: Alle Layer laden (Roof_solid, Roof, Wall)
-            result = roof_service.fetch_all_layers_on_demand(bundle.egid)
-
-            if result['loaded_layers']:
-                logger.info(
-                    f"[3D-GEOM] 3D-Layer für EGID {bundle.egid} geladen: {result['loaded_layers']}"
-                )
-            else:
-                logger.debug(f"[3D-GEOM] Keine 3D-Geometrie für EGID {bundle.egid} verfügbar")
-
-        except Exception as e:
-            logger.warning(f"[3D-GEOM] Fehler beim Laden der 3D-Layer für {bundle.egid}: {e}")
+    # FIX 24.01.2026: _fetch_roof_geometry_for_complex ENTFERNT
+    # Funktion war redundant - Parquet-Pipeline lädt alle 3D-Daten beim Tile-Import.
+    # Siehe: tile_prefetch.py → import_tile_with_parquet_pipeline()
 
     def _assess_data_quality(self, bundle: BuildingDataBundle):
         """Bewertet die Gesamtqualität der gesammelten Daten"""
