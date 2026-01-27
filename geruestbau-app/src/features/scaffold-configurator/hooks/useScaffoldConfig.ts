@@ -92,6 +92,10 @@ interface ScaffoldConfigState {
 
 // ============ HELPER FUNCTIONS ============
 
+// NEU 27.01.2026: Höhenberechnung wird jetzt aus 3D-Geometrie gemacht
+// Siehe extractTerrainProfile() in polygonSimplifier.ts
+// Die alte calculateHeightsFromRawData() wurde entfernt (verwendete aggregierte Werte statt 3D-Geometrie)
+
 const createDefaultSettings = (): ScaffoldSettings => ({
   work_type: 'roof',
   system: 'layher_blitz',
@@ -102,25 +106,41 @@ const createDefaultSettings = (): ScaffoldSettings => ({
   weather_cover: false,
 });
 
+// FIX 27.01.2026: 'full' ersetzt durch 'roofer' mit Giebel-Logik
 const calculateFieldsAndLevels = (
   lengthM: number,
-  heightM: number,
+  baseHeightM: number,  // Traufhöhe
   fieldWidthM: number,
   levelHeightM: number,
-  workType: WorkType
+  workType: WorkType,
+  firstHeightM?: number,  // NEU: Firsthöhe für Spengler
+  isGiebel?: boolean,     // NEU: Giebel-Fassade?
+  giebelHeightM?: number  // NEU: Giebel-Dreieck-Höhe
 ): { fields: number; levels: number; targetHeight: number } => {
   // Target height based on work type
   let targetHeight: number;
   switch (workType) {
     case 'facade':
-      targetHeight = heightM;
+      targetHeight = baseHeightM; // Bis Traufe
       break;
     case 'roof':
-      targetHeight = heightM + 1.0; // +1m fall protection
+      targetHeight = baseHeightM + 1.0; // +1m Absturzsicherung
       break;
-    case 'full':
-      targetHeight = heightM + 2.5; // Up to ridge
+    case 'roofer':
+      // Spengler: Gerüst bis First - 1m
+      if (isGiebel && giebelHeightM && giebelHeightM > 0) {
+        // Giebel-Fassade: Trapez-Form (Traufe + Giebel - 1m)
+        targetHeight = baseHeightM + giebelHeightM - 1.0;
+      } else if (firstHeightM && firstHeightM > baseHeightM) {
+        // Trauf-Fassade: Rechteck bis First - 1m
+        targetHeight = firstHeightM - 1.0;
+      } else {
+        // Fallback: Traufe + 2m (geschätzte Giebelhöhe)
+        targetHeight = baseHeightM + 2.0;
+      }
       break;
+    default:
+      targetHeight = baseHeightM;
   }
 
   const fields = Math.ceil(lengthM / fieldWidthM);
@@ -129,17 +149,22 @@ const calculateFieldsAndLevels = (
   return { fields, levels, targetHeight };
 };
 
+// FIX 27.01.2026: firstHeight für Spengler-Modus hinzugefügt
 const createFacadeElement = (
   facade: SelectedFacade,
   settings: ScaffoldSettings,
-  globalTerrainDiff?: number  // NEU 14.01.2026: Globale Terrain-Differenz für Hanglage
+  globalTerrainDiff?: number,  // NEU 14.01.2026: Globale Terrain-Differenz für Hanglage
+  firstHeight?: number         // NEU 27.01.2026: Firsthöhe für Spengler-Modus
 ): ScaffoldFacade => {
   const { fields, levels, targetHeight } = calculateFieldsAndLevels(
     facade.length_m,
-    facade.height_m,
+    facade.height_m,  // Traufhöhe (base)
     settings.field_width_m,
     settings.level_height_m,
-    settings.work_type
+    settings.work_type,
+    firstHeight,           // Firsthöhe für Spengler
+    facade.is_giebel,      // Giebel-Fassade?
+    facade.giebel_height_m // Giebel-Dreieck-Höhe
   );
 
   const directionNames: Record<FacadeDirection, string> = {
@@ -154,6 +179,10 @@ const createFacadeElement = (
     name: directionNames[facade.direction] || facade.direction,  // Fallback to raw direction code
     direction: facade.direction,
     length_m: facade.length_m,
+    base_height_m: facade.height_m,  // FIX 27.01.2026: Originale Traufhöhe speichern
+    first_height_m: firstHeight,     // NEU 27.01.2026: Firsthöhe für Spengler-Modus
+    is_giebel: facade.is_giebel,     // NEU 27.01.2026: Giebel-Fassade?
+    giebel_height_m: facade.giebel_height_m, // NEU 27.01.2026: Giebel-Dreieck-Höhe
     target_height_m: targetHeight,
     slope_percent: facade.slope_percent,
     fields,
@@ -193,9 +222,11 @@ const createCornerElement = (
   enabled: false, // Corners disabled by default (depend on facade selection)
 });
 
+// NEU 27.01.2026: roof Parameter für Firsthöhe (Spengler-Modus)
 const createElementsFromFacades = (
   facades: SelectedFacade[],
-  settings: ScaffoldSettings
+  settings: ScaffoldSettings,
+  roof?: RoofData
 ): ScaffoldElement[] => {
   const elements: ScaffoldElement[] = [];
   const facadeElements: ScaffoldFacade[] = [];
@@ -207,10 +238,21 @@ const createElementsFromFacades = (
   const globalTerrainDiff = zMinValues.length > 0
     ? Math.max(...zMinValues) - Math.min(...zMinValues)
     : 0;
+  const minTerrainZ = zMinValues.length > 0 ? Math.min(...zMinValues) : undefined;
+
+  // NEU 27.01.2026: Firsthöhe relativ für Spengler-Modus berechnen
+  // roof_dach_max_m (absolute Höhe ü.M.) - terrain_z_min = relative Firsthöhe
+  let firstHeight: number | undefined;
+  if (roof?.roof_dach_max_m && minTerrainZ !== undefined) {
+    firstHeight = roof.roof_dach_max_m - minTerrainZ;
+  } else if (roof?.terrain_z_min && roof?.roof_dach_max_m) {
+    // Fallback: terrain_z_min aus roof verwenden
+    firstHeight = roof.roof_dach_max_m - roof.terrain_z_min;
+  }
 
   // Create facade elements
   facades.forEach((facade) => {
-    const facadeEl = createFacadeElement(facade, settings, globalTerrainDiff);
+    const facadeEl = createFacadeElement(facade, settings, globalTerrainDiff, firstHeight);
     facadeElements.push(facadeEl);
   });
 
@@ -322,15 +364,21 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
 
         const newSettings = { ...configuration.settings, work_type: type };
 
-        // Recalculate fields/levels for all facades
+        // FIX 27.01.2026: Recalculate using base_height_m (not the old target_height_m hack)
+        // NEU 27.01.2026: Giebel-Parameter für Spengler-Modus (roofer)
         const newElements = configuration.elements.map((el) => {
           if (el.type === 'facade') {
+            // Use base_height_m (original eaves height) as the basis for calculation
+            const baseHeight = el.base_height_m || el.target_height_m;  // Fallback for old data
             const { fields, levels, targetHeight } = calculateFieldsAndLevels(
               el.length_m,
-              el.target_height_m - (configuration.settings.work_type === 'roof' ? 1.0 : configuration.settings.work_type === 'full' ? 2.5 : 0),
+              baseHeight,
               newSettings.field_width_m,
               newSettings.level_height_m,
-              type
+              type,
+              el.first_height_m,   // NEU 27.01.2026: Firsthöhe für Spengler
+              el.is_giebel,        // NEU 27.01.2026: Giebel-Fassade?
+              el.giebel_height_m   // NEU 27.01.2026: Giebel-Dreieck-Höhe
             );
             return { ...el, fields, levels, target_height_m: targetHeight };
           }
@@ -635,7 +683,8 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
       // Initialization
       initializeFromFacades: (projectId, buildingName, buildingAddress, facades, buildingPolygon, roof) => {
         const settings = createDefaultSettings();
-        const elements = createElementsFromFacades(facades, settings);
+        // NEU 27.01.2026: roof für Firsthöhe (Spengler-Modus) übergeben
+        const elements = createElementsFromFacades(facades, settings, roof);
         const now = new Date().toISOString();
 
         const configuration: ScaffoldConfiguration = {
@@ -693,7 +742,8 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         if (!configuration) return;
 
         const settings = configuration.settings;
-        const elements = createElementsFromFacades(newFacades, settings);
+        // NEU 27.01.2026: roof für Firsthöhe (Spengler-Modus) übergeben
+        const elements = createElementsFromFacades(newFacades, settings, configuration.roof);
         const now = new Date().toISOString();
 
         set({

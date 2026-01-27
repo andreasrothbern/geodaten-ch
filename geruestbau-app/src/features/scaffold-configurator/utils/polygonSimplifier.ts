@@ -513,6 +513,146 @@ export interface WallMatchResult {
   polygon_z_min: number;  // Min z aus dem gematchten Polygon
   polygon_z_max: number;  // Max z aus dem gematchten Polygon
   wall_height: number;    // polygon_z_max - polygon_z_min
+  // NEU 24.01.2026 P3: Giebel-Erkennung
+  is_giebel: boolean;     // True wenn Wand-Höhe > Traufhöhe (dachMin)
+  giebel_height_m?: number;  // Giebel-Höhe über Traufe (wall_z_max - dachMin)
+  // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
+  terrain_profile?: TerrainProfilePoint[];
+}
+
+/**
+ * NEU 27.01.2026: Terrain-Profil-Punkt für Stellspindel-Berechnung
+ *
+ * Jeder Punkt repräsentiert die Terrain-Höhe an einer Position entlang der Fassade.
+ * position_m = 0 am Fassaden-Start, position_m = facade_length am Ende.
+ */
+export interface TerrainProfilePoint {
+  position_m: number;      // Position entlang der Fassade (0 = Start)
+  z_terrain: number;       // Terrain-Höhe (m ü.M.)
+  z_traufe: number;        // Trauf-Höhe an diesem Punkt (m ü.M.)
+  scaffold_height_m: number;  // Gerüst-Höhe = z_traufe - z_terrain
+}
+
+/**
+ * NEU 27.01.2026: Extrahiert Terrain-Profil aus Wall-Polygon für Stellspindel-Berechnung
+ *
+ * Das Wall-Polygon enthält 3D-Vertices. Die unteren Vertices (nahe z_min) repräsentieren
+ * das Terrain entlang der Fassade. Diese Funktion extrahiert diese Punkte und sortiert
+ * sie nach Position entlang der Fassade.
+ *
+ * Beispiel:
+ *   Wall-Polygon:  [A]───[B]    z ≈ 562m (Traufe)
+ *                   │     │
+ *                  [D]───[C]    z = 555.8m → 556.5m (Terrain, variiert!)
+ *
+ *   Terrain-Profil: [{pos: 0, z: 555.8}, {pos: 6, z: 556.1}, {pos: 12, z: 556.5}]
+ *
+ * @param coords3d 3D-Koordinaten des Wall-Polygons [[x,y,z], ...]
+ * @param facadeStart Start der Fassade [E, N]
+ * @param facadeEnd Ende der Fassade [E, N]
+ * @param zThresholdRatio Anteil der Wandhöhe unter dem ein Vertex als "Terrain" gilt (default: 0.3 = untere 30%)
+ * @returns Sortiertes Array von Terrain-Profil-Punkten
+ */
+export function extractTerrainProfile(
+  coords3d: number[][],
+  facadeStart: [number, number],
+  facadeEnd: [number, number],
+  zThresholdRatio: number = 0.3
+): TerrainProfilePoint[] {
+  if (!coords3d || coords3d.length < 3) return [];
+
+  // 1. z_min und z_max des Polygons berechnen
+  let z_min = Infinity;
+  let z_max = -Infinity;
+  for (const coord of coords3d) {
+    if (coord.length >= 3) {
+      const z = coord[2];
+      if (z < z_min) z_min = z;
+      if (z > z_max) z_max = z;
+    }
+  }
+  if (!isFinite(z_min) || !isFinite(z_max) || z_max <= z_min) return [];
+
+  // 2. Schwellenwert für "Terrain-Vertices" (untere X% der Wandhöhe)
+  const wallHeight = z_max - z_min;
+  const zThreshold = z_min + wallHeight * zThresholdRatio;
+
+  // 3. Fassaden-Richtung und Länge berechnen
+  const facadeDx = facadeEnd[0] - facadeStart[0];
+  const facadeDy = facadeEnd[1] - facadeStart[1];
+  const facadeLength = Math.sqrt(facadeDx * facadeDx + facadeDy * facadeDy);
+  if (facadeLength < 0.1) return [];
+
+  // Einheitsvektor der Fassade
+  const facadeUnitX = facadeDx / facadeLength;
+  const facadeUnitY = facadeDy / facadeLength;
+
+  // 4. Terrain-Vertices extrahieren und auf Fassade projizieren
+  const terrainPoints: TerrainProfilePoint[] = [];
+
+  for (const coord of coords3d) {
+    if (coord.length < 3) continue;
+    const [x, y, z] = coord;
+
+    // Nur Vertices im unteren Bereich (Terrain)
+    if (z > zThreshold) continue;
+
+    // Projektion auf Fassaden-Linie: position = (P - Start) · Einheitsvektor
+    const dx = x - facadeStart[0];
+    const dy = y - facadeStart[1];
+    const position = dx * facadeUnitX + dy * facadeUnitY;
+
+    // Nur Punkte innerhalb der Fassaden-Länge (mit kleiner Toleranz)
+    if (position < -0.5 || position > facadeLength + 0.5) continue;
+
+    // Trauf-Höhe = z_max (obere Kante des Wand-Polygons)
+    // Bei komplexen Polygonen könnte man hier den entsprechenden oberen Vertex suchen,
+    // aber für die meisten Wände ist z_max konstant
+    terrainPoints.push({
+      position_m: Math.max(0, Math.min(facadeLength, position)),
+      z_terrain: z,
+      z_traufe: z_max,
+      scaffold_height_m: z_max - z,
+    });
+  }
+
+  // 5. Nach Position sortieren
+  terrainPoints.sort((a, b) => a.position_m - b.position_m);
+
+  // 6. Duplikate entfernen (Punkte die sehr nah beieinander liegen)
+  const uniquePoints: TerrainProfilePoint[] = [];
+  for (const point of terrainPoints) {
+    const lastPoint = uniquePoints[uniquePoints.length - 1];
+    if (!lastPoint || Math.abs(point.position_m - lastPoint.position_m) > 0.1) {
+      uniquePoints.push(point);
+    }
+  }
+
+  return uniquePoints;
+}
+
+/**
+ * NEU 27.01.2026: Berechnet Stellspindel-Höhen aus Terrain-Profil
+ *
+ * Die Stellspindel gleicht das Terrain-Gefälle aus. Der niedrigste Punkt
+ * braucht keine Spindel (Referenz), alle anderen Punkte brauchen eine
+ * Spindel entsprechend der Höhendifferenz.
+ *
+ * @param terrainProfile Terrain-Profil aus extractTerrainProfile()
+ * @returns Array von Stellspindel-Höhen pro Position (0 = keine Spindel nötig)
+ */
+export function calculateLevelingSpindles(
+  terrainProfile: TerrainProfilePoint[]
+): Array<{ position_m: number; spindle_height_m: number }> {
+  if (terrainProfile.length === 0) return [];
+
+  // Niedrigsten Terrain-Punkt finden (Referenz)
+  const minTerrain = Math.min(...terrainProfile.map((p) => p.z_terrain));
+
+  return terrainProfile.map((point) => ({
+    position_m: point.position_m,
+    spindle_height_m: point.z_terrain - minTerrain,
+  }));
 }
 
 /**
@@ -595,7 +735,8 @@ export function matchFacadeToWall(
   facadeStart: [number, number],
   facadeEnd: [number, number],
   buildingWalls: BuildingWall[],
-  tolerance: number = 3.0  // FIX: Erhöht von 2.0m wegen Koordinaten-Offset
+  tolerance: number = 3.0,  // FIX: Erhöht von 2.0m wegen Koordinaten-Offset
+  dachMin?: number  // NEU 24.01.2026 P3: Für Giebel-Erkennung
 ): WallMatchResult | undefined {
   // Sammle ALLE Matches
   const allMatches: Array<{
@@ -650,21 +791,36 @@ export function matchFacadeToWall(
   if (!isFinite(z_min) || !isFinite(z_max)) {
     // Fallback auf globale Wall-Werte wenn keine z-Koordinaten im Ring
     if (bestMatch.wall.z_min !== null && bestMatch.wall.z_max !== null) {
+      // NEU 24.01.2026 P3: Giebel-Erkennung
+      const isGiebel = dachMin !== undefined && bestMatch.wall.z_max > dachMin + 0.5;
+      const giebelHeightM = isGiebel && dachMin !== undefined ? bestMatch.wall.z_max - dachMin : undefined;
       return {
         wall: bestMatch.wall,
         polygon_z_min: bestMatch.wall.z_min,
         polygon_z_max: bestMatch.wall.z_max,
         wall_height: bestMatch.wall.z_max - bestMatch.wall.z_min,
+        is_giebel: isGiebel,
+        giebel_height_m: giebelHeightM,
       };
     }
     return undefined;
   }
+
+  // NEU 24.01.2026 P3: Giebel-Erkennung
+  const isGiebel = dachMin !== undefined && z_max > dachMin + 0.5;
+  const giebelHeightM = isGiebel && dachMin !== undefined ? z_max - dachMin : undefined;
+
+  // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
+  const terrainProfile = extractTerrainProfile(bestMatch.coords3d, facadeStart, facadeEnd);
 
   return {
     wall: bestMatch.wall,
     polygon_z_min: z_min,
     polygon_z_max: z_max,
     wall_height: z_max - z_min,
+    is_giebel: isGiebel,
+    giebel_height_m: giebelHeightM,
+    terrain_profile: terrainProfile.length > 0 ? terrainProfile : undefined,
   };
 }
 

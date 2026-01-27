@@ -1,7 +1,19 @@
 # 3D-Layer Verwendung: Gerüst-Kalkulation
 
-> **Stand 14.01.2026 00:20**
-> **Status:** ✅ KOMPLETT IMPLEMENTIERT (inkl. Materialliste mit Stellspindeln)
+> **Stand 27.01.2026 14:00**
+> **Status:** ✅ P1-Bug gefixt (Höhenberechnung)
+>            ✅ P2 implementiert (Pro-Fassade Z-Matching)
+>            ✅ P3 implementiert (Giebel-Erkennung mit is_giebel Flag)
+>            🔄 REFACTORING GEPLANT: Höhenberechnung + Gerüst-Abstand
+>
+> **FIX 24.01.2026:** Frontend verwendet jetzt API-Traufhöhe statt Geometrie-Berechnung.
+> Siehe "Konzept-Trennung" für Details.
+>
+> **NEU 25.01.2026:** Giebel-Erkennung in `matchFacadeToWall()` implementiert.
+> `is_giebel` und `giebel_height_m` werden jetzt pro Fassade berechnet.
+>
+> **NEU 27.01.2026:** WorkType `'full'` → `'roofer'` (Spengler) mit Giebel-Trapez.
+> Siehe "WorkType Spengler" für Details.
 >
 > **Aktuelle DB-Statistiken (14.01.2026 00:15):**
 > | Tabelle | Anzahl | Bemerkung |
@@ -11,11 +23,338 @@
 > | building_walls | 29,927 | ~6.2 Wände/Gebäude |
 > | **DB-Größe** | **402 MB** | DuckDB komprimiert |
 
+---
+
+## 🔄 GEPLANTES REFACTORING: 3D-Geometrie-basierte Gerüstplanung (27.01.2026)
+
+### Motivation
+
+Das aktuelle System hat drei Probleme:
+
+1. **Höhenberechnung:** 7+ Stellen im Backend berechnen `traufhoehe_m`/`firsthoehe_m` - aber das sind KEINE Rohdaten!
+2. **Gerüst-Abstand:** Fix 0.5m, obwohl der Abstand je nach Work-Type und Dachüberstand variieren sollte
+3. **Terrain:** Nur 1 Punkt (`terrain_z_min`) - reicht nicht für Stellspindel-Berechnung bei Gefälle!
+
+### Was sind Rohdaten?
+
+**ECHTE ROHDATEN** = 3D-Geometrie aus swissBUILDINGS3D:
+- `building_walls[].geometry` - 3D-Polygone mit `[x, y, z]` Koordinaten
+- `building_roofs[].geometry` - 3D-Dach-Polygone mit `[x, y, z]` Koordinaten
+
+**KEINE ROHDATEN** = Bereits aggregierte/berechnete Werte:
+- `roof_dach_min_m` ← Minimum aller Dach-Z-Werte (berechnet)
+- `terrain_z_min` ← Minimum aller Terrain-Z-Werte (berechnet)
+- `traufhoehe_m` ← `dach_min - terrain_z_min` (berechnet)
+
+### Ziel-Architektur: Gerüst folgt exakt der 3D-Geometrie
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 NEUE ARCHITEKTUR: 3D-GEOMETRIE-BASIERT                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  BACKEND liefert ECHTE Rohdaten (3D-Geometrie):                            │
+│  ═══════════════════════════════════════════════                            │
+│  {                                                                          │
+│    "building_walls": [{                                                    │
+│      "egid": "1234567",                                                    │
+│      "geometry_type": "MultiPolygon",                                      │
+│      "coords_3d": [[[[x1,y1,z1], [x2,y2,z2], ...]]]  // ← ECHTE 3D-DATEN! │
+│    }],                                                                     │
+│    "building_roofs": [{                                                    │
+│      "geometry_coords": [[[x1,y1,z1], [x2,y2,z2], ...]],                  │
+│      "dach_min": 562.94,    // NUR als Referenz                           │
+│      "dach_max": 570.08     // NUR als Referenz                           │
+│    }],                                                                     │
+│    "roof_overhang_m": 0.45  // Aus Sonnendach.ch                          │
+│  }                                                                          │
+│                                                                             │
+│  FRONTEND berechnet aus 3D-Geometrie (SINGLE SOURCE OF TRUTH):             │
+│  ═════════════════════════════════════════════════════════════              │
+│                                                                             │
+│  1. GERÜST-PLATZIERUNG: Exakt entlang der Wall-Polygone                   │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  Wall-Polygon:    [x1,y1,z1] → [x2,y2,z2] → [x3,y3,z3] → ...   │   │
+│     │  Gerüst folgt:    ════════════════════════════════════════════  │   │
+│     │                   Exakt entlang der Kontur, nicht vereinfacht!  │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  2. FASSADEN-HÖHE: Pro Fassade aus Wall-Vertices                          │
+│     - z_min = niedrigstes Z der Fassaden-Vertices (Terrain)               │
+│     - z_max = höchstes Z der Fassaden-Vertices (Traufe/Giebel)            │
+│     - Höhe = z_max - z_min (pro Fassade individuell!)                     │
+│                                                                             │
+│  3. TERRAIN-PROFIL: Mehrere Punkte pro Fassade für Stellspindeln          │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  Fassade (12m Länge): ══════════════════════════════════════   │   │
+│     │  Terrain-Punkte:       z=555.8  z=556.1  z=556.5  z=557.2     │   │
+│     │  Differenz zu min:      0.0m     0.3m     0.7m     1.4m       │   │
+│     │  Stellspindel:         keine    keine    0.4m     0.8m+0.6m  │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  4. GERÜST-ABSTAND: Je nach WorkType + roof_overhang_m                    │
+│     facade:  0.30m fix (Putz/Maler)                                       │
+│     roof:    roof_overhang_m (am Dachrand vorbei)                         │
+│     roofer:  roof_overhang_m - 0.2m (unter dem Dach)                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Warum mehrere Terrain-Punkte?
+
+Ein einzelner `terrain_z_min` Wert reicht NICHT für die Ausnivellierung:
+
+```
+PROBLEM mit 1 Punkt:
+  terrain_z_min = 555.8 (globales Minimum)
+  → Wir wissen nur: "irgendwo ist das Terrain auf 555.8m"
+  → Wir wissen NICHT: "wo genau?" und "wie verläuft das Gefälle?"
+
+LÖSUNG mit mehreren Punkten (Z-Werte der Wall-Vertices):
+  Feld 1: z=555.8m → Stellspindel: 0.0m (Referenz)
+  Feld 2: z=556.1m → Stellspindel: 0.3m
+  Feld 3: z=556.5m → Stellspindel: 0.7m
+  Feld 4: z=557.2m → Stellspindel: 1.4m (Ausgleichsrahmen!)
+
+  → EXAKTE Materialliste pro Feld!
+```
+
+Siehe "Ausnivellierung bei Hanglage" unten für Details zur Stellspindel-Berechnung.
+
+### ✅ ANALYSE 27.01.2026: Z-Daten sind bereits vorhanden!
+
+Die benötigten Terrain-Z-Werte sind **bereits in `building_walls[].geometry`** enthalten.
+Kein zusätzliches Terrain-Mesh erforderlich!
+
+**Vorhandene Datenstrukturen (Frontend):**
+
+| Interface/Funktion | Datei | Liefert |
+|--------------------|-------|---------|
+| `BuildingWall.geometry` | `project.ts:114-119` | 3D-Polygone mit `[x, y, z]` Vertices |
+| `extractWallRingsWithZ()` | `polygonSimplifier.ts:525-561` | `coords2d` + `coords3d` mit Z-Werten |
+| `extractZFromRing()` | `polygonSimplifier.ts:566-579` | `z_min`, `z_max` pro Polygon-Ring |
+| `matchFacadeToWall()` | `polygonSimplifier.ts:597-684` | Wall-Match mit `polygon_z_min`, `polygon_z_max` |
+
+**Struktur der Wall-Geometrie:**
+```typescript
+// BuildingWall.geometry enthält 3D-Koordinaten:
+// - Polygon: [[[x,y,z], ...], [[hole], ...]]
+// - MultiPolygon: [[[[x,y,z], ...]], [...]]
+
+// Beispiel für ein Wand-Polygon (Rechteck mit 4 Ecken):
+// Untere Kante: [x1, y1, 555.8], [x2, y2, 556.3]  ← Terrain-Höhe!
+// Obere Kante:  [x1, y1, 562.9], [x2, y2, 562.9]  ← Trauf-Höhe!
+```
+
+**Was das bedeutet:**
+1. **Terrain-Profil:** Die unteren Vertices jeder Wand = Terrain-Höhe an diesem Punkt
+2. **Pro Feld:** Alle Z-Werte entlang einer Fassade → Stellspindel-Material pro Feld
+3. **Kein API-Call:** Alles bereits in `building_walls[]` vorhanden
+
+**✅ IMPLEMENTIERT 27.01.2026:**
+
+| Funktion | Zeile | Beschreibung |
+|----------|-------|--------------|
+| `extractTerrainProfile()` | `polygonSimplifier.ts:529-602` | Extrahiert Terrain-Z-Werte aus Wall-Vertices |
+| `calculateLevelingSpindles()` | `polygonSimplifier.ts:604-622` | Berechnet Stellspindel-Höhen pro Position |
+| `TerrainProfilePoint` | `polygonSimplifier.ts:521-527` | Interface für Terrain-Profil-Punkte |
+| `WallMatchResult.terrain_profile` | `polygonSimplifier.ts:518` | Terrain-Profil im Match-Result |
+
+**Verwendung:**
+```typescript
+const result = matchFacadeToWall(facadeStart, facadeEnd, buildingWalls);
+// result.terrain_profile enthält Z-Werte entlang der Fassade:
+// [{position_m: 0, z_terrain: 555.8, z_traufe: 562.9, scaffold_height_m: 7.1}, ...]
+
+const spindles = calculateLevelingSpindles(result.terrain_profile);
+// [{position_m: 0, spindle_height_m: 0}, {position_m: 4, spindle_height_m: 0.3}, ...]
+```
+
+### Analyse: Backend-Stellen mit Höhenberechnung (zu bereinigen)
+
+| # | Datei | Zeilen | Beschreibung | Aktion |
+|---|-------|--------|--------------|--------|
+| 1 | `geruestbau.py` | 589-601, 1008-1025 | Berechnet `traufhoehe_m` | → ENTFERNEN (Frontend macht das) |
+| 2 | `building_data_stream.py` | 97-117, 627-628 | SSE-Stream mit Fallback | → ENTFERNEN |
+| 3 | `smart_building/service.py` | 717-718, 801-802, 890+ | Bundle-Befüllung | → NUR 3D-Geometrie liefern |
+| 4 | `roof.py` | 388-403 | Fallback aus GWR (Geschosse×3.2m) | → ENTFERNEN |
+| 5 | `tile_prefetch.py` | 1987-1988 | Legacy UPSERT | → Unverändert (Speicherung) |
+| 6 | `data_cache.py` | 186-196 | Alter Cache | → Prüfen ob noch verwendet |
+| 7 | `main.py` | 1167-1169, 1340-1341 | Legacy-Endpunkte | → Prüfen ob noch verwendet |
+
+### Analyse: Gerüst-Abstand (aktuell fix)
+
+| Stelle | Wert | Beschreibung |
+|--------|------|--------------|
+| `ScaffoldScene.tsx:781` | `scaffoldGap = 0.5` | Fix 0.5m für 3D-Visualisierung |
+| `npk114_calculator.py:35` | `fassadenabstand_m = 0.30` | Fix 0.3m für NPK-Ausmass |
+
+**Ziel:** Dynamisch aus `roof_overhang_m` + WorkType:
+
+```typescript
+// ScaffoldScene.tsx (NEU)
+const getScaffoldGap = (workType: WorkType, roofOverhang: number): number => {
+  switch (workType) {
+    case 'facade':
+      return 0.30;  // Fix für Putz-/Malerarbeiten
+    case 'roof':
+      return roofOverhang;  // Am Dachrand vorbei für Absturzsicherung
+    case 'roofer':
+      return Math.max(0.20, roofOverhang - 0.20);  // Unter dem Dach, min. 20cm
+  }
+};
+```
+
+### Implementierungsplan
+
+| Phase | Task | Aufwand | Beschreibung |
+|-------|------|---------|--------------|
+| **1. ANALYSE** | ✅ Erledigt | - | Architektur definiert, 3D-Geometrie als Basis |
+| **2. FRONTEND** | 3D-Geometrie verwenden | Mittel | Gerüst folgt exakt den Wall-Polygonen |
+| **3. FRONTEND** | ✅ Terrain-Profil pro Fassade | Erledigt | `extractTerrainProfile()` + `calculateLevelingSpindles()` |
+| **4. FRONTEND** | Dynamischer Abstand | Klein | `ScaffoldScene.tsx`: Abstand je WorkType + `roof_overhang_m` |
+| **5. BACKEND** | 3D-Geometrie liefern | Klein | `building_walls` mit vollständiger `coords_3d` |
+| **6. CLEANUP** | Legacy entfernen | Mittel | Berechnete Höhenwerte im Backend entfernen |
+
+### Betroffene Dateien
+
+**Frontend (ändern):**
+- `ScaffoldScene.tsx` - Gerüst entlang 3D-Geometrie, dynamischer Abstand
+- `useScaffoldConfig.ts` - Höhen aus 3D-Vertices berechnen
+- `polygonSimplifier.ts` - Terrain-Z-Werte pro Fassaden-Segment
+
+**Backend (vereinfachen):**
+- `geruestbau.py` - Nur `building_walls` mit 3D-Koordinaten liefern
+- `smart_building/service.py` - Keine berechneten Höhen mehr ins Bundle
+- `roof.py` - Fallback entfernen (keine GWR-Schätzung mehr)
+
+### Kein Fallback mehr!
+
+**Begründung:** Wir haben zuverlässige 3D-Daten für alle Gebäude via swissBUILDINGS3D STAC API.
+Ein Fallback auf GWR-Schätzung (Geschosse × 3.2m) ist:
+- Ungenau (±2-3m)
+- Inkonsistent mit 3D-Visualisierung
+- Verwirrend für Benutzer
+
+**Wenn keine 3D-Daten:** Fehler anzeigen, nicht raten!
+
+### Datenfluss: 3D-Geometrie → Gerüst
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DATENFLUSS: 3D-GEOMETRIE → GERÜST                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. BACKEND: swissBUILDINGS3D Tile laden                                   │
+│     └─ building_walls Tabelle: geometry_wkb (3D MultiPolygon)              │
+│                                                                             │
+│  2. API: /configurator/facades                                             │
+│     └─ building_walls[].coords_3d = [[[[x,y,z], [x,y,z], ...]]]           │
+│                                                                             │
+│  3. FRONTEND: ConfiguratorPage.tsx                                         │
+│     └─ buildingWalls an ScaffoldScene übergeben                            │
+│                                                                             │
+│  4. FRONTEND: ScaffoldScene.tsx                                            │
+│     ├─ Pro Fassade: Wall-Vertices matchen (2D-Position)                   │
+│     ├─ Z-Werte extrahieren → z_min[], z_max[]                             │
+│     ├─ Terrain-Profil: Array von Z-Werten entlang Fassade                 │
+│     ├─ Stellspindeln: diff[i] = z[i] - min(z[])                           │
+│     └─ Gerüst: Exakt entlang der 3D-Kontur platzieren                     │
+│                                                                             │
+│  5. MATERIALLISTE: layher_catalog.py                                       │
+│     └─ Terrain-Profil → Stellspindel-Typen pro Feld berechnen             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## WorkType Spengler (NEU 27.01.2026)
+
+### Änderung
+
+Der WorkType `'full'` (Komplett) wurde durch `'roofer'` (Spengler) ersetzt:
+
+| Type | Label | Berechnung | Gerüst-Position |
+|------|-------|------------|-----------------|
+| `facade` | Fassade | `traufhoehe_m` | 0.3m von Fassade |
+| `roof` | Dacharbeiten | `traufhoehe_m + 1m` | Am Dachrand |
+| `roofer` | **Spengler** | `firsthoehe_m - 1m` | Unter dem Dach |
+
+### Giebel-Trapez für Spengler
+
+Bei Giebel-Fassaden (z.B. Ost/West bei O-W-Dach) wird das Gerüst als **Trapez** berechnet:
+
+```
+TRAUF-FASSADE (N/S):           GIEBEL-FASSADE (E/W):
+┌────────────────┐             ┌────────────────┐
+│                │                    /\
+│   RECHTECK     │                   /  \
+│   bis First-1m │                  /    \
+│                │                 / TRAPEZ\
+│                │                /  bis    \
+└────────────────┘               /  First-1m \
+                               ────────────────
+                               Traufe + Giebel - 1m
+```
+
+**Berechnung:**
+- **Trauf-Fassade:** `target_height = firsthoehe_m - 1.0`
+- **Giebel-Fassade:** `target_height = traufhoehe_m + giebel_height_m - 1.0`
+
+### Betroffene Dateien
+
+- `scaffold.types.ts` - WorkType, ScaffoldFacade.is_giebel, ScaffoldFacade.giebel_height_m
+- `WorkTypeSelector.tsx` - UI "Spengler" statt "Komplett"
+- `calculations.ts` - `calculateTargetHeight()` mit Giebel-Logik
+- `useScaffoldConfig.ts` - `setWorkType()` mit Giebel-Parametern
+- `ScaffoldGrid.tsx`, `ScaffoldScene.tsx` - `'full'` → `'roofer'`
+
+---
+
 ## Übersicht
 
 Dieses Dokument beschreibt, wie die 3D-Layer-Daten (swissBUILDINGS3D) in der Gerüst-Kalkulation verwendet werden.
 
-**Kernkonzept:** Bei Gebäuden am Hang haben verschiedene Fassaden unterschiedliche Höhen. Die 3D-Layer-Daten liefern präzise Fassaden-Höhen für jede Himmelsrichtung.
+## ⚠️ WICHTIG: Konzept-Trennung (NEU 24.01.2026)
+
+Die `facade_z_min` / `facade_z_max` Werte werden für **ZWEI VERSCHIEDENE ZWECKE** verwendet:
+
+| Konzept | Zweck | Höhenberechnung | Datei |
+|---------|-------|-----------------|-------|
+| **3D-Visualisierung** | Gerüst-Darstellung | `height = traufhoehe_m` (KONSTANT) | `ConfiguratorPage.tsx` |
+| **NPK 114 Ausmass** | Abrechnung/Fläche | `height = z_max - z_min` (PRO FASSADE) | `npk114_calculator.py` |
+| **Stellspindeln** | Material-Berechnung | `diff = max(z_min) - min(z_min)` | `layher_catalog.py` |
+
+### Warum KONSTANTE Höhe für 3D-Visualisierung?
+
+**NPK 114 Grundprinzip:** Das Gerüst hat überall die **gleiche physische Höhe** (= Traufhöhe).
+Terrain-Differenzen werden durch **Stellspindeln am Boden** ausgeglichen, NICHT durch höheres Gerüst!
+
+```
+KORREKT (NPK 114):                    FALSCH (alter Bug):
+  ┌──────────────────┐                   ┌──────────────────┐
+  │                  │                   │                  │
+  │  GERÜST (5.5m)   │                   │  GERÜST (11.2m!) │
+  │                  │                   │                  │
+  └──────────────────┘                   │                  │
+   ╱────────────────╲                    │                  │
+   TERRAIN (schräg)                      │                  │
+   + Stellspindeln                       └──────────────────┘
+                                         Giebel + Terrain inkludiert!
+```
+
+### Was der Bug war (ConfiguratorPage.tsx)
+
+```typescript
+// BUG (vor 24.01.2026):
+facadeHeight = zMax - zMin;  // Bei Giebel: First-Spitze - tiefstes Terrain = 11.23m!
+
+// FIX (nach 24.01.2026):
+facadeHeight = traufHeight;  // API-Wert = 5.49m (konstant für alle Fassaden)
+```
+
+**Kernkonzept für Hanglage:** Die 3D-Layer-Daten liefern präzise Terrain-Höhen pro Fassade für **Stellspindel-Berechnung** und **NPK 114 Ausmass** - aber NICHT für die 3D-Gerüst-Visualisierung.
 
 ## Datenfluss: 3D-Daten → Gerüst-Kalkulation
 
@@ -35,46 +374,27 @@ Dieses Dokument beschreibt, wie die 3D-Layer-Daten (swissBUILDINGS3D) in der Ger
 │                          │ (Dict pro Himmelsrichtung)           │          │
 │                          │                                      │          │
 │                          │ Beispiel Hanglage:                   │          │
-│                          │   N: z_min=543.0, z_max=555.0 → 12m  │          │
-│                          │   S: z_min=540.0, z_max=555.0 → 15m  │          │
+│                          │   N: z_min=543.0, z_max=555.0        │          │
+│                          │   S: z_min=540.0, z_max=555.0        │          │
 │                          └──────────────────┬───────────────────┘          │
 │                                             │                              │
-│                                             ▼                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                      BuildingDataBundle                              │  │
-│  │                      (SmartBuildingService)                          │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  terrain:                                                            │  │
-│  │    facade_z_min: { "N": 543.0, "NE": 542.5, "E": 541.0, ... }       │  │
-│  │    facade_z_max: { "N": 555.0, "NE": 555.0, "E": 555.0, ... }       │  │
-│  │    facade_heights_source: "wall_layer" | "terrain_sampled"          │  │
-│  └──────────────────────────────────────────┬───────────────────────────┘  │
-│                                             │                              │
-│              ┌──────────────────────────────┴───────────────┐              │
-│              │                                              │              │
-│              ▼                                              ▼              │
-│  ┌─────────────────────────┐              ┌─────────────────────────────┐  │
-│  │ Frontend: Geodata       │              │ Backend: NPK114 Kalkulation │  │
-│  │ (geruestbau-app)        │              │ (npk114_calculator.py)      │  │
-│  ├─────────────────────────┤              ├─────────────────────────────┤  │
-│  │ Geodata Interface:      │              │ Ausmass pro Fassade:        │  │
-│  │   facade_z_min          │              │   height_m = z_max - z_min  │  │
-│  │   facade_z_max          │              │   LA = length + 2×LS        │  │
-│  │   facade_heights_source │              │   HA = height + Zuschlag    │  │
-│  └───────────┬─────────────┘              │   Fläche = LA × HA          │  │
-│              │                            └─────────────────────────────┘  │
-│              ▼                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         sidesToFacades()                            │   │
-│  │                     (polygonSimplifier.ts)                          │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  IST:                                                               │   │
-│  │    height_m = defaultHeight  ← GLEICH für alle Fassaden!            │   │
-│  │                                                                     │   │
-│  │  SOLL:                                                              │   │
-│  │    height_m = facadeZMax[direction] - facadeZMin[direction]         │   │
-│  │             = Fassaden-spezifische Höhe                             │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│      ┌──────────────────────────────────────┼──────────────────────────┐   │
+│      │                                      │                          │   │
+│      ▼                                      ▼                          ▼   │
+│  ┌────────────────────┐   ┌────────────────────────┐   ┌──────────────────┐│
+│  │ 3D-VISUALISIERUNG  │   │ NPK114 AUSMASS         │   │ STELLSPINDELN    ││
+│  │ (ScaffoldScene.tsx)│   │ (npk114_calculator.py) │   │ (layher_catalog) ││
+│  ├────────────────────┤   ├────────────────────────┤   ├──────────────────┤│
+│  │                    │   │                        │   │                  ││
+│  │ height = traufhöhe │   │ height = z_max - z_min │   │ diff = max(z_min)││
+│  │ (KONSTANT!)        │   │ (PRO FASSADE!)         │   │      - min(z_min)││
+│  │                    │   │                        │   │                  ││
+│  │ → Gerüst-Rechteck  │   │ → Abrechnungsfläche    │   │ → Ausgleichs-    ││
+│  │   gleiche Höhe     │   │   pro Fassade          │   │   material       ││
+│  └────────────────────┘   └────────────────────────┘   └──────────────────┘│
+│                                                                             │
+│  ✅ FIX 24.01.2026: 3D-Visualisierung verwendet jetzt traufhoehe_m aus API │
+│                     NICHT mehr z_max - z_min (enthielt Giebel-Spitze!)     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -260,34 +580,57 @@ def calculate_facade_ausmass(self, side, facade_z_min, facade_z_max, global_trau
 
 ## Plan: Fassaden-Höhen in Gerüst-Kalkulation
 
-**Stand 14.01.2026 22:30 - ✅ IMPLEMENTIERT**
+**Stand 24.01.2026 18:30 - ⚠️ KONZEPT KORRIGIERT**
 
-### Problem
+### Ursprüngliches Problem (falsch verstanden)
 
-Bei Gebäuden am Hang haben verschiedene Fassaden unterschiedliche Höhen:
-- Nordseite: Terrain auf 543m → Traufe auf 555m → **12m Gerüst**
-- Südseite: Terrain auf 540m → Traufe auf 555m → **15m Gerüst**
+~~Bei Gebäuden am Hang haben verschiedene Fassaden unterschiedliche Höhen:~~
+~~- Nordseite: Terrain auf 543m → Traufe auf 555m → **12m Gerüst**~~
+~~- Südseite: Terrain auf 540m → Traufe auf 555m → **15m Gerüst**~~
 
-Aktuell wird eine globale `traufhoehe_m` für ALLE Fassaden verwendet.
+### Korrektes Verständnis (NPK 114)
 
-### Lösung
-
-Die vorhandenen `facade_z_min` und `facade_z_max` Daten nutzen um pro Fassade die korrekte Gerüsthöhe zu berechnen.
-
-### Datenfluss (IST → SOLL)
+**Das Gerüst hat ÜBERALL die gleiche physische Höhe** (= Traufhöhe von der Gebäudewand).
+Terrain-Differenzen werden durch **Stellspindeln** ausgeglichen, NICHT durch höheres Gerüst!
 
 ```
-IST:
-  Geodata.traufhoehe_m (global: 12.5m)
-       ↓
-  ScaffoldFacade.target_height_m = 12.5m (für ALLE Fassaden gleich)
+BEISPIEL HANGLAGE:
 
-SOLL:
+  Nordseite (höheres Terrain):    Südseite (tieferes Terrain):
+  ┌────────────────┐              ┌────────────────┐
+  │                │              │                │
+  │  GERÜST 5.5m   │              │  GERÜST 5.5m   │  ← GLEICHE HÖHE!
+  │                │              │                │
+  └────────────────┘              └────────────────┘
+  ═════════════════              │ Stellspindel   │
+  Terrain                        └────────────────┘
+                                 ════════════════════
+                                 Terrain (3m tiefer)
+
+→ Gerüst-HÖHE ist identisch (5.5m)
+→ STELLSPINDELN sind 3m länger auf Südseite
+→ NPK 114 AUSMASS berücksichtigt den Höhenunterschied (Fläche)
+```
+
+### Datenfluss (KORRIGIERT 24.01.2026)
+
+```
+3D-VISUALISIERUNG (ScaffoldScene):
+  Geodata.traufhoehe_m = 5.5m (KONSTANT für alle Fassaden!)
+       ↓
+  ScaffoldFacade.target_height_m = 5.5m
+       ↓
+  Gerüst wird mit einheitlicher Höhe gerendert
+  + Stellspindel-Visualisierung basierend auf terrain_diff_m
+
+NPK 114 AUSMASS (Backend):
   Geodata.facade_z_min["N"] = 543.0    Geodata.facade_z_max["N"] = 555.0
   Geodata.facade_z_min["S"] = 540.0    Geodata.facade_z_max["S"] = 555.0
        ↓
-  ScaffoldFacade["N"].target_height_m = 555.0 - 543.0 = 12.0m
-  ScaffoldFacade["S"].target_height_m = 555.0 - 540.0 = 15.0m
+  Ausmass["N"].height_m = 555.0 - 543.0 = 12.0m
+  Ausmass["S"].height_m = 555.0 - 540.0 = 15.0m
+       ↓
+  Abrechnung berücksichtigt Terrain-Differenz (23% mehr Fläche!)
 ```
 
 ### Implementierung
@@ -985,10 +1328,461 @@ Ergebnis:
 
 ---
 
+---
+
+## Partielle Fassaden-Blockierung (NEU 23.01.2026)
+
+### Problem
+
+Bei Gebäuden mit teilweise blockierenden Nachbarn (z.B. Garage, Waschraum) wurde die **gesamte Fassade** als blockiert markiert, obwohl nur ein Teil tatsächlich blockiert war.
+
+```
+FASSADE:    |==============================|
+GARAGE:                    |████████|
+
+ALT:        |█████████████████████████████| (ganze Fassade grau)
+                          ❌ FALSCH
+
+NEU:        |=============|████████|=======|
+             auswählbar    blockiert  auswählbar
+                          ✅ RICHTIG
+```
+
+### Lösung: Segment-basierte Blockierung
+
+Das Backend berechnet für jede Fassade **Segmente** mit ihrem Blockierungs-Status:
+
+```python
+# Backend: blocked_facades_service.py
+
+@dataclass
+class BlockedSegment:
+    start_ratio: float  # 0.0-1.0 Position auf Fassade
+    end_ratio: float    # 0.0-1.0 Position auf Fassade
+    blocker_egid: str
+    min_distance_m: float
+```
+
+### Datenfluss
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    PARTIELLE BLOCKIERUNG                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Backend: blocked_facades_service.py                        │
+│     └─ _calculate_blocked_segments(facade, neighbor_polygon)   │
+│         ├─ Sampelt Fassade alle 50cm                           │
+│         ├─ Prüft Distanz zu Nachbar-Polygon                    │
+│         └─ Gibt BlockedSegment[] zurück                        │
+│                                                                 │
+│  2. SSE: project_context_stream.py                             │
+│     └─ blocked_facades Event enthält:                          │
+│         {                                                       │
+│           "blockers": [{                                       │
+│             "facade_index": 2,                                 │
+│             "fully_blocked": false,                            │
+│             "blocked_segments": [                              │
+│               { "start_ratio": 0.4, "end_ratio": 0.7, ... }   │
+│             ]                                                  │
+│           }]                                                   │
+│         }                                                       │
+│                                                                 │
+│  3. Frontend: FacadePanel.tsx                                  │
+│     ├─ allBlockedSegmentsByFacadeIndex (Map)                   │
+│     ├─ getFacadeSegments(index) → FacadeSegment[]              │
+│     ├─ isFacadeFullyBlocked(index) → boolean (>= 90%)          │
+│     └─ SVG-Darstellung mit Segment-Aufteilung                  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### UI-Darstellung
+
+| Segment | Farbe | Interaktion |
+|---------|-------|-------------|
+| Freies Segment | Nach Himmelsrichtung | Klickbar |
+| Blockiertes Segment | Grau (#e5e7eb) | Nicht klickbar |
+
+| Fassaden-Status | Darstellung | Info-Text |
+|-----------------|-------------|-----------|
+| Frei | Grüner Rand | `{length} m` |
+| Partiell blockiert | Gelber Rand | `{freeLength} m frei (X% blockiert)` |
+| Vollständig blockiert (≥90%) | Grau, deaktiviert | - |
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `blocked_facades_service.py` | Segment-Berechnung |
+| `project_context_stream.py` | SSE mit `blocked_segments` |
+| `geruestbau.ts` | Interface `BlockedSegment` |
+| `useProjectContextStream.ts` | Interface `BlockedSegment` |
+| `FacadePanel.tsx` | Segment-basierte Visualisierung |
+
+---
+
+---
+
+## Fassaden-exakte Gerüstberechnung (NEU 24.01.2026)
+
+> **Status:** 🔴 ANALYSE - Bug erkannt, Konzept definiert
+>
+> **Problem:** Frontend berechnet Höhe aus Wall-Geometrie (falsch), statt API-Werte zu nutzen.
+> **Ziel:** Gerüst exakt pro Fassade aus 3D-Geometrie berechnen, inkl. Giebel-Optimierung.
+
+### Problem: Falsche Höhenberechnung im Frontend
+
+**Symptom:** Frontend zeigt 11.23m Traufhöhe, API liefert 5.49m.
+
+**Ursache in `ConfiguratorPage.tsx:308-310`:**
+
+```typescript
+// FALSCH - enthält Giebel-Spitze UND Terrain-Gefälle!
+if (isFinite(geometryWallMinZ) && isFinite(geometryWallMaxZ)) {
+  traufHeight = geometryWallMaxZ - geometryWallMinZ;
+  // 565.71 (First) - 554.48 (tiefstes Terrain) = 11.23m
+}
+```
+
+**Das Problem im Detail:**
+
+```
+WALL-GEOMETRIE Z-WERTE (Knospenweg 4-6):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  /\  ← geometryWallMaxZ = 565.71m (First-Spitze)
+                 /  \
+                /    \     ← GIEBEL (gehört nicht zur Traufhöhe!)
+               /      \
+==============+========+== ← dach_min = 562.96m (ECHTE Traufe)
+|              Gebäude   |
+|                        |
+|                        |
++========================+ ← wall z_min = 557.47m (Terrain-Attribut)
+                         |
+                         | ← Terrain fällt ab (Hanglage)
+                         |
++========================+ ← geometryWallMinZ = 554.48m (tiefstes Vertex)
+
+BERECHNUNGEN:
+  Frontend (FALSCH): 565.71 - 554.48 = 11.23m
+  API (RICHTIG):     562.96 - 557.47 = 5.49m
+```
+
+### Konzept: Fassaden-exakte Gerüstberechnung
+
+#### Datenquellen-Zuverlässigkeit
+
+| Datenquelle | Zuverlässigkeit | Verwendung |
+|-------------|-----------------|------------|
+| `dach_min` (building_roofs) | ✅ **Sehr zuverlässig** | Trauf-Niveau absolut |
+| `dach_max` (building_roofs) | ✅ **Sehr zuverlässig** | First-Niveau absolut |
+| `wall.z_min` (Attribut) | ⚠️ **Mäßig zuverlässig** | Terrain-Referenz (Gebäudemitte) |
+| `wall geometry.z[]` | ✅ **Präzise pro Punkt** | Exakte Höhen pro Fassade |
+| `terrain_z_min` (global) | ❌ **Unzuverlässig** | Nur Indiz für Hanglage |
+| `traufhoehe_m` (API) | ✅ **Zuverlässig** | Berechnete Traufhöhe |
+
+#### Ziel-Architektur: Fassaden-individuelle Höhen
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    NEUE ARCHITEKTUR: PRO-FASSADE HÖHEN                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  DATENQUELLE: Wall-Geometrie (3D-Koordinaten)                              │
+│  ─────────────────────────────────────────────                              │
+│                                                                             │
+│  1. Wall-Geometrie enthält alle Vertices mit [x, y, z]                     │
+│  2. Pro Fassade: Vertices matchen basierend auf 2D-Position                │
+│  3. Z-Werte pro Fassade:                                                   │
+│     - facade_z_min = niedrigstes Z der gematchten Vertices                 │
+│     - facade_z_max = OHNE Giebel-Spitze (median oder Trauf-Niveau)         │
+│                                                                             │
+│  BERECHNUNG PRO FASSADE:                                                   │
+│  ─────────────────────────                                                  │
+│  Trauf-Fassade (N, S):  height = dach_min - facade_z_min                   │
+│  Giebel-Fassade (E, W): height = dach_min - facade_z_min (bis Traufe)      │
+│                         + Giebel-Zone (optional, bis dach_max)             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Giebel-Einrüstung (Trapez-Form)
+
+**Praxis-Anforderung:** Das Gerüst "verjüngt" sich am Giebel - Material sparen!
+
+```
+GIEBEL-FASSADE (Ost oder West bei O-W-Dach):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                    ╱╲
+                   ╱  ╲  ← Giebel-Spitze (First)
+                  ╱    ╲
+                 ╱      ╲
+                ╱ GIEBEL ╲         ← Gerüst NUR hier bis First
+               ╱  ZONE    ╲            (1-2 Felder breit, Mitte)
+              ╱            ╲
+             ╱              ╲
+════════════╱════════════════╲════════════ ← Traufe (dach_min)
+            ╲                ╱
+             ╲   STANDARD   ╱
+              ╲  GERÜST    ╱    ← Gerüst bis Traufe
+               ╲          ╱        (links und rechts vom Giebel)
+════════════════╲════════╱════════════════ ← Terrain
+
+GERÜST-FORM (Trapez/Stufenpyramide):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+           ┌──┐           ← Oberste Lage: 1-2 Felder (Giebel-Spitze)
+          ┌┴──┴┐          ← 2. Lage: 3-4 Felder
+         ┌┴────┴┐         ← 3. Lage: 5-6 Felder
+        ┌┴──────┴┐        ← Standard-Breite ab Trauf-Niveau
+        │        │
+        │        │
+════════╧════════╧════════ ← Terrain
+
+MATERIAL-ERSPARNIS:
+  Standard (Rechteck):  10m breit × 8m hoch = 80 m² Gerüst
+  Trapez (Giebel):      ~60 m² (ca. 25% weniger Material)
+```
+
+### Implementierungskonzept
+
+#### 1. Höhenberechnung korrigieren (P1)
+
+**Datei:** `ConfiguratorPage.tsx:308-355`
+
+```typescript
+// KORREKTUR: API-Werte priorisieren statt Geometrie-Berechnung
+const apiTraufHeight = projectBuildings[0]?.traufhoehe_m;
+const apiFirstHeight = projectBuildings[0]?.firsthoehe_m;
+
+if (apiTraufHeight && apiTraufHeight > 0) {
+  traufHeight = apiTraufHeight;  // ← API-Wert verwenden!
+  console.log(`[convertGeodataResponse] Traufhöhe aus API: ${traufHeight.toFixed(2)}m`);
+} else if (isFinite(geometryWallMinZ) && isFinite(geometryWallMaxZ)) {
+  // Fallback NUR wenn keine API-Werte
+  // Aber: dach_min statt geometryWallMaxZ verwenden!
+  const roofDachMin = allRoofs[0]?.dach_min;
+  if (roofDachMin && isFinite(roofDachMin)) {
+    traufHeight = roofDachMin - geometryWallMinZ;
+  }
+}
+```
+
+#### 2. Fassaden-exakte Z-Werte aus Geometrie (P2)
+
+**Neuer Algorithmus in `polygonSimplifier.ts`:**
+
+```typescript
+export function matchFacadeToWallGeometry(
+  facade: { start_point: [number, number], end_point: [number, number] },
+  wallGeometry: number[][][] | number[][][][],  // Polygon oder MultiPolygon
+  dachMin: number  // Trauf-Niveau aus building_roofs
+): { z_min: number; z_max: number; is_giebel: boolean } {
+
+  // 1. Alle Vertices aus Wall-Geometrie extrahieren
+  const vertices: {x: number, y: number, z: number}[] = extractVertices(wallGeometry);
+
+  // 2. Vertices filtern die zur Fassade gehören (Distanz < 1m zur Fassaden-Linie)
+  const facadeVertices = vertices.filter(v =>
+    distanceToLine(v, facade.start_point, facade.end_point) < 1.0
+  );
+
+  // 3. Z-Werte analysieren
+  const zValues = facadeVertices.map(v => v.z).sort((a, b) => a - b);
+  const z_min = Math.min(...zValues);  // Terrain
+
+  // 4. Giebel-Erkennung: Hat diese Fassade Punkte über dach_min?
+  const pointsAboveDachMin = zValues.filter(z => z > dachMin + 0.5);
+  const is_giebel = pointsAboveDachMin.length > 0;
+
+  // 5. z_max bestimmen
+  // - Trauf-Fassade: z_max = dach_min (keine Punkte darüber)
+  // - Giebel-Fassade: z_max = max(zValues) (First-Spitze)
+  const z_max = is_giebel ? Math.max(...zValues) : dachMin;
+
+  return { z_min, z_max, is_giebel };
+}
+```
+
+#### 3. Giebel-Zone als separate Konfiguration (P3) ✅ IMPLEMENTIERT
+
+**NEU 25.01.2026:** Implementiert in `polygonSimplifier.ts` und `ConfiguratorPage.tsx`.
+
+**Erweitertes Interface in `WallMatchResult`:**
+
+```typescript
+export interface WallMatchResult {
+  wall: BuildingWall;
+  polygon_z_min: number;
+  polygon_z_max: number;
+  wall_height: number;
+  // NEU 24.01.2026 P3: Giebel-Erkennung
+  is_giebel: boolean;           // true wenn Punkte über dach_min + 0.5m liegen
+  giebel_height_m?: number;     // Höhe des Giebel-Dreiecks (z_max - dach_min)
+}
+```
+
+**Erweitertes Interface in `SelectedFacade`:**
+
+```typescript
+interface SelectedFacade {
+  // ... bestehende Felder ...
+
+  // NEU 24.01.2026 P3: Giebel-Erkennung für NPK 114 Ausmass
+  is_giebel?: boolean;        // true wenn Wandpunkte über dach_min liegen
+  giebel_height_m?: number;   // Höhe des Giebel-Dreiecks (z_max - dach_min)
+}
+```
+
+**UI-Konfiguration:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Fassade Ost (Giebel-Fassade)                        │
+├─────────────────────────────────────────────────────┤
+│ Länge: 12.5m                                        │
+│ Höhe bis Traufe: 5.49m                              │
+│ Giebel-Höhe: 2.75m                                  │
+│                                                     │
+│ ☑ Giebel einrüsten (Trapez-Form)                   │
+│   Breite Giebel-Zone: [2] Felder                   │
+│                                                     │
+│ Geschätzte Fläche: 68.2 m² (vs. 89.4 m² Rechteck)  │
+│ Material-Ersparnis: ~24%                            │
+└─────────────────────────────────────────────────────┘
+```
+
+### Hanglage-Material (Stellspindeln)
+
+**Wichtig:** `terrain_z_min` (global) ist **unzuverlässig**!
+
+**Zuverlässige Alternative:** Pro-Fassade z_min aus Wall-Geometrie:
+
+```typescript
+// Pro Fassade die Terrain-Differenz berechnen
+const facadeTechnet wurdee
+rrainDiff = facades.map(f => ({
+  Dies direction: f.direction,
+  z_min: f.z_min,
+  diff_to_lowest: f.z_min - Math.min(...facades.map(f => f.z_min))
+}));
+
+// Material basierend auf lokaler Differenz, nicht globalem Wert
+if (facadeTerrainDiff.diff_to_lowest > 1.5) {
+  // Ausgleichsrahmen nötig
+}
+```
+
+### Data-Flow E2E (Korrigiert)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    KORRIGIERTER DATA-FLOW                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. BACKEND: building_roofs + building_walls                               │
+│     ├─ dach_min = 562.96 (Trauf-Niveau absolut, m ü.M.) ← ZUVERLÄSSIG     │
+│     ├─ dach_max = 565.71 (First-Niveau absolut, m ü.M.) ← ZUVERLÄSSIG     │
+│     └─ wall.geometry = [[[x,y,z], ...]]  ← PRO-VERTEX Z-WERTE             │
+│                                                                             │
+│  2. BACKEND: /geodata API                                                  │
+│     ├─ traufhoehe_m = dach_min - wall.z_min = 5.49m ← API-BERECHNUNG      │
+│     ├─ firsthoehe_m = dach_max - wall.z_min = 8.24m                       │
+│     └─ walls[].geometry = volle 3D-Geometrie                              │
+│                                                                             │
+│  3. FRONTEND: convertGeodataResponse                                       │
+│     └─ traufHeight = apiTraufHeight (5.49m)  ← NICHT aus Geometrie!       │
+│                                                                             │
+│  4. FRONTEND: polygonSimplifier.ts                                         │
+│     └─ matchFacadeToWallGeometry() für jede Fassade:                      │
+│         ├─ Trauf-Fassade: height = dach_min - facade_z_min                │
+│         └─ Giebel-Fassade: height + giebel_zone                           │
+│                                                                             │
+│  5. FRONTEND: ScaffoldScene (3D)                                           │
+│     ├─ Trauf-Fassade: Rechteck-Gerüst                                     │
+│     └─ Giebel-Fassade: Trapez-Gerüst (wenn aktiviert)                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Next Steps
+
+| Priorität | Task | Beschreibung |
+|-----------|------|--------------|
+| **P1** | Höhenberechnung-Bug fixen | `ConfiguratorPage.tsx`: API-Wert statt Geometrie |
+| **P2** | Pro-Fassade Z-Matching | `polygonSimplifier.ts`: Geometrie → Fassade matchen |
+| **P3** | Giebel-Erkennung | Fassaden mit `is_giebel` Flag markieren |
+| **P4** | Trapez-Gerüst UI | Option für Giebel-Einrüstung im Konfigurator |
+| **P5** | 3D-Visualisierung | Trapez-Form in ScaffoldScene rendern |
+
+### Test-Gebäude
+Noch ei
+| Adresse | Typ | Erwartung |
+|---------|-----|-----------|
+| Knospenweg 4-6, Bern | Reihenhaus mit O-W Dach | E/W = Giebel, N/S = Trauf |
+| Bundeshaus, Bern | Komplex | Keine Giebel (Walmdach) |
+| Kirche St. Peter, Bern | Sakralbau | Giebel an Ost-Fassade |
+
+---
+
+## Bekanntes Problem: blocked_facades Index-Mismatch
+
+### Problem
+
+Der SSE-Stream liefert `blocked_facades` mit Indizes basierend auf dem **Original-Polygon** (z.B. 31 Punkte = 30 Segmente). Nach der Douglas-Peucker Vereinfachung hat das Frontend nur noch 5-8 Fassaden.
+
+```
+ORIGINAL-POLYGON: 30 Segmente (Index 0-29)
+  blocked_indices: [0, 1, 2, 9, 10, 11]  ← Backend berechnet auf Original
+
+VEREINFACHT:      8 Fassaden (Index 0-7)
+  → Index 9, 10, 11 existieren nicht mehr!
+  → Falsche Fassaden werden als blockiert markiert
+```
+
+### Aktuelle Situation
+
+- Backend (`blocked_facades_service.py`) berechnet auf Union-Polygon
+- Frontend vereinfacht das Polygon (Douglas-Peucker, epsilon variable)
+- **Keine Zuordnung** zwischen Original-Index und vereinfachtem Index
+
+### Mögliche Lösungen
+
+| Lösung | Beschreibung | Aufwand |
+|--------|--------------|---------|
+| **A: Direction-basiert** | Blockierung per Himmelsrichtung statt Index | Mittel |
+| **B: Backend vereinfacht** | Backend sendet bereits vereinfachte Indizes | Hoch |
+| **C: Index-Mapping** | Frontend mappt Original→Vereinfacht bei Vereinfachung | Mittel |
+
+**Empfehlung:** Lösung A (Direction-basiert) ist am robustesten, da Himmelsrichtungen stabil bleiben auch bei Vereinfachung.
+
+```typescript
+// Statt: blocked_indices: [0, 1, 2, 9, 10, 11]
+// Besser: blocked_directions: ["N", "NE", "E"]
+
+// Frontend kann dann:
+facades.filter(f => !blockedDirections.includes(f.direction))
+```
+
+### Betroffene Dateien
+
+| Datei | Änderung nötig |
+|-------|----------------|
+| `blocked_facades_service.py` | Direction statt Index liefern |
+| `project_context_stream.py` | SSE-Format anpassen |
+| `useProjectContextStream.ts` | Interface anpassen |
+| `FacadePanel.tsx` | Direction-basierte Filterung |
+
+---
+
 ## Changelog
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 8.0 | 24.01.2026 | Fassaden-exakte Gerüstberechnung, Giebel-Trapez, Bug-Analyse |
+| 7.0 | 23.01.2026 | Partielle Fassaden-Blockierung (Segment-basiert) |
 | 6.9 | 14.01.2026 00:20 | Parquet-Pipeline (C.1-C.4) dokumentiert, DB-Statistiken aktualisiert |
 | 6.8 | 13.01.2026 23:45 | Materialliste mit Stellspindeln KOMPLETT |
 | 6.7 | 13.01.2026 22:00 | Editor-Visualisierung implementiert |
