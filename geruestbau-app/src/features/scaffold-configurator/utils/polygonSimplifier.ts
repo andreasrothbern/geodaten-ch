@@ -11,6 +11,24 @@
 
 import type { FacadeDirection } from '../types/scaffold.types';
 import type { BuildingWall } from '../../../types/project';
+ import type { TerrainWarning } from './terrainValidation';
+import { validateTerrainProfile } from './terrainValidation';
+
+// Re-export für externe Verwendung
+export type { TerrainWarning } from './terrainValidation';
+export {
+  validateTerrainProfile,
+  validateCornerTerrain,
+  summarizeWarnings,
+  classifySlope,
+  getRequiredSpindle,
+  SPINDLE_VARIANTS,
+  LEVELING_FRAMES,
+  SLOPE_THRESHOLDS,
+  type SlopeClass,
+  type TerrainWarningCode,
+  type TerrainWarningSeverity,
+} from './terrainValidation';
 
 export interface Point {
   x: number;
@@ -518,6 +536,8 @@ export interface WallMatchResult {
   giebel_height_m?: number;  // Giebel-Höhe über Traufe (wall_z_max - dachMin)
   // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
   terrain_profile?: TerrainProfilePoint[];
+  // NEU 27.01.2026: Strukturierte Warnungen für Terrain-Validierung
+  terrain_warnings?: TerrainWarning[];
 }
 
 /**
@@ -813,6 +833,14 @@ export function matchFacadeToWall(
   // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
   const terrainProfile = extractTerrainProfile(bestMatch.coords3d, facadeStart, facadeEnd);
 
+  // NEU 27.01.2026: Terrain-Validierung mit strukturierten Warnungen
+  // Fassaden-Länge berechnen für Feld-Validierung
+  const facadeLength = Math.sqrt(
+    (facadeEnd[0] - facadeStart[0]) ** 2 + (facadeEnd[1] - facadeStart[1]) ** 2
+  );
+  const terrainWarnings =
+    terrainProfile.length > 0 ? validateTerrainProfile(terrainProfile, facadeLength) : undefined;
+
   return {
     wall: bestMatch.wall,
     polygon_z_min: z_min,
@@ -821,6 +849,7 @@ export function matchFacadeToWall(
     is_giebel: isGiebel,
     giebel_height_m: giebelHeightM,
     terrain_profile: terrainProfile.length > 0 ? terrainProfile : undefined,
+    terrain_warnings: terrainWarnings,
   };
 }
 

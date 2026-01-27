@@ -204,14 +204,43 @@ function invalidateStoreIfNewSelection() {
 }
 
 // FIX 10.01.2026 22:30 - Cache invalidieren wenn Projekt sich ändert
-// Vergleicht aktuelle projectId mit zuletzt geladener
+// FIX 24.01.2026: Auch localStorage-Cache prüfen (sessionStorage kann leer sein nach Page Refresh)
 function invalidateStoreIfProjectChanged(projectId: string | null) {
   if (!projectId) return;
+
+  let shouldClear = false;
+
+  // 1. sessionStorage-basierte Prüfung (schnell)
   const lastProjectId = sessionStorage.getItem('lastLoadedProjectId');
   if (lastProjectId && lastProjectId !== projectId) {
-    console.log(`[Cache] Project changed: ${lastProjectId} -> ${projectId}, clearing store cache`);
+    console.log(`[Cache] Project changed (sessionStorage): ${lastProjectId} -> ${projectId}`);
+    shouldClear = true;
+  }
+
+  // 2. FIX 24.01.2026: localStorage-Cache prüfen (falls sessionStorage leer)
+  // Dies fängt den Fall ab, wenn sessionStorage nach Page Refresh/Browser Neustart leer ist
+  if (!shouldClear) {
+    try {
+      const cacheStr = localStorage.getItem('scaffold-config-storage');
+      if (cacheStr) {
+        const cache = JSON.parse(cacheStr);
+        const cachedProjectId = cache?.state?.projectId;
+        if (cachedProjectId && cachedProjectId !== projectId) {
+          console.log(`[Cache] Project changed (localStorage): ${cachedProjectId} -> ${projectId}`);
+          shouldClear = true;
+        }
+      }
+    } catch (e) {
+      // JSON parse error - clear cache to be safe
+      console.log('[Cache] Invalid cache, clearing');
+      shouldClear = true;
+    }
+  }
+
+  if (shouldClear) {
     localStorage.removeItem('scaffold-config-storage');
   }
+
   sessionStorage.setItem('lastLoadedProjectId', projectId);
 }
 
@@ -234,32 +263,144 @@ function convertGeodataResponseToConfiguratorFormat(
   const polygon = geodataResponse.polygon as [number, number][];
   const projectBuildings = geodataResponse.project_buildings;
 
-  // Höhen aggregieren aus allen Projekt-Gebäuden
-  // Bei Multi-Building: Max-Werte verwenden (höchstes Gebäude bestimmt Gerüsthöhe)
+  // FIX 21.01.2026: Walls und Roofs ZUERST extrahieren, dann Höhen daraus berechnen
+  // Die 3D-Daten (z_min/z_max) sind die Wahrheit - keine API-berechneten Werte verwenden!
+  const allWalls: BuildingWall[] = projectBuildings.flatMap((b: GeodataBuilding) =>
+    (b.walls ?? []).map((w, idx: number) => ({
+      gebaeudeeinheit: `${b.egid}_wall_${idx}`,
+      egid: parseInt(b.egid) || null,
+      z_min: w.z_min,
+      z_max: w.z_max,
+      geometry_type: w.geometry_type ?? 'Polygon',
+      geometry: w.geometry ?? null,
+    }))
+  );
+
+  const allRoofs: BuildingRoof[] = projectBuildings.flatMap((b: GeodataBuilding) =>
+    (b.roofs ?? []).map((r, idx: number) => ({
+      gebaeudeeinheit: `${b.egid}_roof_${idx}`,
+      egid: parseInt(b.egid) || null,
+      dach_min: r.dach_min,
+      dach_max: r.dach_max,
+      roof_form: null,
+      roof_angle_deg: null,
+      roof_orientation: null,
+      geometry_type: r.geometry_type ?? null,
+      geometry: r.geometry ?? null,
+    }))
+  );
+
+  // FIX 24.01.2026: API-Werte für Gerüsthöhe verwenden (NPK 114 konform)
+  // Die Gerüsthöhe ist KONSTANT (= Traufhöhe). Terrain-Differenzen werden
+  // durch Stellspindeln/Ausgleichsrahmen am Boden ausgeglichen, NICHT durch
+  // Variation der Gerüsthöhe! Siehe: NPK 114, 3D_LAYER_USAGE_SCAFFOLDING.md
   let traufHeight = 8;  // Default
   let firstHeight = 10; // Default
 
+  // Hilfsfunktion: Extrahiere min/max Z aus verschachtelter Geometrie
+  // Wird NUR für Terrain-Z-Werte verwendet (Stellspindel-Berechnung), NICHT für Gerüsthöhe!
+  const extractZFromGeometry = (geometry: unknown): { minZ: number; maxZ: number } => {
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    const processCoord = (coord: number[]) => {
+      if (coord.length >= 3) {
+        minZ = Math.min(minZ, coord[2]);
+        maxZ = Math.max(maxZ, coord[2]);
+      }
+    };
+
+    const processGeom = (geom: unknown) => {
+      if (Array.isArray(geom)) {
+        if (geom.length > 0 && typeof geom[0] === 'number') {
+          processCoord(geom as number[]);
+        } else {
+          geom.forEach(g => processGeom(g));
+        }
+      }
+    };
+
+    processGeom(geometry);
+    return { minZ, maxZ };
+  };
+
+  // Terrain-Z-Werte aus Wall-Geometrie extrahieren (NUR für Hanglage/Stellspindeln)
+  let geometryWallMinZ = Infinity;
+  let geometryWallMaxZ = -Infinity;
+
+  allWalls.forEach(wall => {
+    if (wall.geometry) {
+      const { minZ, maxZ } = extractZFromGeometry(wall.geometry);
+      if (isFinite(minZ)) geometryWallMinZ = Math.min(geometryWallMinZ, minZ);
+      if (isFinite(maxZ)) geometryWallMaxZ = Math.max(geometryWallMaxZ, maxZ);
+    }
+  });
+
+  // PRIORITÄT 1: API-Werte verwenden (korrekt berechnet im Backend)
+  // traufhoehe_m = Gerüsthöhe (konstant für alle Fassaden)
+  // Terrain-Differenzen werden durch Stellspindeln ausgeglichen!
   if (projectBuildings.length > 0) {
     const traufValues = projectBuildings
-      .map((b: GeodataBuilding) => b.traufhoehe_m ?? b.gebaeudehoehe_m)
-      .filter((v: number | undefined): v is number => v !== null && v !== undefined);
+      .map((b: GeodataBuilding) => b.traufhoehe_m)
+      .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
     const firstValues = projectBuildings
       .map((b: GeodataBuilding) => b.firsthoehe_m)
-      .filter((v: number | undefined): v is number => v !== null && v !== undefined);
+      .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
 
     if (traufValues.length > 0) {
       traufHeight = Math.max(...traufValues);
+      console.log(`[convertGeodataResponse] Traufhöhe (Gerüsthöhe) aus API: ${traufHeight.toFixed(2)}m`);
     }
     if (firstValues.length > 0) {
       firstHeight = Math.max(...firstValues);
-    } else {
-      firstHeight = traufHeight + 2;
+      console.log(`[convertGeodataResponse] Firsthöhe aus API: ${firstHeight.toFixed(2)}m`);
+    } else if (traufValues.length > 0) {
+      firstHeight = traufHeight + 2;  // Schätzung wenn keine First-Daten
     }
+  }
+
+  // PRIORITÄT 2: Fallback auf Roof dach_min/dach_max (wenn keine API-Werte)
+  if (traufHeight === 8 && allRoofs.length > 0) {
+    const roofMins = allRoofs.filter(r => r.dach_min != null).map(r => r.dach_min!);
+    const roofMaxs = allRoofs.filter(r => r.dach_max != null).map(r => r.dach_max!);
+    // Für Fallback: Verwende wall.z_min als Terrain-Referenz
+    const wallZMins = allWalls.filter(w => w.z_min != null).map(w => w.z_min!);
+    const terrainRef = wallZMins.length > 0 ? Math.min(...wallZMins) : 0;
+
+    if (roofMins.length > 0 && terrainRef > 0) {
+      const dachMin = Math.min(...roofMins);
+      traufHeight = dachMin - terrainRef;
+      console.log(`[convertGeodataResponse] Traufhöhe aus Roof-Daten (Fallback): ${traufHeight.toFixed(2)}m`);
+    }
+    if (roofMaxs.length > 0 && terrainRef > 0) {
+      const dachMax = Math.max(...roofMaxs);
+      firstHeight = dachMax - terrainRef;
+    }
+  }
+
+  // PRIORITÄT 3: Fallback auf gebaeudehoehe_m (GWR-Schätzung)
+  if (traufHeight === 8 && projectBuildings.length > 0) {
+    const gebHoehen = projectBuildings
+      .map((b: GeodataBuilding) => b.gebaeudehoehe_m)
+      .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
+    if (gebHoehen.length > 0) {
+      traufHeight = Math.max(...gebHoehen);
+      firstHeight = traufHeight + 2;
+      console.log(`[convertGeodataResponse] Traufhöhe aus gebaeudehoehe_m (Fallback): ${traufHeight.toFixed(2)}m`);
+    }
+  }
+
+  // Terrain-Info loggen (für Debugging, zeigt Hanglage-Situation)
+  if (isFinite(geometryWallMinZ) && isFinite(geometryWallMaxZ)) {
+    const terrainRange = geometryWallMaxZ - geometryWallMinZ;
+    console.log(`[convertGeodataResponse] Terrain Z-Range: ${geometryWallMinZ.toFixed(1)} - ${geometryWallMaxZ.toFixed(1)}m (Differenz: ${terrainRange.toFixed(2)}m) → für Stellspindel-Berechnung`);
   }
 
   // Fassaden aus Union-Polygon berechnen
   // NEU 19.01.2026: originalPolygon für exakte 3D-Gerüst-Platzierung übergeben
-  const simplifyResult = simplifyPolygon(polygon, { epsilon: 0.5 });
+  // FIX 25.01.2026: epsilon: 0 = KEINE Vereinfachung beim Laden (Original-Polygon)
+  // Der Benutzer kann dann im FacadePanel mit dem Slider vereinfachen
+  const simplifyResult = simplifyPolygon(polygon, { epsilon: 0 });
   const facades = sidesToFacades(
     simplifyResult.sides,
     traufHeight,
@@ -281,34 +422,6 @@ function convertGeodataResponseToConfiguratorFormat(
   const roofOrientation = calculateRoofOrientation(polygon);
   const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
   const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
-
-  // Walls und Roofs aus allen Projekt-Gebäuden zusammenfassen
-  // FIX 20.01.2026: geometry_type aus API übernehmen (nicht hardcoden!)
-  const allWalls: BuildingWall[] = projectBuildings.flatMap((b: GeodataBuilding) =>
-    (b.walls ?? []).map((w, idx: number) => ({
-      gebaeudeeinheit: `${b.egid}_wall_${idx}`,
-      egid: parseInt(b.egid) || null,
-      z_min: w.z_min,
-      z_max: w.z_max,
-      geometry_type: w.geometry_type ?? 'Polygon',
-      geometry: w.geometry ?? null,
-    }))
-  );
-
-  // FIX 21.01.2026: Auch Roofs extrahieren für echte 3D-Dachgeometrie
-  const allRoofs: BuildingRoof[] = projectBuildings.flatMap((b: GeodataBuilding) =>
-    (b.roofs ?? []).map((r, idx: number) => ({
-      gebaeudeeinheit: `${b.egid}_roof_${idx}`,
-      egid: parseInt(b.egid) || null,
-      dach_min: r.dach_min,
-      dach_max: r.dach_max,
-      roof_form: null,
-      roof_angle_deg: null,
-      roof_orientation: null,
-      geometry_type: r.geometry_type ?? null,
-      geometry: r.geometry ?? null,
-    }))
-  );
 
   // EGID: Bei Multi-Building alle EGIDs kombinieren
   const combinedEgid = geodataResponse.project_egids.join('+');
@@ -504,9 +617,9 @@ function convertGeodataToConfiguratorFormat(
     // Calculate ALL facades from polygon (fallback)
     facades = [];
     let calculatedPerimeter = 0;
-    // NEU 14.01.2026 21:45 - Fassaden-Höhen für Hanglage verwenden
-    const facadeZMin = geodata.facade_z_min;
-    const facadeZMax = geodata.facade_z_max;
+    // FIX 24.01.2026: facade_z_min/max werden in convertToSelectedFacades() aus
+    // building_walls extrahiert (für Terrain-Visualisierung). NICHT HIER verwenden!
+    // NPK 114: Gerüsthöhe ist konstant = Traufhöhe für ALLE Fassaden.
 
     for (let i = 0; i < polygon.length - 1; i++) {
       const start = polygon[i];
@@ -520,24 +633,22 @@ function convertGeodataToConfiguratorFormat(
 
       const direction = calculateDirection(start, end);
 
-      // NEU: Fassaden-spezifische Höhe wenn verfügbar (Hanglage)
-      let facadeHeight = traufHeight;
-      if (facadeZMin && facadeZMax) {
-        const zMin = facadeZMin[direction];
-        const zMax = facadeZMax[direction];
-        if (zMin !== undefined && zMax !== undefined && zMax > zMin) {
-          facadeHeight = zMax - zMin;
-        }
-      }
+      // FIX 24.01.2026: Gerüsthöhe ist IMMER traufHeight (NPK 114)!
+      // ENTFERNT: facadeHeight = zMax - zMin (war FALSCH bei Giebel-Fassaden)
+      // Die z_min/z_max Werte werden weiterhin für facade_z_min/max gespeichert
+      // (für Stellspindel-Visualisierung), aber NICHT für die Gerüsthöhe verwendet.
+      const facadeHeight = traufHeight;
 
       facades.push({
         id: `facade-${i + 1}`,
         direction,
         length_m: Math.round(length * 100) / 100,
-        height_m: facadeHeight,
+        height_m: facadeHeight,  // FIX 24.01.2026: Immer traufHeight, nicht zMax-zMin!
         slope_percent: 0,
         start_point: start,
         end_point: end,
+        // HINWEIS: facade_z_min/max werden später in convertToSelectedFacades()
+        // aus building_walls extrahiert (für Terrain-Visualisierung, nicht Höhe!)
       });
     }
     if (!perimeter) perimeter = calculatedPerimeter;
@@ -726,16 +837,28 @@ export default function ConfiguratorPage() {
   }, [sseData.projectBuildings]);
 
   // NEU 10.01.2026 21:45 - SSE-Daten auf buildingData anwenden (verzögert)
-  // FIX 19.01.2026: Bei Multi-Building Höhen aggregieren (max values)
+  // FIX 24.01.2026: SSE soll API-Höhen NICHT überschreiben!
+  // Die API liefert bereits korrekte relative Höhen (traufhoehe_m).
+  // SSE-Berechnung aus wallMaxZ war FALSCH (Giebelspitze statt Traufe).
   useEffect(() => {
     if (!sseProjectBuildings || sseProjectBuildings.length === 0) return;
     if (!buildingData) return;
 
+    // FIX 24.01.2026: Wenn API bereits gültige Traufhöhe geliefert hat, SSE-Update ÜBERSPRINGEN!
+    // Die API berechnet traufhoehe_m = dach_min - terrain_min (korrekt)
+    // SSE wallMaxZ-Fallback war FALSCH (enthält Giebelspitze, nicht Traufe)
+    const apiTraufHeight = buildingData.building.trauf_height_m;
+    if (apiTraufHeight && apiTraufHeight > 0 && apiTraufHeight < 50) {
+      // API-Höhe ist plausibel (0-50m) - NICHT überschreiben
+      console.log(`[SSE-Heights] API lieferte bereits trauf_height_m=${apiTraufHeight.toFixed(2)}m - SSE-Update übersprungen`);
+      return;
+    }
+
+    // Ab hier: Nur wenn API KEINE gültige Höhe hatte (Fallback)
     const updatedBuilding = { ...buildingData.building };
     let hasChanges = false;
 
     // FIX 19.01.2026: Höhen aus ALLEN Gebäuden aggregieren (höchste Werte)
-    // Bei Multi-Building: Die höchsten Werte bestimmen die Gerüsthöhe
     let maxTrauf: number | null = null;
     let maxFirst: number | null = null;
     let minTerrainZ: number | null = null;
@@ -758,16 +881,57 @@ export default function ConfiguratorPage() {
       }
     }
 
-    // Relative Höhen berechnen (absolut - Terrain)
-    if (maxTrauf != null && minTerrainZ != null) {
-      const calculatedTrauf = maxTrauf - minTerrainZ;
+    console.log(`[SSE-Heights] Fallback-Berechnung: ${sseProjectBuildings.length} Gebäude, maxTrauf=${maxTrauf}, maxFirst=${maxFirst}, minTerrainZ=${minTerrainZ}`);
+
+    // Terrain-Referenz aus Walls (für konsistente 3D-Darstellung)
+    let effectiveTerrainZ = minTerrainZ;
+    let wallMinZ = Infinity;
+
+    if (buildingData.building_walls && buildingData.building_walls.length > 0) {
+      for (const wall of buildingData.building_walls) {
+        if (wall.z_min != null && wall.z_min < wallMinZ) {
+          wallMinZ = wall.z_min;
+        }
+        // Auch aus geometry extrahieren falls z_min nicht gesetzt
+        if (wall.geometry) {
+          const processCoord = (coord: number[]) => {
+            if (coord.length >= 3 && coord[2] < wallMinZ) {
+              wallMinZ = coord[2];
+            }
+          };
+          const processGeom = (geom: unknown) => {
+            if (Array.isArray(geom)) {
+              if (geom.length > 0 && typeof geom[0] === 'number') {
+                processCoord(geom as number[]);
+              } else {
+                geom.forEach(g => processGeom(g));
+              }
+            }
+          };
+          processGeom(wall.geometry);
+        }
+      }
+      if (wallMinZ !== Infinity) {
+        console.log(`[SSE-Heights] Verwende wallMinZ=${wallMinZ.toFixed(1)} als Terrain-Referenz`);
+        effectiveTerrainZ = wallMinZ;
+      }
+      // FIX 24.01.2026: ENTFERNT! wallMaxZ als Traufhöhe war FALSCH!
+      // wallMaxZ enthält Giebelspitze (z.B. 567m), nicht Traufe (z.B. 562m)
+      // Ergebnis war: 567 - 556 = 11m statt korrekt 562 - 556 = 6m
+      // Die API liefert bereits korrekte traufhoehe_m - diese NICHT überschreiben!
+    }
+
+    // Relative Höhen berechnen (nur wenn SSE roof_dach_min_m hat)
+    if (maxTrauf != null && effectiveTerrainZ != null) {
+      const calculatedTrauf = maxTrauf - effectiveTerrainZ;
       if (calculatedTrauf !== updatedBuilding.trauf_height_m) {
+        console.log(`[SSE-Heights] Fallback: Setze trauf_height_m=${calculatedTrauf.toFixed(2)}m`);
         updatedBuilding.trauf_height_m = calculatedTrauf;
         hasChanges = true;
       }
     }
-    if (maxFirst != null && minTerrainZ != null) {
-      const calculatedFirst = maxFirst - minTerrainZ;
+    if (maxFirst != null && effectiveTerrainZ != null) {
+      const calculatedFirst = maxFirst - effectiveTerrainZ;
       if (calculatedFirst !== updatedBuilding.first_height_m) {
         updatedBuilding.first_height_m = calculatedFirst;
         hasChanges = true;
@@ -784,10 +948,21 @@ export default function ConfiguratorPage() {
 
     if (hasChanges) {
       const newTraufHeight = updatedBuilding.trauf_height_m;
+      console.log(`[SSE-Heights] Aktualisiere Traufhöhe: ${newTraufHeight.toFixed(2)}m`);
       setBuildingData(prev => {
         if (!prev) return prev;
+        const oldTraufHeight = prev.building.trauf_height_m;
+        // FIX 21.01.2026: Fassadenhöhen aktualisieren wenn:
+        // - height_m ist 0 (nicht gesetzt)
+        // - height_m entspricht der ALTEN Traufhöhe (nicht manuell geändert)
+        // - height_m ist kleiner als die neue Traufhöhe UND nahe der alten (< 1m Differenz)
+        //   Dies fängt den Fall ab, wenn Fassaden mit API-Wert erstellt wurden
         const updatedFacades = prev.selected_facades.map(facade => {
-          if (facade.height_m === 0 || facade.height_m === prev.building.trauf_height_m) {
+          const shouldUpdate = facade.height_m === 0
+            || facade.height_m === oldTraufHeight
+            || (facade.height_m < newTraufHeight && Math.abs(facade.height_m - oldTraufHeight) < 1);
+          if (shouldUpdate) {
+            console.log(`[SSE-Heights] Fassade ${facade.id}: ${facade.height_m.toFixed(2)}m → ${newTraufHeight.toFixed(2)}m`);
             return { ...facade, height_m: newTraufHeight };
           }
           return facade;
@@ -835,10 +1010,33 @@ export default function ConfiguratorPage() {
   }, [neighbors, neighborsRadius]);
 
   // Nachbarn für BLOCKING (immer aktiv, unabhängig vom Slider)
-  // Enthält alle Nachbarn innerhalb von 2m für die Geometrie-basierte Blockierungsprüfung
-  const blockingNeighbors = useMemo(() => {
-    return neighbors.filter(n => n.distance_m <= BLOCKING_THRESHOLD_M);
-  }, [neighbors]);
+  // FIX 25.01.2026 BUG-030: Verwende SSE blocking_neighbors (Polygon-zu-Polygon Distanz)
+  // statt Center-to-Center Filterung. Das SSE Event enthält nur Nachbarn die
+  // tatsächlich Fassaden blockieren (Polygon-Distanz < 2m).
+  const blockingNeighbors = useMemo((): NeighborBuilding[] => {
+    // SSE blocking_neighbors hat korrekte Polygon-zu-Polygon Distanzen
+    if (sseData.blockingNeighbors && sseData.blockingNeighbors.length > 0) {
+      console.log(`[Blocking] Using SSE blocking_neighbors: ${sseData.blockingNeighbors.length} buildings`);
+      // Konvertiere SSE-Format (number[][] | null) zu geruestbau.NeighborBuilding Format ([number, number][] | undefined)
+      return sseData.blockingNeighbors.map(n => ({
+        egid: n.egid,
+        distance_m: n.distance_m,
+        direction: n.direction,
+        polygon: n.polygon ? n.polygon as [number, number][] : undefined,
+        center_e: n.center_e,
+        center_n: n.center_n,
+        gebaeudehoehe_m: n.gebaeudehoehe_m,
+        roof_dach_min_m: n.roof_dach_min_m,
+        roof_dach_max_m: n.roof_dach_max_m,
+      }));
+    }
+    // Fallback für nicht-SSE Modus (z.B. Adress-Suche ohne Projekt)
+    const fallback = neighbors.filter(n => n.distance_m <= BLOCKING_THRESHOLD_M);
+    if (fallback.length > 0) {
+      console.log(`[Blocking] Using fallback (center distance filter): ${fallback.length} buildings`);
+    }
+    return fallback;
+  }, [sseData.blockingNeighbors, neighbors]);
 
   // REST API Fallback bei Slider-Änderung (nur für Adress-Suche ohne Projekt)
   useEffect(() => {
@@ -969,6 +1167,12 @@ export default function ConfiguratorPage() {
   const loadProjectData = async (id: string) => {
     setLoadingState('loading');
     setError(null);
+
+    // FIX 24.01.2026: Cache IMMER löschen bevor API-Daten geladen werden!
+    // Die API liefert frische Höhendaten - der Cache darf diese NICHT überschreiben.
+    // Problem war: Gleiche projectId = Cache wurde nicht invalidiert = falsche Höhen blieben.
+    console.log('[loadProjectData] Clearing scaffold cache to ensure fresh API data');
+    localStorage.removeItem('scaffold-config-storage');
 
     try {
       // 1. Projekt-Metadaten laden
@@ -1140,8 +1344,11 @@ export default function ConfiguratorPage() {
 
   // Convert API response to SelectedFacade format (including coordinates for 3D)
   // NEU 15.01.2026 BUG-024: Wendet building_walls Matching an für korrekte Höhen
+  // NEU 24.01.2026 P3: Giebel-Erkennung mit dachMin Parameter
   const convertToSelectedFacades = (data: ConfiguratorBuildingData): SelectedFacade[] => {
     const buildingWalls = data.building_walls || [];
+    // NEU 24.01.2026 P3: dachMin für Giebel-Erkennung (absolute Traufhöhe m ü.M.)
+    const dachMin = data.roof?.roof_dach_min_m;
 
     return data.selected_facades.map((facade) => {
       let facadeZMin: number | undefined;
@@ -1155,11 +1362,20 @@ export default function ConfiguratorPage() {
       // FIX 18.01.2026 BUG-026: wall_height NICHT als Fassaden-Höhe verwenden!
       // Giebel-Fassaden haben höhere Wände (bis First), aber das Gerüst soll
       // bei "Fassadenarbeit" nur bis zur TRAUFE gehen.
+      // NEU 24.01.2026 P3: Giebel-Erkennung mit dachMin
+      let isGiebel = false;
+      let giebelHeightM: number | undefined;
+      // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+      let terrainProfile: SelectedFacade['terrain_profile'];
+      let terrainWarnings: SelectedFacade['terrain_warnings'];
+
       if (buildingWalls.length > 0 && facade.start_point && facade.end_point) {
         const matchResult = matchFacadeToWall(
           facade.start_point,
           facade.end_point,
-          buildingWalls
+          buildingWalls,
+          3.0,  // tolerance
+          dachMin  // NEU 24.01.2026 P3: Für Giebel-Erkennung
         );
 
         if (matchResult) {
@@ -1170,6 +1386,12 @@ export default function ConfiguratorPage() {
           // wall_height enthält Giebel-Dreiecke und wäre zu hoch.
           // ENTFERNT: heightM = matchResult.wall_height;
           heightSource = 'building_walls';
+          // NEU 24.01.2026 P3: Giebel-Info übernehmen
+          isGiebel = matchResult.is_giebel;
+          giebelHeightM = matchResult.giebel_height_m;
+          // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+          terrainProfile = matchResult.terrain_profile;
+          terrainWarnings = matchResult.terrain_warnings;
         }
       }
 
@@ -1184,6 +1406,12 @@ export default function ConfiguratorPage() {
         facade_z_min: facadeZMin,
         facade_z_max: facadeZMax,
         height_source: heightSource,
+        // NEU 24.01.2026 P3: Giebel-Erkennung
+        is_giebel: isGiebel,
+        giebel_height_m: giebelHeightM,
+        // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+        terrain_profile: terrainProfile,
+        terrain_warnings: terrainWarnings,
       };
     });
   };
@@ -1349,11 +1577,11 @@ export default function ConfiguratorPage() {
                         await fetchBuildingData(selectedBuildings[0].address, project);
                       } else if (selectedBuildings.length > 1) {
                         // Multi-Building: Lade mit kombinierter Adresse
-                        // Backend berechnet automatisch object_data mit "polygon"
+                        // FIX 22.01.2026: combinedAddress VERWENDEN statt nur erste Adresse!
+                        // Backend SmartBuildingService parst komma-getrennte Adressen
                         const combinedAddress = selectedBuildings.map(b => b.address).join(', ');
                         console.log(`[Objekt-Architektur] Lade ${selectedBuildings.length} Gebäude: ${combinedAddress}`);
-                        await fetchBuildingData(selectedBuildings[0].address, project);
-                        // TODO: Backend SSE sollte object_data liefern
+                        await fetchBuildingData(combinedAddress, project);
                       }
                     } finally {
                       setLoadingMultiBuilding(false);

@@ -204,6 +204,9 @@ const createFacadeElement = (
     terrain_z_min: facade.facade_z_min,
     terrain_z_max: facade.facade_z_max,
     terrain_diff_m: globalTerrainDiff,
+    // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+    terrain_profile: facade.terrain_profile,
+    terrain_warnings: facade.terrain_warnings,
   };
 };
 

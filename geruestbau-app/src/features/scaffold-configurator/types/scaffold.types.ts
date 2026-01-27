@@ -3,6 +3,11 @@
  * Based on SCAFFOLD_CONFIGURATOR_SPEC.md
  */
 
+import type { TerrainWarning, TerrainProfilePoint } from '../utils/polygonSimplifier';
+
+// Re-export terrain types for use in other components
+export type { TerrainWarning, TerrainProfilePoint };
+
 // ============ INPUT TYPES (from Facade Selection) ============
 
 export interface ProjectInput {
@@ -41,6 +46,12 @@ export interface SelectedFacade {
   facade_z_max?: number;      // Wandoberkante an dieser Fassade (m ü.M.)
   // NEU 15.01.2026 BUG-024: 'building_walls' für koordinatenbasiertes Matching
   height_source?: 'wall_layer' | 'terrain_sampled' | 'global' | 'building_walls';
+  // NEU 24.01.2026 P3: Giebel-Erkennung für NPK 114 Ausmass
+  is_giebel?: boolean;        // true wenn Wandpunkte über dach_min liegen
+  giebel_height_m?: number;   // Höhe des Giebel-Dreiecks (z_max - dach_min)
+  // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+  terrain_profile?: TerrainProfilePoint[];  // Terrain-Höhen entlang der Fassade
+  terrain_warnings?: TerrainWarning[];      // Strukturierte Warnungen (Spindel, Ausgleichsrahmen, etc.)
 }
 
 export type FacadeDirection = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -53,7 +64,11 @@ export interface DetectedFeature {
 
 // ============ SCAFFOLD CONFIGURATION ============
 
-export type WorkType = 'facade' | 'roof' | 'full';
+// FIX 27.01.2026: 'full' (Komplett) ersetzt durch 'roofer' (Spengler)
+// - facade: Gerüst bis Traufe (traufhoehe_m)
+// - roof: Gerüst bis Traufe + 1m Absturzsicherung (traufhoehe_m + 1m)
+// - roofer: Gerüst bis First - 1m für Spengler (firsthoehe_m - 1m)
+export type WorkType = 'facade' | 'roof' | 'roofer';
 export type ScaffoldSystem = 'layher_blitz' | 'layher_allround';
 export type FieldWidth = 2.57 | 3.07;
 export type BayWidth = 0.73 | 1.09;
@@ -142,7 +157,11 @@ export interface ScaffoldFacade {
   name: string;
   direction: FacadeDirection;
   length_m: number;
-  target_height_m: number;
+  base_height_m: number;    // FIX 27.01.2026: Originale Traufhöhe (ohne work_type-Offset)
+  first_height_m?: number;  // NEU 27.01.2026: Firsthöhe für Spengler-Modus (roofer)
+  is_giebel?: boolean;      // NEU 27.01.2026: Giebel-Fassade (für Trapez-Form)
+  giebel_height_m?: number; // NEU 27.01.2026: Höhe des Giebel-Dreiecks
+  target_height_m: number;  // Gerüsthöhe (basierend auf work_type)
   slope_percent: number;
   fields: number;
   levels: number;
@@ -163,6 +182,9 @@ export interface ScaffoldFacade {
   terrain_z_min?: number;   // Niedrigste Terrain-Höhe (m ü.M.)
   terrain_z_max?: number;   // Höchste Terrain-Höhe (m ü.M.)
   terrain_diff_m?: number;  // Terrain-Differenz für Ausnivellierung
+  // NEU 27.01.2026: Terrain-Profil und Warnungen für Stellspindel-Berechnung
+  terrain_profile?: TerrainProfilePoint[];  // Terrain-Höhen entlang der Fassade
+  terrain_warnings?: TerrainWarning[];      // Strukturierte Warnungen (Spindel, Ausgleichsrahmen, etc.)
 }
 
 export interface FacadeModifications {
