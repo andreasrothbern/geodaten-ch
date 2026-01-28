@@ -1,11 +1,13 @@
 # 3D-Layer Analyse - Umfassende Bestandsaufnahme
 
-> **Version:** 1.3
-> **Datum:** 14.01.2026 14:45
-> **Status:** T1-T4 implementiert ✅
+> **Version:** 1.4
+> **Datum:** 28.01.2026 10:15
+> **Status:** T1-T4 implementiert ✅ | DuckDB migriert ✅ | BUG-031 gefixt ✅
 > **Autor:** Claude Code
 >
 > **NEU 14.01.2026:** 3D-Dach-Rendering für alle Gebäude (Fix ScaffoldScene.tsx)
+> **NEU 13.01.2026:** DuckDB Migration abgeschlossen (building_3d.duckdb)
+> **NEU 27.01.2026:** WorkType 'roofer' ersetzt 'full' (Spengler-Modus)
 >
 > **Siehe auch:** [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) - Railway Volume & Deployment
 
@@ -119,7 +121,7 @@ SELECT
 │  │                                                                 │   │
 │  │  terrain Event:                                                 │   │
 │  │    • terrain_height_m, slope_m, slope_class                    │   │
-│  │    • KEINE facade_heights! ❌                                   │   │
+│  │    • facade_z_min, facade_z_max (seit T2-T4) ✅                │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
 │       │                                                                 │
 │       ▼                                                                 │
@@ -149,14 +151,14 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Was wird NICHT verwendet
+### 2.2 Was wird NICHT verwendet (Stand 28.01.2026)
 
-| Daten | Verfügbar in | Aktuell genutzt | Warum nicht? |
-|-------|--------------|-----------------|--------------|
-| Wall z_min/z_max | building_walls | ❌ Nein | Daten nicht geladen |
-| Floor Terrain-Variation | building_floors | ❌ Nein | Import deaktiviert |
-| 3D-Wandgeometrie | building_walls.geometry_wkb | ❌ Nein | Kein Rendering |
-| Per-Fassade Terrain | Wall Layer | ❌ Nein | Kein Mapping |
+| Daten | Verfügbar in | Aktuell genutzt | Status |
+|-------|--------------|-----------------|--------|
+| Wall z_min/z_max | building_walls | ✅ Ja | Via WallFacadeMatcher (T1) |
+| Floor Terrain-Variation | building_floors | ❌ Nein | Import deaktiviert (Fiona) |
+| 3D-Wandgeometrie | building_walls.geometry_wkb | ⚠️ Teilweise | Für Matching, nicht Rendering |
+| Per-Fassade Terrain | Wall Layer + swissALTI3D | ✅ Ja | facade_z_min/z_max (T2-T4) |
 
 ---
 
@@ -405,7 +407,7 @@ On-Demand bei Bedarf:
 
 #### T2-T4 Implementierungsdetails (14.01.2026)
 
-**T2: TerrainProfile erweitert (`models.py:100-107`)**
+        **T2: TerrainProfile erweitert (`models.py:100-107`)**
 ```python
 @dataclass
 class TerrainProfile:
@@ -475,10 +477,10 @@ facade_heights = matcher.get_facade_heights(egid, sides)
 
 ### 6.3 Langfristig (P5)
 
-| # | Task | Beschreibung | Aufwand |
-|---|------|--------------|---------|
-| T8 | DuckDB Migration | Wie in BUILDING_3D_SCHEMA.md | 20h |
-| T9 | Volles 3D-Modell | Alle Layer, echte Geometrie | 40h |
+| # | Task | Beschreibung | Status |
+|---|------|--------------|--------|
+| T8 | DuckDB Migration | building_3d.duckdb als Default | ✅ Erledigt 13.01.2026 |
+| T9 | Volles 3D-Modell | Alle Layer, echte Geometrie | 📋 Geplant (~40h) |
 
 ---
 
@@ -503,25 +505,24 @@ facade_heights = matcher.get_facade_heights(egid, sides)
 
 ---
 
-## Teil 8: Nächste Schritte
+## Teil 8: Nächste Schritte (Stand 28.01.2026)
 
-### Sofort (diese Session):
+### Erledigt ✅
 
 1. ✅ Diese Analyse dokumentieren
-2. ❓ Entscheidung: Option A, B oder C?
-3. ❓ Priorität für T1 (Wall→Facade Mapping)?
+2. ✅ Entscheidung: Option C (Hybrid) gewählt
+3. ✅ T1: Wall→Facade Matching (13.01.2026)
+4. ✅ T2-T4: facade_heights End-to-End (14.01.2026)
+5. ✅ T8: DuckDB Migration (13.01.2026)
+6. ✅ BUG-031: Multi-Building Traufhöhe (27.01.2026)
+7. ✅ BUG-033: WorkType 'roofer' (27.01.2026)
 
-### Diese Woche:
+### Offen 📋
 
-1. Prototyp für Wall→Facade Matching
-2. Test mit Knospenweg (Reihenhaus mit Hanglage)
-3. Dokumentation aktualisieren
-
-### Diesen Monat:
-
-1. facade_heights End-to-End implementieren
-2. 3D-Viewer Terrain-Verbesserung
-3. Multi-Building Support verbessern
+1. T5: Floor-Layer Import fixen (Fiona Geometrie-Typ Problem)
+2. T6: 3D-Terrain im Viewer (Gelände-Mesh statt flache Ebene)
+3. T7: Echte Wall-Geometrie rendern (3D-Wände aus WKB)
+4. T9: Volles 3D-Modell (alle Layer, echte Geometrie)
 
 ---
 
@@ -660,6 +661,11 @@ docs/architecture/
 |-------|---------|----------|
 | 13.01.2026 | 1.0 | Initiale Analyse erstellt |
 | 13.01.2026 | 1.1 | T1 (Wall→Facade Matching) implementiert |
+| 13.01.2026 | 1.1 | T8 (DuckDB Migration) abgeschlossen |
 | 14.01.2026 | 1.2 | T2-T4 implementiert: Fassaden-Höhen End-to-End |
 | 14.01.2026 | 1.3 | 3D-Dach für ALLE Gebäude (Fix ScaffoldScene.tsx) |
 | 14.01.2026 | 1.3 | Railway Fixes → siehe [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) |
+| 25.01.2026 | 1.3 | BUG-030: blocking_neighbors SSE Event (Polygon-Distanz) |
+| 27.01.2026 | 1.3 | BUG-031: Multi-Building Traufhöhe korrigiert |
+| 27.01.2026 | 1.3 | BUG-033: WorkType 'full' → 'roofer' (Spengler-Modus) |
+| 28.01.2026 | 1.4 | Dokumentation aktualisiert, veraltete TODOs korrigiert |

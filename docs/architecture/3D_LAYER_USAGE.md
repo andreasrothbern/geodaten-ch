@@ -1,6 +1,6 @@
 # 3D-Layer Datenverwendung
 
-> **Datum:** 17.01.2026 16:00
+> **Datum:** 28.01.2026 10:00
 > **Status:** P1 + P2 + P3 (T1-T4) + P4 ✅ ALLE IMPLEMENTIERT
 > **Basis:** BUILDING_3D_SCHEMA.md, SWISSBUILDINGS3D_ANALYSE.md, 3D_LAYER_ANALYSIS.md
 > **Siehe auch:** [`3D_LAYER_USAGE_SCAFFOLDING.md`](3D_LAYER_USAGE_SCAFFOLDING.md) - Gerüst-Kalkulation Details
@@ -111,42 +111,108 @@ verwendet werden, nicht für die eigentliche Gerüstkalkulation.
 
 ---
 
-## Blockierte Fassaden - Datenfluss
+## Blockierte Fassaden - DatenflussNein, setzte" 
+
+**AKTUALISIERT 25.01.2026 12:00:** Neues SSE-Event `blocking_neighbors` liefert blockierende Nachbarn
+> mit **Polygon-zu-Polygon Distanz** (statt Center-to-Center). BUG-030 endgültig gefixt!
+
+### Das Problem (BUG-030)
+
+Zwei Probleme bei blockierten Fassaden:
+
+1. **Index-Mismatch:** Bei Polygon-Vereinfachung stimmen die Fassaden-Indizes nicht überein
+2. **Leere blockingNeighbors:** Die `distance_m` im `neighbors` SSE-Event war **Center-to-Center**
+
+```
+PROBLEM 1: Index-Mismatch
+  ORIGINAL-Polygon: 27 Fassaden (Index 0-26)
+  VEREINFACHT:      4 Fassaden  (Index 0-3)
+  → SSE blocked_indices beziehen sich auf Original!
+
+PROBLEM 2: Center-to-Center Distanz
+  neighbors[].distance_m = 15m (Center-to-Center)
+  blockingNeighbors = neighbors.filter(n => n.distance_m <= 2.0)
+  → IMMER LEER bei Reihenhäusern! (Center-Distanz > 10m)
+  → isFacadeBlocked() hatte keine Daten zum Prüfen!
+```
+
+### Lösung: SSE `blocking_neighbors` Event
+
+Neues SSE-Event mit **Polygon-zu-Polygon** Distanz:
+
+| SSE Event | Inhalt | Verwendung |
+|-----------|--------|------------|
+| `blocked_facades` | `blocked_indices` (Original-Polygon) | Nur Fallback |
+| `blocking_neighbors` | Nachbarn mit Polygon-Distanz < 2m | **PRIMÄR** |
+| `neighbors` | Alle Nachbarn (Center-Distanz) | 3D-Anzeige |
+
+### Datenfluss (v3 - 25.01.2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    BLOCKIERTE FASSADEN                          │
+│                    BLOCKIERTE FASSADEN (v3)                     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  DATENQUELLE: building_3d.db (lokale DuckDB)                   │
-│  ═══════════════════════════════════════════                    │
+│  1. User öffnet Projekt → SSE Stream startet                   │
+│     ↓                                                           │
+│  2. Backend (project_context_stream.py):                        │
+│     │                                                           │
+│     ├─► blocked_facades Event:                                  │
+│     │   blocked_facades_service.calculate_for_project()        │
+│     │   → blocked_indices (Original-Polygon Indizes)           │
+│     │   → blockers[] mit EGID und Distanz                      │
+│     │                                                           │
+│     └─► blocking_neighbors Event (NEU 25.01.2026):             │
+│         Sammle alle EGIDs aus blockers[]                        │
+│         → Lade Polygon-Daten für jeden Blocker                 │
+│         → Sende als blocking_neighbors[]                        │
+│     ↓                                                           │
+│  3. Frontend (useProjectContextStream.ts):                      │
+│     sseData.blockingNeighbors[] = Nachbarn mit Polygonen       │
+│     ↓                                                           │
+│  4. Frontend (ConfiguratorPage.tsx):                           │
+│     blockingNeighbors = sseData.blockingNeighbors              │
+│     (nicht mehr: neighbors.filter(n => n.distance_m <= 2))     │
+│     ↓                                                           │
+│  5. Frontend (FacadePanel.tsx):                                │
+│     │                                                           │
+│     ├─► WENN blockingNeighbors vorhanden:                      │
+│     │   isFacadeBlocked(facade, index)                         │
+│     │   → Geometrischer Check: Fassade vs. Nachbar-Polygone    │
+│     │   → facadeToPolygonDistance() < BLOCKING_THRESHOLD_M     │
+│     │   → Funktioniert mit JEDEM Polygon (original/vereinfacht)│
+│     │                                                           │
+│     └─► FALLBACK (keine Geometrie):                            │
+│         isFacadeFullyBlocked(index)                            │
+│         → SSE blocked_indices (nur für Original-Polygon!)      │
 │                                                                 │
-│  "Ohne API Call" bedeutet:                                      │
-│  → KEINE externen APIs (swisstopo, swissBUILDINGS3D) nötig      │
-│  → Nachbarn sind BEREITS in building_3d.db (vom Prefetch)      │
-│  → Nur lokaler DB-Lookup (~5ms)                                 │
-│                                                                 │
-│  ABLAUF:                                                        │
-│  ═══════                                                        │
-│                                                                 │
-│  1. User öffnet Projekt                                         │
-│     ↓                                                           │
-│  2. Frontend: GET /api/v1/geruestbau/building/{egid}/neighbors  │
-│     ↓                                                           │
-│  3. Backend (geruestbau.py:746-751):                           │
-│     │  neighbors = building_3d_service.get_neighbors()          │
-│     │  for neighbor in neighbors:                               │
-│     │      if neighbor.distance_m < 2.0:  ← BLOCKING_THRESHOLD  │
-│     │          blocked_facades.add(direction)                   │
-│     ↓                                                           │
-│  4. Response: { neighbors[], blocked_facades[] }                │
-│     ↓                                                           │
-│  5. Frontend (FacadePanel.tsx:185):                             │
-│     │  if (dist < BLOCKING_THRESHOLD_M)                         │
-│     │      → Fassade grau (nicht wählbar)                       │
+│  6. Blockierte Fassade:                                         │
+│     → Farbe: #e5e7eb (grau)                                    │
+│     → Nicht klickbar (cursor: default)                         │
+│     → In Fassaden-Liste: disabled                              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `project_context_stream.py:222-263` | Neues SSE Event `blocking_neighbors` |
+| `useProjectContextStream.ts` | Event empfangen, State speichern |
+| `ConfiguratorPage.tsx:1012-1034` | `blockingNeighbors` aus SSE |
+| `FacadePanel.tsx:448-538` | SVG-Rendering: Geometrie-Check |
+| `FacadePanel.tsx:666-693` | Fassaden-Liste: Gleiche Logik |
+
+### Warum die ersten beiden Ansätze nicht funktionierten
+
+1. **Erster Ansatz (SSE blocked_indices):** Index-Mismatch bei vereinfachtem Polygon
+2. **Zweiter Ansatz (Geometrie-Check priorisieren):** `blockingNeighbors` war LEER!
+   - `neighbors[].distance_m` war Center-to-Center
+   - Filterung `<= 2.0m` gab leere Liste
+
+Der neue Ansatz liefert `blocking_neighbors` direkt vom Backend mit korrekter
+Polygon-zu-Polygon Distanzberechnung aus `blocked_facades_service`.
 
 ---
 
@@ -1204,6 +1270,136 @@ height_m = bundle.traufhoehe_m (KONSTANT)
 | `backend/app/services/smart_building/service.py:1193-1293` | `_build_facades_array()`, `_get_gable_directions()` |
 | `backend/app/main.py:4135` | facades im API-Response |
 | `backend/app/services/building_data_stream.py` | facades im SSE-Stream |
+
+---
+
+## NEU: WorkType 'Spengler' (27.01.2026)
+
+### Übersicht
+
+Der WorkType `'full'` (Komplett) wurde durch `'roofer'` (Spengler) ersetzt.
+
+### Work-Types
+
+| Type | Label | Beschreibung | Berechnung |
+|------|-------|--------------|------------|
+| `facade` | Fassade | Bis Traufe | `traufhoehe_m` |
+| `roof` | Dacharbeiten | +1m Absturzsicherung | `traufhoehe_m + 1m` |
+| `roofer` | Spengler | First -1m für Arbeitsplatz | `firsthoehe_m - 1m` (mit Giebel-Trapez) |
+
+### Giebel-Trapez-Berechnung (NEU)
+
+Bei `'roofer'` WorkType wird für Giebel-Fassaden eine Trapez-Form berechnet:
+
+```typescript
+// calculations.ts - calculateTargetHeight()
+if (workType === 'roofer' && isGiebel && giebelHeightM) {
+  // Giebel-Fassade: Trapez bis First - 1m
+  return traufhoeheM + giebelHeightM - 1.0;
+}
+```
+
+### Neue Felder in ScaffoldFacade
+
+```typescript
+interface ScaffoldFacade {
+  // ... bestehende Felder ...
+  first_height_m?: number;   // Firsthöhe für Spengler-Modus
+  is_giebel?: boolean;       // Giebel-Fassade?
+  giebel_height_m?: number;  // Höhe des Giebel-Dreiecks
+}
+```
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `scaffold.types.ts` | WorkType, ScaffoldFacade Interface |
+| `WorkTypeSelector.tsx` | UI-Labels |
+| `calculations.ts` | `calculateTargetHeight()` mit Giebel-Logik |
+| `useScaffoldConfig.ts` | `createFacadeElement()`, `setWorkType()` |
+
+---
+
+## BUG-031: 3D-Höhen-Diskrepanz (Gebäude vs. Gerüst) - GEFIXT
+
+> **Status:** ✅ Gefixt am 27.01.2026 11:00
+> **Problem (behoben):** Das Gerüst erschien in der 3D-Ansicht kleiner als erwartet,
+> weil die Multi-Building-Traufhöhe falsch berechnet wurde.
+
+### Symptome
+
+1. **Fassadenarbeit:** Gerüst sollte exakt bis zur Traufe reichen, ist aber kürzer
+2. **Dacharbeit:** Gerüst sollte 1m über die Traufe ragen, erreicht aber gerade die Traufe
+
+### Ursache: Unterschiedliche Terrain-Referenzen
+
+Das Gebäude-Mesh und das Gerüst verwenden **unterschiedliche Terrain-Werte**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 HÖHEN-DISKREPANZ ANALYSE                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  GEBÄUDE-MESH (ScaffoldScene.tsx):                             │
+│  ══════════════════════════════════                             │
+│  buildingHeight = roof_dach_min_m - terrain_z_min              │
+│                                                                 │
+│  Beispiel:                                                      │
+│    roof_dach_min_m = 562.94m (Traufe, m ü.M.)                  │
+│    terrain_z_min = 555.80m (niedrigstes Terrain)               │
+│    → buildingHeight = 7.14m                                     │
+│                                                                 │
+│  GERÜST (useScaffoldConfig.ts):                                │
+│  ═══════════════════════════════                                │
+│  facade.height_m = trauf_height_m (aus API)                    │
+│  levels = Math.ceil(facade.height_m / levelHeight)             │
+│  Gerüsthöhe = levels × levelHeight                             │
+│                                                                 │
+│  Beispiel:                                                      │
+│    facade.height_m = 5.49m (aus API - ANDERER Terrain-Wert!)   │
+│    levels = Math.ceil(5.49 / 2.0) = 3                          │
+│    → Gerüsthöhe = 6.0m                                          │
+│                                                                 │
+│  DISKREPANZ: 7.14m (Gebäude) vs. 6.0m (Gerüst) = 1.14m Differenz│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Warum unterschiedliche Terrain-Werte?
+
+| Quelle | Terrain-Berechnung | Verwendet für |
+|--------|-------------------|---------------|
+| **API** (`geruestbau.py:558-589`) | `min(facade_z_min)` aus swissALTI3D | `trauf_height_m` (Fassaden) |
+| **3D-Scene** (`ScaffoldScene.tsx:1346-1348`) | `terrain_z_min` aus SSE/API | `buildingHeight` (Mesh) |
+
+Diese können unterschiedlich sein weil:
+1. `facade_z_min` ist das Minimum über alle Fassaden-Eckpunkte
+2. `terrain_z_min` kann ein anderer Wert sein (z.B. vom SSE-Stream)
+
+### Lösung (Implementiert 27.01.2026)
+
+Die Multi-Building-Logik in `_calculate_object_data()` verwendet jetzt die korrekte
+Traufhöhenberechnung: `roof_dach_min_m - min(terrain_z_min)` statt `bundle.traufhoehe_m`.
+
+```python
+# FIX 27.01.2026 (building_data_stream.py:95-115)
+if bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.facade_z_min:
+    min_terrain = min(bundle.terrain.facade_z_min.values())
+    corrected_trauf = bundle.roof_dach_min_m - min_terrain  # Echte 3D-Daten!
+```
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `building_data_stream.py:95-115` | Korrigierte Traufhöhenberechnung in `_calculate_object_data()` |
+| `geruestbau.py:588-601` | Korrigierter Fallback für Multi-Building Response |
+
+### Ergebnis
+
+Gebäude und Gerüst verwenden jetzt **dieselbe Terrain-Referenz** (`min(facade_z_min)`).
+Die visuelle Diskrepanz in der 3D-Ansicht ist behoben.
 
 ---
 

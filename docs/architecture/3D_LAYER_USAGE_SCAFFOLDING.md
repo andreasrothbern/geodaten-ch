@@ -1,10 +1,14 @@
 # 3D-Layer Verwendung: Gerüst-Kalkulation
 
-> **Stand 27.01.2026 14:00**
+> **Stand 28.01.2026 10:00**
 > **Status:** ✅ P1-Bug gefixt (Höhenberechnung)
 >            ✅ P2 implementiert (Pro-Fassade Z-Matching)
 >            ✅ P3 implementiert (Giebel-Erkennung mit is_giebel Flag)
+>            ✅ Layher-Spezifikationen korrigiert (Katalog 2025/2026)
 >            🔄 REFACTORING GEPLANT: Höhenberechnung + Gerüst-Abstand
+>
+> **KORRIGIERT 28.01.2026:** Layher Fußspindel- und Ausgleichsrahmen-Spezifikationen
+> aktualisiert auf Katalog 2025/2026 (Art.-Nr. 4001.xxx, 4002.xxx, 1773.xxx).
 >
 > **FIX 24.01.2026:** Frontend verwendet jetzt API-Traufhöhe statt Geometrie-Berechnung.
 > Siehe "Konzept-Trennung" für Details.
@@ -892,14 +896,29 @@ Bei Gebäuden am Hang muss das Gerüst am Grund ausgeglichen werden:
               SCHRÄGER BODEN (Terrain)
 ```
 
-### Layher Blitz Ausnivellierungs-Material
+### Layher Blitz Ausnivellierungs-Material (Katalog 2025/2026)
 
-| Höhe Ausgleich | Material | Art.-Nr. | Gewicht |
+> **KORRIGIERT 28.01.2026:** Artikelnummern und Max-Höhen gemäss Layher Katalog 2025/2026
+
+**Fußspindeln (einzeln):**
+
+| Max. Ausgleich | Material | Art.-Nr. | Gewicht |
 |----------------|----------|----------|---------|
-| 0 - 0.40m | Stellspindel 0.4m | 0730.020 | 4.2 kg |
-| 0.40 - 0.80m | Ausgleichsrahmen 0.5m | 0731.050 | 8.5 kg |
-| 0.80 - 1.30m | Ausgleichsrahmen 1.0m | 0731.100 | 14.0 kg |
-| > 1.30m | Zusätzliche Startlagen | - | variabel |
+| bis 0.41m | Fußspindel 60 | 4001.060 | 3.6 kg |
+| bis 0.55m | Fußspindel 80 verstärkt | 4002.080 | 4.9 kg |
+| bis 0.79m | Fußspindel 110 verstärkt | 4002.110 | 6.5 kg |
+| bis 0.82m | Fußspindel 150 verstärkt | 4002.130 | 10.0 kg |
+
+**Ausgleichsrahmen + Fußspindel 80 (kombiniert):**
+
+| Max. Ausgleich | Material | Art.-Nr. | Gewicht (inkl. Spindel) |
+|----------------|----------|----------|-------------------------|
+| bis 1.21m | Ausgleichsrahmen 0.66m + Spindel 80 | 1773.066 | 14.9 kg |
+| bis 1.55m | Ausgleichsrahmen 1.00m + Spindel 80 | 1773.100 | 16.9 kg |
+| bis 2.05m | Ausgleichsrahmen 1.50m + Spindel 80 | 1773.150 | 19.9 kg |
+| bis 2.55m | Ausgleichsrahmen 2.00m + Spindel 80 | 1773.200 | 23.4 kg |
+
+> **Hinweis:** Ausgleichsrahmen werden immer mit Fußspindel 80 (max +55cm) kombiniert!
 
 ### Berechnung Ausgleichsmaterial
 
@@ -962,10 +981,10 @@ Mit Ausnivellierung:
 
 2. **`renderLevelingSpindles()`** - Zeichnet Stellspindeln/Ausgleichsrahmen
    - Lineare Interpolation: links = max Verlängerung, rechts = keine
-   - Farbkodierung nach Verlängerung:
-     - Grau (#666666): Stellspindel bis 0.4m
-     - Orange (#f97316): Lange Stellspindel 0.4-0.8m
-     - Rot (#dc2626): Ausgleichsrahmen >0.8m
+   - Farbkodierung nach Verlängerung (gemäss Layher Katalog 2025/2026):
+     - Grau (#666666): Fußspindel 60 (bis 0.41m)
+     - Orange (#f97316): Fußspindel 80/110/150 (0.41-0.82m)
+     - Rot (#dc2626): Ausgleichsrahmen nötig (>0.82m)
    - Fussplatten-Anzeige
    - Höhenangabe am ersten Feld
 
@@ -1066,14 +1085,16 @@ Geodata.facade_z_min (pro Richtung)
 │  │       │                                                                  │  │
 │  │       └─ if terrain_diff_m > 0.1:                                        │  │
 │  │              │                                                           │  │
-│  │              └─ calculate_leveling_materials()   ✅ IMPLEMENTIERT        │  │
-│  │                    │                                                     │  │
-│  │                    ├─ Fussspindel 0.40m (0-0.4m)                         │  │
-│  │                    ├─ Fussspindel 0.60m (0.4-0.6m)                       │  │
-│  │                    ├─ Fussspindel 0.80m (0.6-0.8m)                       │  │
-│  │                    ├─ Ausgleichsrahmen 1.00m (0.8-1.0m)                  │  │
-│  │                    ├─ Ausgleichsrahmen 1.50m (1.0-1.5m)                  │  │
-│  │                    └─ Ausgleichsrahmen 2.00m (1.5-2.0m)                  │  │
+│  │              └─ calculate_leveling_materials()   ✅ KORRIGIERT 28.01.2026 │  │
+│  │                    │ (Layher Katalog 2025/2026)                          │  │
+│  │                    ├─ Fußspindel 60 (0-0.41m, Art. 4001.060)             │  │
+│  │                    ├─ Fußspindel 80 verstärkt (0.41-0.55m, Art. 4002.080)│  │
+│  │                    ├─ Fußspindel 110 verstärkt (0.55-0.79m, Art. 4002.110)│  │
+│  │                    ├─ Fußspindel 150 verstärkt (0.79-0.82m, Art. 4002.130)│  │
+│  │                    ├─ Rahmen 0.66m + Spindel 80 (0.82-1.21m, Art. 1773.066)│  │
+│  │                    ├─ Rahmen 1.00m + Spindel 80 (1.21-1.55m, Art. 1773.100)│  │
+│  │                    ├─ Rahmen 1.50m + Spindel 80 (1.55-2.05m, Art. 1773.150)│  │
+│  │                    └─ Rahmen 2.00m + Spindel 80 (2.05-2.55m, Art. 1773.200)│  │
 │  │                                                                          │  │
 │  └──────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
@@ -1097,13 +1118,13 @@ Geodata.facade_z_min (pro Richtung)
 | Frontend MaterialList Button | `ThreeDPanel.tsx:310-327` | ✅ Implementiert |
 | MaterialListModal | `ThreeDPanel.tsx:329-463` | ✅ Implementiert |
 
-### API-Test (13.01.2026 23:40)
+### API-Test (KORRIGIERT 28.01.2026)
 
 ```bash
 curl "http://localhost:8000/api/v1/catalog/estimate?system_id=blitz70&area_m2=200&terrain_diff_m=1.5&field_count=8"
 ```
 
-**Ergebnis:**
+**Ergebnis (mit korrekten Layher Katalog 2025/2026 Bezeichnungen):**
 ```json
 {
   "summary": {
@@ -1115,32 +1136,34 @@ curl "http://localhost:8000/api/v1/catalog/estimate?system_id=blitz70&area_m2=20
   },
   "materials": [
     // ... Standard-Material ...
-    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.40m", "quantity_typical": 2},
-    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.60m", "quantity_typical": 1},
-    {"category": "Ausnivellierung (Hanglage)", "name": "Fussspindel 0.80m", "quantity_typical": 1},
-    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.00m", "quantity_typical": 1},
-    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.50m", "quantity_typical": 3}
+    {"category": "Ausnivellierung (Hanglage)", "name": "Fußspindel 60", "article": "4001.060", "quantity_typical": 2},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Fußspindel 80 verstärkt", "article": "4002.080", "quantity_typical": 1},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.00m + Spindel 80", "article": "1773.100", "quantity_typical": 2},
+    {"category": "Ausnivellierung (Hanglage)", "name": "Ausgleichsrahmen 1.50m + Spindel 80", "article": "1773.150", "quantity_typical": 3}
   ]
 }
 ```
 
-### Berechnung der Stellspindeln (layher_catalog.py)
+### Berechnung der Stellspindeln (layher_catalog.py) - KORRIGIERT 28.01.2026
 
 ```
 Beispiel: Hanglage 2.5m, 6 Felder entlang der Fassade
+(Gemäss Layher Katalog 2025/2026)
 
-Feld 0 (links/oben):    0.0m Ausgleich → keine Verlängerung
-Feld 1:                 0.5m Ausgleich → Fussspindel 0.60m
-Feld 2:                 1.0m Ausgleich → Ausgleichsrahmen 1.00m
-Feld 3:                 1.5m Ausgleich → Ausgleichsrahmen 1.50m
-Feld 4:                 2.0m Ausgleich → Ausgleichsrahmen 2.00m
-Feld 5 (rechts/unten):  2.5m Ausgleich → Ausgleichsrahmen 2.00m + Stellspindel
+Feld 0 (links/oben):    0.0m Ausgleich → Fußspindel 60 (Standard)
+Feld 1:                 0.5m Ausgleich → Fußspindel 80 verstärkt (max 55cm)
+Feld 2:                 1.0m Ausgleich → Ausgleichsrahmen 0.66m + Spindel 80 (max 1.21m)
+Feld 3:                 1.5m Ausgleich → Ausgleichsrahmen 1.00m + Spindel 80 (max 1.55m)
+Feld 4:                 2.0m Ausgleich → Ausgleichsrahmen 1.50m + Spindel 80 (max 2.05m)
+Feld 5 (rechts/unten):  2.5m Ausgleich → Ausgleichsrahmen 2.00m + Spindel 80 (max 2.55m)
 
 Ergebnis:
-  - 1× Fussspindel 0.60m
-  - 1× Ausgleichsrahmen 1.00m
-  - 1× Ausgleichsrahmen 1.50m
-  - 2× Ausgleichsrahmen 2.00m
+  - 1× Fußspindel 60 (Art. 4001.060)
+  - 1× Fußspindel 80 verstärkt (Art. 4002.080)
+  - 1× Ausgleichsrahmen 0.66m (Art. 1773.066) + Fußspindel 80
+  - 1× Ausgleichsrahmen 1.00m (Art. 1773.100) + Fußspindel 80
+  - 1× Ausgleichsrahmen 1.50m (Art. 1773.150) + Fußspindel 80
+  - 1× Ausgleichsrahmen 2.00m (Art. 1773.200) + Fußspindel 80
 ```
 
 ### Implementierte Dateien
@@ -1664,7 +1687,7 @@ interface SelectedFacade {
 // Pro Fassade die Terrain-Differenz berechnen
 const facadeTechnet wurdee
 rrainDiff = facades.map(f => ({
-  Dies direction: f.direction,
+  Dies einer Ebenesollten Junkerngassecht zum Laufen gebracht.direction: f.direction,
   z_min: f.z_min,
   diff_to_lowest: f.z_min - Math.min(...facades.map(f => f.z_min))
 }));
