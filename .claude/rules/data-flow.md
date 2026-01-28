@@ -31,8 +31,8 @@
 │  ├─ building_contexts Tabelle                                  │
 │  │   └─ Zonen (Claude-Analyse / known_buildings.py)            │
 │  └─ building_environment Tabelle                               │
-│      ├─ Terrain (Geländehöhe aus swissALTI3D)                  │
-│      └─ Hanglage (slope_m, slope_class)                        │
+│      ├─ Terrain (Referenzhöhe aus swissALTI3D)                 │
+│      └─ facade_z_min/z_max (aus Wall-Layer für Frontend)       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -246,12 +246,33 @@ Frontend: GeodataStep.tsx
 
 | Daten | Tabelle | Quelle |
 |-------|---------|--------|
-| Terrain-Höhe | `building_environment.terrain_data` | swissALTI3D |
-| Hanglage | `building_environment.terrain_data` | swissALTI3D (Polygon-Ecken) |
+| Terrain-Höhe | `building_environment.terrain_data` | swissALTI3D (Referenz) |
+| **Hanglage** | **Frontend-Berechnung** | **building_walls.geometry (LiDAR)** |
 | Zonen | `building_contexts.context_json` | Claude-Analyse / known_buildings.py |
 | Foto-Analyse | `building_environment` | Claude Vision (geplant) |
 
-### Hanglage-Klassifikation
+### Hanglage-Berechnung (GEÄNDERT 28.01.2026)
+
+> **WICHTIG:** Die Hanglage wird jetzt im **Frontend** aus `building_walls.geometry`
+> Z-Koordinaten berechnet, NICHT mehr im Backend aus swissALTI3D Sampling!
+
+**Warum Frontend statt Backend?**
+- `building_walls.geometry` enthält LiDAR-basierte 3D-Koordinaten [x, y, z]
+- Präzision: ±0.1m (LiDAR) vs. ±0.5m (swissALTI3D Sampling)
+- Pro-Fassade Höhen statt globaler Schätzung
+
+**Datenfluss:**
+```
+building_walls.geometry (aus DB)
+    ↓
+Frontend: matchFacadeToWall() in polygonSimplifier.ts
+    ↓
+extractZFromRing(coords3d) → polygon_z_min, polygon_z_max
+    ↓
+slope_m = Math.abs(terrainZMax - terrainZMin)
+```
+
+**Klassifikation (im Frontend):**
 
 | Klasse | Höhendifferenz | Bedeutung |
 |--------|----------------|-----------|
@@ -272,9 +293,8 @@ Die Enrichment-Daten werden persistent pro EGID gecacht:
    │   → DataSource.CACHE setzen
    │
    └─ Falls nicht gecacht:
-       ├─ swissALTI3D API aufrufen
-       ├─ Polygon-Ecken samplen (max 8 Punkte)
-       ├─ Hanglage berechnen (min/max/slope_m)
+       ├─ swissALTI3D API: Referenz-Höhe am Gebäudezentrum
+       ├─ _collect_facade_heights(): Z-Werte aus Wall-Layer
        └─ _save_terrain_to_environment(egid) → Cache speichern
 ```
 
@@ -282,13 +302,15 @@ Die Enrichment-Daten werden persistent pro EGID gecacht:
 ```json
 {
   "height_m": 533.5,
-  "min_terrain_m": 531.2,
-  "max_terrain_m": 537.1,
-  "slope_m": 5.9,
-  "slope_class": "stark",
-  "requires_level_compensation": true
+  "facade_z_min": {"N": 554.3, "E": 554.3, ...},
+  "facade_z_max": {"N": 562.9, "E": 565.0, ...},
+  "facade_heights_source": "wall_layer"
 }
 ```
+
+> **HINWEIS:** `slope_m` und `slope_class` werden nicht mehr vom Backend berechnet.
+> Alte Cache-Einträge können diese Felder noch enthalten, werden aber vom Frontend
+> mit präziseren Werten überschrieben.
 
 **Implementierung:**
 - `service.py:_load_terrain_from_environment()` - Cache lesen

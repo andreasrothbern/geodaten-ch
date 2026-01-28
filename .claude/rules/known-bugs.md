@@ -30,6 +30,245 @@ während der Frontend-Wert bei 2.0m bleibt. Das führt zu inkonsistenter Anzeige
 
 ## Gefixte Bugs (Neu)
 
+### BUG-033: WorkType 'Komplett' durch 'Spengler' ersetzt (FEATURE)
+
+**Status:** ✅ Implementiert am 27.01.2026 13:00
+
+**Änderung:**
+Der WorkType `'full'` (Komplett) wurde durch `'roofer'` (Spengler) ersetzt mit neuer Berechnungslogik.
+
+**Alte Logik (Komplett):**
+- Gerüst bis First: `target_height = firsthoehe_m`
+- Keine Unterscheidung Giebel vs. Trauf-Fassade
+
+**Neue Logik (Spengler):**
+- Gerüst bis First MINUS 1m für Arbeitsplatz Spengler: `target_height = firsthoehe_m - 1m`
+- Bei Giebel-Fassaden: Trapez-Form berechnen: `target_height = traufhoehe + giebel_height - 1m`
+- Bei Trauf-Fassaden: Rechteck bis First - 1m
+
+**Work-Types jetzt:**
+| Type | Label | Beschreibung | Berechnung |
+|------|-------|--------------|------------|
+| `facade` | Fassade | Bis Traufe | `traufhoehe_m` |
+| `roof` | Dacharbeiten | +1m Absturzsicherung | `traufhoehe_m + 1m` |
+| `roofer` | Spengler | First -1m für Spengler | `firsthoehe_m - 1m` (mit Giebel-Trapez) |
+
+**Neue Felder in ScaffoldFacade:**
+- `first_height_m` - Firsthöhe für Spengler-Modus
+- `is_giebel` - Giebel-Fassade? (für Trapez-Form)
+- `giebel_height_m` - Höhe des Giebel-Dreiecks
+
+**Betroffene Dateien:**
+- `scaffold.types.ts` - WorkType, ScaffoldFacade Interface
+- `WorkTypeSelector.tsx` - UI-Labels
+- `calculations.ts` - `calculateTargetHeight()` mit Giebel-Logik
+- `useScaffoldConfig.ts` - `createFacadeElement()`, `setWorkType()`, `createElementsFromFacades()`
+- `ScaffoldGrid.tsx` - `'full'` → `'roofer'`
+- `ScaffoldScene.tsx` - `'full'` → `'roofer'`
+
+---
+
+### BUG-032: Work-Type Wechsel ändert Gerüsthöhe nicht (GEFIXT)
+
+**Status:** ✅ Gefixt am 27.01.2026 11:30
+
+**Problem:**
+Beim Wechsel von "Fassadenarbeit" auf "Dacharbeit" oder "Komplett" wurde die Gerüsthöhe
+nicht angepasst. Das Gerüst blieb auf der Traufhöhe statt höher zu werden.
+
+**Ursache:**
+Die `ScaffoldFacade` speicherte nur `target_height_m` (Gerüsthöhe mit work_type-Offset),
+aber NICHT die originale Traufhöhe. Bei `setWorkType` wurde versucht, die Basis-Höhe
+zurückzurechnen - das schlug fehl wenn die Fassade mit einem anderen work_type erstellt wurde.
+
+```typescript
+// FALSCH (vorher - Zeile 330):
+el.target_height_m - (configuration.settings.work_type === 'roof' ? 1.0 : ...)
+// Problem: target_height_m enthält bereits den Offset!
+```
+
+**Fix:**
+1. Neues Feld `base_height_m` in `ScaffoldFacade` (originale Traufhöhe)
+2. Bei Erstellung wird `facade.height_m` als `base_height_m` gespeichert
+3. `setWorkType` verwendet jetzt `base_height_m` als Basis
+
+```typescript
+// KORREKT (nachher):
+const baseHeight = el.base_height_m || el.target_height_m;  // Fallback für alte Daten
+const { targetHeight } = calculateFieldsAndLevels(el.length_m, baseHeight, ..., type);
+```
+
+**Betroffene Dateien:**
+- `geruestbau-app/src/features/scaffold-configurator/types/scaffold.types.ts:148` - Neues Feld
+- `geruestbau-app/src/features/scaffold-configurator/hooks/useScaffoldConfig.ts:157,326-336` - Verwendung
+
+---
+
+### BUG-031: Multi-Building Traufhöhe falsch berechnet (GEFIXT)
+
+**Status:** ✅ Gefixt am 27.01.2026 11:00
+
+**Problem:**
+Bei Multi-Building-Projekten (z.B. "Knospenweg 1-3, Bern") wurde die Traufhöhe falsch angezeigt.
+Die angezeigte Höhe war viel zu hoch (z.B. 13.49m statt ~7m).
+
+```
+SYMPTOM: Knospenweg 1-3, Bern
+  Angezeigt: Traufhöhe 13.49m
+  Erwartet:  ~7m (basierend auf 3D-Daten)
+  Gerüst:    14m berechnet (zu hoch!)
+```
+
+**Ursache:**
+Die Multi-Building-Logik in `_calculate_object_data()` verwendete `bundle.traufhoehe_m` direkt.
+Dieses Feld ist aber seit BUG-025 (16.01.2026) entweder NULL oder enthält einen Fallback-Wert
+aus der GWR-Schätzung (Geschosse × 3.2m).
+
+Die **korrekte** Berechnung (`roof_dach_min_m - min(terrain_z_min)`) wurde nur für
+Single-Building-Anfragen in `geruestbau.py:991-1029` implementiert, NICHT für Multi-Building.
+
+```python
+# FALSCH (vorher):
+if bundle.traufhoehe_m:
+    total_traufhoehe += bundle.traufhoehe_m  # ← GWR-Schätzung!
+
+# KORREKT (nachher):
+if bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.facade_z_min:
+    min_terrain = min(bundle.terrain.facade_z_min.values())
+    corrected_trauf = bundle.roof_dach_min_m - min_terrain  # ← Echte 3D-Daten!
+```
+
+**Fix:**
+1. `building_data_stream.py:95-115`: Korrigierte Traufhöhenberechnung in `_calculate_object_data()`
+2. `geruestbau.py:588-601`: Korrigierter Fallback für Multi-Building Response
+
+**Betroffene Dateien:**
+- `backend/app/services/building_data_stream.py:95-115`
+- `backend/app/routers/geruestbau.py:588-601`
+
+---
+
+### BUG-030: Blockierte Fassaden nach Polygon-Vereinfachung (GEFIXT)
+
+**Status:** ✅ Gefixt am 25.01.2026 12:00 (zweiter Fix-Versuch)
+
+**Problem:**
+Bei Polygon-Vereinfachung (Douglas-Peucker Slider) wurden fast alle Fassaden als "blockiert"
+angezeigt, obwohl nur wenige tatsächlich blockiert waren.
+
+```
+SYMPTOM: Knospenweg 1, Bern
+  Backend SSE: blocked_indices = [0,1,2,3,4,5,7,8,9,10,11...25,26]  (22 von 27!)
+  Frontend: Zeigt vereinfachtes Polygon mit 4 Fassaden
+  → Fast alle Fassaden grau, ganze Seite "fehlt"
+```
+
+**Ursache (eigentlicher Root-Cause):**
+1. `blocked_facades_service` berechnet Indizes für ORIGINAL-Polygon → Index-Mismatch bei vereinfachtem Polygon
+2. **ECHTER BUG:** `blockingNeighbors` im Frontend war IMMER LEER!
+   - `neighbors` im SSE hat `distance_m` als **CENTER-TO-CENTER** Distanz
+   - Bei Reihenhäusern ist Center-Distanz > 10m, obwohl Polygone angrenzen
+   - `blockingNeighbors = neighbors.filter(n => n.distance_m <= 2.0)` → LEER
+   - → `isFacadeBlocked()` hatte keine Nachbarn zum Prüfen!
+
+**Fix (zweiter Ansatz - korrekter):**
+Neues SSE-Event `blocking_neighbors` mit **Polygon-zu-Polygon** Distanz:
+
+1. **Backend** (`project_context_stream.py:222-263`):
+   - Neues SSE-Event `blocking_neighbors` nach `blocked_facades`
+   - Enthält alle Nachbarn die Fassaden blockieren (aus `blocked_facades_service`)
+   - Polygon-Daten für Geometrie-basierte Prüfung im Frontend
+
+2. **Frontend** (`useProjectContextStream.ts`):
+   - Neues Event `blocking_neighbors` empfangen
+   - `sseData.blockingNeighbors` verfügbar
+
+3. **Frontend** (`ConfiguratorPage.tsx:1012-1034`):
+   - `blockingNeighbors` verwendet SSE-Daten statt Center-Distance-Filterung
+   - Fallback auf alte Logik für nicht-SSE Modus
+
+```typescript
+// FIX 25.01.2026: SSE blocking_neighbors (Polygon-zu-Polygon Distanz)
+const blockingNeighbors = useMemo(() => {
+  if (sseData.blockingNeighbors && sseData.blockingNeighbors.length > 0) {
+    console.log(`[Blocking] Using SSE blocking_neighbors: ${sseData.blockingNeighbors.length} buildings`);
+    return sseData.blockingNeighbors.map(n => ({...}));
+  }
+  // Fallback für nicht-SSE Modus
+  return neighbors.filter(n => n.distance_m <= BLOCKING_THRESHOLD_M);
+}, [sseData.blockingNeighbors, neighbors]);
+```
+
+**Betroffene Dateien:**
+- `backend/app/services/project_context_stream.py:222-263` - SSE Event
+- `geruestbau-app/src/hooks/useProjectContextStream.ts` - Event empfangen
+- `geruestbau-app/src/pages/ConfiguratorPage.tsx:1012-1034` - blockingNeighbors aus SSE
+- `geruestbau-app/src/features/.../FacadePanel.tsx` - Geometrie-basierte Prüfung
+
+**Warum erster Fix nicht funktionierte:**
+Der erste Fix priorisierte Geometrie-basierte Blockierung über SSE-Index-basierte.
+ABER: `blockingNeighbors` war leer → `isFacadeBlocked()` gab immer `false` zurück!
+
+**Details:** Siehe `docs/architecture/3D_LAYER_USAGE.md` → "Blockierte Fassaden - Datenfluss"
+
+---
+
+### BUG-029: SmartBuildingService gibt falsche EGID zurück (GEFIXT)
+
+**Status:** ✅ Gefixt am 22.01.2026 15:30
+
+**Problem:**
+Bei Multi-Building-Projekten (z.B. "Knospenweg 1-7, Bern") bekamen alle Adressen dieselbe
+falsche EGID. Das Problem trat nur beim SmartBuildingService auf - `/address/resolve` funktionierte korrekt.
+
+```
+VOR dem Fix:                              NACH dem Fix:
+Knospenweg 1: EGID 504011987 (Waschraum!) Knospenweg 1: EGID 1243787 ✅
+Knospenweg 3: EGID 1243793               Knospenweg 3: EGID 1243789 ✅
+Knospenweg 5: EGID 1243793               Knospenweg 5: EGID 1243791 ✅
+Knospenweg 7: EGID 1243793               Knospenweg 7: EGID 1243793 ✅
+```
+
+**Ursache:**
+`_collect_gwr_data()` verwendete `identify_buildings()[0]` OHNE Point-in-Polygon Check.
+Bei Reihenhäusern wurde das falsche Gebäude (erstes im Radius) zurückgegeben.
+
+```python
+# VOR dem Fix (service.py:656-658)
+if buildings:
+    building = buildings[0]  # FALSCH - nimmt erstes ohne Check!
+    bundle.egid = str(building.egid)
+```
+
+Der BUG-015 Fix (Point-in-Polygon) war nur in `address_parser.py` implementiert,
+nicht im `SmartBuildingService`.
+
+**Fix:**
+Point-in-Polygon Lookup aus `address_parser.py` wiederverwenden:
+
+```python
+# NACH dem Fix (service.py:656-668)
+if buildings:
+    building = buildings[0]
+
+    if not bundle.egid:
+        from app.services.address_parser import _lookup_egid_by_coordinates
+        pip_egid = _lookup_egid_by_coordinates(bundle.lv95_e, bundle.lv95_n)
+        if pip_egid:
+            bundle.egid = str(pip_egid)
+        elif building.egid:
+            bundle.egid = str(building.egid)  # Fallback
+```
+
+**Betroffene Dateien:**
+- `backend/app/services/smart_building/service.py:656-668`
+
+**Hinweis:**
+Geocoding liefert nicht immer eine EGID (z.B. `geo.egid=None` für Knospenweg).
+Deshalb muss Point-in-Polygon als primäre Methode verwendet werden.
+
+---
+
 ### BUG-022: Blockierte Fassaden werden nicht erkannt (GEFIXT)
 
 **Status:** ✅ Gefixt am 14.01.2026 18:15
@@ -851,6 +1090,46 @@ Die neue Implementierung loggt automatisch:
 ```
 [PREFETCH] GDB-Parsing: 7197 Gebäude | 45000ms (6.3ms/Gebäude) | Methode: fiona_direct
 ```
+
+---
+
+### OPT-003: Backend-Hanglage-Berechnung entfernt (28.01.2026)
+
+**Status:** ✅ Implementiert
+
+**Problem:**
+Das Backend berechnete `slope_m` und `slope_class` durch swissALTI3D Sampling (8 Polygon-Punkte).
+Diese Berechnung war **redundant und weniger präzise** als die Frontend-Berechnung aus
+`building_walls.geometry` Z-Koordinaten (LiDAR).
+
+**Beispiel Knospenweg 4:**
+```
+Backend (swissALTI3D Sampling): slope_m = 1.8m (FALSCH - kein Hang!)
+Frontend (LiDAR Z-Koordinaten): slope_m = 0.0m (KORREKT - eben)
+```
+
+**Lösung:**
+1. swissALTI3D Polygon-Sampling für slope_m/slope_class in `_collect_terrain_data()` entfernt
+2. `slope_m = None`, `slope_class = "eben"` als Default
+3. Frontend berechnet slope_m aus `building_walls.geometry` Z-Koordinaten
+
+**Datenfluss (NEU):**
+```
+building_walls.geometry (LiDAR)
+    ↓
+Frontend: extractZFromRing(coords3d)
+    ↓
+polygon_z_min, polygon_z_max pro Fassade
+    ↓
+slope_m = Math.abs(terrainZMax - terrainZMin)
+```
+
+**Betroffene Dateien:**
+- `backend/app/services/smart_building/service.py:933-1025` - `_collect_terrain_data()` vereinfacht
+
+**Was bleibt:**
+- `reference_height_m` - Terrain-Höhe am Gebäudezentrum (für Referenz)
+- `facade_z_min/facade_z_max` - Z-Werte aus Wall-Layer (via `_collect_facade_heights`)
 
 ---
 

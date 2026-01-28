@@ -931,16 +931,23 @@ class SmartBuildingService:
             logger.warning(f"[ROOF_3D] Fehler beim Laden der Dach-Daten: {e}")
 
     async def _collect_terrain_data(self, bundle: BuildingDataBundle):
-        """Schritt 4: Terrain-Daten (Hanglage) - ENRICHMENT
+        """Schritt 4: Terrain-Daten - ENRICHMENT
 
         Sammelt Terrain-Daten und speichert sie in building_environment
         für persistentes Caching pro EGID.
 
-        Hanglage-Klassifikation:
-        - eben: < 0.5m
-        - leicht: 0.5 - 1.5m (Stellspindeln reichen)
-        - mittel: 1.5 - 3.0m (Ausgleichsrahmen nötig)
-        - stark: > 3.0m (Spezielle Fundamentierung)
+        WICHTIG 28.01.2026: Die Hanglage-Berechnung (slope_m, slope_class) wurde
+        aus diesem Backend-Service ENTFERNT, da sie redundant und weniger präzise
+        ist als die Frontend-Berechnung aus building_walls.geometry Z-Koordinaten.
+
+        Das Frontend verwendet:
+        - building_walls.geometry: 3D-Koordinaten [x, y, z] aus LiDAR (swissBUILDINGS3D)
+        - matchFacadeToWall(): Extrahiert polygon_z_min/polygon_z_max pro Fassade
+        - slope_m wird berechnet als: Math.abs(terrainZMax - terrainZMin)
+
+        Dieses Backend liefert weiterhin:
+        - reference_height_m: Terrain-Höhe am Gebäudezentrum (für Referenz)
+        - facade_z_min/facade_z_max: Z-Werte aus Wall-Layer (via _collect_facade_heights)
         """
         if not bundle.lv95_e or not bundle.lv95_n:
             logger.info(f"[TERRAIN] Skipping - no coordinates for {bundle.egid}")
@@ -987,47 +994,23 @@ class SmartBuildingService:
                 bundle.terrain = TerrainProfile(reference_height_m=ref_height)
                 bundle.add_source(DataSource.SWISSALTI3D)
 
-                # Hanglage über alle Polygon-Punkte berechnen
-                # OPTIMIERT 10.01.2026: Parallele API-Calls (~2.5s → ~0.3s)
-                if bundle.polygon and len(bundle.polygon) >= 3:
-                    # Sample max 8 Punkte für Performance
-                    step = max(1, len(bundle.polygon) // 8)
-                    sample_points = [bundle.polygon[i] for i in range(0, len(bundle.polygon), step)]
+                # ENTFERNT 28.01.2026: swissALTI3D Polygon-Sampling für slope_m/slope_class
+                # Die Berechnung war redundant und weniger präzise als die Frontend-Berechnung
+                # aus building_walls.geometry Z-Koordinaten (LiDAR).
+                #
+                # Das Frontend berechnet slope_m direkt aus:
+                # - building_walls.geometry: 3D-Koordinaten [x, y, z]
+                # - matchFacadeToWall(): polygon_z_min/polygon_z_max pro Fassade
+                #
+                # slope_m, slope_class bleiben auf Default (None, "eben") -
+                # das Frontend überschreibt diese mit den präziseren Werten.
+                bundle.terrain.slope_m = None
+                bundle.terrain.slope_class = "eben"
+                bundle.terrain.is_sloped = False
+                bundle.terrain.requires_level_compensation = False
 
-                    # Alle Höhen-Calls PARALLEL ausführen
-                    height_tasks = [terrain_service.get_height(p[0], p[1]) for p in sample_points]
-                    height_results = await asyncio.gather(*height_tasks, return_exceptions=True)
-                    heights = [h for h in height_results if isinstance(h, (int, float))]
-
-                    if heights:
-                        bundle.terrain.min_height_m = min(heights)
-                        bundle.terrain.max_height_m = max(heights)
-                        slope_m = max(heights) - min(heights)
-                        bundle.terrain.slope_m = slope_m
-                        bundle.terrain.is_sloped = slope_m > 1.0
-
-                        # Hanglage-Klassifikation
-                        if slope_m < 0.5:
-                            bundle.terrain.slope_class = "eben"
-                        elif slope_m < 1.5:
-                            bundle.terrain.slope_class = "leicht"
-                            bundle.terrain.requires_level_compensation = True
-                        elif slope_m < 3.0:
-                            bundle.terrain.slope_class = "mittel"
-                            bundle.terrain.requires_level_compensation = True
-                        else:
-                            bundle.terrain.slope_class = "stark"
-                            bundle.terrain.requires_level_compensation = True
-
-                        bundle.terrain.max_compensation_m = slope_m
-
-                        if bundle.terrain.is_sloped:
-                            bundle.add_warning(
-                                f"Hanglage erkannt: {slope_m:.1f}m ({bundle.terrain.slope_class})"
-                            )
-
-                # NEU 14.01.2026: Fassaden-Höhen aus Wall-Layer (T2)
-                # Fallback-Kette: 1. Wall-Layer → 2. Terrain-Sampling → 3. Global
+                # Fassaden-Höhen aus Wall-Layer (T2) - diese sind die präzisen Daten!
+                # Fallback-Kette: 1. Wall-Layer → 2. Global
                 await self._collect_facade_heights(bundle)
 
                 # NEU 18.01.2026: facades[] Array aufbauen (kombiniert sides + terrain)
@@ -1042,7 +1025,12 @@ class SmartBuildingService:
             bundle.add_warning(f"Terrain-Daten nicht verfügbar: {str(e)}")
 
     def _load_terrain_from_environment(self, egid: str) -> Optional[TerrainProfile]:
-        """Lädt Terrain-Daten aus building_environment Cache."""
+        """Lädt Terrain-Daten aus building_environment Cache.
+
+        HINWEIS 28.01.2026: slope_m und slope_class werden aus dem Cache geladen
+        (für Rückwärtskompatibilität), aber das Frontend überschreibt diese mit
+        präziseren Werten aus building_walls.geometry Z-Koordinaten.
+        """
         try:
             from app.services.intelligent_db import IntelligentDBService
             db_service = IntelligentDBService()
@@ -1096,7 +1084,7 @@ class SmartBuildingService:
                 blocked_facades=[],
                 terrain_data=terrain_data
             )
-            logger.info(f"Terrain saved for EGID {bundle.egid}: {bundle.terrain.slope_class}")
+            logger.info(f"Terrain saved for EGID {bundle.egid}: reference_height={bundle.terrain.reference_height_m}, facade_source={bundle.terrain.facade_heights_source}")
         except Exception as e:
             logger.warning(f"Could not save terrain to environment: {e}")
 
