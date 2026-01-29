@@ -31,7 +31,7 @@
 │  ├─ building_contexts Tabelle                                  │
 │  │   └─ Zonen (Claude-Analyse / known_buildings.py)            │
 │  └─ building_environment Tabelle                               │
-│      ├─ Terrain (Referenzhöhe aus swissALTI3D)                 │
+│      ├─ Terrain (Referenzhöhe aus building_walls.z_min)        │
 │      └─ facade_z_min/z_max (aus Wall-Layer für Frontend)       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -216,7 +216,7 @@ Frontend: GeodataStep.tsx
    │   │       ├─ Geocoding
    │   │       ├─ GWR-Daten
    │   │       ├─ 3D-Daten (Polygon + Höhen) ← Grunddaten
-   │   │       ├─ Terrain (swissALTI3D)      ← Enrichment!
+   │   │       ├─ Terrain (aus 3D-Daten)     ← Enrichment!
    │   │       ├─ Sonnendach.ch              ← Enrichment!
    │   │       ├─ Zonen-Analyse              ← Enrichment!
    │   │       └─ SUVA-Zugänge               ← Enrichment!
@@ -246,20 +246,23 @@ Frontend: GeodataStep.tsx
 
 | Daten | Tabelle | Quelle |
 |-------|---------|--------|
-| Terrain-Höhe | `building_environment.terrain_data` | swissALTI3D (Referenz) |
+| Terrain-Höhe | `building_environment.terrain_data` | building_walls.z_min (3D-Daten) |
 | **Hanglage** | **Frontend-Berechnung** | **building_walls.geometry (LiDAR)** |
 | Zonen | `building_contexts.context_json` | Claude-Analyse / known_buildings.py |
 | Foto-Analyse | `building_environment` | Claude Vision (geplant) |
 
 ### Hanglage-Berechnung (GEÄNDERT 28.01.2026)
 
-> **WICHTIG:** Die Hanglage wird jetzt im **Frontend** aus `building_walls.geometry`
-> Z-Koordinaten berechnet, NICHT mehr im Backend aus swissALTI3D Sampling!
+> **WICHTIG (28.01.2026):** swissALTI3D wurde komplett entfernt. Alle Terrain-Daten
+> kommen jetzt aus swissBUILDINGS3D (building_walls):
+> - `reference_height_m` = min(building_walls.z_min)
+> - Hanglage wird im **Frontend** aus `building_walls.geometry` Z-Koordinaten berechnet
 
-**Warum Frontend statt Backend?**
+**Warum 3D-Daten statt swissALTI3D?**
 - `building_walls.geometry` enthält LiDAR-basierte 3D-Koordinaten [x, y, z]
-- Präzision: ±0.1m (LiDAR) vs. ±0.5m (swissALTI3D Sampling)
+- Präzision: ±0.1m (LiDAR) vs. ±0.5m (swissALTI3D API)
 - Pro-Fassade Höhen statt globaler Schätzung
+- Kein zusätzlicher API-Call (schneller)
 
 **Datenfluss:**
 ```
@@ -293,7 +296,7 @@ Die Enrichment-Daten werden persistent pro EGID gecacht:
    │   → DataSource.CACHE setzen
    │
    └─ Falls nicht gecacht:
-       ├─ swissALTI3D API: Referenz-Höhe am Gebäudezentrum
+       ├─ building_walls.z_min: Referenz-Höhe (min aller Wände)
        ├─ _collect_facade_heights(): Z-Werte aus Wall-Layer
        └─ _save_terrain_to_environment(egid) → Cache speichern
 ```

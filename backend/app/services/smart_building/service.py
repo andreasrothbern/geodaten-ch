@@ -984,15 +984,25 @@ class SmartBuildingService:
                 return
 
         try:
-            from app.services.terrain import get_terrain_service
-            terrain_service = get_terrain_service()
+            # NEU 28.01.2026: reference_height_m aus building_walls.z_min berechnen
+            # statt swissALTI3D API-Call. 3D-Daten sind immer verfügbar.
+            ref_height = None
 
-            # Haupthöhe am Gebäudezentrum
-            ref_height = await terrain_service.get_height(bundle.lv95_e, bundle.lv95_n)
+            if bundle.egid:
+                from app.services.layer_fetcher import get_layer_fetcher
+                layer_fetcher = get_layer_fetcher()
+                walls = layer_fetcher.get_walls_for_building(bundle.egid)
+
+                if walls:
+                    # reference_height_m = minimale Terrain-Höhe (z_min) aller Wände
+                    z_mins = [w['z_min'] for w in walls if w.get('z_min') is not None]
+                    if z_mins:
+                        ref_height = min(z_mins)
+                        logger.info(f"[TERRAIN] reference_height_m={ref_height:.2f}m aus building_walls.z_min (EGID {bundle.egid})")
 
             if ref_height is not None:
                 bundle.terrain = TerrainProfile(reference_height_m=ref_height)
-                bundle.add_source(DataSource.SWISSALTI3D)
+                bundle.add_source(DataSource.SWISSBUILDINGS3D)  # 3D-Daten statt swissALTI3D
 
                 # ENTFERNT 28.01.2026: swissALTI3D Polygon-Sampling für slope_m/slope_class
                 # Die Berechnung war redundant und weniger präzise als die Frontend-Berechnung
@@ -1091,16 +1101,14 @@ class SmartBuildingService:
     async def _collect_facade_heights(self, bundle: BuildingDataBundle):
         """NEU 14.01.2026 (T2): Sammelt Fassaden-Höhen aus Wall-Layer.
 
-        DEPRECATED 15.01.2026 (BUG-024):
-            Diese Funktion verwendet wall_facade_matcher welcher nur ~20% der
-            Fassaden korrekt matcht. Wall-Segmente werden jetzt direkt ans
-            Frontend gesendet (wall_segments in API-Response).
-            Siehe: docs/architecture/3D_LAYER_USAGE_3D_VIEW.md → BUG-024
+        GEÄNDERT 28.01.2026:
+            swissALTI3D Terrain-Sampling wurde entfernt. Die 3D-Daten (building_walls)
+            sind immer verfügbar und liefern präzisere Werte.
+            Das Frontend matcht die Fassaden direkt mit building_walls.geometry.
 
         Fallback-Kette:
-        1. Wall-Layer (höchste Präzision) - wenn has_3d_layers=True
-        2. Terrain-Sampling (gute Präzision) - swissALTI3D pro Fassade
-        3. Global (Fallback) - Referenz-Höhe für alle Fassaden
+        1. Wall-Layer (höchste Präzision) - immer verfügbar
+        2. Global (Fallback) - Referenz-Höhe für alle Fassaden
 
         Die Daten werden in TerrainProfile.facade_z_min/facade_z_max gespeichert.
         """
@@ -1140,56 +1148,8 @@ class SmartBuildingService:
             except Exception as e:
                 logger.warning(f"[FACADE-HEIGHTS] Wall-Layer Fehler: {e}")
 
-        # STUFE 2: Terrain-Sampling (swissALTI3D pro Fassaden-Startpunkt)
-        try:
-            from app.services.terrain import get_terrain_service
-            terrain_service = get_terrain_service()
-
-            sampled_count = 0
-            # FIX 14.01.2026: Absolute Dachkanten-Höhe (gleich für alle Fassaden!)
-            # Bei Hanglage ist das Dach horizontal, nur das Terrain variiert.
-            absolute_dach_hoehe = None
-            if bundle.terrain and bundle.terrain.reference_height_m and bundle.traufhoehe_m:
-                absolute_dach_hoehe = bundle.terrain.reference_height_m + bundle.traufhoehe_m
-
-            for side in bundle.sides:
-                direction = side.get("direction", "?")
-                start_point = side.get("start_point") or side.get("start", {})
-
-                if isinstance(start_point, dict):
-                    e = start_point.get("x") or start_point.get("e")
-                    n = start_point.get("y") or start_point.get("n")
-                elif isinstance(start_point, (list, tuple)) and len(start_point) >= 2:
-                    e, n = start_point[0], start_point[1]
-                else:
-                    continue
-
-                if e and n:
-                    terrain_height = await terrain_service.get_height(e, n)
-                    if terrain_height is not None:
-                        bundle.terrain.facade_z_min[direction] = terrain_height
-                        # FIX: z_max ist KONSTANT (absolute Dachkanten-Höhe)
-                        if absolute_dach_hoehe:
-                            bundle.terrain.facade_z_max[direction] = absolute_dach_hoehe
-                        sampled_count += 1
-
-            if sampled_count > 0:
-                bundle.terrain.facade_heights_source = "terrain_sampled"
-                # Log mit Höhendifferenz für Hanglage-Erkennung
-                if bundle.terrain.facade_z_min:
-                    min_terrain = min(bundle.terrain.facade_z_min.values())
-                    max_terrain = max(bundle.terrain.facade_z_min.values())
-                    height_diff = max_terrain - min_terrain
-                    logger.info(
-                        f"[FACADE-HEIGHTS] Terrain-Sampling: {sampled_count} Fassaden, "
-                        f"Hanglage: {height_diff:.2f}m"
-                    )
-                return
-
-        except Exception as e:
-            logger.warning(f"[FACADE-HEIGHTS] Terrain-Sampling Fehler: {e}")
-
-        # STUFE 3: Global-Fallback (alle Fassaden gleiche Höhe)
+        # STUFE 2: Global-Fallback (alle Fassaden gleiche Höhe)
+        # ENTFERNT 28.01.2026: swissALTI3D Terrain-Sampling - 3D-Daten sind immer verfügbar
         bundle.terrain.facade_heights_source = "global"
         ref_height = bundle.terrain.reference_height_m
         absolute_dach_hoehe = ref_height + bundle.traufhoehe_m if bundle.traufhoehe_m else None

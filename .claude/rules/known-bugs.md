@@ -1133,6 +1133,55 @@ slope_m = Math.abs(terrainZMax - terrainZMin)
 
 ---
 
+### OPT-004: swissALTI3D komplett entfernt (28.01.2026)
+
+**Status:** ✅ Implementiert
+
+**Hintergrund:**
+Nach OPT-003 (slope_m-Entfernung) wurde swissALTI3D noch für `reference_height_m` und
+als STUFE 2 Fallback in `_collect_facade_heights()` verwendet.
+
+**Entscheidung:**
+"Wir laden immer die 3D Daten - es gibt kein Edge Case." → swissALTI3D vollständig entfernt.
+
+**Änderungen:**
+
+1. **`_collect_terrain_data()`:**
+   - swissALTI3D `get_height()` entfernt
+   - `reference_height_m` wird jetzt aus `building_walls.z_min` berechnet (min aller Wände)
+   - Datenquelle: `DataSource.SWISSBUILDINGS3D` statt `SWISSALTI3D`
+
+2. **`_collect_facade_heights()`:**
+   - STUFE 2 Terrain-Sampling komplett entfernt
+   - Nur noch 2 Stufen: Wall-Layer → Global-Fallback
+
+**Datenfluss (NEU):**
+```
+building_walls (DB)
+    │
+    └─ z_min (minimale Terrain-Höhe aller Wände)
+        │
+        └─ reference_height_m (für Referenz)
+
+building_walls.geometry (3D-Koordinaten)
+    │
+    └─ Frontend: matchFacadeToWall()
+        │
+        └─ polygon_z_min, polygon_z_max pro Fassade
+```
+
+**Vorteile:**
+- Kein API-Call mehr für Terrain (schneller)
+- Konsistente Datenquelle (alles aus swissBUILDINGS3D)
+- Präzisere Werte (LiDAR ±0.1m statt API ±0.5m)
+
+**Betroffene Dateien:**
+- `backend/app/services/smart_building/service.py:986-1003` - Neue Berechnung
+- `backend/app/services/smart_building/service.py:1101-1116` - Docstring aktualisiert
+- `backend/app/services/smart_building/service.py:1150-1152` - STUFE 2 entfernt
+
+---
+
 ## Geplante Optimierungen
 
 ### TODO: Weitere GDB Parsing Optimierungen

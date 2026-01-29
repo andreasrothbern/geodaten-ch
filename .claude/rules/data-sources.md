@@ -4,15 +4,19 @@
 
 | Quelle | Daten | Status |
 |--------|-------|--------|
-| swisstopo API | Geocoding, GWR, Terrain | Live |
-| swissBUILDINGS3D | Höhe + Polygon | On-Demand STAC |
-| swissALTI3D | Terrain-Höhe (m ü.M.) | Live |
+| swisstopo API | Geocoding, GWR | Live |
+| swissBUILDINGS3D | Höhe + Polygon + Terrain | On-Demand STAC |
+| ~~swissALTI3D~~ | ~~Terrain-Höhe (m ü.M.)~~ | **Deaktiviert** |
 | Sonnendach.ch (BFE) | Dachgeometrie, Neigung, Überstand | Live |
 | ~~geodienste.ch WFS~~ | ~~Gebäude-Polygon~~ | **Deaktiviert** |
 
 > **Änderung 01.01.2026:** geodienste.ch wurde deaktiviert.
 > Alle Polygon-Daten kommen jetzt aus swissBUILDINGS3D.
 > Das funktioniert für ALLE Schweizer Kantone.
+
+> **Änderung 28.01.2026:** swissALTI3D wurde deaktiviert.
+> Terrain-Daten (reference_height_m) kommen jetzt aus building_walls.z_min.
+> Das Frontend berechnet Hanglage aus building_walls.geometry Z-Koordinaten.
 
 ## Höhen-Lookup Strategie
 
