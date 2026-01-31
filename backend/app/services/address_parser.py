@@ -102,7 +102,7 @@ def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -
 
         # FIX BUG-015: Alle Kandidaten im Radius laden (nicht nur nächstes)
         cursor.execute('''
-            SELECT egid, polygon, center_e, center_n,
+            SELECT egid, ST_AsGeoJSON(geom) as polygon, center_e, center_n,
                    (center_e - ?) * (center_e - ?) + (center_n - ?) * (center_n - ?) as dist_sq
             FROM buildings_3d
             WHERE center_e BETWEEN ? AND ?
@@ -125,8 +125,13 @@ def _lookup_egid_by_coordinates(e: float, n: float, tolerance_m: float = 10.0) -
                 continue
 
             try:
-                polygon = json.loads(polygon_json) if isinstance(polygon_json, str) else polygon_json
-            except (json.JSONDecodeError, TypeError):
+                geojson = json.loads(polygon_json) if isinstance(polygon_json, str) else polygon_json
+                # ST_AsGeoJSON liefert {"type": "Polygon", "coordinates": [[[x,y], ...]]}
+                if isinstance(geojson, dict) and 'coordinates' in geojson:
+                    polygon = geojson['coordinates'][0]
+                else:
+                    polygon = geojson  # Fallback für altes Format
+            except (json.JSONDecodeError, TypeError, KeyError, IndexError):
                 continue
 
             # Prüfe ob Punkt im Polygon liegt
@@ -471,11 +476,11 @@ class AddressParserService:
                 swissbuildings_egid = _lookup_egid_by_coordinates(e, n, tolerance_m=10.0)
 
                 # Schritt 2: Falls nicht gefunden → Point-in-Polygon direkt im Tile
-                # (ohne Prefetch zu triggern - das passiert später im SmartBuildingService)
+                # FIX 31.01.2026: skip_prefetch entfernt - Fetcher hat keine Side-Effects mehr
                 if swissbuildings_egid is None:
                     logger.info(f"[BUG-015] Keine Daten in building_3d.db für ({e:.1f}, {n:.1f}) - prüfe Tile...")
                     from app.services.swissbuildings3d_fetcher import fetch_building_polygon_for_coordinates
-                    result = await fetch_building_polygon_for_coordinates(e, n, skip_prefetch=True)
+                    result = await fetch_building_polygon_for_coordinates(e, n)
                     if result and result.get('egid'):
                         swissbuildings_egid = int(result.get('egid'))
 

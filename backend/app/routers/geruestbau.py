@@ -234,7 +234,7 @@ async def get_project_geodata(
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT egid, polygon, center_e, center_n,
+        SELECT egid, ST_AsGeoJSON(geom) as polygon, center_e, center_n,
                traufhoehe_m, firsthoehe_m, gebaeudehoehe_m, gebaeudeeinheit
         FROM buildings_3d
         WHERE center_e BETWEEN ? AND ?
@@ -259,13 +259,18 @@ async def get_project_geodata(
         if distance_m > radius_m:
             continue
 
-        # Polygon parsen
+        # Polygon parsen (ST_AsGeoJSON liefert GeoJSON-Format)
         polygon_data = row[1]
         polygon = None
         if polygon_data:
             try:
-                polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
-            except (json.JSONDecodeError, TypeError):
+                geojson = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                # ST_AsGeoJSON: {"type": "Polygon", "coordinates": [[[x,y], ...]]}
+                if isinstance(geojson, dict) and 'coordinates' in geojson:
+                    polygon = geojson['coordinates'][0]
+                else:
+                    polygon = geojson  # Fallback
+            except (json.JSONDecodeError, TypeError, KeyError, IndexError):
                 pass
 
         building = {
@@ -532,9 +537,101 @@ async def get_facade_data_for_configurator(
     - sonnendach.ch API (DachflÃ¤chen)
     - Lokale DB (HÃ¶hen)
 
+    NEU 22.01.2026: Multi-Building Support via komma-getrennte Adressen.
+    Bei Multi-Building wird ein Union-Polygon berechnet.
+
     Returns:
         ProjectInput-kompatibles JSON für ScaffoldConfigurator
     """
+    # NEU 22.01.2026: Multi-Building Support
+    # Prüfe ob komma-getrennte Adressen (Multi-Building)
+    # Heuristik: Mindestens 2 Kommas UND Wiederholung des Ortsnamens
+    addresses = []
+    if address.count(',') >= 2:
+        # Versuche Adressen zu splitten
+        # Format: "Knospenweg 1, Bern, Knospenweg 3, Bern" oder "Strasse 1, 3001 Bern, Strasse 3, 3001 Bern"
+        parts = [p.strip() for p in address.split(',')]
+
+        # Gruppiere immer 2 Teile (Strasse, Ort)
+        # Falls ungerade Anzahl, nehme alles als eine Adresse
+        if len(parts) >= 4 and len(parts) % 2 == 0:
+            for i in range(0, len(parts), 2):
+                addr = f"{parts[i]}, {parts[i+1]}"
+                addresses.append(addr)
+            logger.info(f"[MULTI-BUILDING] Erkannt: {len(addresses)} Adressen aus '{address}'")
+        else:
+            addresses = [address]
+    else:
+        addresses = [address]
+
+    # Multi-Building: SmartBuildingService mit Liste aufrufen
+    if len(addresses) > 1:
+        from app.services.smart_building.service import get_smart_building_service
+        from app.services.building_data_stream import _calculate_object_data
+
+        smart_service = get_smart_building_service()
+        bundles = await smart_service.collect_all_data(
+            address=addresses,  # Liste übergeben!
+            force_refresh=False,
+            include_research=True,
+            include_zones_analysis=False,
+            include_terrain=True,
+        )
+
+        if not bundles or len(bundles) == 0:
+            raise HTTPException(status_code=404, detail="Keine GebÃ¤ude gefunden für Multi-Building Anfrage")
+
+        # object_data mit Union-Polygon berechnen
+        object_data = _calculate_object_data(bundles)
+        if not object_data:
+            raise HTTPException(status_code=404, detail="Konnte Union-Polygon nicht berechnen")
+
+        # Multi-Building Response im gleichen Format wie Single-Building
+        # aber mit zusätzlichem project_buildings Array
+        first_bundle = bundles[0]
+
+        # FIX 27.01.2026 11:00: Korrigierte Traufhöhe aus _calculate_object_data
+        # Die Berechnung erfolgt jetzt korrekt: roof_dach_min_m - min(terrain_z_min)
+        avg_traufhoehe = object_data.get("avg_traufhoehe_m")
+
+        # Fallback nur wenn object_data keine Traufhöhe hat
+        if not avg_traufhoehe:
+            # Korrigierte Berechnung auch im Fallback
+            corrected_traufs = []
+            for b in bundles:
+                if b.roof_dach_min_m and b.terrain and b.terrain.facade_z_min:
+                    min_terrain = min(b.terrain.facade_z_min.values())
+                    corrected_traufs.append(b.roof_dach_min_m - min_terrain)
+                elif b.traufhoehe_m:
+                    corrected_traufs.append(b.traufhoehe_m)
+            avg_traufhoehe = sum(corrected_traufs) / len(corrected_traufs) if corrected_traufs else 0
+
+        return {
+            "address": address,
+            "matched_address": ", ".join([b.address_matched or "" for b in bundles if b.address_matched]),
+            "egid": "+".join([str(b.egid) for b in bundles if b.egid]),
+            "lv95_e": object_data.get("center_e") or first_bundle.lv95_e,
+            "lv95_n": object_data.get("center_n") or first_bundle.lv95_n,
+            "polygon": object_data.get("polygon", []),
+            "sides": object_data.get("sides", []),
+            "selected_facades": object_data.get("facades_object", []),
+            "traufhoehe_m": round(avg_traufhoehe, 2) if avg_traufhoehe else 0,
+            "firsthoehe_m": max((b.firsthoehe_m or 0 for b in bundles), default=None),
+            "gebaeudehoehe_m": max((b.gebaeudehoehe_m or 0 for b in bundles), default=None),
+            "terrain_z_min": min((b.terrain.min_height_m if b.terrain and b.terrain.min_height_m else 999 for b in bundles), default=None),
+            "roof": object_data.get("roof_object", {}),
+            "zones": [],  # Multi-Building: Zonen pro Gebäude nicht kombinierbar
+            "building_name": f"Multi-Building ({len(bundles)} GebÃ¤ude)",
+            "complexity": "complex",
+            "research_source": "multi_building",
+            "building_walls": [],  # TODO: Wall-Daten für alle Gebäude sammeln
+            "building_roofs": [],
+            "project_buildings": object_data.get("projectBuildings", []),  # FIX 22.01.2026: CamelCase key
+            "is_multi_building": True,
+            "building_count": len(bundles),
+        }
+
+    # Single-Building: Original-Logik
     # 1. Geocoding - Adresse in Koordinaten umwandeln
     swisstopo = SwisstopoService()
     geocode_result = await swisstopo.geocode(address)
@@ -939,6 +1036,12 @@ async def get_facade_data_for_configurator(
             first_height = corrected_first
             logger.info(f"[HEIGHT-FIX] Firsthöhe korrigiert: → {corrected_first:.2f}m")
 
+        # FIX 24.01.2026: selected_facades wurden VOR der Korrektur erstellt!
+        # Die Fassaden-Höhen müssen ebenfalls aktualisiert werden.
+        for facade in selected_facades:
+            facade["height_m"] = round(trauf_height, 2)
+        logger.info(f"[HEIGHT-FIX] {len(selected_facades)} Fassaden-Höhen aktualisiert auf {trauf_height:.2f}m")
+
     # 8. Response im ProjectInput-Format zusammenstellen
     project_id = str(uuid.uuid4())[:8]
 
@@ -1137,7 +1240,7 @@ async def get_neighbors_by_coordinates(
 
     # BBox-Query für Kandidaten
     cursor.execute("""
-        SELECT egid, polygon, center_e, center_n,
+        SELECT egid, ST_AsGeoJSON(geom) as polygon, center_e, center_n,
                traufhoehe_m, firsthoehe_m, gebaeudehoehe_m
         FROM buildings_3d
         WHERE center_e BETWEEN ? AND ?
@@ -1165,13 +1268,18 @@ async def get_neighbors_by_coordinates(
         if distance_m > radius_m:
             continue
 
-        # Polygon parsen
+        # Polygon parsen (ST_AsGeoJSON liefert GeoJSON-Format)
         polygon_data = row[1]
         polygon = None
         if include_polygons and polygon_data:
             try:
-                polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
-            except (json.JSONDecodeError, TypeError):
+                geojson = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                # ST_AsGeoJSON: {"type": "Polygon", "coordinates": [[[x,y], ...]]}
+                if isinstance(geojson, dict) and 'coordinates' in geojson:
+                    polygon = geojson['coordinates'][0]
+                else:
+                    polygon = geojson  # Fallback
+            except (json.JSONDecodeError, TypeError, KeyError, IndexError):
                 pass
 
         buildings.append({
@@ -1543,6 +1651,7 @@ async def get_blocked_facades(
                    "Bitte zuerst Ã¼ber SmartBuildingService laden."
         )
 
+    # NEU 22.01.2026: blocked_segments für partielle Blockierung
     return {
         "egid": result.egid,
         "blocked_indices": result.blocked_indices,
@@ -1554,7 +1663,19 @@ async def get_blocked_facades(
                 "facade_index": bf.facade_index,
                 "egid": bf.blockers[0].egid if bf.blockers else None,
                 "distance_m": bf.min_distance_m,
-                "direction": bf.blockers[0].direction if bf.blockers else None
+                "direction": bf.blockers[0].direction if bf.blockers else None,
+                # NEU 22.01.2026: Partielle Blockierung
+                "fully_blocked": bf.fully_blocked,
+                "blocked_segments": [
+                    {
+                        "start_ratio": seg.start_ratio,
+                        "end_ratio": seg.end_ratio,
+                        "blocker_egid": seg.blocker_egid,
+                        "min_distance_m": seg.min_distance_m,
+                        "length_ratio": seg.length_ratio
+                    }
+                    for seg in bf.blocked_segments
+                ]
             }
             for bf in result.blocked_facades
         ]
