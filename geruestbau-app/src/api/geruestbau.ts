@@ -176,11 +176,30 @@ export interface MaterialEstimateResponse {
 }
 
 // Blocked Facades API Types
+
+// NEU 23.01.2026: Partielle Blockierung - nur Teile einer Fassade blockiert
+export interface BlockedSegment {
+  start_ratio: number  // 0.0-1.0 Position auf Fassade (0=Start, 1=Ende)
+  end_ratio: number    // 0.0-1.0 Position auf Fassade
+  blocker_egid: string
+  min_distance_m: number
+}
+
+export interface BlockerInfo {
+  egid: string
+  distance_m: number
+  direction: string  // N, NE, E, SE, S, SW, W, NW
+}
+
 export interface BlockedFacadeInfo {
   facade_index: number
   egid: string | null
   distance_m: number
   direction: string | null
+  // NEU 23.01.2026: Partielle Blockierung
+  blocked_segments?: BlockedSegment[]
+  blockers?: BlockerInfo[]
+  fully_blocked?: boolean  // true wenn >= 90% blockiert
 }
 
 export interface BlockedFacadesResponse {

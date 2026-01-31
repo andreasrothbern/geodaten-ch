@@ -146,6 +146,8 @@ def get_building_3d_connection(read_only: bool = False):
 
     WICHTIG (DuckDB): Alle Connections zur gleichen DB müssen die gleiche
     Konfiguration verwenden! read_only wird IGNORIERT um Konflikte zu vermeiden.
+
+    NEU 31.01.2026: Spatial Extension wird automatisch geladen für ST_Contains, ST_DWithin.
     """
     if USE_DUCKDB:
         import duckdb
@@ -155,7 +157,11 @@ def get_building_3d_connection(read_only: bool = False):
         # gibt es einen "different configuration" Fehler.
         # Lösung: Immer write-Modus verwenden (DuckDB kann trotzdem lesen).
         # FIX 14.01.2026: DUCKDB_CONFIG übergeben für Multi-Threading!
-        return duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), config=DUCKDB_CONFIG)
+        conn = duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), config=DUCKDB_CONFIG)
+        # NEU 31.01.2026: Spatial Extension für GEOMETRY-Typ und R-Tree Index
+        conn.execute("INSTALL spatial")
+        conn.execute("LOAD spatial")
+        return conn
     else:
         import sqlite3
         conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))

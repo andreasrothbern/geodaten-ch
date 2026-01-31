@@ -258,15 +258,20 @@ def insert_blitz70_materials(conn: sqlite3.Connection):
         ("2628.207", "blitz70", "diagonal", "Diagonalstrebe 2.07m", "Diagonale 2.07m", 2.07, 2.00, None, 4.5, None, "verzinkt", "Mit Klauen"),
 
         # Fussplatten und Spindeln
-        ("2620.000", "blitz70", "base", "Fussplatte 150×150mm", "Platine 150×150mm", None, None, 0.15, 2.5, None, "verzinkt", None),
-        ("2620.040", "blitz70", "base", "Fussspindel 0.40m", "Vérin 0.40m", None, 0.40, None, 3.0, None, "verzinkt", "Verstellbar 0-40cm"),
-        ("2620.060", "blitz70", "base", "Fussspindel 0.60m", "Vérin 0.60m", None, 0.60, None, 4.0, None, "verzinkt", "Verstellbar 0-60cm"),
-        ("2620.080", "blitz70", "base", "Fussspindel 0.80m", "Vérin 0.80m", None, 0.80, None, 5.0, None, "verzinkt", "Verstellbar 0-80cm"),
+        # FIX 28.01.2026: Korrigierte Art.-Nr. und Gewichte gemäss Layher Katalog 2025/2026
+        ("4000.000", "blitz70", "base", "Fußplatte 150×150mm", "Platine 150×150mm", None, None, 0.15, 2.5, None, "verzinkt", None),
+        ("4001.060", "blitz70", "base", "Fußspindel 60", "Vérin 60", None, 0.56, None, 3.6, None, "verzinkt", "Max. Spindelweg 41cm"),
+        ("4002.080", "blitz70", "base", "Fußspindel 80 verstärkt", "Vérin 80 renforcé", None, 0.73, None, 4.9, None, "verzinkt", "Max. Spindelweg 55cm"),
+        ("4002.110", "blitz70", "base", "Fußspindel 110 verstärkt", "Vérin 110 renforcé", None, 1.10, None, 6.5, None, "verzinkt", "Max. Spindelweg 79cm"),
+        ("4002.130", "blitz70", "base", "Fußspindel 150 verstärkt", "Vérin 150 renforcé", None, 1.50, None, 10.0, None, "verzinkt", "Max. Spindelweg 82cm"),
+        ("4003.000", "blitz70", "base", "Schwenkbare Fußspindel 60", "Vérin basculant 60", None, 0.58, None, 6.1, None, "verzinkt", "Max. Spindelweg 32cm, für geneigte Untergründe"),
+        ("4000.400", "blitz70", "base", "Ausgleichsplatte", "Plaque de nivellement", None, None, None, 2.0, None, "verzinkt", "Neigungsbereich 0-16%"),
 
-        # NEU 15.01.2026: Ausgleichsrahmen für Hanglage (>0.8m)
-        ("2621.100", "blitz70", "base", "Ausgleichsrahmen 1.00m", "Cadre de nivellement 1.00m", None, 1.00, 0.73, 12.0, 6, "verzinkt", "Für Hanglage 0.8-1.0m"),
-        ("2621.150", "blitz70", "base", "Ausgleichsrahmen 1.50m", "Cadre de nivellement 1.50m", None, 1.50, 0.73, 15.0, 6, "verzinkt", "Für Hanglage 1.0-1.5m"),
-        ("2621.200", "blitz70", "base", "Ausgleichsrahmen 2.00m", "Cadre de nivellement 2.00m", None, 2.00, 0.73, 18.5, 6, "verzinkt", "Für Hanglage 1.5-2.0m"),
+        # Ausgleichsrahmen für Hanglage (Rahmen + Spindel 80 kombiniert)
+        # FIX 28.01.2026: Korrigierte Art.-Nr. gemäss Layher Katalog
+        ("1773.066", "blitz70", "base", "Ausgleichsrahmen 0.66m", "Cadre de nivellement 0.66m", None, 0.66, 0.73, 10.0, 6, "verzinkt", "Für Hanglage bis 1.21m (+ Spindel 80)"),
+        ("1773.100", "blitz70", "base", "Ausgleichsrahmen 1.00m", "Cadre de nivellement 1.00m", None, 1.00, 0.73, 12.0, 6, "verzinkt", "Für Hanglage bis 1.55m (+ Spindel 80)"),
+        ("1773.150", "blitz70", "base", "Ausgleichsrahmen 1.50m", "Cadre de nivellement 1.50m", None, 1.50, 0.73, 15.0, 6, "verzinkt", "Für Hanglage bis 2.05m (+ Spindel 80)"),
 
         # Verankerung
         ("2630.050", "blitz70", "anchor", "Gerüsthalter kurz", "Fixation courte", 0.50, None, None, 1.5, None, "verzinkt", "Für Mauerwerk"),
@@ -320,8 +325,9 @@ def insert_reference_values(conn: sqlite3.Connection):
         ("blitz70", "diagonal", "2628.307", 6, 8, 7, "Pro Feld eine"),
 
         # Fussplatten/Spindeln
-        ("blitz70", "base", "2620.000", 10, 12, 11, None),
-        ("blitz70", "base", "2620.040", 10, 12, 11, "Standard"),
+        # FIX 28.01.2026: Korrigierte Art.-Nr. gemäss Layher Katalog
+        ("blitz70", "base", "4000.000", 10, 12, 11, "Fußplatte"),
+        ("blitz70", "base", "4001.060", 10, 12, 11, "Standard-Fußspindel"),
 
         # Verankerung (4m Raster)
         ("blitz70", "anchor", "2630.050", 6, 8, 7, "Horizontalabstand 4m"),

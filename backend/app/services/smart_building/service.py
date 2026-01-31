@@ -989,8 +989,8 @@ class SmartBuildingService:
             ref_height = None
 
             if bundle.egid:
-                from app.services.layer_fetcher import get_layer_fetcher
-                layer_fetcher = get_layer_fetcher()
+                from app.services.layer_fetcher import get_layer_fetcher_service
+                layer_fetcher = get_layer_fetcher_service()
                 walls = layer_fetcher.get_walls_for_building(bundle.egid)
 
                 if walls:

@@ -15,6 +15,16 @@ import { simplifyPolygon, sidesToFacades, sidesToFacadesWithWalls } from '../uti
 // NEU 10.01.2026 19:30 - Blocked Facades per EGID (Multi-Building Support)
 import type { BlockedFacadesData } from '../../../hooks/useProjectContextStream';
 
+// ============================================================================
+// BLOCKIERUNGS-FLAGS (zum Testen der verschiedenen Ansätze)
+// Siehe: docs/architecture/FACADE_BLOCKING_STRATEGIES.md
+// ============================================================================
+const DISABLE_FACADE_BLOCKING = true;   // Master-Schalter: true = KEINE Blockierung (alle frei)
+const USE_GEOMETRY_BLOCKING = false;    // Geometrie-basiert: facadeToPolygonDistance < 2m
+const USE_DIRECTION_BLOCKING = false;   // SSE-Richtungs-basiert: blockedDirectionsFromSSE
+
+const DEBUG_BLOCKING = true;            // Debug-Logging in Console
+
 interface FacadePanelProps {
   neighbors?: NeighborBuilding[];
   // FIX 15.01.2026 01:45 - Separate Liste für Blocking (immer aktiv, unabhängig vom Slider)
@@ -165,40 +175,45 @@ export default function FacadePanel({
     return directions;
   }, [blockedFacadesData]);
 
-  // Check if a facade is blocked by neighbors (geometry-based)
-  // FIX 15.01.2026 01:45 - Nutze blockingNeighbors (immer aktiv) statt neighbors (Slider-abhängig)
-  // Geometrie-basiert: Prüft tatsächliche Distanz Fassade → Nachbar-Polygon
+  // Check if a facade is blocked by neighbors
+  // Gesteuert durch Flags: DISABLE_FACADE_BLOCKING, USE_GEOMETRY_BLOCKING, USE_DIRECTION_BLOCKING
+  // Siehe: docs/architecture/FACADE_BLOCKING_STRATEGIES.md
   const isFacadeBlocked = useCallback((facade: ScaffoldFacade, _facadeIndex: number): boolean => {
-    // Geometry-based calculation: Check distance to each blocking neighbor polygon
-    // blockingNeighbors enthält alle Nachbarn innerhalb von 2m, unabhängig vom Slider
-    if (facade.start_point && facade.end_point && blockingNeighbors.length > 0) {
+    // Master-Schalter: Alle Fassaden frei
+    if (DISABLE_FACADE_BLOCKING) {
+      if (DEBUG_BLOCKING) console.log(`[Blocking] DISABLED - ${facade.direction} frei`);
+      return false;
+    }
+
+    // Strategie 1: Geometrie-basiert (facadeToPolygonDistance)
+    if (USE_GEOMETRY_BLOCKING && facade.start_point && facade.end_point && blockingNeighbors.length > 0) {
       for (const neighbor of blockingNeighbors) {
-        if (!neighbor.polygon || neighbor.polygon.length < 3) {
-          continue;
-        }
+        if (!neighbor.polygon || neighbor.polygon.length < 3) continue;
         const dist = facadeToPolygonDistance(
           facade.start_point as [number, number],
           facade.end_point as [number, number],
           neighbor.polygon as [number, number][]
         );
         if (dist < BLOCKING_THRESHOLD_M) {
+          if (DEBUG_BLOCKING) console.log(`[Blocking] GEOMETRY - ${facade.direction} blockiert (dist=${dist.toFixed(2)}m)`);
           return true;
         }
       }
-      // Geometrie-Check mit blockingNeighbors hat keine Blockierung gefunden
+      if (DEBUG_BLOCKING) console.log(`[Blocking] GEOMETRY - ${facade.direction} frei (keine Nachbarn < ${BLOCKING_THRESHOLD_M}m)`);
       return false;
     }
 
-    // Fallback wenn keine Geometrie-Daten: Direction-based check via SSE
-    if (blockedDirectionsFromSSE.size > 0) {
-      const facadeDirection = facade.direction;
-      if (facadeDirection && blockedDirectionsFromSSE.has(facadeDirection)) {
-        return true;
-      }
+    // Strategie 2: SSE-Richtungs-basiert (blockedDirectionsFromSSE)
+    if (USE_DIRECTION_BLOCKING && blockedDirectionsFromSSE.size > 0) {
+      const isBlocked = blockedDirectionsFromSSE.has(facade.direction);
+      if (DEBUG_BLOCKING) console.log(`[Blocking] DIRECTION - ${facade.direction} ${isBlocked ? 'blockiert' : 'frei'} (SSE: ${Array.from(blockedDirectionsFromSSE).join(',')})`);
+      return isBlocked;
     }
 
-    // Letzter Fallback: blockedSides Array
-    return blockedSides.includes(facade.direction);
+    // Fallback: blockedSides Array (Legacy)
+    const isBlocked = blockedSides.includes(facade.direction);
+    if (DEBUG_BLOCKING) console.log(`[Blocking] FALLBACK - ${facade.direction} ${isBlocked ? 'blockiert' : 'frei'}`);
+    return isBlocked;
   }, [blockingNeighbors, blockedSides, blockedDirectionsFromSSE, facadeToPolygonDistance]);
 
   // Get default height from existing facades

@@ -285,10 +285,10 @@ class TerrainService:
 
         heights = [c["height_m"] for c in corner_heights]
 
-        # Zentroid berechnen
-        center_e = sum(p[0] for p in polygon) / len(polygon)
-        center_n = sum(p[1] for p in polygon) / len(polygon)
-        center_height = await self.get_height(center_e, center_n)
+        # FIX 30.01.2026: Zentralisierte Centroid-Berechnung
+        from .object_geometry import calculate_centroid_from_polygon
+        center_e, center_n = calculate_centroid_from_polygon(polygon)
+        center_height = await self.get_height(center_e, center_n) if center_e and center_n else None
 
         return {
             "corners": corner_heights,

@@ -45,7 +45,8 @@ export default function ScaffoldGrid({
   }, []);
 
   // Calculate SVG dimensions
-  const showRoof = settings.work_type === 'roof' || settings.work_type === 'full';
+  // FIX 27.01.2026: 'full' ersetzt durch 'roofer' (Spengler)
+  const showRoof = settings.work_type === 'roof' || settings.work_type === 'roofer';
   const dims = useSvgDimensions({
     containerWidth,
     facade,
@@ -235,7 +236,8 @@ export default function ScaffoldGrid({
   const renderRoof = () => {
     if (!showRoof) return null;
 
-    const roofHeight = settings.work_type === 'full' ? 40 : 20;
+    // FIX 27.01.2026: 'full' ersetzt durch 'roofer' (Spengler geht höher)
+    const roofHeight = settings.work_type === 'roofer' ? 40 : 20;
     const buildingTop = dims.startY - facade.levels * dims.cellHeight;
     const buildingLeft = dims.startX;
     const buildingRight = dims.startX + facade.fields * dims.cellWidth;

@@ -73,7 +73,8 @@ export default function GeodataStep({
     isLoading: isStreamLoading,
     isDownloading,
   } = useBuildingDataStream({
-    includeResearch: false,  // Research wird separat im zones-Step gemacht
+    // includeResearch: Default true - Backend entscheidet automatisch
+    // basierend auf Gebäude-Komplexität (Fläche, GKAT, Polygon-Punkte)
     includeZones: true,
     includeTerrain: true,
 
@@ -509,9 +510,10 @@ export default function GeodataStep({
           </h3>
 
           <div className="space-y-2 text-sm max-h-48 overflow-y-auto">
-            {buildings.map((building) => (
+            {/* FIX 22.01.2026: Use address+index as key - EGID may be duplicated for Reihenhäuser */}
+            {buildings.map((building, index) => (
               <div
-                key={building.egid}
+                key={`${building.address}_${index}`}
                 className="flex items-center justify-between p-2 bg-white rounded border border-green-100"
               >
                 <div className="flex items-center gap-2">

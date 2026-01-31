@@ -515,6 +515,7 @@ class LayherCatalogService:
         Berechne Ausnivellierungs-Material für Hanglage.
 
         NEU 15.01.2026: Stellspindeln/Ausgleichsrahmen basierend auf Terrain-Differenz.
+        FIX 28.01.2026: Korrigierte Werte gemäss Layher Blitz Katalog 2025/2026.
 
         Die Berechnung geht davon aus, dass das Gerüst auf der höchsten Seite
         aufgestellt wird und zur niedrigsten Seite hin ausgeglichen werden muss.
@@ -528,25 +529,31 @@ class LayherCatalogService:
         Returns:
             Liste mit benötigten Materialien und Mengen
 
-        Klassifikation:
-            - Stellspindel 0.40m: 0 - 0.4m Ausgleich
-            - Stellspindel 0.60m: 0.4 - 0.6m Ausgleich
-            - Stellspindel 0.80m: 0.6 - 0.8m Ausgleich
-            - Ausgleichsrahmen 1.00m: 0.8 - 1.0m Ausgleich
-            - Ausgleichsrahmen 1.50m: 1.0 - 1.5m Ausgleich
-            - Ausgleichsrahmen 2.00m: 1.5 - 2.0m Ausgleich
+        Klassifikation (Layher Katalog 2025/2026):
+            - Fußspindel 60 (4001.060): max. 41 cm
+            - Fußspindel 80 verstärkt (4002.080): max. 55 cm
+            - Fußspindel 110 verstärkt (4002.110): max. 79 cm
+            - Fußspindel 150 verstärkt (4002.130): max. 82 cm
+            - Ausgleichsrahmen 0.66m + Spindel 80: max. 121 cm
+            - Ausgleichsrahmen 1.00m + Spindel 80: max. 155 cm
+            - Ausgleichsrahmen 1.50m + Spindel 80: max. 205 cm
         """
         if terrain_diff_m < 0.1 or field_count < 1:
             return []
 
-        # Standard-Spindel-Artikel nach Höhe
+        # Fußspindel-Varianten gemäss Layher Blitz Katalog 2025/2026
+        # FIX 28.01.2026: Korrigierte Art.-Nr. und max. Höhen
         spindle_options = [
-            {"article": "2620.040", "max_height": 0.40, "name": "Fussspindel 0.40m", "weight": 3.0, "type": "spindle"},
-            {"article": "2620.060", "max_height": 0.60, "name": "Fussspindel 0.60m", "weight": 4.0, "type": "spindle"},
-            {"article": "2620.080", "max_height": 0.80, "name": "Fussspindel 0.80m", "weight": 5.0, "type": "spindle"},
-            {"article": "2621.100", "max_height": 1.00, "name": "Ausgleichsrahmen 1.00m", "weight": 12.0, "type": "frame"},
-            {"article": "2621.150", "max_height": 1.50, "name": "Ausgleichsrahmen 1.50m", "weight": 15.0, "type": "frame"},
-            {"article": "2621.200", "max_height": 2.00, "name": "Ausgleichsrahmen 2.00m", "weight": 18.5, "type": "frame"},
+            {"article": "4001.060", "max_height": 0.41, "name": "Fußspindel 60", "weight": 3.6, "type": "spindle"},
+            {"article": "4002.080", "max_height": 0.55, "name": "Fußspindel 80 verstärkt", "weight": 4.9, "type": "spindle"},
+            {"article": "4002.110", "max_height": 0.79, "name": "Fußspindel 110 verstärkt", "weight": 6.5, "type": "spindle"},
+            {"article": "4002.130", "max_height": 0.82, "name": "Fußspindel 150 verstärkt", "weight": 10.0, "type": "spindle"},
+            # Ausgleichsrahmen (Rahmen + Spindel 80 kombiniert = max_height)
+            # Gewicht: Rahmen + Spindel 80 (4.9kg)
+            {"article": "1773.066", "max_height": 1.21, "name": "Ausgleichsrahmen 0.66m + Spindel 80", "weight": 14.9, "type": "frame"},
+            {"article": "1773.100", "max_height": 1.55, "name": "Ausgleichsrahmen 1.00m + Spindel 80", "weight": 16.9, "type": "frame"},
+            {"article": "1773.150", "max_height": 2.05, "name": "Ausgleichsrahmen 1.50m + Spindel 80", "weight": 19.9, "type": "frame"},
+            {"article": "1773.200", "max_height": 2.55, "name": "Ausgleichsrahmen 2.00m + Spindel 80", "weight": 23.4, "type": "frame"},
         ]
 
         # Pro Feld berechnen, welche Spindel/Rahmen benötigt wird
@@ -570,7 +577,8 @@ class LayherCatalogService:
                     selected = option
                     break
 
-            # Fallback auf größten Rahmen wenn > 2m
+            # Fallback auf größten Rahmen wenn > 2.05m
+            # Über 2.05m: Spezielle Fundamentierung/Statik-Nachweis empfohlen
             if selected is None:
                 selected = spindle_options[-1]
 

@@ -59,11 +59,22 @@ export interface ProjectBuildingData {
   terrain_z_min?: number | null;
 }
 
+// NEU 23.01.2026: Partielle Blockierung - nur Teile einer Fassade blockiert
+export interface BlockedSegment {
+  start_ratio: number;  // 0.0-1.0 Position auf Fassade (0=Start, 1=Ende)
+  end_ratio: number;    // 0.0-1.0 Position auf Fassade
+  blocker_egid: string;
+  min_distance_m: number;
+}
+
 export interface BlockerInfo {
   facade_index: number;
   egid: string | null;
   distance_m: number;
   direction: string | null;
+  // NEU 23.01.2026: Partielle Blockierung
+  blocked_segments?: BlockedSegment[];
+  fully_blocked?: boolean;  // true wenn >= 90% blockiert
 }
 
 export interface BlockedFacadesData {
@@ -96,6 +107,12 @@ export interface NeighborsData {
   buildings: NeighborBuilding[];
 }
 
+// NEU 25.01.2026: Blocking Neighbors - Nachbarn mit Polygon-zu-Polygon < 2m
+export interface BlockingNeighborsData {
+  count: number;
+  buildings: NeighborBuilding[];
+}
+
 export interface CompleteData {
   status: string;
   duration_ms: number;
@@ -112,6 +129,7 @@ export interface StreamState {
   centroid: CentroidData | null;
   projectBuildings: ProjectBuildingData[] | null;
   blockedFacades: BlockedFacadesData | null;
+  blockingNeighbors: NeighborBuilding[] | null; // NEU 25.01.2026: Polygon-zu-Polygon < 2m
   neighbors: Map<number, NeighborBuilding[]>; // radius -> buildings
   complete: CompleteData | null;
   error: ErrorData | null;
@@ -134,6 +152,7 @@ export function useProjectContextStream() {
     centroid: null,
     projectBuildings: null,
     blockedFacades: null,
+    blockingNeighbors: null, // NEU 25.01.2026
     neighbors: new Map(),
     complete: null,
     error: null,
@@ -177,6 +196,7 @@ export function useProjectContextStream() {
         centroid: null,
         projectBuildings: null,
         blockedFacades: null,
+        blockingNeighbors: null, // NEU 25.01.2026
         neighbors: new Map(),
         complete: null,
         error: null,
@@ -216,6 +236,13 @@ export function useProjectContextStream() {
         const totalBlocked = egids.reduce((sum, egid) => sum + eventData[egid].blocked_indices.length, 0);
         console.log(`[SSE] blocked_facades: ${totalBlocked} blocked across ${egids.length} buildings`);
         setData((prev) => ({ ...prev, blockedFacades: eventData }));
+      });
+
+      // NEU 25.01.2026: Blocking Neighbors - Nachbarn mit Polygon-zu-Polygon < 2m
+      es.addEventListener('blocking_neighbors', (e) => {
+        const eventData: BlockingNeighborsData = JSON.parse(e.data);
+        console.log(`[SSE] blocking_neighbors: ${eventData.count} buildings`);
+        setData((prev) => ({ ...prev, blockingNeighbors: eventData.buildings }));
       });
 
       es.addEventListener('neighbors', (e) => {
@@ -291,6 +318,7 @@ export function useProjectContextStream() {
     centroid: data.centroid,
     projectBuildings: data.projectBuildings,
     blockedFacades: data.blockedFacades,
+    blockingNeighbors: data.blockingNeighbors, // NEU 25.01.2026
     neighbors: data.neighbors,
     isComplete: data.complete !== null,
   };

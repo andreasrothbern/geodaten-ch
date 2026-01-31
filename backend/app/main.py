@@ -3882,35 +3882,6 @@ async def get_building_3d_layers(egid: str):
     return result
 
 
-@app.post("/api/v1/building/{egid}/load-3d-layers",
-          tags=["3D-Layer"])
-async def load_building_3d_layers(
-    egid: str,
-    force: bool = Query(False, description="Erzwingt Neuladen auch wenn vorhanden")
-):
-    """
-    Lädt 3D-Layer (Wall, Floor) on-demand für ein Gebäude.
-
-    Wird automatisch aufgerufen wenn:
-    - Gebäude als COMPLEX klassifiziert ist
-    - 3D-Visualisierung aktiviert wird
-
-    **Ablauf:**
-    1. Tile downloaden (temporär)
-    2. Wall + Floor parsen
-    3. In DB speichern
-    4. has_3d_layers Flag setzen
-
-    **Beispiel:** `POST /api/v1/building/2242547/load-3d-layers`
-    """
-    from app.services.layer_fetcher import get_layer_fetcher_service
-
-    layer_fetcher = get_layer_fetcher_service()
-    result = await layer_fetcher.fetch_3d_layers_for_building(egid, force=force)
-
-    return result
-
-
 @app.get("/api/v1/building/{egid}/roof",
          tags=["3D-Layer"])
 async def get_building_roof(egid: str):

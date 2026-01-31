@@ -107,12 +107,12 @@ export interface HeightsData {
   roof_angle_deg?: number | null;  // Dachneigung in Grad
 }
 
+// FIX 29.01.2026: slope_m/slope_class ENTFERNT (Frontend berechnet aus building_walls.geometry)
 export interface TerrainData {
   terrain_height_m: number | null;
   min_terrain_m?: number;
   max_terrain_m?: number;
-  slope_m?: number;
-  slope_class?: 'eben' | 'leicht' | 'mittel' | 'stark';
+  // DEPRECATED 29.01.2026: slope_m, slope_class - Frontend berechnet aus building_walls.geometry
   // NEU 14.01.2026 (T3/T4) - Fassaden-Höhen aus Wall-Layer
   facade_z_min?: Record<string, number>;
   facade_z_max?: Record<string, number>;
@@ -238,13 +238,12 @@ export interface BuildingDataBundle {
   gwr_area_m2: number | null;
   gwr_category: string | null;
   gwr_category_code: number | null;
-  // Terrain
+  // Terrain - FIX 29.01.2026: slope_m/slope_class ENTFERNT (Frontend berechnet)
   terrain: {
     reference_height_m: number;
     min_height_m: number;
     max_height_m: number;
-    slope_m: number;
-    slope_class: 'eben' | 'leicht' | 'mittel' | 'stark';
+    // DEPRECATED 29.01.2026: slope_m, slope_class - Frontend berechnet aus building_walls.geometry
     // NEU 14.01.2026 (T3/T4) - Fassaden-Höhen aus Wall-Layer
     facade_z_min?: Record<string, number>;
     facade_z_max?: Record<string, number>;

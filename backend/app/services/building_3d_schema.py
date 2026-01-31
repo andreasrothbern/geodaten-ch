@@ -36,10 +36,14 @@ logger = logging.getLogger(__name__)
 # Für das Hauptgebäude erfolgt exakte Berechnung via Terrain-Sampling.
 # Für Nachbarn reicht die Schätzung aus swissBUILDINGS3D.
 # NEU 17.01.2026: Terrain-Felder für prefetch_neighbors() Enrichment
+# NEU 31.01.2026: polygon JSON → geom GEOMETRY (DuckDB Spatial Extension)
+#   - R-Tree Index für schnelle Point-in-Polygon Queries
+#   - ST_Contains, ST_DWithin statt Python Ray-Casting
+#   - ST_AsGeoJSON für Frontend-Kompatibilität
 BUILDINGS_3D_TABLE = """
 CREATE TABLE IF NOT EXISTS buildings_3d (
     egid INTEGER PRIMARY KEY,
-    polygon {json_type},
+    geom GEOMETRY,
     traufhoehe_m {float_type},
     firsthoehe_m {float_type},
     gebaeudehoehe_m {float_type},
@@ -122,6 +126,7 @@ CREATE TABLE IF NOT EXISTS import_log (
 # Indizes
 # NEU 13.01.2026 19:15: gebaeudeeinheit ist jetzt PRIMARY KEY, kein Index nötig
 # NEU 17.01.2026: idx_buildings_3d_enrichment für prefetch_neighbors() Abfragen
+# NEU 31.01.2026: Spatial Index separat (RTREE-Syntax)
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_coords ON buildings_3d(center_e, center_n)",
     "CREATE INDEX IF NOT EXISTS idx_buildings_3d_tile ON buildings_3d(tile_id)",
@@ -131,6 +136,11 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_roofs_egid ON building_roofs(egid)",
     "CREATE INDEX IF NOT EXISTS idx_walls_egid ON building_walls(egid)",
     "CREATE INDEX IF NOT EXISTS idx_floors_egid ON building_floors(egid)",
+]
+
+# NEU 31.01.2026: Spatial Index wird separat erstellt (andere Syntax)
+SPATIAL_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_buildings_3d_geom ON buildings_3d USING RTREE(geom)",
 ]
 
 # =============================================================================
@@ -202,11 +212,44 @@ def init_duckdb_schema() -> None:
             sql = _get_formatted_sql(table_sql, use_duckdb=True)
             conn.execute(sql)
 
-        # Indizes erstellen
+        # FIX 24.01.2026: Indizes bei DuckDB immer neu erstellen (Korruptionsproblem)
+        # DROP + CREATE statt nur CREATE IF NOT EXISTS
         for index_sql in INDEXES:
-            conn.execute(index_sql)
+            # Extrahiere Index-Name aus SQL
+            # Format: "CREATE INDEX IF NOT EXISTS idx_name ON ..."
+            parts = index_sql.split()
+            if "IF" in parts and "NOT" in parts:
+                idx_name = parts[5]  # idx_name ist nach "EXISTS"
+            else:
+                idx_name = parts[2]  # idx_name ist nach "INDEX"
 
-    logger.info(f"[SCHEMA] DuckDB-Schema initialisiert: {BUILDING_3D_DUCKDB_PATH}")
+            # Drop und neu erstellen
+            conn.execute(f"DROP INDEX IF EXISTS {idx_name}")
+            # Entferne "IF NOT EXISTS" und erstelle neu
+            clean_sql = index_sql.replace("IF NOT EXISTS ", "")
+            conn.execute(clean_sql)
+
+        # NEU 31.01.2026: Spatial Indexes (RTREE) erstellen
+        for spatial_sql in SPATIAL_INDEXES:
+            parts = spatial_sql.split()
+            if "IF" in parts and "NOT" in parts:
+                idx_name = parts[5]
+            else:
+                idx_name = parts[2]
+
+            # Drop und neu erstellen
+            conn.execute(f"DROP INDEX IF EXISTS {idx_name}")
+            clean_sql = spatial_sql.replace("IF NOT EXISTS ", "")
+            try:
+                conn.execute(clean_sql)
+                logger.info(f"[SCHEMA] Spatial Index erstellt: {idx_name}")
+            except Exception as e:
+                logger.warning(f"[SCHEMA] Spatial Index {idx_name} fehlgeschlagen: {e}")
+
+        # Checkpoint für Persistenz
+        conn.execute("CHECKPOINT")
+
+    logger.info(f"[SCHEMA] DuckDB-Schema initialisiert (Indizes rebuilt): {BUILDING_3D_DUCKDB_PATH}")
 
 
 def init_schema() -> None:

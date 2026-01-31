@@ -2163,35 +2163,32 @@ async def prefetch_and_cleanup(
     skip_egids: Optional[List[int]] = None
 ) -> int:
     """
-    Non-blocking Background-Prefetch für den Rest des Tiles.
+    Non-blocking 2-stufiger Background-Prefetch.
 
-    NEU 31.01.2026: Ersetzt schedule_prefetch_with_neighbors().
+    NEU 31.01.2026: 3-Stufen-Architektur für schnellere has_3d_layers=1:
+    - STUFE 1: Angefragtes Gebäude (bereits in SSE-Pipeline, ~50ms)
+    - STUFE 2: Nachbarn 100m Radius (hier, ~1.8s) → schnell für Nachbar-Klicks!
+    - STUFE 3: Rest des Tiles (hier, ~86s) → vollständige Tile-Abdeckung
+
     Diese Funktion läuft als Background-Task NACH dem SSE POLYGON Event.
-
-    Ablauf:
-    1. Tile herunterladen falls nicht vorhanden
-    2. Alle Gebäude via Parquet-Pipeline importieren
-    3. GDB aufräumen nach Import (wenn CLEANUP_TILES_AFTER_IMPORT=True)
-
-    Die skip_egids werden NICHT mehr gefiltert - die Parquet-Pipeline
-    überschreibt keine Gebäude mit has_3d_layers=1.
-
-    WICHTIG: Diese Funktion ist fire-and-forget. Sie blockiert NICHT
-    den SSE-Stream. Das GDB wird 2x geöffnet:
-    - 1x für das Haupt-Objekt (bbox-Filter, schnell ~280ms)
-    - 1x hier für den Rest (vollständiger Import)
 
     Args:
         tile_id: Tile-Referenz (z.B. "1088-22")
-        center_e: LV95 Easting (für Logging)
-        center_n: LV95 Northing (für Logging)
-        skip_egids: Ignoriert (Kompatibilität, wird nicht mehr verwendet)
+        center_e: LV95 Easting für Stufe 2 Radius-Berechnung
+        center_n: LV95 Northing für Stufe 2 Radius-Berechnung
+        skip_egids: EGIDs die bereits importiert wurden (Stufe 1)
 
     Returns:
-        Anzahl importierter Gebäude
+        Anzahl importierter Gebäude (Stufe 2 + Stufe 3)
     """
     start_time = time.time()
-    logger.info(f"[PREFETCH] Background-Task gestartet für Tile {tile_id} (center={center_e:.0f},{center_n:.0f})")
+    skip_egids_set = set(skip_egids or [])
+    total_saved = 0
+
+    logger.info(
+        f"[PREFETCH] Background-Task gestartet für Tile {tile_id} "
+        f"(center={center_e:.0f},{center_n:.0f}, skip={len(skip_egids_set)} EGIDs)"
+    )
 
     try:
         # GDB-Pfad holen (lädt ggf. neu herunter wenn 'cleaned')
@@ -2209,23 +2206,70 @@ async def prefetch_and_cleanup(
             logger.warning(f"[PREFETCH] Konnte GDB für Tile {tile_id} nicht laden")
             return 0
 
-        # prefetch_tile_buildings_async macht alles:
-        # - Prüft ob bereits importiert (status != 'pending')
-        # - Parquet-Pipeline (GDB → Parquet → DuckDB)
-        # - Cleanup (GDB löschen wenn CLEANUP_TILES_AFTER_IMPORT=True)
+        # ════════════════════════════════════════════════════════════════
+        # STUFE 2: Nachbarn im 100m Radius (~1.8s)
+        # ════════════════════════════════════════════════════════════════
+        stage2_start = time.time()
+
+        from .parquet_writer import import_buildings_in_radius
+
+        stage2_result = await import_buildings_in_radius(
+            gdb_path=gdb_path,
+            center_e=center_e,
+            center_n=center_n,
+            radius_m=100.0,  # 100m Radius für Nachbarn
+            tile_id=tile_id,
+            exclude_egids=skip_egids_set,
+            cleanup_after=True
+        )
+
+        stage2_ms = (time.time() - stage2_start) * 1000
+        stage2_count = stage2_result.get('buildings_count', 0)
+        stage2_egids = set(stage2_result.get('egids', []))
+
+        if stage2_count > 0:
+            total_saved += stage2_count
+            logger.info(
+                f"[PREFETCH] STUFE 2 abgeschlossen: {stage2_count} Nachbarn "
+                f"im 100m Radius ({stage2_ms:.0f}ms) → has_3d_layers=1"
+            )
+        else:
+            logger.info(f"[PREFETCH] STUFE 2: Keine neuen Nachbarn im 100m Radius")
+
+        # EGIDs für Stufe 3 Skip-Liste erweitern
+        skip_egids_set.update(stage2_egids)
+
+        # ════════════════════════════════════════════════════════════════
+        # STUFE 3: Rest des Tiles (~86s)
+        # ════════════════════════════════════════════════════════════════
+        # Die Parquet-Pipeline hat UPSERT mit WHERE has_3d_layers=0,
+        # daher werden Stufe 1+2 Gebäude NICHT überschrieben.
+        stage3_start = time.time()
+
         saved_count = await prefetch_tile_buildings_async(
             tile_id=tile_id,
             gdb_path=gdb_path,
-            exclude_egids=None  # Wird ignoriert bei Parquet-Pipeline
+            exclude_egids=None  # Parquet-Pipeline schützt has_3d_layers=1
+        )
+
+        stage3_ms = (time.time() - stage3_start) * 1000
+        # Anzahl neuer Gebäude (abzüglich bereits importierter)
+        stage3_new = max(0, saved_count - len(skip_egids_set))
+        total_saved += stage3_new
+
+        logger.info(
+            f"[PREFETCH] STUFE 3 abgeschlossen: {saved_count} total, "
+            f"{stage3_new} neue ({stage3_ms:.0f}ms)"
         )
 
         elapsed_ms = (time.time() - start_time) * 1000
         logger.info(
-            f"[PREFETCH] Background-Task abgeschlossen: {tile_id} | "
-            f"{saved_count} Gebäude | {elapsed_ms:.0f}ms"
+            f"[PREFETCH] Background-Task KOMPLETT: {tile_id} | "
+            f"Stufe2={stage2_count}, Stufe3={stage3_new}, Total={total_saved} | "
+            f"{elapsed_ms:.0f}ms"
         )
 
-        return saved_count
+        return total_saved
 
     except Exception as e:
         elapsed_ms = (time.time() - start_time) * 1000

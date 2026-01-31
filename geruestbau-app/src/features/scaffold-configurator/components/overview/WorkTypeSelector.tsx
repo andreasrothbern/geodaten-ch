@@ -10,6 +10,7 @@ interface WorkTypeSelectorProps {
   onChange: (type: WorkType) => void;
 }
 
+// FIX 27.01.2026: 'full' (Komplett) ersetzt durch 'roofer' (Spengler)
 const WORK_TYPES: {
   id: WorkType;
   label: string;
@@ -29,9 +30,9 @@ const WORK_TYPES: {
     icon: <Home className="w-4 h-4" />,
   },
   {
-    id: 'full',
-    label: 'Komplett',
-    description: 'Bis First',
+    id: 'roofer',
+    label: 'Spengler',
+    description: 'First -1m',
     icon: <Maximize2 className="w-4 h-4" />,
   },
 ];

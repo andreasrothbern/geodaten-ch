@@ -12,15 +12,38 @@ import { SCAFFOLD_CONSTANTS } from '../types/scaffold.types';
 
 /**
  * Calculate target height based on work type
+ * FIX 27.01.2026: 'full' ersetzt durch 'roofer' (Spengler)
+ *
+ * @param baseHeight - Traufhöhe (base_height_m)
+ * @param workType - Art der Arbeiten
+ * @param firstHeight - Optional: Firsthöhe für Spengler (first_height_m)
+ * @param isGiebel - Optional: Ist es eine Giebel-Fassade?
+ * @param giebelHeight - Optional: Höhe des Giebel-Dreiecks
  */
-export function calculateTargetHeight(baseHeight: number, workType: WorkType): number {
+export function calculateTargetHeight(
+  baseHeight: number,
+  workType: WorkType,
+  firstHeight?: number,
+  isGiebel?: boolean,
+  giebelHeight?: number
+): number {
   switch (workType) {
     case 'facade':
-      return baseHeight; // Up to eaves
+      return baseHeight; // Up to eaves (Traufe)
     case 'roof':
-      return baseHeight + 1.0; // +1m fall protection
-    case 'full':
-      return baseHeight + 2.5; // Up to ridge
+      return baseHeight + 1.0; // +1m fall protection (Absturzsicherung)
+    case 'roofer':
+      // Spengler: Gerüst bis First - 1m
+      if (isGiebel && giebelHeight && giebelHeight > 0) {
+        // Giebel-Fassade: Trapez-Form (base + giebel - 1m)
+        return baseHeight + giebelHeight - 1.0;
+      } else if (firstHeight && firstHeight > baseHeight) {
+        // Trauf-Fassade: Rechteck bis First - 1m
+        return firstHeight - 1.0;
+      } else {
+        // Fallback: baseHeight + 2m (geschätzte Giebelhöhe)
+        return baseHeight + 2.0;
+      }
     default:
       return baseHeight;
   }
@@ -144,6 +167,7 @@ export function formatWeight(weightKg: number): string {
 
 /**
  * Get work type display info
+ * FIX 27.01.2026: 'full' ersetzt durch 'roofer' (Spengler)
  */
 export function getWorkTypeInfo(workType: WorkType): { label: string; description: string; icon: string } {
   switch (workType) {
@@ -151,8 +175,8 @@ export function getWorkTypeInfo(workType: WorkType): { label: string; descriptio
       return { label: 'Fassade', description: 'Bis Traufe', icon: 'building' };
     case 'roof':
       return { label: 'Dacharbeiten', description: '+1m Schutz', icon: 'home' };
-    case 'full':
-      return { label: 'Komplett', description: 'Bis First', icon: 'expand-alt' };
+    case 'roofer':
+      return { label: 'Spengler', description: 'First -1m', icon: 'expand-alt' };
   }
 }
 

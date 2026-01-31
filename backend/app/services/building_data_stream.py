@@ -599,26 +599,66 @@ class BuildingDataStreamService:
                 )
 
             # ════════════════════════════════════════════════════════════
-            # FIX 31.01.2026: Non-blocking Background-Prefetch
-            # Läuft parallel zu Steps 4-8 (HEIGHTS, TERRAIN, ZONES, etc.)
+            # NEU 31.01.2026: 3-Stufen-Import für has_3d_layers=1
+            # ════════════════════════════════════════════════════════════
+            # STUFE 1: Angefragte Gebäude SOFORT speichern (~50ms pro Gebäude)
+            #          → has_3d_layers=1 noch VOR dem Heights-Event!
+            # STUFE 2+3: Nachbarn + Rest im Background (prefetch_and_cleanup)
             # ════════════════════════════════════════════════════════════
             if bundles and bundles[0].lv95_e and bundles[0].lv95_n:
-                from .tile_prefetch import prefetch_and_cleanup
-                from .tile_cache import lv95_to_tile_id
+                from .tile_cache import lv95_to_tile_id, get_tile_cache
+                from .parquet_writer import import_single_building
+                from pathlib import Path
 
                 center_e, center_n = bundles[0].lv95_e, bundles[0].lv95_n
                 tile_id = lv95_to_tile_id(center_e, center_n)
 
-                # Fire-and-forget: GDB erneut öffnen, Rest laden, aufräumen
+                # GDB-Pfad holen
+                tile_cache = get_tile_cache()
+                gdb_path_str = tile_cache.get_tile_for_coordinates(center_e, center_n)
+                gdb_path = Path(gdb_path_str) if gdb_path_str else None
+
+                # STUFE 1: Jedes angefragte Gebäude sofort speichern
+                if gdb_path and gdb_path.exists():
+                    for bundle in bundles:
+                        if bundle.egid:
+                            try:
+                                egid_int = int(bundle.egid)
+                                t_import_start = time.time()
+
+                                # Single-Building Import (Building + Roof + Wall → DB)
+                                import_result = await import_single_building(
+                                    gdb_path=gdb_path,
+                                    egid=egid_int,
+                                    tile_id=tile_id,
+                                    cleanup_after=True
+                                )
+
+                                t_import_end = time.time()
+                                import_ms = round((t_import_end - t_import_start) * 1000)
+
+                                if import_result.get('success'):
+                                    # has_3d_layers=1 ist jetzt in der DB gesetzt!
+                                    bundle.has_3d_layers = True
+                                    print(f"[SSE-TIMING] STUFE 1: EGID {egid_int} importiert ({import_ms}ms) → has_3d_layers=1", flush=True)
+                                else:
+                                    print(f"[SSE-TIMING] STUFE 1: EGID {egid_int} nicht gefunden ({import_result.get('reason')})", flush=True)
+
+                            except (ValueError, TypeError) as e:
+                                print(f"[SSE-TIMING] STUFE 1: EGID {bundle.egid} ungültig: {e}", flush=True)
+
+                # STUFE 2+3: Nachbarn + Rest im Background
+                from .tile_prefetch import prefetch_and_cleanup
+
                 asyncio.create_task(
                     prefetch_and_cleanup(
                         tile_id=tile_id,
                         center_e=center_e,
                         center_n=center_n,
-                        skip_egids=loaded_egids
+                        skip_egids=loaded_egids  # Die gerade importierten überspringen
                     )
                 )
-                print(f"[SSE-TIMING] Background prefetch_and_cleanup started for tile {tile_id}", flush=True)
+                print(f"[SSE-TIMING] STUFE 2+3: Background prefetch_and_cleanup started for tile {tile_id}", flush=True)
 
             # ═══════════════════════════════════════════════════════════════
             # 4. HEIGHTS (separates Event)
@@ -679,7 +719,9 @@ class BuildingDataStreamService:
                 terrain_results = []
 
                 for bundle in bundles:
-                    await smart._collect_terrain_data(bundle)
+                    # DISABLED 31.01.2026: swissALTI3D Call deaktiviert - Daten ungenau
+                    # Frontend berechnet Terrain aus building_walls.geometry Z-Koordinaten
+                    # await smart._collect_terrain_data(bundle)
 
                     # FIX 29.01.2026: DEPRECATED slope_m/slope_class ENTFERNT
                     # Frontend berechnet aus building_walls.geometry Z-Koordinaten

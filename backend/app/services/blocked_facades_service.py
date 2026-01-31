@@ -33,12 +33,30 @@ class BlockerInfo:
     direction: str  # N, NE, E, SE, S, SW, W, NW
 
 
+# NEU 22.01.2026: Partielle Blockierung statt ganze Fassaden
+@dataclass
+class BlockedSegment:
+    """Ein blockiertes Segment einer Fassade (Teilstück)."""
+    start_ratio: float  # 0.0-1.0 Position auf Fassade (0=Start, 1=Ende)
+    end_ratio: float    # 0.0-1.0 Position auf Fassade
+    blocker_egid: str
+    min_distance_m: float
+
+    @property
+    def length_ratio(self) -> float:
+        """Anteil der blockierten Fassadenlänge (0-1)."""
+        return self.end_ratio - self.start_ratio
+
+
 @dataclass
 class BlockedFacade:
-    """Eine blockierte Fassade."""
+    """Eine (teilweise) blockierte Fassade."""
     facade_index: int  # 0-basiert, entspricht Polygon-Kante
     blockers: List[BlockerInfo] = field(default_factory=list)
     min_distance_m: float = 0.0
+    # NEU 22.01.2026: Partielle Blockierung
+    blocked_segments: List[BlockedSegment] = field(default_factory=list)
+    fully_blocked: bool = False  # True wenn >= 90% blockiert
 
 
 @dataclass
@@ -118,12 +136,12 @@ class BlockedFacadesService:
             exclude_egids
         )
 
-        # 4. Für jede Fassade prüfen ob blockiert
+        # 4. Für jede Fassade prüfen ob blockiert (inkl. partielle Blockierung)
         blocked_facades = []
         blocked_indices = []
 
         for idx, facade in enumerate(facades):
-            blockers = self._check_facade_blocked(
+            blockers, blocked_segments = self._check_facade_blocked(
                 facade,
                 neighbors,
                 threshold_m,
@@ -132,10 +150,19 @@ class BlockedFacadesService:
 
             if blockers:
                 min_dist = min(b.distance_m for b in blockers)
+
+                # NEU 22.01.2026: Berechne ob fully_blocked (>= 90% blockiert)
+                total_blocked_ratio = sum(
+                    seg.length_ratio for seg in blocked_segments
+                )
+                fully_blocked = total_blocked_ratio >= 0.9
+
                 blocked_facades.append(BlockedFacade(
                     facade_index=idx,
                     blockers=blockers,
-                    min_distance_m=min_dist
+                    min_distance_m=min_dist,
+                    blocked_segments=blocked_segments,
+                    fully_blocked=fully_blocked
                 ))
                 blocked_indices.append(idx)
 
@@ -320,9 +347,12 @@ class BlockedFacadesService:
         threshold_m: float,
         ref_e: float,
         ref_n: float
-    ) -> List[BlockerInfo]:
+    ) -> Tuple[List[BlockerInfo], List[BlockedSegment]]:
         """
         Prüft ob eine Fassade durch Nachbar-Polygone blockiert ist.
+
+        NEU 22.01.2026: Berechnet auch PARTIELLE Blockierung (nur der Teil
+        der effektiv blockiert ist, nicht die ganze Fassade).
 
         Args:
             facade: (start, end) Koordinaten der Fassade
@@ -331,9 +361,10 @@ class BlockedFacadesService:
             ref_e, ref_n: Referenzpunkt für Richtungsberechnung
 
         Returns:
-            Liste der blockierenden Gebäude
+            Tuple von (blockers, blocked_segments)
         """
         blockers = []
+        all_blocked_segments = []
         (x1, y1), (x2, y2) = facade
 
         # Mittelpunkt der Fassade
@@ -359,7 +390,159 @@ class BlockedFacadesService:
                     direction=direction
                 ))
 
-        return blockers
+                # NEU: Partielle Blockierung berechnen
+                segments = self._calculate_blocked_segments(
+                    facade, neighbor_polygon, neighbor['egid'], threshold_m
+                )
+                all_blocked_segments.extend(segments)
+
+        # Merge überlappende Segmente
+        merged_segments = self._merge_overlapping_segments(all_blocked_segments)
+
+        return blockers, merged_segments
+
+    def _calculate_blocked_segments(
+        self,
+        facade: Tuple[Tuple[float, float], Tuple[float, float]],
+        neighbor_polygon: List,
+        neighbor_egid: str,
+        threshold_m: float,
+        sample_interval_m: float = 0.5
+    ) -> List[BlockedSegment]:
+        """
+        Berechnet welche Segmente einer Fassade durch ein Nachbar-Polygon blockiert sind.
+
+        NEU 22.01.2026: Partielle Blockierung für Knospenweg-Use-Case.
+
+        Methode: Sample die Fassade in regelmässigen Abständen und prüfe für
+        jeden Punkt die Distanz zum Nachbar-Polygon.
+
+        Args:
+            facade: (start, end) Koordinaten der Fassade
+            neighbor_polygon: Polygon des blockierenden Gebäudes
+            neighbor_egid: EGID des Blockers
+            threshold_m: Distanz-Schwellenwert
+            sample_interval_m: Abstand zwischen Sample-Punkten (Standard: 50cm)
+
+        Returns:
+            Liste von BlockedSegment (zusammenhängende blockierte Bereiche)
+        """
+        (x1, y1), (x2, y2) = facade
+
+        # Fassadenlänge berechnen
+        facade_length = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+        if facade_length < 0.1:
+            return []  # Zu kurze Fassade
+
+        # Anzahl Sample-Punkte (mindestens 10, maximal 100)
+        num_samples = max(10, min(100, int(facade_length / sample_interval_m) + 1))
+
+        # Für jeden Sample-Punkt: prüfe Distanz zum Nachbar-Polygon
+        blocked_ratios = []  # Liste von (ratio, distance) für blockierte Punkte
+
+        for i in range(num_samples):
+            t = i / (num_samples - 1) if num_samples > 1 else 0.5
+
+            # Punkt auf der Fassade bei ratio t
+            px = x1 + t * (x2 - x1)
+            py = y1 + t * (y2 - y1)
+
+            # Distanz dieses Punkts zum Nachbar-Polygon
+            dist = self._point_to_polygon_distance((px, py), neighbor_polygon)
+
+            if dist < threshold_m:
+                blocked_ratios.append((t, dist))
+
+        if not blocked_ratios:
+            return []
+
+        # Zusammenhängende blockierte Bereiche finden
+        segments = []
+        current_start = blocked_ratios[0][0]
+        current_min_dist = blocked_ratios[0][1]
+        prev_t = blocked_ratios[0][0]
+
+        # Toleranz für "zusammenhängend" (2 Sample-Intervalle)
+        gap_tolerance = 2.0 / (num_samples - 1) if num_samples > 1 else 1.0
+
+        for t, dist in blocked_ratios[1:]:
+            if t - prev_t > gap_tolerance:
+                # Lücke gefunden - vorheriges Segment abschliessen
+                segments.append(BlockedSegment(
+                    start_ratio=round(current_start, 3),
+                    end_ratio=round(prev_t, 3),
+                    blocker_egid=neighbor_egid,
+                    min_distance_m=round(current_min_dist, 2)
+                ))
+                current_start = t
+                current_min_dist = dist
+            else:
+                current_min_dist = min(current_min_dist, dist)
+            prev_t = t
+
+        # Letztes Segment
+        segments.append(BlockedSegment(
+            start_ratio=round(current_start, 3),
+            end_ratio=round(prev_t, 3),
+            blocker_egid=neighbor_egid,
+            min_distance_m=round(current_min_dist, 2)
+        ))
+
+        return segments
+
+    def _point_to_polygon_distance(
+        self,
+        point: Tuple[float, float],
+        polygon: List
+    ) -> float:
+        """Berechnet minimale Distanz von einem Punkt zu einem Polygon."""
+        min_dist = float('inf')
+        n = len(polygon)
+
+        for i in range(n):
+            p1 = self._get_coords(polygon[i])
+            p2 = self._get_coords(polygon[(i + 1) % n])
+            dist = self._point_to_segment_distance(point, p1, p2)
+            min_dist = min(min_dist, dist)
+
+        return min_dist
+
+    def _merge_overlapping_segments(
+        self,
+        segments: List[BlockedSegment]
+    ) -> List[BlockedSegment]:
+        """
+        Merged überlappende Segmente (von verschiedenen Blockern).
+
+        Wenn mehrere Blocker denselben Bereich blockieren, wird ein
+        gemeinsames Segment mit dem nächsten Blocker erstellt.
+        """
+        if not segments:
+            return []
+
+        # Sortiere nach start_ratio
+        sorted_segs = sorted(segments, key=lambda s: s.start_ratio)
+
+        merged = []
+        current = sorted_segs[0]
+
+        for seg in sorted_segs[1:]:
+            # Überlappung oder direkt angrenzend?
+            if seg.start_ratio <= current.end_ratio + 0.01:
+                # Merge: erweitere das aktuelle Segment
+                current = BlockedSegment(
+                    start_ratio=current.start_ratio,
+                    end_ratio=max(current.end_ratio, seg.end_ratio),
+                    blocker_egid=current.blocker_egid if current.min_distance_m <= seg.min_distance_m else seg.blocker_egid,
+                    min_distance_m=min(current.min_distance_m, seg.min_distance_m)
+                )
+            else:
+                # Keine Überlappung - vorheriges Segment abschliessen
+                merged.append(current)
+                current = seg
+
+        merged.append(current)
+        return merged
 
     def _facade_to_polygon_distance(
         self,

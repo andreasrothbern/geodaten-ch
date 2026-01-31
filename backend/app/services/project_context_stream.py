@@ -189,6 +189,7 @@ class ProjectContextStreamService:
                 print(f"[SSE] blocked_results: {list(blocked_results.keys())} - blocked: {[(k, v.blocked_indices) for k,v in blocked_results.items()]}")
 
                 # Formatieren für Frontend
+                # NEU 22.01.2026: blocked_segments für partielle Blockierung
                 blocked_data = {}
                 for egid, result in blocked_results.items():
                     blocked_data[egid] = {
@@ -200,7 +201,19 @@ class ProjectContextStreamService:
                                 "facade_index": bf.facade_index,
                                 "egid": bf.blockers[0].egid if bf.blockers else None,
                                 "distance_m": bf.min_distance_m,
-                                "direction": bf.blockers[0].direction if bf.blockers else None
+                                "direction": bf.blockers[0].direction if bf.blockers else None,
+                                # NEU 22.01.2026: Partielle Blockierung
+                                "fully_blocked": bf.fully_blocked,
+                                "blocked_segments": [
+                                    {
+                                        "start_ratio": seg.start_ratio,
+                                        "end_ratio": seg.end_ratio,
+                                        "blocker_egid": seg.blocker_egid,
+                                        "min_distance_m": seg.min_distance_m,
+                                        "length_ratio": seg.length_ratio
+                                    }
+                                    for seg in bf.blocked_segments
+                                ]
                             }
                             for bf in result.blocked_facades
                         ]
@@ -210,6 +223,53 @@ class ProjectContextStreamService:
                     event="blocked_facades",
                     data=blocked_data
                 )
+
+                # ===============================
+                # 4b. Blocking Neighbors senden (NEU 25.01.2026)
+                # ===============================
+                # Sammle alle Nachbarn die Fassaden blockieren (Polygon-zu-Polygon < 2m)
+                # Diese haben bereits korrekte Polygon-Distanzen aus _find_neighbors()
+                blocking_neighbors_set = set()
+                for egid, result in blocked_results.items():
+                    for bf in result.blocked_facades:
+                        for blocker in bf.blockers:
+                            blocking_neighbors_set.add(blocker.egid)
+
+                if blocking_neighbors_set:
+                    # Lade die Polygon-Daten für die blockierenden Nachbarn
+                    blocking_neighbors_data = []
+                    for blocker_egid in blocking_neighbors_set:
+                        blocker_building = self._load_building(str(blocker_egid))
+                        if blocker_building and blocker_building.get('polygon'):
+                            # Berechne Distanz zum Projekt-Centroid (für Sortierung)
+                            b_center_e = blocker_building.get('center_e', 0)
+                            b_center_n = blocker_building.get('center_n', 0)
+                            dx = b_center_e - center_e
+                            dy = b_center_n - center_n
+                            center_dist = round((dx*dx + dy*dy)**0.5, 2)
+
+                            blocking_neighbors_data.append({
+                                "egid": blocker_building['egid'],
+                                "polygon": blocker_building['polygon'],
+                                "center_e": b_center_e,
+                                "center_n": b_center_n,
+                                "distance_m": center_dist,  # Center distance for sorting
+                                "traufhoehe_m": blocker_building.get('traufhoehe_m'),
+                                "firsthoehe_m": blocker_building.get('firsthoehe_m'),
+                                "gebaeudehoehe_m": blocker_building.get('gebaeudehoehe_m'),
+                            })
+
+                    # Sortieren nach Distanz
+                    blocking_neighbors_data.sort(key=lambda x: x['distance_m'])
+
+                    yield SSEEvent(
+                        event="blocking_neighbors",
+                        data={
+                            "count": len(blocking_neighbors_data),
+                            "buildings": blocking_neighbors_data
+                        }
+                    )
+                    print(f"[SSE] blocking_neighbors: {len(blocking_neighbors_data)} buildings")
 
             # ===============================
             # 5. Nachbarn in Schichten laden
@@ -307,31 +367,16 @@ class ProjectContextStreamService:
         """
         Berechnet geometrischen Mittelpunkt aller Projekt-Gebäude.
 
+        FIX 30.01.2026: Delegiert an zentralisierte Funktion in object_geometry.py
+
         Args:
             buildings: Liste von Building-Dicts mit center_e, center_n
 
         Returns:
             (center_e, center_n) Tuple
         """
-        if not buildings:
-            return (0.0, 0.0)
-
-        total_e = 0.0
-        total_n = 0.0
-        count = 0
-
-        for b in buildings:
-            e = b.get('center_e')
-            n = b.get('center_n')
-            if e and n:
-                total_e += e
-                total_n += n
-                count += 1
-
-        if count == 0:
-            return (0.0, 0.0)
-
-        return (total_e / count, total_n / count)
+        from .object_geometry import calculate_centroid_from_buildings
+        return calculate_centroid_from_buildings(buildings)
 
     def _load_building(self, egid: str) -> Optional[Dict[str, Any]]:
         """Lädt Gebäude aus building_3d.db."""

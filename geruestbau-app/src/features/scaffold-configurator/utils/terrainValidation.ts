@@ -18,33 +18,38 @@ import type { TerrainProfilePoint } from './polygonSimplifier';
 
 /**
  * Fussspindel-Varianten (Verstellbereich)
- * Artikelnummern aus create_layher_catalog.py
+ * Artikelnummern aus Layher Blitz Katalog 2025/2026
+ * FIX 28.01.2026: Korrigierte Art.-Nr. und max. Höhen gemäss Katalog
  */
 export const SPINDLE_VARIANTS = {
-  SPINDLE_40: { artNr: '2620.040', maxHeight_m: 0.40, name: 'Fussspindel 0.40m' },
-  SPINDLE_60: { artNr: '2620.060', maxHeight_m: 0.60, name: 'Fussspindel 0.60m' },
-  SPINDLE_80: { artNr: '2620.080', maxHeight_m: 0.80, name: 'Fussspindel 0.80m' },
+  SPINDLE_60: { artNr: '4001.060', maxHeight_m: 0.41, name: 'Fußspindel 60' },
+  SPINDLE_80: { artNr: '4002.080', maxHeight_m: 0.55, name: 'Fußspindel 80 verstärkt' },
+  SPINDLE_110: { artNr: '4002.110', maxHeight_m: 0.79, name: 'Fußspindel 110 verstärkt' },
+  SPINDLE_150: { artNr: '4002.130', maxHeight_m: 0.82, name: 'Fußspindel 150 verstärkt' },
 } as const;
 
 /**
  * Ausgleichsrahmen für Hanglagen (wenn Spindel nicht reicht)
+ * FIX 28.01.2026: Korrigierte Art.-Nr. und kombinierten max. Ausgleich (Rahmen + Spindel 80)
  */
 export const LEVELING_FRAMES = {
-  FRAME_100: { artNr: '2621.100', height_m: 1.00, name: 'Ausgleichsrahmen 1.00m', forSlope: '0.8-1.0m' },
-  FRAME_150: { artNr: '2621.150', height_m: 1.50, name: 'Ausgleichsrahmen 1.50m', forSlope: '1.0-1.5m' },
-  FRAME_200: { artNr: '2621.200', height_m: 2.00, name: 'Ausgleichsrahmen 2.00m', forSlope: '1.5-2.0m' },
+  FRAME_066: { artNr: '1773.066', height_m: 0.66, name: 'Ausgleichsrahmen 0.66m', forSlope: 'bis 1.21m (+ Spindel 80)' },
+  FRAME_100: { artNr: '1773.100', height_m: 1.00, name: 'Ausgleichsrahmen 1.00m', forSlope: 'bis 1.55m (+ Spindel 80)' },
+  FRAME_150: { artNr: '1773.150', height_m: 1.50, name: 'Ausgleichsrahmen 1.50m', forSlope: 'bis 2.05m (+ Spindel 80)' },
+  FRAME_200: { artNr: '1773.200', height_m: 2.00, name: 'Ausgleichsrahmen 2.00m', forSlope: 'bis 2.55m (+ Spindel 80)' },
 } as const;
 
 /**
  * Hanglage-Klassifikation (aus data-flow.md)
+ * FIX 28.01.2026: Angepasst an Layher Spindel-Kapazitäten
  */
 export type SlopeClass = 'eben' | 'leicht' | 'mittel' | 'stark';
 
 export const SLOPE_THRESHOLDS = {
-  EBEN_MAX: 0.5,      // < 0.5m = kein Höhenausgleich nötig
-  LEICHT_MAX: 1.5,    // 0.5-1.5m = Stellspindeln reichen
-  MITTEL_MAX: 3.0,    // 1.5-3.0m = Ausgleichsrahmen nötig
-  // > 3.0m = spezielle Fundamentierung (stark)
+  EBEN_MAX: 0.41,     // ≤ 41cm = Fußspindel 60 reicht (Standard)
+  LEICHT_MAX: 0.82,   // ≤ 82cm = Fußspindel 150 reicht (grösste Spindel)
+  MITTEL_MAX: 2.55,   // ≤ 2.55m = Ausgleichsrahmen 2.00m + Spindel 80 (55cm)
+  // > 2.55m = spezielle Fundamentierung (stark)
 } as const;
 
 /**
@@ -101,6 +106,7 @@ export function classifySlope(terrainDiff_m: number): SlopeClass {
 
 /**
  * Ermittelt die benötigte Spindel-Variante für eine Höhendifferenz
+ * FIX 28.01.2026: Korrigierte Schwellenwerte gemäss Layher Katalog
  */
 export function getRequiredSpindle(heightDiff_m: number): {
   spindle: typeof SPINDLE_VARIANTS[keyof typeof SPINDLE_VARIANTS] | null;
@@ -109,33 +115,53 @@ export function getRequiredSpindle(heightDiff_m: number): {
 } {
   const diff = Math.abs(heightDiff_m);
 
-  // Stellspindeln reichen
-  if (diff <= SPINDLE_VARIANTS.SPINDLE_40.maxHeight_m) {
-    return { spindle: SPINDLE_VARIANTS.SPINDLE_40, needsLevelingFrame: false };
-  }
+  // Stellspindeln reichen (gemäss Katalog max. Spindelweg)
   if (diff <= SPINDLE_VARIANTS.SPINDLE_60.maxHeight_m) {
+    // ≤ 41cm: Standard-Fußspindel 60
     return { spindle: SPINDLE_VARIANTS.SPINDLE_60, needsLevelingFrame: false };
   }
   if (diff <= SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m) {
+    // ≤ 55cm: Fußspindel 80 verstärkt
     return { spindle: SPINDLE_VARIANTS.SPINDLE_80, needsLevelingFrame: false };
   }
+  if (diff <= SPINDLE_VARIANTS.SPINDLE_110.maxHeight_m) {
+    // ≤ 79cm: Fußspindel 110 verstärkt
+    return { spindle: SPINDLE_VARIANTS.SPINDLE_110, needsLevelingFrame: false };
+  }
+  if (diff <= SPINDLE_VARIANTS.SPINDLE_150.maxHeight_m) {
+    // ≤ 82cm: Fußspindel 150 verstärkt
+    return { spindle: SPINDLE_VARIANTS.SPINDLE_150, needsLevelingFrame: false };
+  }
 
-  // Ausgleichsrahmen nötig
-  if (diff <= LEVELING_FRAMES.FRAME_100.height_m) {
+  // Ausgleichsrahmen nötig (Spindel 80 + Rahmen)
+  // Katalog: Rahmen + Spindel 80 (55cm) = max. kombinierte Höhe
+  const maxWithFrame066 = LEVELING_FRAMES.FRAME_066.height_m + SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m; // 1.21m
+  const maxWithFrame100 = LEVELING_FRAMES.FRAME_100.height_m + SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m; // 1.55m
+  const maxWithFrame150 = LEVELING_FRAMES.FRAME_150.height_m + SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m; // 2.05m
+  const maxWithFrame200 = LEVELING_FRAMES.FRAME_200.height_m + SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m; // 2.55m
+
+  if (diff <= maxWithFrame066) {
+    return {
+      spindle: SPINDLE_VARIANTS.SPINDLE_80,
+      needsLevelingFrame: true,
+      levelingFrame: LEVELING_FRAMES.FRAME_066,
+    };
+  }
+  if (diff <= maxWithFrame100) {
     return {
       spindle: SPINDLE_VARIANTS.SPINDLE_80,
       needsLevelingFrame: true,
       levelingFrame: LEVELING_FRAMES.FRAME_100,
     };
   }
-  if (diff <= LEVELING_FRAMES.FRAME_150.height_m) {
+  if (diff <= maxWithFrame150) {
     return {
       spindle: SPINDLE_VARIANTS.SPINDLE_80,
       needsLevelingFrame: true,
       levelingFrame: LEVELING_FRAMES.FRAME_150,
     };
   }
-  if (diff <= LEVELING_FRAMES.FRAME_200.height_m) {
+  if (diff <= maxWithFrame200) {
     return {
       spindle: SPINDLE_VARIANTS.SPINDLE_80,
       needsLevelingFrame: true,
@@ -143,7 +169,7 @@ export function getRequiredSpindle(heightDiff_m: number): {
     };
   }
 
-  // Über 2m: Spezielle Fundamentierung
+  // Über 2.55m: Spezielle Fundamentierung
   return { spindle: null, needsLevelingFrame: true };
 }
 
@@ -176,36 +202,42 @@ export function validateTerrainProfile(
   const spindleInfo = getRequiredSpindle(totalDiff);
 
   // Gesamt-Bewertung
+  // FIX 28.01.2026: Korrigierte Schwellenwerte gemäss Layher Katalog
   if (slopeClass === 'eben') {
     warnings.push({
       code: 'SPINDLE_SUFFICIENT',
       severity: 'info',
       message: `Ebenes Terrain (${totalDiff.toFixed(2)}m Differenz)`,
-      details: 'Standard-Fussspindeln (40cm) reichen aus.',
+      details: 'Standard-Fußspindel 60 (max. 41cm) reicht aus.',
       recommendation: 'Keine besonderen Massnahmen nötig.',
       height_diff_m: totalDiff,
-      suggestedMaterial: SPINDLE_VARIANTS.SPINDLE_40.artNr,
+      suggestedMaterial: SPINDLE_VARIANTS.SPINDLE_60.artNr,
     });
   } else if (slopeClass === 'leicht') {
-    if (totalDiff <= 0.6) {
+    if (totalDiff <= SPINDLE_VARIANTS.SPINDLE_80.maxHeight_m) {
+      // ≤ 55cm
       warnings.push({
         code: 'SPINDLE_60_NEEDED',
         severity: 'info',
         message: `Leichte Hanglage (${totalDiff.toFixed(2)}m Differenz)`,
-        details: 'Fussspindeln 60cm empfohlen.',
+        details: 'Fußspindel 80 verstärkt (max. 55cm) empfohlen.',
         recommendation: 'Stellspindeln nach Terrain-Profil einstellen.',
         height_diff_m: totalDiff,
-        suggestedMaterial: SPINDLE_VARIANTS.SPINDLE_60.artNr,
+        suggestedMaterial: SPINDLE_VARIANTS.SPINDLE_80.artNr,
       });
     } else {
+      // 55-82cm (Spindel 110 oder 150)
+      const spindle = totalDiff <= SPINDLE_VARIANTS.SPINDLE_110.maxHeight_m
+        ? SPINDLE_VARIANTS.SPINDLE_110
+        : SPINDLE_VARIANTS.SPINDLE_150;
       warnings.push({
         code: 'SPINDLE_80_NEEDED',
         severity: 'warning',
         message: `Hanglage (${totalDiff.toFixed(2)}m Differenz)`,
-        details: 'Fussspindeln 80cm nötig.',
+        details: `${spindle.name} (max. ${(spindle.maxHeight_m * 100).toFixed(0)}cm) nötig.`,
         recommendation: 'Längere Stellspindeln verwenden.',
         height_diff_m: totalDiff,
-        suggestedMaterial: SPINDLE_VARIANTS.SPINDLE_80.artNr,
+        suggestedMaterial: spindle.artNr,
       });
     }
   } else if (slopeClass === 'mittel') {

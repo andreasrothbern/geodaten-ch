@@ -1675,7 +1675,8 @@ export default function ScaffoldScene({
       parent.add(createBuilding(fallbackBuildingWidth, fallbackBuildingDepth, fallbackBuildingHeight));
 
       // Add roof if needed
-      if (config.settings.work_type === 'roof' || config.settings.work_type === 'full') {
+      // FIX 27.01.2026: 'full' ersetzt durch 'roofer' (Spengler)
+      if (config.settings.work_type === 'roof' || config.settings.work_type === 'roofer') {
         parent.add(createRoof(fallbackBuildingWidth + 1, fallbackBuildingDepth + 1, 3, fallbackBuildingHeight));
       }
 

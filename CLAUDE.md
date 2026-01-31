@@ -88,23 +88,23 @@ Ein **SessionStart Hook** (`.claude/hooks/check-feature-branch.py`) erinnert aut
 
 ### Backend starten
 
-**Stand 14.01.2026 21:45:**
+**Stand 28.01.2026:**
 - DuckDB ist jetzt der Default - kein Flag mehr nötig!
-- **WICHTIG:** `--workers 4` statt `--reload` verwenden!
+- **WICHTIG:** KEIN `--workers` und KEIN `--reload` für Entwicklung!
 
 ```bash
 cd backend
 
 # Windows CMD/PowerShell (Standard - verwendet DuckDB):
-".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
+".\venv\Scripts\python.exe" -m uvicorn app.main:app --port 8000
 
 # Nur falls SQLite benötigt wird (Legacy):
-set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --workers 4 --port 8000
+set USE_DUCKDB=false && ".\venv\Scripts\python.exe" -m uvicorn app.main:app --port 8000
 ```
 
-**Warum `--workers 4` statt `--reload`?**
+**Warum kein `--workers` und kein `--reload`?**
 - `--reload` überwacht Dateien → Konflikte beim Editieren mit Claude
-- `--workers 4` ermöglicht parallele Request-Verarbeitung
+- `--workers N` startet N Prozesse → DuckDB-Datei-Lock (nur 1 Prozess kann zugreifen)
 - Bei Code-Änderungen: Backend stoppen + neu starten
 
 **Warum DuckDB (Default)?**
@@ -132,7 +132,7 @@ del /F /Q backend\app\data\building_3d.db* backend\app\data\tiles.db* 2>nul & rm
 
 # 3. Backend neu starten
 cd backend
-python -m uvicorn app.main:app --workers 4 --port 8000
+python -m uvicorn app.main:app --port 8000
 ```
 
 **Was wird gelöscht:**
@@ -1981,7 +1981,7 @@ cd backend
 python -m venv venv
 venv\Scripts\activate  # Windows
 pip install -r requirements.txt
-uvicorn app.main:app --workers 4 --port 8000
+uvicorn app.main:app --port 8000
 
 # Frontend (Terminal 2)
 cd frontend
@@ -1989,7 +1989,7 @@ npm install
 npm run dev
 ```
 
-**Hinweis:** `--workers 4` statt `--reload` verwenden! Bei Code-Änderungen Backend stoppen + neu starten.
+**Hinweis 28.01.2026 00:45:** KEIN `--workers` (DuckDB-Lock) und KEIN `--reload` (Datei-Konflikte). Bei Code-Änderungen Backend stoppen + neu starten.
 
 - API Docs: http://localhost:8000/docs
 - Frontend: http://localhost:3000

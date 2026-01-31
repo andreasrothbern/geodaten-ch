@@ -3,7 +3,7 @@
  * Manages tab navigation between Overview, Editor, and 3D views
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ArrowLeft, LayoutGrid, Edit3, Box, MoreVertical, Layers } from 'lucide-react';
 import { useScaffoldConfig } from '../hooks/useScaffoldConfig';
 import type { MainTab, SelectedFacade, RoofData, BuildingZone } from '../types/scaffold.types';
@@ -78,6 +78,11 @@ export default function ScaffoldConfigurator({
     configuration,
   } = useScaffoldConfig();
 
+  // FIX 25.01.2026: Ref to prevent infinite loop in height-based re-initialization
+  // The heightsNeedUpdate check can trigger re-init, but after init the heights may still differ
+  // This ref ensures we only attempt height-based re-init once per project
+  const heightReinitAttemptedRef = useRef<string | null>(null);
+
   // Initialize configuration on mount
   useEffect(() => {
     // DEBUG: Log roof prop to track data flow
@@ -95,10 +100,20 @@ export default function ScaffoldConfigurator({
     ) ?? false;
 
     // FIX 10.01.2026 23:15 - Check if heights need update (SSE delivered new heights)
+    // FIX 21.01.2026: Auch re-initialisieren wenn Höhen signifikant unterschiedlich sind (>1m oder >20%)
     const configMaxHeight = configuration?.elements?.filter(el => el.type === 'facade')
       .reduce((max, el) => Math.max(max, (el as { target_height_m?: number }).target_height_m ?? 0), 0) ?? 0;
     const facadesMaxHeight = selectedFacades.reduce((max, f) => Math.max(max, f.height_m), 0);
-    const heightsNeedUpdate = configMaxHeight === 0 && facadesMaxHeight > 0;
+
+    // Re-initialize if heights differ significantly
+    const heightDiff = Math.abs(configMaxHeight - facadesMaxHeight);
+    const heightsDifferSignificantly = heightDiff > 1.0 ||
+      (configMaxHeight > 0 && heightDiff / configMaxHeight > 0.2);
+    const heightsNeedUpdate = facadesMaxHeight > 0 && (configMaxHeight === 0 || heightsDifferSignificantly);
+
+    if (heightsNeedUpdate && configuration) {
+      console.log(`[ScaffoldConfigurator] Heights differ: config=${configMaxHeight.toFixed(2)}m vs facades=${facadesMaxHeight.toFixed(2)}m (diff=${heightDiff.toFixed(2)}m)`);
+    }
 
     if (!configuration || configuration.project_id !== projectId) {
       console.log('Initializing from facades with roof:', roof);
@@ -111,9 +126,11 @@ export default function ScaffoldConfigurator({
       // Re-initialize if cached config has no coordinates but new data does (FIX 10.01.2026)
       console.log('Re-initializing: Cached facades missing coordinates, new facades have them');
       initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
-    } else if (heightsNeedUpdate) {
-      // FIX 10.01.2026 23:15 - Re-initialize if heights were 0 but now have real values (from SSE)
-      console.log(`Re-initializing: Config heights=0, but new facades have height=${facadesMaxHeight}m`);
+    } else if (heightsNeedUpdate && heightReinitAttemptedRef.current !== projectId) {
+      // FIX 21.01.2026 - Re-initialize if heights differ significantly (new 3D data vs cached)
+      // FIX 25.01.2026 - Only attempt once per project to prevent infinite loop (BUG-030 related)
+      console.log(`Re-initializing: Heights differ significantly (config=${configMaxHeight.toFixed(2)}m → facades=${facadesMaxHeight.toFixed(2)}m)`);
+      heightReinitAttemptedRef.current = projectId;
       initializeFromFacades(projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof);
     }
   }, [projectId, buildingName, buildingAddress, selectedFacades, buildingPolygon, roof, configuration, initializeFromFacades]);
