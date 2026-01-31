@@ -229,15 +229,30 @@ async def prefetch_neighbors(
 def _parse_building_layer_all(
     gdb_path: Path,
     tile_id: str,
-    exclude_egid: Optional[int] = None
+    exclude_egid: Optional[int] = None,
+    bbox: Optional[Tuple[float, float, float, float]] = None,  # OPT-006: bbox-Filter
+    exclude_egids: Optional[Set[int]] = None  # OPT-006: Multi-EGID exclude
 ) -> List[Dict]:
     """
-    Parsed Building_solid Layer - ALLE Gebaeude im Tile.
+    Parsed Building_solid Layer - mit optionalem bbox-Filter.
+
+    Args:
+        gdb_path: Pfad zum GDB
+        tile_id: Tile-Referenz
+        exclude_egid: Einzelne EGID zum Ausschliessen (Legacy)
+        bbox: Optional (minx, miny, maxx, maxy) fuer Spatial Filter
+        exclude_egids: Set von EGIDs die uebersprungen werden
 
     Returns:
         Liste von Building-Dicts mit allen Attributen
     """
     buildings = []
+
+    # Merge exclude_egid into exclude_egids Set
+    if exclude_egids is None:
+        exclude_egids = set()
+    if exclude_egid:
+        exclude_egids.add(exclude_egid)
 
     try:
         layers = fiona.listlayers(gdb_path)
@@ -252,7 +267,14 @@ def _parse_building_layer_all(
             return []
 
         with fiona.open(gdb_path, layer=target_layer) as src:
-            for feature in src:
+            # OPT-006 31.01.2026: bbox-Filter fuer 66x Speedup
+            if bbox:
+                features = src.filter(bbox=bbox)
+                logger.debug(f"[PARSE] bbox-Filter aktiv: {bbox}")
+            else:
+                features = src
+
+            for feature in features:
                 try:
                     props = feature.get('properties', {})
                     egid = props.get('EGID')
@@ -262,7 +284,8 @@ def _parse_building_layer_all(
                         continue
                     egid = int(egid)
 
-                    if exclude_egid and egid == exclude_egid:
+                    # OPT-006: Skip bereits verarbeitete EGIDs
+                    if egid in exclude_egids:
                         continue
 
                     # Geometrie parsen
@@ -276,9 +299,12 @@ def _parse_building_layer_all(
                     centroid = geom.centroid
                     geom_e, geom_n = centroid.x, centroid.y
 
-                    # Polygon als JSON
+                    # NEU 31.01.2026: Polygon als WKB für DuckDB Spatial
+                    from shapely import wkb
                     coords = list(geom.exterior.coords)
-                    polygon_json = json.dumps([[round(c[0], 2), round(c[1], 2)] for c in coords])
+                    # 2D Polygon für WKB (Z-Koordinaten entfernen falls vorhanden)
+                    polygon_2d = Polygon([(c[0], c[1]) for c in coords])
+                    geom_wkb = wkb.dumps(polygon_2d) if polygon_2d.is_valid else None
 
                     # Hoehen aus Attributen
                     gelaendepunkt = props.get('GELAENDEPUNKT')
@@ -295,7 +321,7 @@ def _parse_building_layer_all(
 
                     buildings.append({
                         'egid': egid,
-                        'polygon': polygon_json,
+                        'geom_wkb': geom_wkb,  # NEU 31.01.2026: WKB statt JSON
                         'traufhoehe_m': traufhoehe,
                         'firsthoehe_m': firsthoehe,
                         'gebaeudehoehe_m': gesamthoehe,
@@ -482,10 +508,10 @@ def _write_buildings_parquet(buildings: List[Dict], prefix: str) -> str:
     temp_dir = tempfile.gettempdir()
     parquet_path = Path(temp_dir) / f"buildings_{prefix}_{int(time.time()*1000)}.parquet"
 
-    # PyArrow Table erstellen
+    # NEU 31.01.2026: geom_wkb (binary) statt polygon (JSON string)
     table = pa.Table.from_pydict({
         'egid': [b['egid'] for b in buildings],
-        'polygon': [b['polygon'] for b in buildings],
+        'geom_wkb': [b.get('geom_wkb') for b in buildings],  # NEU: WKB binary
         'traufhoehe_m': [b.get('traufhoehe_m') for b in buildings],
         'firsthoehe_m': [b.get('firsthoehe_m') for b in buildings],
         'gebaeudehoehe_m': [b.get('gebaeudehoehe_m') for b in buildings],
@@ -524,20 +550,20 @@ def _import_parquet_to_duckdb(parquet_path: str, has_3d_layers: bool = False) ->
         # UPSERT mit has_3d_layers Schutz
         has_3d_value = 1 if has_3d_layers else 0
 
-        # FIX 18.01.2026 - CURRENT_TIMESTAMP als SQL-Literal, nicht als f-string Variable
+        # NEU 31.01.2026: geom mit ST_GeomFromWKB statt polygon
         sql = f"""
         INSERT INTO buildings_3d (
-            egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+            egid, geom, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
             area_m2, perimeter_m, center_e, center_n, tile_id,
             gebaeudeeinheit, objektart, source, has_3d_layers, imported_at
         )
         SELECT
-            egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+            egid, ST_GeomFromWKB(geom_wkb), traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
             area_m2, perimeter_m, center_e, center_n, tile_id,
             gebaeudeeinheit, objektart, source, {has_3d_value}, now()
         FROM read_parquet('{parquet_path}')
         ON CONFLICT (egid) DO UPDATE SET
-            polygon = excluded.polygon,
+            geom = excluded.geom,
             traufhoehe_m = excluded.traufhoehe_m,
             firsthoehe_m = excluded.firsthoehe_m,
             gebaeudehoehe_m = excluded.gebaeudehoehe_m,
@@ -794,3 +820,165 @@ def _calculate_tile_id(e: float, n: float) -> str:
     """
     from app.services.tile_cache import lv95_to_tile_id
     return lv95_to_tile_id(e, n)
+
+
+# =============================================================================
+# OPT-006 31.01.2026: 3-Stufen Background Prefetch (non-blocking)
+# =============================================================================
+
+async def prefetch_3_stages(
+    object_egid: int,
+    center_e: float,
+    center_n: float,
+    gdb_path: Path,
+    tile_id: str,
+    neighbor_radius_m: float = 100.0
+) -> Dict[str, Any]:
+    """
+    DEPRECATED 31.01.2026: Diese Funktion wird nicht mehr verwendet!
+
+    Nutze stattdessen: tile_prefetch.prefetch_and_cleanup()
+
+    Die neue Funktion ist ein schlanker Wrapper um prefetch_tile_buildings_async()
+    und wird als asyncio.create_task() Background-Task aufgerufen.
+
+    ---
+    Alte Doku (für Referenz):
+    3-Stufen Background Prefetch - laeuft NICHT BLOCKIEREND nach User-Antwort.
+
+    Stufe 1: Objekt (bereits durch fetch_building_polygon_for_coordinates erledigt)
+    Stufe 2: Nachbarn 100m - bbox-Filter, exclude Objekt
+    Stufe 3: Rest des Tiles - kein bbox, exclude alle bisherigen EGIDs
+    """
+    logger.warning(
+        "[DEPRECATED] prefetch_3_stages() wird nicht mehr verwendet! "
+        "Nutze tile_prefetch.prefetch_and_cleanup() stattdessen."
+    )
+    start_time = time.time()
+    processed_egids = {object_egid}
+    stats = {
+        'object_egid': object_egid,
+        'neighbors_count': 0,
+        'rest_count': 0,
+        'total_time_s': 0
+    }
+
+    logger.info(f"[PREFETCH_3STAGES] Start: Objekt={object_egid}, Zentrum=({center_e:.1f}, {center_n:.1f})")
+
+    try:
+        # =====================================================================
+        # STUFE 2: Nachbarn 100m (mit bbox-Filter)
+        # =====================================================================
+        bbox_neighbors = (
+            center_e - neighbor_radius_m,
+            center_n - neighbor_radius_m,
+            center_e + neighbor_radius_m,
+            center_n + neighbor_radius_m
+        )
+
+        t1 = time.time()
+        neighbors = await asyncio.to_thread(
+            _parse_building_layer_all,
+            gdb_path=gdb_path,
+            tile_id=tile_id,
+            bbox=bbox_neighbors,
+            exclude_egids=processed_egids
+        )
+        logger.info(f"[PREFETCH_3STAGES] Stufe 2: {len(neighbors)} Nachbarn in {(time.time()-t1)*1000:.0f}ms")
+
+        if neighbors:
+            # Nachbarn nach Distanz sortieren (naechste zuerst)
+            for b in neighbors:
+                b['distance_m'] = math.sqrt((b['center_e'] - center_e)**2 + (b['center_n'] - center_n)**2)
+            neighbors.sort(key=lambda x: x['distance_m'])
+
+            # EGIDs tracken
+            neighbor_egids = {b['egid'] for b in neighbors}
+            processed_egids.update(neighbor_egids)
+
+            # Roof + Wall fuer Nachbarn laden
+            roofs = await asyncio.to_thread(
+                _parse_roof_layer_for_egids, gdb_path, neighbor_egids, tile_id
+            )
+            walls = await asyncio.to_thread(
+                _parse_wall_layer_for_egids, gdb_path, neighbor_egids, tile_id
+            )
+
+            # Parquet schreiben und importieren
+            parquet_neighbors = await asyncio.to_thread(
+                _write_buildings_parquet, neighbors, "neighbors"
+            )
+            if parquet_neighbors:
+                await asyncio.to_thread(_import_parquet_to_duckdb, parquet_neighbors, has_3d_layers=True)
+                Path(parquet_neighbors).unlink(missing_ok=True)
+
+            if roofs or walls:
+                await asyncio.to_thread(_save_roofs_and_walls, roofs, walls)
+
+            stats['neighbors_count'] = len(neighbors)
+            logger.info(f"[PREFETCH_3STAGES] Stufe 2 done: {len(neighbors)} Nachbarn gespeichert")
+
+        # =====================================================================
+        # STUFE 3: Rest des Tiles (ohne bbox, exclude verarbeitete)
+        # =====================================================================
+        t2 = time.time()
+        rest = await asyncio.to_thread(
+            _parse_building_layer_all,
+            gdb_path=gdb_path,
+            tile_id=tile_id,
+            bbox=None,  # Kein bbox = ganzes Tile
+            exclude_egids=processed_egids
+        )
+        logger.info(f"[PREFETCH_3STAGES] Stufe 3: {len(rest)} Rest-Gebaeude in {(time.time()-t2)*1000:.0f}ms")
+
+        if rest:
+            # Parquet schreiben und importieren (ohne Roof/Wall fuer Rest)
+            parquet_rest = await asyncio.to_thread(
+                _write_buildings_parquet, rest, "rest"
+            )
+            if parquet_rest:
+                await asyncio.to_thread(_import_parquet_to_duckdb, parquet_rest, has_3d_layers=False)
+                Path(parquet_rest).unlink(missing_ok=True)
+
+            stats['rest_count'] = len(rest)
+
+        # Cleanup: GDB loeschen
+        await asyncio.to_thread(_cleanup_gdb, tile_id, gdb_path)
+
+    except Exception as e:
+        logger.error(f"[PREFETCH_3STAGES] Fehler: {e}")
+
+    stats['total_time_s'] = time.time() - start_time
+    logger.info(
+        f"[PREFETCH_3STAGES] Fertig: {stats['neighbors_count']} Nachbarn + "
+        f"{stats['rest_count']} Rest in {stats['total_time_s']:.1f}s"
+    )
+
+    return stats
+
+
+def start_background_prefetch(
+    object_egid: int,
+    center_e: float,
+    center_n: float,
+    gdb_path: Path,
+    tile_id: str,
+    neighbor_radius_m: float = 100.0
+) -> None:
+    """
+    DEPRECATED 31.01.2026: Diese Funktion wird nicht mehr verwendet!
+
+    Nutze stattdessen in deinem async Code:
+        from tile_prefetch import prefetch_and_cleanup
+        asyncio.create_task(prefetch_and_cleanup(tile_id, e, n, skip_egids))
+
+    ---
+    Alte Doku (für Referenz):
+    Startet den 3-Stufen Prefetch als Fire-and-Forget Background Task.
+    """
+    logger.warning(
+        "[DEPRECATED] start_background_prefetch() wird nicht mehr verwendet! "
+        "Nutze asyncio.create_task(tile_prefetch.prefetch_and_cleanup(...)) stattdessen."
+    )
+    # Funktionalität deaktiviert - tut nichts mehr
+    pass

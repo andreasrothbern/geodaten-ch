@@ -497,10 +497,9 @@ def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
                 # Dachform analysieren
                 roof_analysis = analyze_roof(geom)
 
-                # OPTIMIERUNG 12.01.2026: geometry_wkb NICHT beim Prefetch speichern
-                # Reduziert DB-Grösse von ~280MB auf ~50MB (84% Ersparnis!)
-                # Bei komplexen Dächern: On-demand aus GDB nachladen via get_roof_geometry()
-                geometry_wkb = None
+                # FIX 23.01.2026: geometry_wkb beim Prefetch speichern!
+                # On-demand Loading wurde entfernt.
+                geometry_wkb = geom.wkb
 
                 roofs.append({
                     "gebaeudeeinheit": gebaeudeeinheit,
@@ -513,8 +512,8 @@ def _parse_roof_solid_from_gdb(gdb_path: Path) -> list:
                     "roof_form_confidence": roof_analysis.get('confidence'),
                     "z_levels": roof_analysis.get('z_levels'),
                     "calculation_method": "z_level_analysis",
-                    "has_full_geometry": 0,  # Immer 0 beim Prefetch (on-demand)
-                    "geometry_wkb": None,    # Wird on-demand nachgeladen
+                    "has_full_geometry": 1,  # FIX 23.01.2026: Geometrie vorhanden
+                    "geometry_wkb": geometry_wkb,
                 })
 
         parse_time_ms = (time.time() - parse_start) * 1000
@@ -555,7 +554,8 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
 
     try:
         import fiona
-        from shapely.geometry import shape, MultiPoint
+        from shapely.geometry import shape, MultiPoint, Polygon as ShapelyPolygon
+        from shapely import wkb
     except ImportError:
         logger.error("fiona/shapely nicht verfügbar für Prefetch")
         return []
@@ -609,7 +609,8 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
 
                 # Geometrie mit shapely.geometry.shape() konvertieren
                 geom = None
-                polygon = None
+                polygon_2d = None  # 2D Shapely Polygon für WKB
+                geom_wkb = None  # NEU 31.01.2026: WKB für DuckDB Spatial
                 center_e, center_n = None, None
                 area_m2, perimeter_m = None, None
 
@@ -619,7 +620,7 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
 
                         # 3D → 2D Projektion
                         if hasattr(geom, 'geoms'):
-                            # MultiPolygon
+                            # MultiPolygon → Convex Hull
                             all_coords_2d = []
                             for g in geom.geoms:
                                 if hasattr(g, 'exterior'):
@@ -628,12 +629,18 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                             if all_coords_2d:
                                 hull = MultiPoint(all_coords_2d).convex_hull
                                 if hasattr(hull, 'exterior'):
-                                    polygon = [[round(c[0], 2), round(c[1], 2)]
-                                              for c in hull.exterior.coords]
+                                    polygon_coords = [(round(c[0], 2), round(c[1], 2))
+                                                      for c in hull.exterior.coords]
+                                    polygon_2d = ShapelyPolygon(polygon_coords)
                         elif hasattr(geom, 'exterior'):
                             # Single Polygon
-                            polygon = [[round(c[0], 2), round(c[1], 2)]
-                                      for c in geom.exterior.coords]
+                            polygon_coords = [(round(c[0], 2), round(c[1], 2))
+                                              for c in geom.exterior.coords]
+                            polygon_2d = ShapelyPolygon(polygon_coords)
+
+                        # NEU 31.01.2026: WKB für DuckDB Spatial Extension
+                        if polygon_2d is not None and polygon_2d.is_valid:
+                            geom_wkb = wkb.dumps(polygon_2d)
 
                         # Zentroid
                         centroid = geom.centroid
@@ -643,12 +650,8 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
                         # Fläche und Umfang
                         if hasattr(geom, 'area'):
                             area_m2 = round(abs(geom.area), 2)
-                        if polygon:
-                            perimeter_m = round(sum(
-                                math.sqrt((polygon[i+1][0] - polygon[i][0])**2 +
-                                          (polygon[i+1][1] - polygon[i][1])**2)
-                                for i in range(len(polygon) - 1)
-                            ), 2)
+                        if polygon_2d is not None:
+                            perimeter_m = round(polygon_2d.length, 2)
 
                     except Exception as e:
                         logger.debug(f"Geometrie-Fehler für EGID {egid}: {e}")
@@ -679,7 +682,7 @@ def _parse_all_buildings_from_gdb(gdb_path: Path) -> list:
 
                 buildings.append({
                     "egid": egid_int,
-                    "polygon": polygon,
+                    "geom_wkb": geom_wkb,  # NEU 31.01.2026: WKB statt JSON für Spatial Extension
                     "traufhoehe_m": traufhoehe,
                     "firsthoehe_m": firsthoehe,
                     "gebaeudehoehe_m": round(gesamt_f, 2) if gesamt_f else (firsthoehe or traufhoehe),
@@ -1206,7 +1209,8 @@ def find_immediate_neighbors(
 
     try:
         import fiona
-        from shapely.geometry import shape, MultiPoint
+        from shapely.geometry import shape, MultiPoint, Polygon as ShapelyPolygon
+        from shapely import wkb
     except ImportError:
         logger.error("fiona/shapely nicht verfügbar")
         return []
@@ -1242,7 +1246,10 @@ def find_immediate_neighbors(
             center_n + radius_m
         )
 
-        with fiona.open(gdb_path, layer=target_layer) as src:
+        # FIX 31.01.2026: bbox an fiona übergeben für schnelles Filtern auf DB-Ebene!
+        # VORHER: Iterierte über ALLE ~7000 Gebäude (40+ Sekunden!)
+        # NACHHER: Fiona filtert auf GDB-Ebene → nur ~10-20 Gebäude im Radius
+        with fiona.open(gdb_path, layer=target_layer, bbox=bbox_filter) as src:
             for feature in src:
                 props = feature['properties']
                 egid = props.get('EGID')
@@ -1278,8 +1285,9 @@ def find_immediate_neighbors(
                     if dist > radius_m:
                         continue
 
-                    # Nachbar gefunden - vollständig parsen
-                    polygon = None
+                    # NEU 31.01.2026: Nachbar parsen und WKB erstellen
+                    polygon_2d = None
+                    geom_wkb = None
                     if hasattr(geom, 'geoms'):
                         all_coords_2d = []
                         for g in geom.geoms:
@@ -1289,11 +1297,17 @@ def find_immediate_neighbors(
                         if all_coords_2d:
                             hull = MultiPoint(all_coords_2d).convex_hull
                             if hasattr(hull, 'exterior'):
-                                polygon = [[round(c[0], 2), round(c[1], 2)]
-                                          for c in hull.exterior.coords]
+                                polygon_coords = [(round(c[0], 2), round(c[1], 2))
+                                                  for c in hull.exterior.coords]
+                                polygon_2d = ShapelyPolygon(polygon_coords)
                     elif hasattr(geom, 'exterior'):
-                        polygon = [[round(c[0], 2), round(c[1], 2)]
-                                  for c in geom.exterior.coords]
+                        polygon_coords = [(round(c[0], 2), round(c[1], 2))
+                                          for c in geom.exterior.coords]
+                        polygon_2d = ShapelyPolygon(polygon_coords)
+
+                    # WKB für DuckDB Spatial Extension
+                    if polygon_2d is not None and polygon_2d.is_valid:
+                        geom_wkb = wkb.dumps(polygon_2d)
 
                     # Höhen extrahieren
                     # FIX 17.01.2026: traufhoehe_m/firsthoehe_m wiederhergestellt!
@@ -1319,17 +1333,11 @@ def find_immediate_neighbors(
                             firsthoehe = round(dach_max_f - terrain_f, 2)
 
                     area_m2 = round(abs(geom.area), 2) if hasattr(geom, 'area') else None
-                    perimeter_m = None
-                    if polygon:
-                        perimeter_m = round(sum(
-                            math.sqrt((polygon[i+1][0] - polygon[i][0])**2 +
-                                      (polygon[i+1][1] - polygon[i][1])**2)
-                            for i in range(len(polygon) - 1)
-                        ), 2)
+                    perimeter_m = round(polygon_2d.length, 2) if polygon_2d else None
 
                     neighbors.append({
                         "egid": egid_int,
-                        "polygon": polygon,
+                        "geom_wkb": geom_wkb,  # NEU 31.01.2026: WKB statt polygon JSON
                         "traufhoehe_m": traufhoehe,
                         "firsthoehe_m": firsthoehe,
                         "gebaeudehoehe_m": round(gesamt_f, 2) if gesamt_f else (firsthoehe or traufhoehe),
@@ -1371,19 +1379,20 @@ def load_neighbors_and_save(
     exclude_egid: Optional[int] = None
 ) -> Tuple[int, List[int]]:
     """
+    DEPRECATED 31.01.2026: Diese Funktion wird nicht mehr verwendet!
+
+    Nachbarn werden jetzt durch die Parquet-Pipeline geladen:
+    - prefetch_and_cleanup() importiert das ganze Tile im Background
+    - Nachbarn werden aus der DB geholt (building_3d_service.get_neighbors_by_coordinates)
+
+    ---
+    Alte Doku:
     Lädt Nachbarn aus GDB und speichert sie in building_3d.db.
-
-    Args:
-        gdb_path: Pfad zum GDB-Verzeichnis
-        center_e: LV95 Easting
-        center_n: LV95 Northing
-        radius_m: Suchradius
-        tile_id: Tile-ID für DB
-        exclude_egid: EGID zum Ausschliessen
-
-    Returns:
-        Tuple von (saved_count, list_of_egids)
     """
+    logger.warning(
+        "[DEPRECATED] load_neighbors_and_save() wird nicht mehr verwendet! "
+        "Nachbarn werden jetzt aus der DB geholt nach dem Tile-Import."
+    )
     neighbors = find_immediate_neighbors(
         gdb_path, center_e, center_n, radius_m, exclude_egid
     )
@@ -1410,74 +1419,114 @@ async def schedule_prefetch_with_neighbors(
     center_e: float,
     center_n: float,
     main_egid: Optional[int] = None,
-    immediate_radius_m: float = 5.0
+    immediate_radius_m: float = 5.0,
+    skip_egids: Optional[List[int]] = None
 ) -> Tuple[int, int]:
     """
-    NEUE ARCHITEKTUR: Lädt direkte Nachbarn sofort, Rest async.
+    DEPRECATED 31.01.2026: Diese Funktion wird nicht mehr verwendet!
 
-    Ablauf:
-    1. ASYNC: Direkte Nachbarn (5m) laden und speichern (in Thread)
-    2. ASYNC: Prefetch für restliche Gebäude im Hintergrund (Parquet-Pipeline)
+    Nutze stattdessen: prefetch_and_cleanup()
 
-    REFACTORED 17.01.2026: Umgestellt auf async + Parquet-Pipeline
-    - Vorher: Sync prefetch_tile_buildings() im Thread → OOM bei grossen Tiles
-    - Nachher: Async prefetch_tile_buildings_async() mit Parquet → kein RAM-Overhead
+    Der Aufruf war BLOCKING (~141s) und wurde aus building_data_stream.py entfernt.
+    Stattdessen läuft jetzt prefetch_and_cleanup() als asyncio.create_task()
+    NACH dem SSE POLYGON Event.
 
-    FIX 20.01.2026: Prüft ZUERST ob Tile bereits importiert wurde oder GDB existiert!
-    Wenn Tile bereits importiert, werden Nachbarn aus building_3d.db geholt statt GDB.
-
-    Args:
-        tile_id: Tile-Referenz
-        gdb_path: Pfad zum GDB-Verzeichnis
-        center_e: LV95 Easting des Hauptgebäudes
-        center_n: LV95 Northing des Hauptgebäudes
-        main_egid: EGID des Hauptgebäudes (wird ausgeschlossen)
-        immediate_radius_m: Radius für sofortige Nachbarn (default: 5m)
-
-    Returns:
-        Tuple von (immediate_neighbors_count, background_task_started)
+    ---
+    Alte Doku:
+    Lädt Nachbarn und startet dann Background-Prefetch für den Rest des Tiles.
     """
+    logger.warning(
+        "[DEPRECATED] schedule_prefetch_with_neighbors() wird nicht mehr verwendet! "
+        "Nutze prefetch_and_cleanup() stattdessen."
+    )
+    # Funktionalität deaktiviert - gibt (0, 0) zurück
+    return (0, 0)
     immediate_count = 0
+    neighbor_egids = []
     background_started = 0
 
     # FIX 21.01.2026: Import-Status-Prüfung ist WIEDER aktiv!
-    # prefetch_tile_buildings_async() prüft selbst ob Tile schon importiert wurde.
-    # Nur wenn status nicht 'imported'/'cleaned' → Import ausführen.
-    gdb_exists = gdb_path.exists() if gdb_path else False
+    gdb_exists = gdb_path.exists() if gdb_path and str(gdb_path) != "" else False
 
-    # 1. Direkte Nachbarn laden (in Thread um Event-Loop nicht zu blockieren)
-    if center_e and center_n and gdb_exists:
+    # FIX 30.01.2026: DB-FIRST Strategie für schnelles Nachbar-Laden!
+    # VORHER: if gdb_exists → GDB (langsam 40+s!) → else DB
+    # NACHHER: IMMER zuerst DB (~1ms) → nur wenn leer UND GDB existiert → dann GDB
+    #
+    # Begründung: Die DB hat bereits alle Gebäude des Tiles wenn:
+    # - Das Tile früher importiert wurde (status='imported' oder 'cleaned')
+    # - Die Mini-Pipeline das Objekt + Nachbarn geladen hat
+    # Nur bei komplett neuen Tiles (noch nie importiert) müssen wir GDB parsen.
+
+    # 1. Direkte Nachbarn laden - DB-FIRST!
+    if center_e and center_n:
+        # STUFE 1: Versuche DB zuerst (schnell ~1ms)
+        db_neighbors_found = False
         try:
-            immediate_count, neighbor_egids = await asyncio.to_thread(
-                load_neighbors_and_save,
-                gdb_path=gdb_path,
+            from app.services.building_3d_service import get_building_3d_service
+            building_service = get_building_3d_service()
+
+            exclude_list = [main_egid] if main_egid else []
+            if skip_egids:
+                exclude_list.extend(skip_egids)
+
+            neighbors = building_service.get_neighbors_by_coordinates(
                 center_e=center_e,
                 center_n=center_n,
                 radius_m=immediate_radius_m,
-                tile_id=tile_id,
-                exclude_egid=main_egid
+                exclude_egids=exclude_list,
+                limit=100
             )
-            logger.info(
-                f"[IMMEDIATE] {immediate_count} Nachbarn im {immediate_radius_m}m Radius geladen"
-            )
+            if neighbors:
+                immediate_count = len(neighbors)
+                neighbor_egids = [n.get('egid') for n in neighbors if n.get('egid')]
+                db_neighbors_found = True
+                logger.info(
+                    f"[NEIGHBORS] {immediate_count} Nachbarn im {immediate_radius_m}m Radius aus DB (schnell!)"
+                )
         except Exception as e:
-            logger.warning(f"[IMMEDIATE] Fehler beim Laden der Nachbarn aus GDB: {e}")
-            # Nicht kritisch - Nachbarn können später aus DB geholt werden
+            logger.warning(f"[NEIGHBORS] DB-Lookup fehlgeschlagen: {e}")
+
+        # STUFE 2: Nur wenn DB leer UND GDB existiert → GDB parsen (langsam)
+        if not db_neighbors_found and gdb_exists:
+            logger.info(f"[NEIGHBORS] DB leer, parse GDB für Nachbarn...")
+            try:
+                immediate_count, neighbor_egids = await asyncio.to_thread(
+                    load_neighbors_and_save,
+                    gdb_path=gdb_path,
+                    center_e=center_e,
+                    center_n=center_n,
+                    radius_m=immediate_radius_m,
+                    tile_id=tile_id,
+                    exclude_egid=main_egid
+                )
+                logger.info(
+                    f"[NEIGHBORS] {immediate_count} Nachbarn im {immediate_radius_m}m Radius aus GDB geladen"
+                )
+            except Exception as e:
+                logger.warning(f"[NEIGHBORS] Fehler beim Laden aus GDB: {e}")
 
     # 2. Background-Prefetch mit Parquet-Pipeline (async, fire-and-forget)
     # REFACTORED 17.01.2026: Nutzt jetzt prefetch_tile_buildings_async (Parquet)
     # statt sync prefetch_tile_buildings (DuckDB bulk_save → OOM!)
     # FIX 20.01.2026: prefetch_tile_buildings_async() prüft selbst ob Tile bereits importiert
+    # NEU 22.01.2026: skip_egids an exclude_egids weitergeben
+    # FIX 30.01.2026: Auch neighbor_egids ausschliessen!
     try:
+        # Kombiniere skip_egids + neighbor_egids für vollständige Exclusion
+        all_exclude_egids = list(skip_egids) if skip_egids else []
+        if neighbor_egids:
+            all_exclude_egids.extend(neighbor_egids)
+
         asyncio.create_task(
             prefetch_tile_buildings_async(
                 tile_id=tile_id,
                 gdb_path=gdb_path,
-                exclude_egids=None
+                exclude_egids=all_exclude_egids  # FIX: Objekt + Nachbarn überspringen
             )
         )
         background_started = 1
-        logger.info(f"[ASYNC] Parquet-Pipeline Background-Prefetch gestartet für {tile_id}")
+        skip_info = f", skipping {len(all_exclude_egids)} EGIDs (obj={len(skip_egids or [])}, neighbors={len(neighbor_egids)})"
+        logger.info(f"[ASYNC] Parquet-Pipeline Background-Prefetch gestartet für {tile_id}{skip_info}")
     except Exception as e:
         logger.error(f"Konnte Background-Prefetch nicht starten: {e}")
 
@@ -1647,3 +1696,540 @@ def _cleanup_tile_after_import(gdb_path: Path, tile_id: str):
 
     except Exception as e:
         logger.error(f"[CLEANUP] Fehler beim Löschen von {gdb_path}: {e}")
+
+
+# =============================================================================
+# NEU 22.01.2026: EINHEITLICHE MINI-PIPELINE FÜR EGIDS + NACHBARN
+# =============================================================================
+# Löst das GDB-File-Lock-Problem bei Multi-Building-Projekten.
+# Funktioniert für 1-n EGIDs (Einzelabfrage und Multi-Adresse).
+# Lädt automatisch alle Nachbarn im angegebenen Radius mit.
+
+def load_buildings_with_neighbors(
+    gdb_path: Path,
+    egids: List[int],
+    center_coords: List[Tuple[float, float]],
+    tile_id: str,
+    radius_m: float = 100.0
+) -> Dict[str, Any]:
+    """
+    Einheitliche Pipeline für Hauptgebäude + Nachbarn.
+
+    Funktioniert für beide Fälle:
+    - Einzelabfrage: 1 EGID + 1 Koordinate
+    - Multi-Adresse: n EGIDs + n Koordinaten
+
+    Lädt automatisch alle Gebäude im radius_m Umkreis um ALLE Zentren.
+    Parst Building + Roof + Wall Layer in einem Durchgang.
+
+    Args:
+        gdb_path: Pfad zum GDB-Verzeichnis
+        egids: Liste der Haupt-EGIDs (werden immer geladen)
+        center_coords: Liste von (e, n) Koordinaten der Hauptgebäude
+        tile_id: Tile-ID für DB-Referenz
+        radius_m: Radius für Nachbarn (default: 100m)
+
+    Returns:
+        Dict mit Statistiken:
+        {
+            'buildings_count': int,
+            'roofs_count': int,
+            'walls_count': int,
+            'main_egids': List[int],
+            'neighbor_egids': List[int],
+            'elapsed_ms': float
+        }
+    """
+    import fiona
+    from shapely.geometry import shape, MultiPolygon, Polygon
+    from shapely.ops import unary_union
+    from shapely import wkb
+    import json
+
+    start_time = time.time()
+    egids_set = set(egids)
+
+    # Berechne BBox für alle Zentren + Radius
+    if center_coords:
+        min_e = min(c[0] for c in center_coords) - radius_m
+        max_e = max(c[0] for c in center_coords) + radius_m
+        min_n = min(c[1] for c in center_coords) - radius_m
+        max_n = max(c[1] for c in center_coords) + radius_m
+    else:
+        min_e = max_e = min_n = max_n = 0
+
+    buildings = []
+    roofs = []
+    walls = []
+    loaded_egids = set()
+
+    logger.info(f"[MINI-PIPELINE] Start: {len(egids)} EGIDs + Nachbarn im {radius_m}m Radius")
+    print(f"[MINI-PIPELINE] Lade {len(egids)} Hauptgebäude + Nachbarn ({radius_m}m)", flush=True)
+
+    def is_in_radius(cx: float, cy: float) -> bool:
+        """Prüft ob Punkt im Radius um mindestens ein Zentrum liegt."""
+        for center_e, center_n in center_coords:
+            dist = math.sqrt((cx - center_e)**2 + (cy - center_n)**2)
+            if dist <= radius_m:
+                return True
+        return False
+
+    try:
+        layers = fiona.listlayers(gdb_path)
+        building_layer = next((l for l in layers if 'building' in l.lower() and 'solid' in l.lower()), None)
+        roof_layer = next((l for l in layers if 'roof' in l.lower() and 'solid' in l.lower()), None)
+        wall_layer = next((l for l in layers if l.lower() == 'wall'), None)
+
+        # 1. Building Layer parsen
+        if building_layer:
+            with fiona.open(gdb_path, layer=building_layer) as src:
+                for feature in src:
+                    props = feature.get('properties', {})
+                    egid = props.get('EGID')
+
+                    if egid is None:
+                        continue
+
+                    try:
+                        egid_int = int(egid) if not (isinstance(egid, float) and egid != egid) else None
+                        if egid_int is None or egid_int <= 0:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+
+                    geom = feature.get('geometry')
+                    if not geom:
+                        continue
+
+                    try:
+                        geom_shape = shape(geom)
+                        if isinstance(geom_shape, MultiPolygon):
+                            geom_shape = unary_union(geom_shape)
+                        if not isinstance(geom_shape, Polygon):
+                            continue
+
+                        centroid = geom_shape.centroid
+                        cx, cy = centroid.x, centroid.y
+                    except Exception:
+                        continue
+
+                    # Filter: Haupt-EGID ODER im Radius
+                    is_main = egid_int in egids_set
+                    is_neighbor = is_in_radius(cx, cy) if center_coords else False
+
+                    if not is_main and not is_neighbor:
+                        continue
+
+                    # NEU 31.01.2026: 2D Polygon für WKB
+                    coords = list(geom_shape.exterior.coords)
+                    coords_2d = [(round(c[0], 2), round(c[1], 2)) for c in coords]
+                    polygon_2d = Polygon(coords_2d)
+                    geom_wkb = wkb.dumps(polygon_2d) if polygon_2d.is_valid else None
+
+                    # Höhen berechnen
+                    gelaendepunkt = props.get('GELAENDEPUNKT') or 0
+                    dach_min = props.get('DACH_MIN') or 0
+                    dach_max = props.get('DACH_MAX') or 0
+                    gesamthoehe = props.get('GESAMTHOEHE') or 0
+
+                    traufhoehe = (dach_min - gelaendepunkt) if dach_min and gelaendepunkt else None
+                    firsthoehe = (dach_max - gelaendepunkt) if dach_max and gelaendepunkt else None
+
+                    buildings.append({
+                        'egid': egid_int,
+                        'geom_wkb': geom_wkb,  # NEU 31.01.2026: WKB statt JSON
+                        'traufhoehe_m': traufhoehe,
+                        'firsthoehe_m': firsthoehe,
+                        'gebaeudehoehe_m': gesamthoehe,
+                        'area_m2': round(geom_shape.area, 2),
+                        'perimeter_m': round(geom_shape.length, 2),
+                        'center_e': round(cx, 2),
+                        'center_n': round(cy, 2),
+                        'tile_id': tile_id,
+                        'objektart': props.get('OBJEKTART'),
+                        'name_komplett': props.get('NAME_KOMPLETT'),
+                        'gebaeude_nutzung': props.get('GEBAEUDENUTZUNG'),
+                        'gebaeudeeinheit': props.get('GEBAEUDEEINHEIT'),
+                        'is_main': is_main,
+                    })
+                    loaded_egids.add(egid_int)
+
+            print(f"[MINI-PIPELINE] Building: {len(buildings)} gefunden "
+                  f"({len([b for b in buildings if b.get('is_main')])} Haupt + "
+                  f"{len([b for b in buildings if not b.get('is_main')])} Nachbarn)", flush=True)
+
+        # 2. Roof Layer parsen (nur für geladene EGIDs)
+        if roof_layer and loaded_egids:
+            with fiona.open(gdb_path, layer=roof_layer) as src:
+                for feature in src:
+                    props = feature.get('properties', {})
+                    egid = props.get('EGID')
+
+                    if egid is None:
+                        continue
+
+                    try:
+                        egid_int = int(egid) if not (isinstance(egid, float) and egid != egid) else None
+                        if egid_int is None or egid_int not in loaded_egids:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+
+                    geom = feature.get('geometry')
+                    geom_wkb = None
+                    if geom:
+                        try:
+                            geom_shape = shape(geom)
+                            geom_wkb = geom_shape.wkb
+                        except Exception:
+                            pass
+
+                    roofs.append({
+                        'gebaeudeeinheit': props.get('GEBAEUDEEINHEIT'),
+                        'egid': egid_int,
+                        'dach_min': props.get('DACH_MIN'),
+                        'dach_max': props.get('DACH_MAX'),
+                        'tile_id': tile_id,
+                        'geometry_wkb': geom_wkb,
+                    })
+
+            print(f"[MINI-PIPELINE] Roof: {len(roofs)} gefunden", flush=True)
+
+        # 3. Wall Layer parsen (nur für geladene EGIDs)
+        if wall_layer and loaded_egids:
+            with fiona.open(gdb_path, layer=wall_layer) as src:
+                for feature in src:
+                    props = feature.get('properties', {})
+                    egid = props.get('EGID')
+
+                    if egid is None:
+                        continue
+
+                    try:
+                        egid_int = int(egid) if not (isinstance(egid, float) and egid != egid) else None
+                        if egid_int is None or egid_int not in loaded_egids:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+
+                    geom = feature.get('geometry')
+                    geom_wkb = None
+                    z_min = None
+                    z_max = None
+
+                    if geom:
+                        try:
+                            geom_shape = shape(geom)
+                            geom_wkb = geom_shape.wkb
+
+                            # Z-Koordinaten extrahieren
+                            all_z = []
+                            if hasattr(geom_shape, 'geoms'):
+                                for g in geom_shape.geoms:
+                                    if hasattr(g, 'exterior'):
+                                        for coord in g.exterior.coords:
+                                            if len(coord) >= 3:
+                                                all_z.append(coord[2])
+                            elif hasattr(geom_shape, 'exterior'):
+                                for coord in geom_shape.exterior.coords:
+                                    if len(coord) >= 3:
+                                        all_z.append(coord[2])
+
+                            if all_z:
+                                z_min = min(all_z)
+                                z_max = max(all_z)
+                        except Exception:
+                            pass
+
+                    walls.append({
+                        'gebaeudeeinheit': props.get('GEBAEUDEEINHEIT'),
+                        'egid': egid_int,
+                        'z_min': z_min,
+                        'z_max': z_max,
+                        'tile_id': tile_id,
+                        'geometry_wkb': geom_wkb,
+                    })
+
+            print(f"[MINI-PIPELINE] Wall: {len(walls)} gefunden", flush=True)
+
+        # 4. In DB speichern
+        if buildings:
+            _save_buildings_mini_pipeline(buildings, tile_id)
+
+        if roofs:
+            _save_roofs_mini_pipeline(roofs, tile_id)
+
+        if walls:
+            _save_walls_mini_pipeline(walls, tile_id)
+
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        main_egids = [b['egid'] for b in buildings if b.get('is_main')]
+        neighbor_egids = [b['egid'] for b in buildings if not b.get('is_main')]
+
+        result = {
+            'buildings_count': len(buildings),
+            'roofs_count': len(roofs),
+            'walls_count': len(walls),
+            'main_egids': main_egids,
+            'neighbor_egids': neighbor_egids,
+            'elapsed_ms': elapsed_ms
+        }
+
+        logger.info(
+            f"[MINI-PIPELINE] Fertig: {len(main_egids)} Haupt + {len(neighbor_egids)} Nachbarn, "
+            f"{len(roofs)} Dächer, {len(walls)} Wände in {elapsed_ms:.0f}ms"
+        )
+        print(f"[MINI-PIPELINE] Komplett: {len(main_egids)} Haupt + {len(neighbor_egids)} Nachbarn "
+              f"in {elapsed_ms:.0f}ms", flush=True)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[MINI-PIPELINE] Fehler: {e}")
+        print(f"[MINI-PIPELINE] FEHLER: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return {
+            'buildings_count': 0,
+            'roofs_count': 0,
+            'walls_count': 0,
+            'main_egids': [],
+            'neighbor_egids': [],
+            'elapsed_ms': (time.time() - start_time) * 1000,
+            'error': str(e)
+        }
+
+
+# Alias für Abwärtskompatibilität
+def load_specific_egids_with_3d_layers(
+    gdb_path: Path,
+    egids: List[int],
+    tile_id: str
+) -> Dict[str, Any]:
+    """DEPRECATED: Nutze load_buildings_with_neighbors() mit center_coords=[]."""
+    return load_buildings_with_neighbors(gdb_path, egids, [], tile_id, radius_m=0)
+
+
+def _save_buildings_mini_pipeline(buildings: List[Dict], tile_id: str) -> int:
+    """Speichert Buildings in building_3d.duckdb."""
+    from app.config import get_building_3d_connection
+
+    conn = get_building_3d_connection()
+    saved = 0
+
+    try:
+        for b in buildings:
+            conn.execute("""
+                INSERT INTO buildings_3d (
+                    egid, polygon, traufhoehe_m, firsthoehe_m, gebaeudehoehe_m,
+                    area_m2, perimeter_m, center_e, center_n, tile_id,
+                    objektart, name_komplett, gebaeude_nutzung, gebaeudeeinheit,
+                    has_3d_layers, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, current_timestamp)
+                ON CONFLICT (egid) DO UPDATE SET
+                    polygon = excluded.polygon,
+                    traufhoehe_m = excluded.traufhoehe_m,
+                    firsthoehe_m = excluded.firsthoehe_m,
+                    gebaeudehoehe_m = excluded.gebaeudehoehe_m,
+                    area_m2 = excluded.area_m2,
+                    perimeter_m = excluded.perimeter_m,
+                    center_e = excluded.center_e,
+                    center_n = excluded.center_n,
+                    tile_id = excluded.tile_id,
+                    has_3d_layers = 1,
+                    updated_at = current_timestamp
+            """, (
+                b['egid'], b['polygon'], b.get('traufhoehe_m'), b.get('firsthoehe_m'),
+                b.get('gebaeudehoehe_m'), b.get('area_m2'), b.get('perimeter_m'),
+                b['center_e'], b['center_n'], tile_id,
+                b.get('objektart'), b.get('name_komplett'),
+                b.get('gebaeude_nutzung'), b.get('gebaeudeeinheit')
+            ))
+            saved += 1
+
+        conn.commit()
+        logger.debug(f"[MINI-PIPELINE] {saved} buildings gespeichert")
+
+    except Exception as e:
+        logger.error(f"[MINI-PIPELINE] Fehler beim Speichern buildings: {e}")
+
+    return saved
+
+
+def _save_roofs_mini_pipeline(roofs: List[Dict], tile_id: str) -> int:
+    """Speichert Roofs in building_roofs."""
+    from app.config import get_building_3d_connection
+
+    conn = get_building_3d_connection()
+    saved = 0
+
+    try:
+        for r in roofs:
+            # FIX 22.01.2026: geometry_wkb NUR überschreiben wenn NICHT NULL
+            # Verhindert dass Prefetch (ohne geometry) vorhandene 3D-Daten löscht
+            # Analog zum has_3d_layers Schutz für buildings_3d
+            conn.execute("""
+                INSERT INTO building_roofs (
+                    gebaeudeeinheit, egid, dach_min, dach_max, tile_id, geometry_wkb
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (gebaeudeeinheit) DO UPDATE SET
+                    egid = excluded.egid,
+                    dach_min = excluded.dach_min,
+                    dach_max = excluded.dach_max,
+                    geometry_wkb = COALESCE(excluded.geometry_wkb, building_roofs.geometry_wkb)
+            """, (
+                r['gebaeudeeinheit'], r['egid'], r.get('dach_min'), r.get('dach_max'),
+                tile_id, r.get('geometry_wkb')
+            ))
+            saved += 1
+
+        conn.commit()
+        logger.debug(f"[MINI-PIPELINE] {saved} roofs gespeichert")
+
+    except Exception as e:
+        logger.error(f"[MINI-PIPELINE] Fehler beim Speichern roofs: {e}")
+
+    return saved
+
+
+def _save_walls_mini_pipeline(walls: List[Dict], tile_id: str) -> int:
+    """Speichert Walls in building_walls."""
+    from app.config import get_building_3d_connection
+
+    conn = get_building_3d_connection()
+    saved = 0
+
+    try:
+        for w in walls:
+            conn.execute("""
+                INSERT INTO building_walls (
+                    gebaeudeeinheit, egid, z_min, z_max, tile_id, geometry_wkb
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (gebaeudeeinheit) DO UPDATE SET
+                    egid = excluded.egid,
+                    z_min = excluded.z_min,
+                    z_max = excluded.z_max,
+                    geometry_wkb = excluded.geometry_wkb
+            """, (
+                w['gebaeudeeinheit'], w['egid'], w.get('z_min'), w.get('z_max'),
+                tile_id, w.get('geometry_wkb')
+            ))
+            saved += 1
+
+        conn.commit()
+        logger.debug(f"[MINI-PIPELINE] {saved} walls gespeichert")
+
+    except Exception as e:
+        logger.error(f"[MINI-PIPELINE] Fehler beim Speichern walls: {e}")
+
+    return saved
+
+
+async def load_buildings_with_neighbors_async(
+    gdb_path: Path,
+    egids: List[int],
+    center_coords: List[Tuple[float, float]],
+    tile_id: str,
+    radius_m: float = 100.0
+) -> Dict[str, Any]:
+    """Async-Wrapper für load_buildings_with_neighbors()."""
+    return await asyncio.to_thread(
+        load_buildings_with_neighbors,
+        gdb_path, egids, center_coords, tile_id, radius_m
+    )
+
+
+async def load_specific_egids_with_3d_layers_async(
+    gdb_path: Path,
+    egids: List[int],
+    tile_id: str
+) -> Dict[str, Any]:
+    """DEPRECATED: Nutze load_buildings_with_neighbors_async()."""
+    return await asyncio.to_thread(
+        load_specific_egids_with_3d_layers,
+        gdb_path, egids, tile_id
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEU 31.01.2026: Schlanke prefetch_and_cleanup() Funktion
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def prefetch_and_cleanup(
+    tile_id: str,
+    center_e: float,
+    center_n: float,
+    skip_egids: Optional[List[int]] = None
+) -> int:
+    """
+    Non-blocking Background-Prefetch für den Rest des Tiles.
+
+    NEU 31.01.2026: Ersetzt schedule_prefetch_with_neighbors().
+    Diese Funktion läuft als Background-Task NACH dem SSE POLYGON Event.
+
+    Ablauf:
+    1. Tile herunterladen falls nicht vorhanden
+    2. Alle Gebäude via Parquet-Pipeline importieren
+    3. GDB aufräumen nach Import (wenn CLEANUP_TILES_AFTER_IMPORT=True)
+
+    Die skip_egids werden NICHT mehr gefiltert - die Parquet-Pipeline
+    überschreibt keine Gebäude mit has_3d_layers=1.
+
+    WICHTIG: Diese Funktion ist fire-and-forget. Sie blockiert NICHT
+    den SSE-Stream. Das GDB wird 2x geöffnet:
+    - 1x für das Haupt-Objekt (bbox-Filter, schnell ~280ms)
+    - 1x hier für den Rest (vollständiger Import)
+
+    Args:
+        tile_id: Tile-Referenz (z.B. "1088-22")
+        center_e: LV95 Easting (für Logging)
+        center_n: LV95 Northing (für Logging)
+        skip_egids: Ignoriert (Kompatibilität, wird nicht mehr verwendet)
+
+    Returns:
+        Anzahl importierter Gebäude
+    """
+    start_time = time.time()
+    logger.info(f"[PREFETCH] Background-Task gestartet für Tile {tile_id} (center={center_e:.0f},{center_n:.0f})")
+
+    try:
+        # GDB-Pfad holen (lädt ggf. neu herunter wenn 'cleaned')
+        from app.services.tile_cache import get_tile_cache
+
+        tile_cache = get_tile_cache()
+        gdb_path = tile_cache.get_tile_path(tile_id)
+
+        if not gdb_path or not gdb_path.exists():
+            # Tile wurde gelöscht (cleaned) oder nie heruntergeladen
+            from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
+            gdb_path = await asyncio.to_thread(get_or_redownload_gdb_path_for_tile, tile_id)
+
+        if not gdb_path or not gdb_path.exists():
+            logger.warning(f"[PREFETCH] Konnte GDB für Tile {tile_id} nicht laden")
+            return 0
+
+        # prefetch_tile_buildings_async macht alles:
+        # - Prüft ob bereits importiert (status != 'pending')
+        # - Parquet-Pipeline (GDB → Parquet → DuckDB)
+        # - Cleanup (GDB löschen wenn CLEANUP_TILES_AFTER_IMPORT=True)
+        saved_count = await prefetch_tile_buildings_async(
+            tile_id=tile_id,
+            gdb_path=gdb_path,
+            exclude_egids=None  # Wird ignoriert bei Parquet-Pipeline
+        )
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info(
+            f"[PREFETCH] Background-Task abgeschlossen: {tile_id} | "
+            f"{saved_count} Gebäude | {elapsed_ms:.0f}ms"
+        )
+
+        return saved_count
+
+    except Exception as e:
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.error(f"[PREFETCH] Background-Task Fehler für {tile_id}: {e} ({elapsed_ms:.0f}ms)")
+        import traceback
+        logger.debug(traceback.format_exc())
+        return 0

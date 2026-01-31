@@ -681,8 +681,7 @@ async def fetch_building_polygon_for_coordinates(
     e: float,
     n: float,
     tolerance_m: float = 30.0,
-    simplify_epsilon: Optional[float] = None,
-    skip_prefetch: bool = False
+    simplify_epsilon: Optional[float] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch building polygon from swissBUILDINGS3D for given coordinates.
@@ -694,15 +693,16 @@ async def fetch_building_polygon_for_coordinates(
     2. Tile-Cache GDB - Rohdatei parsen (~100-500ms)
     3. STAC Download - Neu laden (~5-10s)
 
+    FIX 31.01.2026: Keine Side-Effects mehr! Diese Funktion gibt nur Daten zurück.
+    Bei Stufe 2/3 wird gdb_path im Result zurückgegeben für optionalen Background-Prefetch.
+
     Args:
         e: LV95 Easting
         n: LV95 Northing
-        skip_prefetch: Falls True, wird der Background-Prefetch übersprungen.
-                       Nützlich für Address Parser (nur EGID brauchen, Prefetch später).
         tolerance_m: Search radius around the point
 
     Returns:
-        Dict with polygon, sides, perimeter, area, heights or None
+        Dict with polygon, sides, perimeter, area, heights, gdb_path (bei Stufe 2/3) or None
     """
     # Ensure coordinates are in LV95 format
     e, n = ensure_lv95(e, n)
@@ -760,23 +760,9 @@ async def fetch_building_polygon_for_coordinates(
             # In building_3d.db speichern für Stufe 1 beim nächsten Mal
             _save_to_building_3d(result, tile_id)
 
-            # FIX 10.01.2026: Prefetch auch bei Stufe 2 starten
-            # (falls building_3d.db noch nicht alle Gebäude enthält)
-            # FIX 11.01.2026: skip_prefetch für Address Parser (nur EGID brauchen)
-            if not skip_prefetch:
-                main_egid = result.get("egid")
-                center_e = result.get("coord_e") or e
-                center_n = result.get("coord_n") or n
-
-                # REFACTORED 17.01.2026: schedule_prefetch_with_neighbors ist jetzt async
-                await schedule_prefetch_with_neighbors(
-                    tile_id=tile_id,
-                    gdb_path=cached_path,
-                    center_e=center_e,
-                    center_n=center_n,
-                    main_egid=int(main_egid) if main_egid else None,
-                    immediate_radius_m=5.0
-                )
+            # FIX 31.01.2026: Side-Effect entfernt! Prefetch wird vom Aufrufer gesteuert.
+            # gdb_path wird zurückgegeben für optionalen Background-Prefetch.
+            result["gdb_path"] = str(cached_path)
 
         return result
 
@@ -820,35 +806,11 @@ async def fetch_building_polygon_for_coordinates(
             result["cache_hit"] = False
 
             # FIX 12.01.2026 BUG-018: Gebäude in building_3d.db speichern auch bei Stufe 3!
-            # Vorher fehlte dieser Aufruf, was dazu führte dass bei Tile-Download
-            # das erste Gebäude nicht in der DB landete und nachfolgende Lookups
-            # auf falsche EGIDs fallbackten.
             _save_to_building_3d(result, tile_id)
 
-            # 🔄 NEUE ARCHITEKTUR (10.01.2026): MINIMAL + ON-DEMAND
-            # 1. SOFORT: Direkte Nachbarn (5m) laden für blocked_facades
-            # 2. ASYNC: Restliche Gebäude im Hintergrund prefetchen
-            # FIX 11.01.2026: skip_prefetch für Address Parser (nur EGID brauchen)
-            if not skip_prefetch:
-                main_egid = result.get("egid")
-                center_e = result.get("coord_e") or e
-                center_n = result.get("coord_n") or n
-
-                # REFACTORED 17.01.2026: schedule_prefetch_with_neighbors ist jetzt async
-                immediate_count, background_started = await schedule_prefetch_with_neighbors(
-                    tile_id=tile_id,
-                    gdb_path=cached_path,
-                    center_e=center_e,
-                    center_n=center_n,
-                    main_egid=int(main_egid) if main_egid else None,
-                    immediate_radius_m=5.0  # 5m Radius für blocked_facades
-                )
-
-                result["immediate_neighbors_loaded"] = immediate_count
-                result["background_prefetch_started"] = bool(background_started)
-            else:
-                result["immediate_neighbors_loaded"] = 0
-                result["background_prefetch_started"] = False
+            # FIX 31.01.2026: Side-Effect entfernt! Prefetch wird vom Aufrufer gesteuert.
+            # gdb_path wird zurückgegeben für optionalen Background-Prefetch.
+            result["gdb_path"] = str(cached_path)
 
         return result
 
@@ -881,13 +843,15 @@ def parse_gdb_for_building_polygon(
     Returns:
         Dict with polygon, sides, heights, etc. or None
     """
+    # OPT-005 31.01.2026: fiona-direct statt geopandas
+    # Vorher: gpd.read_file() lädt ALLE Gebäude (~7s für 7000 Gebäude)
+    # Nachher: fiona streaming mit early-exit (~50ms bei Match)
     try:
-        import geopandas as gpd
         import fiona
-        from shapely.geometry import Point
-        from shapely.ops import transform
+        import math
+        from shapely.geometry import Point, Polygon, MultiPoint, shape
     except ImportError:
-        raise ImportError("geopandas/fiona/shapely required for polygon parsing")
+        raise ImportError("fiona/shapely required for polygon parsing")
 
     try:
         # List available layers
@@ -912,82 +876,81 @@ def parse_gdb_for_building_polygon(
         if not target_layer:
             return None
 
-        # Read with geometry
-        gdf = gpd.read_file(gdb_path, layer=target_layer, engine='fiona')
-
         # Create target point
         target_point = Point(target_e, target_n)
 
-        # BUG-015 FIX 11.01.2026: Point-in-Polygon hat Priorität!
-        # Bei Reihenhäusern liegt der Hauseingang (Geocoding-Koordinate) oft
-        # näher am Nachbar-Zentrum als am eigenen Gebäude-Zentrum.
-        #
-        # Strategie:
-        # 1. ERST: Point-in-Polygon Check (Punkt liegt IM Gebäude)
-        # 2. FALLBACK: Nächstes Zentrum (wie bisher, wenn kein Polygon-Match)
-
+        # OPT-005: fiona streaming mit early-exit
+        # BUG-015 FIX: Point-in-Polygon hat Priorität!
+        # OPT-006 31.01.2026: bbox-Filter für 66x Speedup (280ms statt 18s)
         point_in_polygon_match = None
         best_distance_match = None
         best_distance = float('inf')
+        features_checked = 0
 
-        for _, row in gdf.iterrows():
-            geom = row.get('geometry')
-            if geom is None:
-                continue
+        with fiona.open(gdb_path, layer=target_layer) as src:
+            # OPT-006: bbox-Filter nutzt FileGDB Spatial Index
+            bbox = (target_e - tolerance_m, target_n - tolerance_m,
+                    target_e + tolerance_m, target_n + tolerance_m)
+            for feature in src.filter(bbox=bbox):
+                features_checked += 1
+                geom = shape(feature['geometry'])
+                props = feature['properties']
 
-            try:
-                # Get 2D footprint (project to XY plane)
-                # swissBUILDINGS3D has 3D geometries - we need the 2D footprint
-                if hasattr(geom, 'geoms'):
-                    # MultiPolygon - find the largest/main polygon
-                    all_coords_2d = []
-                    for g in geom.geoms:
-                        if hasattr(g, 'exterior'):
-                            coords = [(c[0], c[1]) for c in g.exterior.coords]
-                            all_coords_2d.extend(coords)
-                    if not all_coords_2d:
+                try:
+                    # Get 2D footprint (project to XY plane)
+                    # swissBUILDINGS3D has 3D geometries - we need the 2D footprint
+                    if hasattr(geom, 'geoms'):
+                        # MultiPolygon - find the largest/main polygon
+                        all_coords_2d = []
+                        for g in geom.geoms:
+                            if hasattr(g, 'exterior'):
+                                coords = [(c[0], c[1]) for c in g.exterior.coords]
+                                all_coords_2d.extend(coords)
+                        if not all_coords_2d:
+                            continue
+                        # Use convex hull of all points as approximation
+                        hull = MultiPoint(all_coords_2d).convex_hull
+                        footprint = hull
+                    elif hasattr(geom, 'exterior'):
+                        # Single Polygon
+                        coords_2d = [(c[0], c[1]) for c in geom.exterior.coords]
+                        footprint = Polygon(coords_2d)
+                    else:
                         continue
-                    # Use convex hull of all points as approximation
-                    from shapely.geometry import MultiPoint, Polygon
-                    hull = MultiPoint(all_coords_2d).convex_hull
-                    footprint = hull
-                elif hasattr(geom, 'exterior'):
-                    # Single Polygon
-                    coords_2d = [(c[0], c[1]) for c in geom.exterior.coords]
-                    from shapely.geometry import Polygon
-                    footprint = Polygon(coords_2d)
-                else:
+
+                    # BUG-015 FIX: Point-in-Polygon Check ZUERST
+                    if footprint.contains(target_point):
+                        egid = props.get('EGID', 'unknown')
+                        # NaN-Check für EGID
+                        if egid is not None and isinstance(egid, float) and math.isnan(egid):
+                            egid = None
+                        logger.info(f"[BUG-015 FIX] Point-in-Polygon Match: ({target_e:.1f}, {target_n:.1f}) → EGID {egid} (nach {features_checked} features)")
+                        point_in_polygon_match = {
+                            "geometry": footprint,
+                            "props": props,
+                            "original_geom": geom
+                        }
+                        break  # EARLY-EXIT! Keine weitere Suche nötig.
+
+                    # Fallback: Distance-basierte Suche (wie bisher)
+                    distance = footprint.centroid.distance(target_point)
+
+                    if distance < tolerance_m and distance < best_distance:
+                        best_distance = distance
+                        best_distance_match = {
+                            "geometry": footprint,
+                            "props": props,
+                            "original_geom": geom
+                        }
+
+                except Exception:
                     continue
-
-                # BUG-015 FIX: Point-in-Polygon Check ZUERST
-                if footprint.contains(target_point):
-                    egid = row.get('EGID', 'unknown')
-                    logger.info(f"[BUG-015 FIX] Point-in-Polygon Match: ({target_e:.1f}, {target_n:.1f}) → EGID {egid}")
-                    point_in_polygon_match = {
-                        "geometry": footprint,
-                        "row": row
-                    }
-                    break  # Gefunden! Keine weitere Suche nötig.
-
-                # Fallback: Distance-basierte Suche (wie bisher)
-                distance = footprint.centroid.distance(target_point)
-
-                if distance < tolerance_m and distance < best_distance:
-                    best_distance = distance
-                    best_distance_match = {
-                        "geometry": footprint,
-                        "row": row
-                    }
-
-            except Exception:
-                continue
 
         # Priorität: Point-in-Polygon > Distance
         best_match = point_in_polygon_match or best_distance_match
 
         if best_match and not point_in_polygon_match and best_distance_match:
-            import math
-            egid_raw = best_distance_match["row"].get('EGID')
+            egid_raw = best_distance_match["props"].get('EGID')
             # FIX 12.01.2026: NaN-Check für Log-Ausgabe
             if egid_raw is None or (isinstance(egid_raw, float) and math.isnan(egid_raw)):
                 egid_log = 'keine EGID'
@@ -995,7 +958,7 @@ def parse_gdb_for_building_polygon(
                 egid_log = str(int(egid_raw)) if isinstance(egid_raw, (int, float)) else str(egid_raw)
             logger.warning(
                 f"[BUG-015] Kein Polygon-Match für ({target_e:.1f}, {target_n:.1f}). "
-                f"Fallback auf nächstes Zentrum: EGID {egid_log} (dist={best_distance:.1f}m)"
+                f"Fallback auf nächstes Zentrum: EGID {egid_log} (dist={best_distance:.1f}m, checked {features_checked} features)"
             )
 
         if not best_match:
@@ -1003,7 +966,7 @@ def parse_gdb_for_building_polygon(
 
         # Extract polygon coordinates
         footprint = best_match["geometry"]
-        row = best_match["row"]
+        props = best_match["props"]  # OPT-005: props statt row
 
         # Get exterior coordinates as list
         if hasattr(footprint, 'exterior'):
@@ -1033,14 +996,13 @@ def parse_gdb_for_building_polygon(
         # Area from original geometry
         area = abs(footprint.area) if hasattr(footprint, 'area') else 0
 
-        # Extract heights from row
-        dach_max = row.get('DACH_MAX')
-        dach_min = row.get('DACH_MIN')
-        gelaendepunkt = row.get('GELAENDEPUNKT')
-        gesamthoehe = row.get('GESAMTHOEHE')
-        egid = row.get('EGID')
+        # Extract heights from props (OPT-005: props statt row)
+        dach_max = props.get('DACH_MAX')
+        dach_min = props.get('DACH_MIN')
+        gelaendepunkt = props.get('GELAENDEPUNKT')
+        gesamthoehe = props.get('GESAMTHOEHE')
+        egid = props.get('EGID')
         # FIX 12.01.2026: NaN-Check für EGID (GDB kann float NaN haben)
-        import math
         if egid is not None and isinstance(egid, float) and math.isnan(egid):
             egid = None
 
@@ -1071,11 +1033,11 @@ def parse_gdb_for_building_polygon(
             "gebaeudehoehe_m": round(gesamt_f, 2) if gesamt_f else (firsthoehe or traufhoehe),
             "terrain_m": round(terrain_f, 2) if terrain_f else None,
             "match_distance_m": round(best_distance, 2),
-            # FIX 12.01.2026: Erweiterte Attribute für 3D-Layer Verknüpfung
-            "gebaeudeeinheit": row.get('GEBAEUDEEINHEIT'),
-            "objektart": row.get('OBJEKTART'),
-            "name_komplett": row.get('NAME_KOMPLETT'),
-            "gebaeude_nutzung": row.get('GEBAEUDE_NUTZUNG'),
+            # FIX 12.01.2026: Erweiterte Attribute für 3D-Layer Verknüpfung (OPT-005: props statt row)
+            "gebaeudeeinheit": props.get('GEBAEUDEEINHEIT'),
+            "objektart": props.get('OBJEKTART'),
+            "name_komplett": props.get('NAME_KOMPLETT'),
+            "gebaeude_nutzung": props.get('GEBAEUDE_NUTZUNG'),
         }
 
     except Exception as e:
@@ -1121,22 +1083,33 @@ def _save_to_building_3d(result: Dict[str, Any], tile_id: str = None):
     """
     try:
         from app.services.building_3d_service import get_building_3d_service
+        from shapely.geometry import Polygon as ShapelyPolygon
+        from shapely import wkb
+
         building_3d = get_building_3d_service()
 
         egid = result.get('egid')
         if not egid:
             return
 
-        # Zentroid berechnen
+        # FIX 30.01.2026: Zentralisierte Centroid-Berechnung
+        from .object_geometry import calculate_centroid_from_polygon
         polygon = result.get('polygon')
-        center_e, center_n = None, None
-        if polygon and len(polygon) > 0:
-            center_e = sum(p[0] for p in polygon) / len(polygon)
-            center_n = sum(p[1] for p in polygon) / len(polygon)
+        center_e, center_n = calculate_centroid_from_polygon(polygon) if polygon else (None, None)
+
+        # NEU 31.01.2026: Polygon zu WKB für DuckDB Spatial
+        geom_wkb = None
+        if polygon and len(polygon) >= 3:
+            try:
+                polygon_2d = ShapelyPolygon(polygon)
+                if polygon_2d.is_valid:
+                    geom_wkb = wkb.dumps(polygon_2d)
+            except Exception as e:
+                logger.warning(f"Konnte Polygon nicht zu WKB konvertieren: {e}")
 
         building_3d.save({
             'egid': egid,
-            'polygon': polygon,
+            'geom_wkb': geom_wkb,  # NEU 31.01.2026: WKB statt JSON
             'traufhoehe_m': result.get('traufhoehe_m'),
             'firsthoehe_m': result.get('firsthoehe_m'),
             'gebaeudehoehe_m': result.get('gebaeudehoehe_m'),

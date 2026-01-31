@@ -26,6 +26,7 @@ Liefert progressiv via Server-Sent Events (SSE):
 8. complete - Vollständiges BuildingDataBundle (oder Liste bei Multi)
 """
 
+import asyncio
 import json
 import re
 import time
@@ -36,6 +37,9 @@ from typing import AsyncGenerator, Dict, Any, Optional, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# NEU 30.01.2026: Pipeline-Logger für detailliertes Timing
+from .sse_pipeline_logger import SSEPipelineLogger, log_step_timing
 
 
 def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
@@ -354,6 +358,9 @@ class BuildingDataStreamService:
         from .smart_building.models import BuildingDataBundle
         from .address_parser import get_address_parser
 
+        # NEU 30.01.2026: Pipeline-Logger für detailliertes Timing
+        pipeline_logger = SSEPipelineLogger(address)
+
         is_multi = _is_multi_address(address)
         if is_multi:
             logger.info(f"[STREAM] Multi-Adresse erkannt: {address}")
@@ -380,6 +387,7 @@ class BuildingDataStreamService:
             # ═══════════════════════════════════════════════════════════════
             # 1. GEOCODING + GWR (für alle Adressen)
             # ═══════════════════════════════════════════════════════════════
+            pipeline_logger.start_step("geocoding", {"address_count": len(addresses_to_process)})
             step_start = time.time()
             bundles: List[BuildingDataBundle] = []
             geocoding_results = []
@@ -432,6 +440,10 @@ class BuildingDataStreamService:
                 return
 
             geocoding_duration = round((time.time() - step_start) * 1000, 1)
+            pipeline_logger.end_step("geocoding", {
+                "building_count": len(bundles),
+                "egids": [b.egid for b in bundles if b.egid]
+            })
 
             if is_multi:
                 yield SSEEvent(
@@ -490,6 +502,7 @@ class BuildingDataStreamService:
             # ═══════════════════════════════════════════════════════════════
             # 3. POLYGON + HEIGHTS (ein API-Aufruf pro Gebäude)
             # ═══════════════════════════════════════════════════════════════
+            pipeline_logger.start_step("polygon", {"building_count": len(bundles)})
             step_start = time.time()
 
             # Progress-Event für Tile-Download
@@ -521,23 +534,21 @@ class BuildingDataStreamService:
                         }
                     )
 
-            # Polygon + Höhen für alle Gebäude laden
+            # 3D-Daten für alle Gebäude laden
             polygon_results = []
+            loaded_egids = []  # FIX 29.01.2026: Sammle EGIDs für Prefetch
+
             for bundle in bundles:
                 # TIMING 21.01.2026: Messe jeden Schritt
                 t0 = time.time()
                 await smart._collect_building_3d_data(bundle)
                 t1 = time.time()
-                # FIX 18.01.2026 BUG-028: 3D-Layer on-demand laden
-                smart._fetch_roof_geometry_for_complex(bundle)
-                t2 = time.time()
                 smart._load_roof_data_from_db(bundle)
-                t3 = time.time()
+                t2 = time.time()
 
                 print(f"[SSE-TIMING] EGID {bundle.egid}: "
                       f"_collect_building_3d_data={round((t1-t0)*1000)}ms, "
-                      f"_fetch_roof_geometry={round((t2-t1)*1000)}ms, "
-                      f"_load_roof_data={round((t3-t2)*1000)}ms", flush=True)
+                      f"_load_roof_data={round((t2-t1)*1000)}ms", flush=True)
 
                 polygon_results.append({
                     "egid": bundle.egid,
@@ -548,30 +559,21 @@ class BuildingDataStreamService:
                     "area_m2": bundle.footprint_area_m2,
                 })
 
-                # NEU 20.01.2026: Prefetch für alle Gebäude im Tile (inkl. Walls)
-                # Läuft im Hintergrund während User die Daten sieht
-                t4 = time.time()
-                if bundle.lv95_e and bundle.lv95_n:
-                    from .tile_prefetch import schedule_prefetch_with_neighbors
-                    from .tile_cache import lv95_to_tile_id, get_tile_cache
-                    from pathlib import Path
+                # Sammle EGID für skip_egids
+                if bundle.egid:
+                    try:
+                        loaded_egids.append(int(bundle.egid))
+                    except (ValueError, TypeError):
+                        pass
 
-                    tile_id = lv95_to_tile_id(bundle.lv95_e, bundle.lv95_n)
-                    tile_cache_local = get_tile_cache()
-                    gdb_path = tile_cache_local.get_tile_path(tile_id)
-
-                    imm, bg = await schedule_prefetch_with_neighbors(
-                        tile_id=tile_id,
-                        gdb_path=gdb_path or Path(""),
-                        center_e=bundle.lv95_e,
-                        center_n=bundle.lv95_n,
-                        main_egid=int(bundle.egid) if bundle.egid else None,
-                        immediate_radius_m=5.0
-                    )
-                    t5 = time.time()
-                    print(f"[SSE-TIMING] EGID {bundle.egid}: prefetch={round((t5-t4)*1000)}ms (imm={imm}, bg={bg})", flush=True)
-
+            # ════════════════════════════════════════════════════════════
+            # FIX 31.01.2026: Blocking-Call entfernt!
+            # schedule_prefetch_with_neighbors wurde hier aufgerufen und
+            # blockierte ~141s. Prefetch läuft jetzt als Background-Task
+            # NACH dem SSE-Event (siehe unten nach yield).
+            # ════════════════════════════════════════════════════════════
             polygon_duration = round((time.time() - step_start) * 1000, 1)
+            pipeline_logger.end_step("polygon", {"duration_ms": polygon_duration})
 
             if is_multi:
                 yield SSEEvent(
@@ -596,17 +598,41 @@ class BuildingDataStreamService:
                     }
                 )
 
+            # ════════════════════════════════════════════════════════════
+            # FIX 31.01.2026: Non-blocking Background-Prefetch
+            # Läuft parallel zu Steps 4-8 (HEIGHTS, TERRAIN, ZONES, etc.)
+            # ════════════════════════════════════════════════════════════
+            if bundles and bundles[0].lv95_e and bundles[0].lv95_n:
+                from .tile_prefetch import prefetch_and_cleanup
+                from .tile_cache import lv95_to_tile_id
+
+                center_e, center_n = bundles[0].lv95_e, bundles[0].lv95_n
+                tile_id = lv95_to_tile_id(center_e, center_n)
+
+                # Fire-and-forget: GDB erneut öffnen, Rest laden, aufräumen
+                asyncio.create_task(
+                    prefetch_and_cleanup(
+                        tile_id=tile_id,
+                        center_e=center_e,
+                        center_n=center_n,
+                        skip_egids=loaded_egids
+                    )
+                )
+                print(f"[SSE-TIMING] Background prefetch_and_cleanup started for tile {tile_id}", flush=True)
+
             # ═══════════════════════════════════════════════════════════════
             # 4. HEIGHTS (separates Event)
             # ═══════════════════════════════════════════════════════════════
+            # FIX 29.01.2026: DEPRECATED traufhoehe_m/firsthoehe_m ENTFERNT
+            # Korrekte Höhen: roof_dach_min_m/roof_dach_max_m (m ü.M.)
+            # Frontend berechnet: traufhoehe = roof_dach_min_m - terrain_z_min
             heights_results = []
             for bundle in bundles:
-                height_source = "swissBUILDINGS3D" if bundle.traufhoehe_m or bundle.firsthoehe_m else "default"
+                height_source = "swissBUILDINGS3D" if bundle.roof_dach_min_m or bundle.roof_dach_max_m else "default"
                 heights_results.append({
                     "egid": bundle.egid,
                     "matched_address": bundle.address_matched,
-                    "traufhoehe_m": bundle.traufhoehe_m,
-                    "firsthoehe_m": bundle.firsthoehe_m,
+                    # DEPRECATED ENTFERNT: traufhoehe_m, firsthoehe_m
                     "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
                     "source": height_source,
                     "has_3d_layers": bundle.has_3d_layers,
@@ -629,8 +655,7 @@ class BuildingDataStreamService:
                 yield SSEEvent(
                     event=StreamStep.HEIGHTS,
                     data={
-                        "traufhoehe_m": h["traufhoehe_m"],
-                        "firsthoehe_m": h["firsthoehe_m"],
+                        # DEPRECATED ENTFERNT: traufhoehe_m, firsthoehe_m
                         "gebaeudehoehe_m": h["gebaeudehoehe_m"],
                         "source": h["source"],
                         "duration_ms": 0,
@@ -649,20 +674,22 @@ class BuildingDataStreamService:
             # 5. TERRAIN (optional)
             # ═══════════════════════════════════════════════════════════════
             if include_terrain:
+                pipeline_logger.start_step("terrain")
                 step_start = time.time()
                 terrain_results = []
 
                 for bundle in bundles:
                     await smart._collect_terrain_data(bundle)
 
+                    # FIX 29.01.2026: DEPRECATED slope_m/slope_class ENTFERNT
+                    # Frontend berechnet aus building_walls.geometry Z-Koordinaten
                     terrain_data = {"egid": bundle.egid, "matched_address": bundle.address_matched}
                     if bundle.terrain:
                         terrain_data.update({
                             "terrain_height_m": bundle.terrain.reference_height_m,
                             "min_terrain_m": bundle.terrain.min_height_m,
                             "max_terrain_m": bundle.terrain.max_height_m,
-                            "slope_m": bundle.terrain.slope_m,
-                            "slope_class": bundle.terrain.slope_class,
+                            # DEPRECATED ENTFERNT: slope_m, slope_class
                             "facade_z_min": bundle.terrain.facade_z_min,
                             "facade_z_max": bundle.terrain.facade_z_max,
                             "facade_heights_source": bundle.terrain.facade_heights_source,
@@ -670,6 +697,7 @@ class BuildingDataStreamService:
                     terrain_results.append(terrain_data)
 
                 terrain_duration = round((time.time() - step_start) * 1000, 1)
+                pipeline_logger.end_step("terrain", {"duration_ms": terrain_duration})
 
                 if is_multi:
                     yield SSEEvent(
@@ -685,8 +713,7 @@ class BuildingDataStreamService:
                             "terrain_height_m": t.get("terrain_height_m"),
                             "min_terrain_m": t.get("min_terrain_m"),
                             "max_terrain_m": t.get("max_terrain_m"),
-                            "slope_m": t.get("slope_m"),
-                            "slope_class": t.get("slope_class"),
+                            # DEPRECATED ENTFERNT: slope_m, slope_class
                             "facade_z_min": t.get("facade_z_min"),
                             "facade_z_max": t.get("facade_z_max"),
                             "facade_heights_source": t.get("facade_heights_source"),
@@ -697,6 +724,7 @@ class BuildingDataStreamService:
             # 6. ZONES (immer, aber Claude nur bei komplexen Gebäuden)
             # ═══════════════════════════════════════════════════════════════
             if include_zones:
+                pipeline_logger.start_step("zones")
                 step_start = time.time()
                 zones_results = []
 
@@ -729,6 +757,7 @@ class BuildingDataStreamService:
                     })
 
                 zones_duration = round((time.time() - step_start) * 1000, 1)
+                pipeline_logger.end_step("zones", {"duration_ms": zones_duration})
 
                 if is_multi:
                     yield SSEEvent(
@@ -752,6 +781,7 @@ class BuildingDataStreamService:
             # 7. RESEARCH (optional)
             # ═══════════════════════════════════════════════════════════════
             if include_research:
+                pipeline_logger.start_step("research")
                 step_start = time.time()
                 research_results = []
 
@@ -768,6 +798,7 @@ class BuildingDataStreamService:
                     })
 
                 research_duration = round((time.time() - step_start) * 1000, 1)
+                pipeline_logger.end_step("research", {"duration_ms": research_duration})
 
                 if is_multi:
                     yield SSEEvent(
@@ -790,6 +821,7 @@ class BuildingDataStreamService:
             # ═══════════════════════════════════════════════════════════════
             # 8. COMPLETE
             # ═══════════════════════════════════════════════════════════════
+            pipeline_logger.start_step("complete")
             total_duration = round((time.time() - start_time) * 1000, 1)
 
             complete_results = []
@@ -842,8 +874,14 @@ class BuildingDataStreamService:
                     }
                 )
 
+            # NEU 30.01.2026: Pipeline-Logging abschliessen
+            pipeline_logger.end_step("complete", {"total_duration_ms": total_duration})
+            pipeline_logger.finish()
+
         except Exception as e:
             logger.exception(f"Error in stream_building_data: {e}")
+            pipeline_logger.add_error(str(e))
+            pipeline_logger.finish()
             yield SSEEvent(
                 event=StreamStep.ERROR,
                 data={
@@ -866,20 +904,21 @@ class BuildingDataStreamService:
                 "beruesten": zone.beruesten,
             })
 
+        # FIX 29.01.2026: DEPRECATED slope_m/slope_class ENTFERNT
         terrain_dict = None
         if bundle.terrain:
             terrain_dict = {
                 "reference_height_m": bundle.terrain.reference_height_m,
                 "min_height_m": bundle.terrain.min_height_m,
                 "max_height_m": bundle.terrain.max_height_m,
-                "slope_m": bundle.terrain.slope_m,
-                "slope_class": bundle.terrain.slope_class,
+                # DEPRECATED ENTFERNT: slope_m, slope_class (Frontend berechnet)
                 # NEU 14.01.2026 (T3): Fassaden-Höhen aus Wall-Layer
                 "facade_z_min": bundle.terrain.facade_z_min,
                 "facade_z_max": bundle.terrain.facade_z_max,
                 "facade_heights_source": bundle.terrain.facade_heights_source,
             }
 
+        # FIX 29.01.2026: DEPRECATED traufhoehe_m/firsthoehe_m ENTFERNT
         return {
             "address_input": bundle.address_input,
             "address_matched": bundle.address_matched,
@@ -892,8 +931,7 @@ class BuildingDataStreamService:
             "facades": bundle.facades,
             "perimeter_m": bundle.perimeter_m,
             "footprint_area_m2": bundle.footprint_area_m2,
-            "traufhoehe_m": bundle.traufhoehe_m,
-            "firsthoehe_m": bundle.firsthoehe_m,
+            # DEPRECATED ENTFERNT: traufhoehe_m, firsthoehe_m
             "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
             "gwr_floors": bundle.gwr_floors,
             "gwr_area_m2": bundle.gwr_area_m2,
