@@ -34,6 +34,64 @@ from app.models.schemas import (
 )
 from app.routers import geruestbau, batch_import
 
+# =============================================================================
+# DATABASE RESET (für PROD Deployment)
+# =============================================================================
+# NEU 01.02.2026: Einmaliger DB-Reset via Umgebungsvariable
+# Verwendung: Variable auf "true" setzen, deployen, dann Variable entfernen
+
+def reset_databases_if_requested():
+    """
+    Löscht Datenbanken basierend auf Umgebungsvariablen.
+
+    RESET_GEODATEN_DB=true:
+    - building_3d.duckdb (Gebäude-Grunddaten)
+    - tiles.db (Tile-Metadaten)
+    - building_contexts.db (Zonen, Terrain)
+    - tiles/ Verzeichnis (GDB-Rohdateien)
+
+    RESET_PROJECTS_DB=true:
+    - geruestbau.db (Projekte - VORSICHT: Benutzerdaten!)
+    """
+    import shutil
+    from app.config import DATA_DIR
+
+    # Geodaten-DBs löschen
+    if os.getenv("RESET_GEODATEN_DB", "").lower() == "true":
+        print("[RESET] Starte Geodaten-Reset...")
+
+        dbs_to_delete = ["building_3d.duckdb", "tiles.db", "building_contexts.db"]
+        for db in dbs_to_delete:
+            db_path = DATA_DIR / db
+            if db_path.exists():
+                db_path.unlink()
+                print(f"[RESET] Geloescht: {db_path}")
+
+        tiles_dir = DATA_DIR / "tiles"
+        if tiles_dir.exists():
+            shutil.rmtree(tiles_dir)
+            print(f"[RESET] Geloescht: {tiles_dir}")
+
+        print("[RESET] Geodaten-Reset abgeschlossen.")
+
+    # Projekt-DB löschen (separate Variable für Sicherheit)
+    if os.getenv("RESET_PROJECTS_DB", "").lower() == "true":
+        print("[RESET] WARNUNG: Loesche Projekt-Datenbank...")
+
+        projects_db = DATA_DIR / "geruestbau.db"
+        if projects_db.exists():
+            projects_db.unlink()
+            print(f"[RESET] Geloescht: {projects_db}")
+
+        print("[RESET] Projekt-Reset abgeschlossen.")
+
+# Reset VOR Service-Initialisierung ausführen!
+reset_databases_if_requested()
+
+# Erinnerung falls Reset-Variablen noch aktiv sind
+if os.getenv("RESET_GEODATEN_DB", "").lower() == "true" or os.getenv("RESET_PROJECTS_DB", "").lower() == "true":
+    print("[WARNUNG] Reset-Variablen noch aktiv! Bitte nach Deploy entfernen.")
+
 # Services initialisieren
 swisstopo = SwisstopoService()
 geodienste = GeodiensteService()

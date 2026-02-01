@@ -52,21 +52,38 @@ export default function ImportStep({
 
   const isSimapUrl = (url: string) => url.includes('simap.ch')
 
-  // NEU 01.02.2026: Optional GPS-Koordinaten (Fallback für iOS Safari capture)
-  const handleFileSelect = async (
-    file: File,
-    gpsCoords?: { lat: number; lon: number }
-  ) => {
+  // NEU 01.02.2026: Integrierte GPS-Fallback-Logik für Bilder
+  const handleFileSelect = async (file: File) => {
     setSelectedFile(file)
     setExtractionResult(null)
     setExtractingDoc(true)
 
-    try {
-      // GPS-Koordinaten mitgeben falls vorhanden (Fallback für iOS Safari)
-      const result = await extractFromDocument(file, gpsCoords)
-      if (gpsCoords) {
-        console.log('[ImportStep] GPS-Fallback gesendet:', gpsCoords)
+    // Bei Bildern: Versuche GPS via Geolocation API zu holen (Fallback für iOS Safari)
+    let gpsCoords: { lat: number; lon: number } | undefined
+    if (file.type.startsWith('image/')) {
+      try {
+        if ('geolocation' in navigator) {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 5000,
+              maximumAge: 60000  // Cache for 1 minute
+            })
+          })
+          gpsCoords = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          }
+          console.log('[ImportStep] GPS-Fallback geholt:', gpsCoords)
+        }
+      } catch (error) {
+        console.log('[ImportStep] GPS nicht verfügbar:', error)
+        // Kein Problem - Backend nutzt EXIF wenn vorhanden
       }
+    }
+
+    try {
+      const result = await extractFromDocument(file, gpsCoords)
       setExtractionResult(result)
 
       if (result.success) {
@@ -124,49 +141,6 @@ export default function ImportStep({
     setExtractionResult(null)
   }
 
-  const handleCameraCapture = () => {
-    // NEU 01.02.2026: Erst GPS holen, dann Foto machen
-    // iOS Safari entfernt EXIF-GPS bei capture="environment"
-    // Daher nutzen wir die Geolocation API als Fallback
-
-    const capturePhoto = (gpsCoords?: { lat: number; lon: number }) => {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = 'image/*'
-      input.capture = 'environment'
-      input.onchange = (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0]
-        if (file) {
-          // GPS-Koordinaten an handleFileSelect übergeben
-          handleFileSelect(file, gpsCoords)
-        }
-      }
-      input.click()
-    }
-
-    // Versuche GPS zu holen bevor Kamera geöffnet wird
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          console.log('[Camera] GPS from Geolocation API:', position.coords.latitude, position.coords.longitude)
-          capturePhoto({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          })
-        },
-        (error) => {
-          console.warn('[Camera] Geolocation failed:', error.message)
-          // Kein GPS verfügbar, trotzdem Foto machen
-          capturePhoto()
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
-    } else {
-      // Kein Geolocation API
-      capturePhoto()
-    }
-  }
-
   const handleUrlExtract = async () => {
     if (!urlInput.trim()) {
       setUrlError('Bitte URL eingeben')
@@ -219,11 +193,10 @@ export default function ImportStep({
 
   return (
     <div className="space-y-4">
-      {/* File Upload Section */}
+      {/* Unified File Upload Section */}
       <div className="card">
         <FileUpload
           onFileSelect={handleFileSelect}
-          onCameraCapture={handleCameraCapture}
           loading={extractingDoc}
           disabled={extractingDoc || extractingUrl}
           selectedFile={selectedFile}

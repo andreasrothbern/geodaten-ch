@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react'
-import { Upload, Camera, FileText, X, Loader2 } from 'lucide-react'
+import { Upload, FileText, X, Loader2, Camera, File, PenLine } from 'lucide-react'
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void
-  onCameraCapture?: () => void
   accept?: string
   loading?: boolean
   disabled?: boolean
@@ -13,7 +12,6 @@ interface FileUploadProps {
 
 export default function FileUpload({
   onFileSelect,
-  onCameraCapture,
   accept = '.pdf,image/*',
   loading = false,
   disabled = false,
@@ -104,34 +102,52 @@ export default function FileUpload({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Drop zone - relative container for the hidden input */}
+    <div>
+      {/* Unified drop zone - handles files and camera on mobile */}
       <label
         className={`
-          relative block border-2 border-dashed rounded-xl p-6 text-center transition-colors
-          ${isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300'}
+          relative block border-2 border-dashed rounded-2xl p-8 text-center transition-all
+          ${isDragging ? 'border-primary-500 bg-primary-50 scale-[1.01]' : 'border-gray-300 hover:border-gray-400'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="flex flex-col items-center gap-3">
-          <div className="p-3 bg-gray-100 rounded-full">
-            <Upload className="w-6 h-6 text-gray-500" />
+        <div className="flex flex-col items-center gap-4">
+          {/* Upload cloud icon */}
+          <div className="w-12 h-12 flex items-center justify-center">
+            <Upload className="w-8 h-8 text-gray-400" />
           </div>
 
+          {/* Main text */}
           <div>
-            <p className="text-gray-700 font-medium">
-              PDF hier ablegen oder klicken zum Upload
+            <p className="text-lg font-semibold text-gray-800">
+              Datei hier ablegen oder klicken
             </p>
-            <p className="text-sm text-gray-500 mt-1">
-              PDF, JPG, PNG (max. 10 MB)
+            <p className="text-sm text-gray-400 mt-1">
+              PDF, JPG, PNG, HEIC (max. 10 MB)
             </p>
+          </div>
+
+          {/* Supported types icons */}
+          <div className="flex items-center gap-4 mt-2">
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <Camera className="w-4 h-4" />
+              <span className="text-xs">Foto</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <File className="w-4 h-4" />
+              <span className="text-xs">PDF</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <PenLine className="w-4 h-4" />
+              <span className="text-xs">Skizze</span>
+            </div>
           </div>
         </div>
 
-        {/* Hidden file input - positioned within the label only */}
+        {/* Hidden file input - handles both file selection and camera on mobile */}
         <input
           type="file"
           accept={accept}
@@ -140,50 +156,6 @@ export default function FileUpload({
           disabled={disabled}
         />
       </label>
-
-      {/* Divider with "oder" */}
-      <div className="relative my-4">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200" />
-        </div>
-        <div className="relative flex justify-center">
-          <span className="bg-white px-3 text-sm text-gray-500">oder</span>
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex gap-3 justify-center">
-        {onCameraCapture && (
-          <button
-            type="button"
-            onClick={onCameraCapture}
-            disabled={disabled}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200
-                       rounded-lg text-gray-700 font-medium transition-colors disabled:opacity-50"
-          >
-            <Camera className="w-5 h-5" />
-            Foto aufnehmen
-          </button>
-        )}
-
-        <label
-          className={`
-            flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200
-            rounded-lg text-gray-700 font-medium transition-colors cursor-pointer
-            ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-          `}
-        >
-          <FileText className="w-5 h-5" />
-          Datei wählen
-          <input
-            type="file"
-            accept={accept}
-            onChange={handleFileInput}
-            className="hidden"
-            disabled={disabled}
-          />
-        </label>
-      </div>
     </div>
   )
 }
