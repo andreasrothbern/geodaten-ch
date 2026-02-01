@@ -789,9 +789,10 @@ Hinweise:
             return {}
 
         try:
-            from app.services.swisstopo import get_swisstopo_service
+            # FIX 01.02.2026: SwisstopoService direkt verwenden (keine Factory-Funktion)
+            from app.services.swisstopo import SwisstopoService
 
-            service = get_swisstopo_service()
+            service = SwisstopoService()
 
             # identify_buildings() liefert Liste von BuildingInfo
             buildings = await service.identify_buildings(
