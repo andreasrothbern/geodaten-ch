@@ -92,15 +92,22 @@ export default function ImportStep({
 
       if (result.success) {
         // NEU 01.02.2026: Unterschiedliche Quellen für Daten
-        let extractedData = result.data
+        let extractedData = result.data || {}
 
         // Bei Gebäudefoto: suggested_address oder preloaded_address verwenden
-        // NEU 01.02.2026: suggested_address hat Priorität (aus identify_buildings)
+        // FIX 01.02.2026: suggested_address hat IMMER Priorität über visible_address (result.data.address)
+        // visible_address ist oft nur eine Hausnummer wie "28" ohne Strasse/Ort
         const resolvedAddress = result.suggested_address || result.preloaded_address
-        if (result.image_type === 'building_photo' && resolvedAddress) {
+
+        if (result.image_type === 'building_photo') {
+          // Prüfe ob result.data.address nur eine Hausnummer ist (keine vollständige Adresse)
+          const dataAddress = extractedData.address || ''
+          const isIncompleteAddress = dataAddress.length < 10 || !dataAddress.includes(' ')
+
           extractedData = {
             ...extractedData,
-            address: resolvedAddress,
+            // Verwende resolvedAddress wenn vorhanden, oder leere wenn nur Hausnummer
+            address: resolvedAddress || (isIncompleteAddress ? '' : dataAddress),
             // Beschreibung aus Foto-Analyse
             description: result.building_analysis ?
               `${result.building_analysis.floors_count || '?'} Geschosse, ${result.building_analysis.roof_type || 'Dach unbekannt'}${result.building_analysis.obstacles?.length ? `, Hindernisse: ${result.building_analysis.obstacles.join(', ')}` : ''}`
