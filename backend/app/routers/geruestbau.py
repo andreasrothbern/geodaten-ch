@@ -1,9 +1,10 @@
 ﻿"""GerÃ¼stbau-App API Router."""
 
+import json
 import logging
 import math
 import uuid
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Form
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 from sse_starlette.sse import EventSourceResponse
@@ -509,6 +510,99 @@ async def import_from_url(request: UrlImportRequest):
     result = await importer.import_from_url(request.url)
 
     return result.to_dict()
+
+
+# ============ UPLOADS API (NEU 01.02.2026) ============
+
+@router.post("/projects/{project_id}/uploads", response_model=Dict[str, Any])
+async def upload_file_to_project(
+    project_id: str,
+    file: UploadFile = File(...),
+    extraction_result: str = Form(...),  # JSON string
+    direction: Optional[str] = Form(None),
+):
+    """
+    Speichert einen Upload (Foto/Skizze) mit Claude Vision Analyse beim Projekt.
+
+    Args:
+        project_id: Projekt-ID
+        file: Die Datei (Foto/Skizze)
+        extraction_result: SmartExtractionResult als JSON-String
+        direction: Optional Fassaden-Richtung (N/S/E/W)
+
+    Returns:
+        Upload-ID und Metadaten
+    """
+    # Projekt prüfen
+    project = await project_service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+
+    # Datei lesen
+    file_bytes = await file.read()
+    if len(file_bytes) > 20 * 1024 * 1024:  # 20 MB limit
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 20 MB)")
+
+    # extraction_result parsen
+    try:
+        extraction_dict = json.loads(extraction_result)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Ungültiges extraction_result JSON")
+
+    # Upload speichern
+    upload_id = await project_service.save_upload(
+        project_id=project_id,
+        file_data=file_bytes,
+        filename=file.filename or "upload",
+        mime_type=file.content_type or "application/octet-stream",
+        extraction_result=extraction_dict,
+        direction=direction
+    )
+
+    return {
+        "id": upload_id,
+        "project_id": project_id,
+        "filename": file.filename,
+        "mime_type": file.content_type,
+        "size_bytes": len(file_bytes),
+    }
+
+
+@router.get("/projects/{project_id}/uploads", response_model=List[Dict[str, Any]])
+async def get_project_uploads(project_id: str):
+    """Lädt alle Uploads für ein Projekt (ohne Datei-Daten)."""
+    project = await project_service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+
+    uploads = await project_service.get_uploads_for_project(project_id)
+    return uploads
+
+
+@router.get("/uploads/{upload_id}/file")
+async def get_upload_file(upload_id: str):
+    """Lädt die Datei eines Uploads (das Bild selbst)."""
+    from fastapi.responses import Response
+
+    result = await project_service.get_upload_file(upload_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Upload nicht gefunden")
+
+    file_data, filename, mime_type = result
+    return Response(
+        content=file_data,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'}
+    )
+
+
+@router.delete("/uploads/{upload_id}")
+async def delete_upload(upload_id: str):
+    """Löscht einen Upload."""
+    deleted = await project_service.delete_upload(upload_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Upload nicht gefunden")
+    return {"deleted": True}
 
 
 # ============ SCAFFOLD CONFIGURATOR API ============

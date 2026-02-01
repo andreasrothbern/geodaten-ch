@@ -56,15 +56,36 @@ class ProjectService:
             )
         ''')
 
+        # NEU 01.02.2026: uploads Tabelle ersetzt alte photos Tabelle
+        # Speichert Fotos/Skizzen als BLOB mit Claude Vision Analyse
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS photos (
+            CREATE TABLE IF NOT EXISTS uploads (
                 id TEXT PRIMARY KEY,
                 project_id TEXT,
-                file_path TEXT,
+
+                -- Datei-Daten
+                filename TEXT,
+                mime_type TEXT,
+                file_data BLOB,
+
+                -- Meta-Daten
+                timestamp TEXT,
                 direction TEXT,
-                analysis TEXT,
+
+                -- GPS (aus EXIF oder Fallback)
+                gps_lat REAL,
+                gps_lon REAL,
+                lv95_e REAL,
+                lv95_n REAL,
+                compass_direction REAL,
+
+                -- Claude Vision Analyse (JSON)
+                extraction_result TEXT,
+
+                -- Timestamps
                 created_at TEXT,
-                FOREIGN KEY (project_id) REFERENCES projects(id)
+
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
         ''')
 
@@ -817,3 +838,144 @@ class ProjectService:
             created_at=datetime.fromisoformat(row['created_at']),
             updated_at=datetime.fromisoformat(row['updated_at'])
         )
+
+    # =========================================================================
+    # NEU 01.02.2026: Upload-Verwaltung (Fotos/Skizzen mit Claude Vision Analyse)
+    # =========================================================================
+
+    async def save_upload(
+        self,
+        project_id: str,
+        file_data: bytes,
+        filename: str,
+        mime_type: str,
+        extraction_result: dict,
+        direction: Optional[str] = None
+    ) -> str:
+        """
+        Speichert einen Upload (Foto/Skizze) mit Claude Vision Analyse.
+
+        Args:
+            project_id: Projekt-ID
+            file_data: Datei als Bytes (BLOB)
+            filename: Original-Dateiname
+            mime_type: MIME-Type (z.B. "image/jpeg")
+            extraction_result: SmartExtractionResult als Dict
+            direction: Optional Fassaden-Richtung (N/S/E/W)
+
+        Returns:
+            Upload-ID
+        """
+        upload_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+
+        # GPS-Daten extrahieren
+        gps_data = extraction_result.get('gps_data', {}) or {}
+        gps_lat = gps_data.get('lat')
+        gps_lon = gps_data.get('lon')
+        lv95_e = gps_data.get('lv95_e')
+        lv95_n = gps_data.get('lv95_n')
+        compass_direction = gps_data.get('compass_direction')
+
+        # Timestamp aus EXIF oder jetzt
+        timestamp = extraction_result.get('photo_timestamp') or now
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO uploads (
+                id, project_id, filename, mime_type, file_data,
+                timestamp, direction,
+                gps_lat, gps_lon, lv95_e, lv95_n, compass_direction,
+                extraction_result, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            upload_id, project_id, filename, mime_type, file_data,
+            timestamp, direction,
+            gps_lat, gps_lon, lv95_e, lv95_n, compass_direction,
+            json.dumps(extraction_result, ensure_ascii=False),
+            now
+        ))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"[UPLOAD] Gespeichert: {filename} für Projekt {project_id} (ID: {upload_id})")
+        return upload_id
+
+    async def get_uploads_for_project(self, project_id: str) -> list:
+        """Lädt alle Uploads für ein Projekt (ohne BLOB-Daten)."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, filename, mime_type, timestamp, direction,
+                   gps_lat, gps_lon, lv95_e, lv95_n, compass_direction,
+                   extraction_result, created_at
+            FROM uploads
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+        ''', (project_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        uploads = []
+        for row in rows:
+            extraction = json.loads(row['extraction_result']) if row['extraction_result'] else {}
+            uploads.append({
+                "id": row['id'],
+                "filename": row['filename'],
+                "mime_type": row['mime_type'],
+                "timestamp": row['timestamp'],
+                "direction": row['direction'],
+                "gps": {
+                    "lat": row['gps_lat'],
+                    "lon": row['gps_lon'],
+                    "lv95_e": row['lv95_e'],
+                    "lv95_n": row['lv95_n'],
+                    "compass_direction": row['compass_direction'],
+                } if row['gps_lat'] else None,
+                "extraction_result": extraction,
+                "created_at": row['created_at'],
+            })
+
+        return uploads
+
+    async def get_upload_file(self, upload_id: str) -> Optional[tuple]:
+        """Lädt die Datei-Daten eines Uploads (BLOB).
+
+        Returns:
+            Tuple (file_data, filename, mime_type) oder None
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT file_data, filename, mime_type
+            FROM uploads WHERE id = ?
+        ''', (upload_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return (row[0], row[1], row[2])
+        return None
+
+    async def delete_upload(self, upload_id: str) -> bool:
+        """Löscht einen Upload."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM uploads WHERE id = ?', (upload_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+
+        if deleted:
+            logger.info(f"[UPLOAD] Gelöscht: {upload_id}")
+        return deleted

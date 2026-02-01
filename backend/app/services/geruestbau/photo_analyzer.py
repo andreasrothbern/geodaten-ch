@@ -107,6 +107,56 @@ class BuildingAnalysis:
 
 
 @dataclass
+class TerrainAnalysis:
+    """Terrain- und Umgebungs-Analyse aus Foto (NEU 01.02.2026)"""
+    # Terrain/Hanglage
+    slope_estimate: Optional[str] = None  # eben, leicht, mittel, stark
+    slope_direction: Optional[str] = None  # N, S, E, W, bergauf, bergab
+    ground_type: Optional[str] = None  # asphalt, kies, rasen, erde, pflaster
+
+    # Zufahrt
+    access_type: Optional[str] = None  # strasse, weg, eingeschraenkt, nicht_sichtbar
+    access_width: Optional[str] = None  # lkw_moeglich, lieferwagen, nur_fussgaenger
+
+    # Umgebung
+    neighboring_distance: Optional[str] = None  # angrenzend, 2-5m, >5m, freistehend
+    trees_nearby: bool = False
+    power_lines: bool = False
+    street_furniture: list = field(default_factory=list)  # laterne, hydrant, parkplatz
+
+    # Gerüst-Hindernisse
+    balconies_count: int = 0
+    awnings_count: int = 0
+    bay_windows: bool = False  # Erker
+    overhangs: list = field(default_factory=list)  # dachvorsprung, vordach
+    other_obstacles: list = field(default_factory=list)  # sonnenstoren, klimaanlage
+
+    # Notizen
+    scaffold_notes: Optional[str] = None
+    confidence: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "slope_estimate": self.slope_estimate,
+            "slope_direction": self.slope_direction,
+            "ground_type": self.ground_type,
+            "access_type": self.access_type,
+            "access_width": self.access_width,
+            "neighboring_distance": self.neighboring_distance,
+            "trees_nearby": self.trees_nearby,
+            "power_lines": self.power_lines,
+            "street_furniture": self.street_furniture,
+            "balconies_count": self.balconies_count,
+            "awnings_count": self.awnings_count,
+            "bay_windows": self.bay_windows,
+            "overhangs": self.overhangs,
+            "other_obstacles": self.other_obstacles,
+            "scaffold_notes": self.scaffold_notes,
+            "confidence": self.confidence,
+        }
+
+
+@dataclass
 class SketchAnalysis:
     """Analyse einer Skizze/Zeichnung"""
     sketch_type: Optional[str] = None  # grundriss, ansicht, schnitt, detail, situationsplan
@@ -151,6 +201,20 @@ class SmartExtractionResult:
     # Skizze/Zeichnung-Analyse
     sketch_analysis: Optional[SketchAnalysis] = None
 
+    # Terrain-Analyse (NEU 01.02.2026)
+    terrain_analysis: Optional[TerrainAnalysis] = None
+
+    # Suggested Data aus GWR (via identify_buildings, NEU 01.02.2026)
+    suggested_egid: Optional[str] = None
+    suggested_address: Optional[str] = None
+    suggested_street: Optional[str] = None
+    suggested_house_number: Optional[str] = None
+    suggested_postal_code: Optional[int] = None
+    suggested_city: Optional[str] = None
+    suggested_floors: Optional[int] = None
+    suggested_construction_year: Optional[int] = None
+    suggested_building_category: Optional[str] = None
+
     # Dokument-Extraktion (bestehend)
     address: Optional[str] = None
     project_name: Optional[str] = None
@@ -183,6 +247,18 @@ class SmartExtractionResult:
             "photo_timestamp": self.photo_timestamp,
             "building_analysis": self.building_analysis.to_dict() if self.building_analysis else None,
             "sketch_analysis": self.sketch_analysis.to_dict() if self.sketch_analysis else None,
+            "terrain_analysis": self.terrain_analysis.to_dict() if self.terrain_analysis else None,
+            # Suggested Data aus GWR (NEU 01.02.2026)
+            "suggested_egid": self.suggested_egid,
+            "suggested_address": self.suggested_address,
+            "suggested_street": self.suggested_street,
+            "suggested_house_number": self.suggested_house_number,
+            "suggested_postal_code": self.suggested_postal_code,
+            "suggested_city": self.suggested_city,
+            "suggested_floors": self.suggested_floors,
+            "suggested_construction_year": self.suggested_construction_year,
+            "suggested_building_category": self.suggested_building_category,
+            # Legacy preloaded fields (deprecated, use suggested_* instead)
             "preloaded_egid": self.preloaded_egid,
             "preloaded_building_name": self.preloaded_building_name,
             "preloaded_address": self.preloaded_address,
@@ -325,6 +401,55 @@ Antworte NUR mit JSON:
     "confidence": 0.85
 }
 ```
+"""
+
+    # NEU 01.02.2026: Erweiterter Prompt für Terrain- und Umgebungs-Analyse
+    TERRAIN_ANALYSIS_PROMPT = """
+Analysiere das Foto für Gerüstbau-Planung. Fokussiere auf TERRAIN, UMGEBUNG und HINDERNISSE.
+
+Antworte NUR mit JSON:
+
+```json
+{
+    "terrain": {
+        "slope_estimate": "eben|leicht|mittel|stark",
+        "slope_direction": "N|S|E|W|bergauf|bergab|nicht_erkennbar",
+        "ground_type": "asphalt|kies|rasen|erde|pflaster|gemischt|nicht_sichtbar"
+    },
+    "access": {
+        "type": "strasse|weg|eingeschraenkt|nicht_sichtbar",
+        "width": "lkw_moeglich|lieferwagen|nur_fussgaenger|nicht_erkennbar"
+    },
+    "environment": {
+        "neighboring_distance": "angrenzend|2-5m|>5m|freistehend",
+        "trees_nearby": false,
+        "power_lines": false,
+        "street_furniture": []
+    },
+    "obstacles": {
+        "balconies": 0,
+        "awnings": 0,
+        "bay_windows": false,
+        "overhangs": [],
+        "other": []
+    },
+    "scaffold_notes": "Besondere Hinweise fuer Geruestplanung",
+    "confidence": 0.8
+}
+```
+
+Hinweise:
+- slope_estimate: Gelaendeneigung
+  - eben: Kein sichtbarer Hoehenunterschied
+  - leicht: Leichte Neigung, Stellspindeln reichen
+  - mittel: Deutliche Neigung, Ausgleichsrahmen noetig
+  - stark: Steiler Hang, spezielle Fundamentierung
+- access.width: Kann LKW fuer Geruestmaterial zufahren?
+- obstacles: Alles was Geruestaufbau beeinflusst
+- overhangs: z.B. ["dachvorsprung_50cm", "vordach_eingang"]
+- street_furniture: z.B. ["laterne", "hydrant", "parkplatz", "zaun"]
+- other: z.B. ["sonnenstoren", "klimaanlage_aussen", "satellitenschuessel"]
+- scaffold_notes: Wichtige Hinweise fuer den Geruestbauer
 """
 
     def __init__(self):
@@ -648,6 +773,127 @@ Antworte NUR mit JSON:
             logger.warning(f"Pre-Load fehlgeschlagen: {e}")
             return {}
 
+    # ============ GWR DATA LOOKUP ============
+
+    async def _get_gwr_data_from_coordinates(self, gps_data: GpsData) -> Dict[str, Any]:
+        """
+        Holt GWR-Daten via identify_buildings() für Reverse Geocoding.
+
+        NEU 01.02.2026: Ersetzt _preload_building_data() - nur leichtgewichtiger
+        GWR-Lookup, keine vollständigen Geodaten.
+
+        Returns:
+            Dict mit suggested_* Feldern (egid, address, street, etc.)
+        """
+        if not gps_data or not gps_data.lv95_e or not gps_data.lv95_n:
+            return {}
+
+        try:
+            from app.services.swisstopo import get_swisstopo_service
+
+            service = get_swisstopo_service()
+
+            # identify_buildings() liefert Liste von BuildingInfo
+            buildings = await service.identify_buildings(
+                x=gps_data.lv95_e,
+                y=gps_data.lv95_n,
+                tolerance=50  # 50m Toleranz für GPS-Ungenauigkeit
+            )
+
+            if not buildings:
+                logger.warning(f"Kein Gebäude bei ({gps_data.lv95_e}, {gps_data.lv95_n}) gefunden")
+                return {}
+
+            # Erstes Gebäude nehmen (nächstes zur Koordinate)
+            building = buildings[0]
+
+            logger.info(f"GWR-Lookup: EGID {building.egid}, Adresse: {building.address}")
+
+            return {
+                "suggested_egid": str(building.egid) if building.egid else None,
+                "suggested_address": building.address,
+                "suggested_street": building.street,
+                "suggested_house_number": building.house_number,
+                "suggested_postal_code": building.postal_code,
+                "suggested_city": building.city,
+                "suggested_floors": building.floors,
+                "suggested_construction_year": building.construction_year,
+                "suggested_building_category": building.building_category,
+            }
+
+        except Exception as e:
+            logger.warning(f"GWR-Lookup fehlgeschlagen: {e}")
+            return {}
+
+    # ============ TERRAIN ANALYSIS ============
+
+    async def _analyze_terrain(self, client, file_bytes: bytes, filename: str) -> Optional[TerrainAnalysis]:
+        """
+        Analysiert Terrain und Umgebung aus dem Foto mit Claude.
+
+        NEU 01.02.2026: Erweiterte Analyse für Gerüstbau-Planung.
+
+        Returns:
+            TerrainAnalysis oder None bei Fehler
+        """
+        try:
+            image_base64 = base64.standard_b64encode(file_bytes).decode('utf-8')
+            media_type = self._get_media_type(filename)
+
+            response = client.messages.create(
+                model=ANALYSIS_MODEL,
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": media_type, "data": image_base64},
+                        },
+                        {"type": "text", "text": self.TERRAIN_ANALYSIS_PROMPT}
+                    ]
+                }]
+            )
+
+            text = response.content[0].text
+            json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+            json_str = json_match.group(1) if json_match else text.strip()
+            data = json.loads(json_str)
+
+            # Parse JSON response to TerrainAnalysis
+            terrain = data.get('terrain', {})
+            access = data.get('access', {})
+            environment = data.get('environment', {})
+            obstacles = data.get('obstacles', {})
+
+            return TerrainAnalysis(
+                # Terrain
+                slope_estimate=terrain.get('slope_estimate'),
+                slope_direction=terrain.get('slope_direction'),
+                ground_type=terrain.get('ground_type'),
+                # Access
+                access_type=access.get('type'),
+                access_width=access.get('width'),
+                # Environment
+                neighboring_distance=environment.get('neighboring_distance'),
+                trees_nearby=environment.get('trees_nearby', False),
+                power_lines=environment.get('power_lines', False),
+                street_furniture=environment.get('street_furniture', []),
+                # Obstacles
+                balconies_count=obstacles.get('balconies', 0),
+                awnings_count=obstacles.get('awnings', 0),
+                bay_windows=obstacles.get('bay_windows', False),
+                overhangs=obstacles.get('overhangs', []),
+                other_obstacles=obstacles.get('other', []),
+                # Notes
+                scaffold_notes=data.get('scaffold_notes'),
+                confidence=data.get('confidence', 0.5),
+            )
+
+        except Exception as e:
+            logger.warning(f"Terrain-Analyse fehlgeschlagen: {e}")
+            return None
+
     # ============ IMAGE HELPERS ============
 
     # IMPORTANT: Claude API only supports these image types
@@ -785,22 +1031,30 @@ Antworte NUR mit JSON:
                 result.gps_data = gps_data
                 logger.info(f"GPS-Fallback verwendet: ({lat:.6f}, {lon:.6f}) → LV95 ({lv95_e:.1f}, {lv95_n:.1f})")
 
-            # Step 1b: Pre-load 3D data if GPS available
+            # Step 1b: GWR-Lookup via identify_buildings() (leichtgewichtig)
+            # NEU 01.02.2026: Nur Reverse Geocoding, keine vollständigen Geodaten
             if gps_data and gps_data.lv95_e and gps_data.lv95_n:
-                logger.info(f"GPS gefunden, lade 3D-Daten für ({gps_data.lv95_e}, {gps_data.lv95_n})...")
-                preloaded = await self._preload_building_data(gps_data)
-                if preloaded:
-                    result.preloaded_egid = preloaded.get('egid')
-                    result.preloaded_building_name = preloaded.get('building_name')
-                    result.preloaded_address = preloaded.get('address')
-                    result.preloaded_traufhoehe_m = preloaded.get('traufhoehe_m')
-                    result.preloaded_firsthoehe_m = preloaded.get('firsthoehe_m')
-                    result.preloaded_roof_type = preloaded.get('roof_type')
-                    result.preloaded_polygon = preloaded.get('polygon')
+                logger.info(f"GPS gefunden, lade GWR-Daten für ({gps_data.lv95_e}, {gps_data.lv95_n})...")
+                gwr_data = await self._get_gwr_data_from_coordinates(gps_data)
+                if gwr_data:
+                    # Neue suggested_* Felder befüllen
+                    result.suggested_egid = gwr_data.get('suggested_egid')
+                    result.suggested_address = gwr_data.get('suggested_address')
+                    result.suggested_street = gwr_data.get('suggested_street')
+                    result.suggested_house_number = gwr_data.get('suggested_house_number')
+                    result.suggested_postal_code = gwr_data.get('suggested_postal_code')
+                    result.suggested_city = gwr_data.get('suggested_city')
+                    result.suggested_floors = gwr_data.get('suggested_floors')
+                    result.suggested_construction_year = gwr_data.get('suggested_construction_year')
+                    result.suggested_building_category = gwr_data.get('suggested_building_category')
 
-                    # Use preloaded address if no other address found
-                    if not result.address and result.preloaded_address:
-                        result.address = result.preloaded_address
+                    # Legacy preloaded_* Felder für Kompatibilität
+                    result.preloaded_egid = gwr_data.get('suggested_egid')
+                    result.preloaded_address = gwr_data.get('suggested_address')
+
+                    # Use suggested address if no other address found
+                    if not result.address and result.suggested_address:
+                        result.address = result.suggested_address
 
             # Step 2: Classify image
             image_type, classification_confidence = await self._classify_image(client, file_bytes, filename)
@@ -813,8 +1067,15 @@ Antworte NUR mit JSON:
                 result.building_analysis = await self._analyze_building_photo(client, file_bytes, filename)
                 result.confidence = result.building_analysis.floors_count is not None and 0.8 or 0.5
 
-                # Address from photo or GPS
-                if result.building_analysis.visible_address:
+                # NEU 01.02.2026: Terrain-Analyse für Gerüstbau-Planung
+                result.terrain_analysis = await self._analyze_terrain(client, file_bytes, filename)
+                if result.terrain_analysis:
+                    logger.info(f"Terrain-Analyse: Neigung={result.terrain_analysis.slope_estimate}, "
+                                f"Zufahrt={result.terrain_analysis.access_type}")
+
+                # Address from photo - nur setzen wenn noch keine Adresse vorhanden
+                # FIX 01.02.2026: suggested_address aus GWR hat Priorität über visible_address
+                if result.building_analysis.visible_address and not result.address:
                     result.address = result.building_analysis.visible_address
 
                 result.success = True

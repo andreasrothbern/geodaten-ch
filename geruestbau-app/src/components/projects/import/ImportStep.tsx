@@ -16,7 +16,11 @@ import FileUpload from '../../ui/FileUpload'
 import type { OcrExtractionResult, ExtractedProjectData } from '../../../types/project'
 
 interface ImportStepProps {
-  onDataExtracted: (data: ExtractedProjectData, source: 'pdf' | 'photo' | 'url' | 'manual') => void
+  onDataExtracted: (
+    data: ExtractedProjectData,
+    source: 'pdf' | 'photo' | 'url' | 'manual',
+    file?: File  // NEU 01.02.2026: Datei für späteres Speichern
+  ) => void
   onManualEntry?: () => void  // Optional callback for manual entry mode
   extractFromDocument: (file: File, gpsCoords?: { lat: number; lon: number }) => Promise<OcrExtractionResult>
   extractFromUrl: (url: string) => Promise<OcrExtractionResult>
@@ -90,11 +94,13 @@ export default function ImportStep({
         // NEU 01.02.2026: Unterschiedliche Quellen für Daten
         let extractedData = result.data
 
-        // Bei Gebäudefoto: Pre-loaded Daten verwenden
-        if (result.image_type === 'building_photo' && result.preloaded_address) {
+        // Bei Gebäudefoto: suggested_address oder preloaded_address verwenden
+        // NEU 01.02.2026: suggested_address hat Priorität (aus identify_buildings)
+        const resolvedAddress = result.suggested_address || result.preloaded_address
+        if (result.image_type === 'building_photo' && resolvedAddress) {
           extractedData = {
             ...extractedData,
-            address: result.preloaded_address,
+            address: resolvedAddress,
             // Beschreibung aus Foto-Analyse
             description: result.building_analysis ?
               `${result.building_analysis.floors_count || '?'} Geschosse, ${result.building_analysis.roof_type || 'Dach unbekannt'}${result.building_analysis.obstacles?.length ? `, Hindernisse: ${result.building_analysis.obstacles.join(', ')}` : ''}`
@@ -121,7 +127,8 @@ export default function ImportStep({
         if (extractedData) {
           const source = result.image_type === 'building_photo' ? 'photo' :
                         (file.type === 'application/pdf' ? 'pdf' : 'photo')
-          onDataExtracted(extractedData, source)
+          // NEU 01.02.2026: Datei mitsenden für späteres Speichern
+          onDataExtracted(extractedData, source, file)
         }
       }
     } catch (error) {

@@ -405,6 +405,34 @@ export interface SketchAnalysis {
   scale?: string
 }
 
+// NEU 01.02.2026: Terrain-/Umgebungs-Analyse aus Foto
+export interface TerrainAnalysis {
+  // Terrain/Hanglage
+  slope_estimate?: string  // eben, leicht, mittel, stark
+  slope_direction?: string  // N, S, E, W, bergauf, bergab
+  ground_type?: string  // asphalt, kies, rasen, erde, pflaster
+
+  // Zufahrt
+  access_type?: string  // strasse, weg, eingeschraenkt, nicht_sichtbar
+  access_width?: string  // lkw_moeglich, lieferwagen, nur_fussgaenger
+
+  // Umgebung
+  neighboring_distance?: string  // angrenzend, 2-5m, >5m, freistehend
+  trees_nearby?: boolean
+  power_lines?: boolean
+  street_furniture?: string[]  // laterne, hydrant, parkplatz
+
+  // Gerüst-Hindernisse
+  balconies_count?: number
+  awnings_count?: number
+  bay_windows?: boolean  // Erker
+  overhangs?: string[]  // dachvorsprung, vordach
+  other_obstacles?: string[]  // sonnenstoren, klimaanlage
+
+  // Notizen
+  scaffold_notes?: string
+}
+
 export interface OcrExtractionResult {
   success: boolean
   data?: ExtractedProjectData
@@ -420,7 +448,7 @@ export interface OcrExtractionResult {
   building_analysis?: BuildingAnalysis
   sketch_analysis?: SketchAnalysis
 
-  // Pre-loaded 3D-Daten (bei GPS-Koordinaten)
+  // Pre-loaded 3D-Daten (bei GPS-Koordinaten) - LEGACY
   preloaded_egid?: string
   preloaded_building_name?: string
   preloaded_address?: string
@@ -428,6 +456,20 @@ export interface OcrExtractionResult {
   preloaded_firsthoehe_m?: number
   preloaded_roof_type?: string
   preloaded_polygon?: number[][]
+
+  // NEU 01.02.2026: GWR-Daten via identify_buildings()
+  suggested_egid?: string
+  suggested_address?: string
+  suggested_street?: string
+  suggested_house_number?: string
+  suggested_postal_code?: string
+  suggested_city?: string
+  suggested_floors?: number
+  suggested_construction_year?: number
+  suggested_building_category?: string
+
+  // NEU 01.02.2026: Terrain-/Umgebungs-Analyse
+  terrain_analysis?: TerrainAnalysis
 }
 
 // =============================================================================

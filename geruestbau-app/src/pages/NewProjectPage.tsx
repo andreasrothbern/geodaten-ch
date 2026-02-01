@@ -29,12 +29,20 @@ export default function NewProjectPage() {
   const [projectData, setProjectData] = useState<ExtractedProjectData>({})
   const [source, setSource] = useState<ImportSource>('manual')
   const [confidence, setConfidence] = useState<number | undefined>()
+  // NEU 01.02.2026: Vollständiges Extraction-Result für Analyse-Details
+  const [extractionResult, setExtractionResult] = useState<OcrExtractionResult | null>(null)
+  // NEU 01.02.2026: Datei für späteres Speichern mit Extraction-Result
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
 
   // Handle data from ImportStep
+  // NEU 01.02.2026: Auch Datei speichern für Upload nach Projekt-Erstellung
   const handleDataExtracted = useCallback(
-    (data: ExtractedProjectData, extractionSource: ImportSource) => {
+    (data: ExtractedProjectData, extractionSource: ImportSource, file?: File) => {
       setProjectData(data)
       setSource(extractionSource)
+      if (file) {
+        setUploadFile(file)
+      }
       setCurrentStep(2)
     },
     []
@@ -54,6 +62,8 @@ export default function NewProjectPage() {
       if (result.confidence) {
         setConfidence(result.confidence)
       }
+      // NEU 01.02.2026: Vollständiges Result speichern für Analyse-Details
+      setExtractionResult(result)
       return result
     },
     []
@@ -66,6 +76,8 @@ export default function NewProjectPage() {
       if (result.confidence) {
         setConfidence(result.confidence)
       }
+      // NEU 01.02.2026: Vollständiges Result speichern
+      setExtractionResult(result)
       return result
     },
     []
@@ -84,7 +96,7 @@ export default function NewProjectPage() {
         // NEU 18.01.2026: geruestbaudata mitsenden
         // Bei Single-Building: Einzelgebäude-Daten
         // Bei Multi-Building: Das KOMBINIERTE Objekt (Union-Polygon + äußere Fassaden)
-        await geruestbauApi.createProject({
+        const project = await geruestbauApi.createProject({
           name: projectData.project_name,
           address: projectData.address,
           egid: geruestbauData?.building.egid, // Bei Multi: "123+456+789"
@@ -95,6 +107,21 @@ export default function NewProjectPage() {
           deadline: projectData.submission_deadline,
         })
 
+        // NEU 01.02.2026: Upload mit Extraction-Result nach Projekt-Erstellung
+        if (uploadFile && extractionResult && project.id) {
+          try {
+            await geruestbauApi.uploadWithExtractionResult(
+              project.id,
+              uploadFile,
+              extractionResult
+            )
+            console.log('[NewProjectPage] Upload mit Extraction-Result gespeichert')
+          } catch (uploadError) {
+            console.error('[NewProjectPage] Upload-Fehler (Projekt wurde erstellt):', uploadError)
+            // Projekt wurde bereits erstellt, Upload-Fehler nicht fatal
+          }
+        }
+
         // Navigate to projects list
         navigate('/projects')
       } catch (error) {
@@ -104,7 +131,7 @@ export default function NewProjectPage() {
         setLoading(false)
       }
     },
-    [projectData, navigate]
+    [projectData, navigate, uploadFile, extractionResult]
   )
 
   return (
@@ -148,6 +175,7 @@ export default function NewProjectPage() {
           data={projectData}
           source={source}
           confidence={confidence}
+          extractionResult={extractionResult}
           onChange={setProjectData}
           onBack={() => setCurrentStep(1)}
           onNext={() => setCurrentStep(3)}

@@ -1,12 +1,14 @@
-import { FileText, Link2, Camera, Pen, AlertCircle } from 'lucide-react'
+import { useState } from 'react'
+import { FileText, Link2, Camera, Pen, AlertCircle, Info, X } from 'lucide-react'
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
 // import AddressAutocomplete from '../../ui/AddressAutocomplete'
-import type { ExtractedProjectData } from '../../../types/project'
+import type { ExtractedProjectData, OcrExtractionResult } from '../../../types/project'
 
 interface ReviewStepProps {
   data: ExtractedProjectData
   source: 'pdf' | 'photo' | 'url' | 'manual'
   confidence?: number
+  extractionResult?: OcrExtractionResult | null  // NEU 01.02.2026
   onChange: (data: ExtractedProjectData) => void
   onBack: () => void
   onNext: () => void
@@ -30,12 +32,23 @@ export default function ReviewStep({
   data,
   source,
   confidence,
+  extractionResult,
   onChange,
   onBack,
   onNext,
 }: ReviewStepProps) {
   const SourceIcon = sourceIcons[source]
   const isFromExtraction = source !== 'manual'
+  // NEU 01.02.2026: State für Analyse-Details Popup
+  const [showAnalysisDetails, setShowAnalysisDetails] = useState(false)
+
+  // Prüfen ob Analyse-Details vorhanden
+  const hasAnalysisDetails = extractionResult && (
+    extractionResult.building_analysis ||
+    extractionResult.terrain_analysis ||
+    extractionResult.gps_data ||
+    extractionResult.suggested_address
+  )
 
   const updateField = <K extends keyof ExtractedProjectData>(
     field: K,
@@ -72,10 +85,127 @@ export default function ReviewStep({
           )}
         </div>
         {isFromExtraction && (
-          <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" />
-            Bitte die extrahierten Daten überprüfen und ggf. korrigieren
-          </p>
+          <div className="relative">
+            <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+              {hasAnalysisDetails ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAnalysisDetails(!showAnalysisDetails)}
+                  className="p-0.5 rounded-full hover:bg-gray-200 transition-colors"
+                  title="Analyse-Details anzeigen"
+                >
+                  <Info className="w-3 h-3 text-gray-500" />
+                </button>
+              ) : (
+                <AlertCircle className="w-3 h-3" />
+              )}
+              Bitte die extrahierten Daten überprüfen und ggf. korrigieren
+            </p>
+
+            {/* NEU 01.02.2026: Analyse-Details Popup */}
+            {showAnalysisDetails && extractionResult && (
+              <div className="absolute left-0 top-6 z-50 w-80 max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+                <div className="flex justify-between items-center mb-2 border-b pb-2">
+                  <span className="font-semibold text-gray-700">Analyse-Details</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAnalysisDetails(false)}
+                    className="p-0.5 hover:bg-gray-100 rounded"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+
+                {/* GPS-Daten */}
+                {extractionResult.gps_data && (
+                  <div className="mb-2">
+                    <p className="font-medium text-gray-600">GPS-Position:</p>
+                    <p className="text-gray-500 ml-2">
+                      {extractionResult.gps_data.lat?.toFixed(5)}, {extractionResult.gps_data.lon?.toFixed(5)}
+                      {extractionResult.gps_data.compass_direction_text && (
+                        <span className="ml-1">(Blick: {extractionResult.gps_data.compass_direction_text})</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                {/* Vorgeschlagene Adresse */}
+                {extractionResult.suggested_address && (
+                  <div className="mb-2">
+                    <p className="font-medium text-gray-600">Erkannte Adresse:</p>
+                    <p className="text-gray-500 ml-2">{extractionResult.suggested_address}</p>
+                    {extractionResult.suggested_egid && (
+                      <p className="text-gray-400 ml-2 text-[10px]">EGID: {extractionResult.suggested_egid}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Gebäude-Analyse */}
+                {extractionResult.building_analysis && (
+                  <div className="mb-2">
+                    <p className="font-medium text-gray-600">Gebäude-Analyse:</p>
+                    <ul className="text-gray-500 ml-2 space-y-0.5">
+                      {extractionResult.building_analysis.floors_count && (
+                        <li>Geschosse: {extractionResult.building_analysis.floors_count}</li>
+                      )}
+                      {extractionResult.building_analysis.roof_type && (
+                        <li>Dachform: {extractionResult.building_analysis.roof_type}</li>
+                      )}
+                      {extractionResult.building_analysis.facade_material && (
+                        <li>Fassade: {extractionResult.building_analysis.facade_material}</li>
+                      )}
+                      {extractionResult.building_analysis.obstacles && extractionResult.building_analysis.obstacles.length > 0 && (
+                        <li className="text-orange-600">Hindernisse: {extractionResult.building_analysis.obstacles.join(', ')}</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Terrain-Analyse */}
+                {extractionResult.terrain_analysis && (
+                  <div className="mb-2">
+                    <p className="font-medium text-gray-600">Terrain & Umgebung:</p>
+                    <ul className="text-gray-500 ml-2 space-y-0.5">
+                      {extractionResult.terrain_analysis.slope_estimate && (
+                        <li>Hanglage: {extractionResult.terrain_analysis.slope_estimate}</li>
+                      )}
+                      {extractionResult.terrain_analysis.ground_type && (
+                        <li>Untergrund: {extractionResult.terrain_analysis.ground_type}</li>
+                      )}
+                      {extractionResult.terrain_analysis.access_type && (
+                        <li>Zufahrt: {extractionResult.terrain_analysis.access_type}</li>
+                      )}
+                      {extractionResult.terrain_analysis.access_width && (
+                        <li>Zufahrtsbreite: {extractionResult.terrain_analysis.access_width}</li>
+                      )}
+                      {extractionResult.terrain_analysis.neighboring_distance && (
+                        <li>Nachbargebäude: {extractionResult.terrain_analysis.neighboring_distance}</li>
+                      )}
+                      {extractionResult.terrain_analysis.trees_nearby && (
+                        <li className="text-orange-600">Bäume in der Nähe</li>
+                      )}
+                      {extractionResult.terrain_analysis.power_lines && (
+                        <li className="text-red-600">Stromleitungen!</li>
+                      )}
+                      {(extractionResult.terrain_analysis.balconies_count ?? 0) > 0 && (
+                        <li>Balkone: {extractionResult.terrain_analysis.balconies_count}</li>
+                      )}
+                      {extractionResult.terrain_analysis.scaffold_notes && (
+                        <li className="italic">{extractionResult.terrain_analysis.scaffold_notes}</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Bildtyp */}
+                {extractionResult.image_type && (
+                  <div className="mt-2 pt-2 border-t text-gray-400">
+                    Bildtyp: {extractionResult.image_type}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
