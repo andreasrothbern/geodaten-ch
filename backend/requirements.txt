@@ -48,3 +48,4 @@ beautifulsoup4>=4.12.0
 # NEU 12.01.2026: Migration von SQLite für building_3d.db
 duckdb>=1.0.0
 pyarrow>=14.0.0
+piexif>=1.1.3  # EXIF parsing for HEIC (Pillow's _getexif() doesn't work with HEIC)
