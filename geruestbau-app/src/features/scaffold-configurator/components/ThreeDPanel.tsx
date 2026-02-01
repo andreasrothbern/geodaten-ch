@@ -4,7 +4,7 @@
  */
 
 import { useState, Suspense } from 'react';
-import { RotateCw, ZoomIn, Home, X, Package, AlertTriangle } from 'lucide-react';
+import { RotateCw, ZoomIn, Home, X, Package, AlertTriangle, Eye, ChevronDown } from 'lucide-react';
 import { useScaffoldConfig, useTotals, useSettings } from '../hooks/useScaffoldConfig';
 import { formatNumber } from '../utils/calculations';
 import type { View3D, BuildingZone, ScaffoldFacade } from '../types/scaffold.types';
@@ -58,6 +58,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], objectD
   const totals = useTotals();
   const settings = useSettings();
   const [activeView, setActiveView] = useState<View3D>('isometric');
+  const [showViewSelector, setShowViewSelector] = useState(false);
 
   // NEU 15.01.2026: State für Materialliste
   const [materialList, setMaterialList] = useState<MaterialListResponse | null>(null);
@@ -194,20 +195,39 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], objectD
             )}
           </div>
 
-          {/* View Selector */}
-          <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden">
-            {views.map((view) => (
+          {/* View Selector - Collapsible */}
+          <div className="absolute top-4 right-4">
+            {showViewSelector ? (
+              <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+                {views.map((view) => (
+                  <button
+                    key={view.id}
+                    onClick={() => {
+                      setActiveView(view.id);
+                      setShowViewSelector(false);
+                    }}
+                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                      activeView === view.id ? 'font-medium bg-gray-50' : 'text-gray-600'
+                    }`}
+                  >
+                    {activeView === view.id && <span className="text-red-500 mr-2">●</span>}
+                    {view.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
               <button
-                key={view.id}
-                onClick={() => setActiveView(view.id)}
-                className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                  activeView === view.id ? 'font-medium bg-gray-50' : 'text-gray-600'
-                }`}
+                onClick={() => setShowViewSelector(true)}
+                className="bg-white rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                title="Ansicht wechseln"
               >
-                {activeView === view.id && <span className="text-red-500 mr-2">●</span>}
-                {view.label}
+                <Eye className="w-4 h-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-700">
+                  {views.find(v => v.id === activeView)?.label || 'Ansicht'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               </button>
-            ))}
+            )}
           </div>
 
           {/* Compass */}
