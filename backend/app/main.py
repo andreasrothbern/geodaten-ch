@@ -549,6 +549,46 @@ async def clear_all_caches():
     }
 
 
+@app.delete("/api/v1/reset/geodaten-db", tags=["System"])
+async def reset_geodaten_db():
+    """
+    Löscht building_3d.duckdb, tiles.db, building_contexts.db.
+    Die DBs werden beim nächsten Zugriff neu erstellt.
+    """
+    import shutil
+    from app.config import DATA_DIR
+
+    deleted = []
+
+    # Singleton zurücksetzen
+    from app.services.building_3d_service import Building3DService
+    Building3DService._instance = None
+
+    dbs = ["building_3d.duckdb", "tiles.db", "building_contexts.db"]
+    for db in dbs:
+        db_path = DATA_DIR / db
+        if db_path.exists():
+            try:
+                db_path.unlink()
+                deleted.append(str(db))
+            except Exception as e:
+                deleted.append(f"{db} (FEHLER: {e})")
+
+    tiles_dir = DATA_DIR / "tiles"
+    if tiles_dir.exists():
+        try:
+            shutil.rmtree(tiles_dir)
+            deleted.append("tiles/")
+        except Exception as e:
+            deleted.append(f"tiles/ (FEHLER: {e})")
+
+    return {
+        "success": True,
+        "deleted": deleted,
+        "message": "Geodaten-DBs gelöscht. Werden beim nächsten Zugriff neu erstellt."
+    }
+
+
 # ============================================================================
 # Adresssuche
 # ============================================================================
