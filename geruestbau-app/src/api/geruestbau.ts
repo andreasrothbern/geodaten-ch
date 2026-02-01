@@ -478,6 +478,34 @@ export const geruestbauApi = {
     return response.json()
   },
 
+  // NEU 01.02.2026: Uploads für Projekt abrufen
+  getProjectUploads: async (
+    projectId: string
+  ): Promise<Array<{
+    id: string
+    project_id: string
+    filename: string
+    file_type: string
+    direction?: string
+    created_at: string
+    extraction_result?: OcrExtractionResult
+  }>> => {
+    const response = await fetch(
+      `${API_BASE}/api/v1/geruestbau/projects/${projectId}/uploads`
+    )
+
+    if (!response.ok) {
+      throw new Error(`Failed to load uploads: ${response.status}`)
+    }
+
+    return response.json()
+  },
+
+  // NEU 01.02.2026: Upload-Datei als Blob abrufen
+  getUploadFile: (uploadId: string): string => {
+    return `${API_BASE}/api/v1/geruestbau/uploads/${uploadId}/file`
+  },
+
   // URL-Import (simap.ch)
   extractFromUrl: async (url: string): Promise<OcrExtractionResult> => {
     const response = await fetch(
