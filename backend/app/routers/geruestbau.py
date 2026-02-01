@@ -514,6 +514,57 @@ async def import_from_url(request: UrlImportRequest):
 
 # ============ UPLOADS API (NEU 01.02.2026) ============
 
+# HEIC-zu-JPEG Konvertierung für Browser-Kompatibilität
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    HEIF_AVAILABLE = True
+except ImportError:
+    HEIF_AVAILABLE = False
+
+from PIL import Image
+from io import BytesIO
+
+def convert_heic_to_jpeg(file_bytes: bytes, filename: str) -> tuple[bytes, str, str]:
+    """
+    Konvertiert HEIC zu JPEG für Browser-Kompatibilität.
+
+    Returns:
+        tuple: (file_bytes, filename, mime_type)
+    """
+    is_heic = filename.lower().endswith(('.heic', '.heif'))
+
+    if not is_heic:
+        # Nicht HEIC - unverändert zurückgeben
+        return file_bytes, filename, "image/jpeg" if filename.lower().endswith(('.jpg', '.jpeg')) else "image/png"
+
+    if not HEIF_AVAILABLE:
+        logger.warning("HEIC-Datei hochgeladen aber pillow-heif nicht installiert!")
+        return file_bytes, filename, "image/heic"
+
+    try:
+        logger.info(f"Konvertiere HEIC zu JPEG: {filename}")
+        image = Image.open(BytesIO(file_bytes))
+
+        # Convert to RGB if necessary (HEIC might be RGBA)
+        if image.mode in ('RGBA', 'P'):
+            image = image.convert('RGB')
+
+        output = BytesIO()
+        image.save(output, format='JPEG', quality=90)
+        converted_bytes = output.getvalue()
+
+        # Dateiname anpassen
+        new_filename = filename.rsplit('.', 1)[0] + '.jpg'
+
+        logger.info(f"HEIC konvertiert: {len(file_bytes)} -> {len(converted_bytes)} bytes")
+        return converted_bytes, new_filename, "image/jpeg"
+
+    except Exception as e:
+        logger.error(f"HEIC-Konvertierung fehlgeschlagen: {e}")
+        return file_bytes, filename, "image/heic"
+
+
 @router.post("/projects/{project_id}/uploads", response_model=Dict[str, Any])
 async def upload_file_to_project(
     project_id: str,
@@ -543,18 +594,22 @@ async def upload_file_to_project(
     if len(file_bytes) > 20 * 1024 * 1024:  # 20 MB limit
         raise HTTPException(status_code=400, detail="Datei zu gross (max. 20 MB)")
 
+    # HEIC zu JPEG konvertieren (für Browser-Kompatibilität)
+    filename = file.filename or "upload"
+    file_bytes, filename, mime_type = convert_heic_to_jpeg(file_bytes, filename)
+
     # extraction_result parsen
     try:
         extraction_dict = json.loads(extraction_result)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Ungültiges extraction_result JSON")
 
-    # Upload speichern
+    # Upload speichern (mit konvertiertem JPEG falls HEIC)
     upload_id = await project_service.save_upload(
         project_id=project_id,
         file_data=file_bytes,
-        filename=file.filename or "upload",
-        mime_type=file.content_type or "application/octet-stream",
+        filename=filename,
+        mime_type=mime_type,
         extraction_result=extraction_dict,
         direction=direction
     )
@@ -562,8 +617,8 @@ async def upload_file_to_project(
     return {
         "id": upload_id,
         "project_id": project_id,
-        "filename": file.filename,
-        "mime_type": file.content_type,
+        "filename": filename,
+        "mime_type": mime_type,
         "size_bytes": len(file_bytes),
     }
 
