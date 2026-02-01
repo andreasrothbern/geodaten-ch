@@ -733,7 +733,11 @@ async def fetch_building_polygon_for_coordinates(
                 "tile_id": cached_building.get('tile_id'),
                 "source": "swissBUILDINGS3D_3.0",
                 "cache_hit": True,
-                "lookup_level": 1
+                "lookup_level": 1,
+                # FIX 02.02.2026: roof_form aus 3D-Daten durchreichen
+                "roof_form": cached_building.get('roof_form'),
+                "roof_form_confidence": cached_building.get('roof_form_confidence'),
+                "roof_orientation": cached_building.get('roof_orientation'),
             }
     except Exception as ex:
         logger.debug(f"[3-STUFEN] Stufe 1 MISS: {ex}")

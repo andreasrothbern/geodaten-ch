@@ -175,8 +175,9 @@ class NeighborsService:
                 return None
             egid_int = egid_list[0]  # Erstes EGID verwenden
 
+            # FIX 01.02.2026: ST_AsGeoJSON(geom) statt polygon (DuckDB Spatial Migration)
             cursor.execute("""
-                SELECT egid, polygon, center_e, center_n, gebaeudehoehe_m
+                SELECT egid, ST_AsGeoJSON(geom) as polygon, center_e, center_n, gebaeudehoehe_m
                 FROM buildings_3d
                 WHERE egid = ?
             """, (egid_int,))
@@ -185,12 +186,17 @@ class NeighborsService:
             conn.close()
 
             if row:
-                # Polygon aus JSON parsen falls String
+                # FIX 01.02.2026: Polygon aus GeoJSON parsen (ST_AsGeoJSON Format)
                 polygon_data = row[1] if isinstance(row, tuple) else row['polygon']
                 polygon = None
                 if polygon_data:
                     try:
-                        polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                        geojson = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                        # GeoJSON → Koordinaten-Liste extrahieren
+                        if isinstance(geojson, dict) and 'coordinates' in geojson:
+                            polygon = geojson['coordinates'][0]  # Outer ring
+                        else:
+                            polygon = geojson  # Fallback für alte Daten
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -317,9 +323,10 @@ class NeighborsService:
 
             # SQL mit dynamischer NOT IN Klausel für Objekt-EGIDs
             # FIX 20.01.2026: has_3d_layers hinzugefügt
+            # FIX 01.02.2026: ST_AsGeoJSON(geom) statt polygon (DuckDB Spatial Migration)
             placeholders = ','.join(['?' for _ in object_egids])
             cursor.execute(f"""
-                SELECT egid, polygon, center_e, center_n,
+                SELECT egid, ST_AsGeoJSON(geom) as polygon, center_e, center_n,
                        traufhoehe_m, firsthoehe_m, gebaeudehoehe_m, has_3d_layers
                 FROM buildings_3d
                 WHERE center_e BETWEEN ? AND ?
@@ -339,12 +346,17 @@ class NeighborsService:
                 neighbor_e = row[2] if isinstance(row, tuple) else row['center_e']
                 neighbor_n = row[3] if isinstance(row, tuple) else row['center_n']
 
-                # Polygon parsen
+                # FIX 01.02.2026: Polygon aus GeoJSON parsen (ST_AsGeoJSON Format)
                 neighbor_polygon = None
                 polygon_data = row[1] if isinstance(row, tuple) else row['polygon']
                 if include_polygons and polygon_data:
                     try:
-                        neighbor_polygon = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                        geojson = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
+                        # GeoJSON → Koordinaten-Liste extrahieren
+                        if isinstance(geojson, dict) and 'coordinates' in geojson:
+                            neighbor_polygon = geojson['coordinates'][0]  # Outer ring
+                        else:
+                            neighbor_polygon = geojson  # Fallback für alte Daten
                     except (json.JSONDecodeError, TypeError):
                         pass
 

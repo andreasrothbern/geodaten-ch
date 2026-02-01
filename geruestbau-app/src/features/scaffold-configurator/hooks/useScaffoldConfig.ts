@@ -365,6 +365,9 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         const { configuration } = get();
         if (!configuration) return;
 
+        // DEBUG 02.02.2026: Log work type change
+        console.log(`[setWorkType] Changing work type from ${configuration.settings.work_type} to ${type}`);
+
         const newSettings = { ...configuration.settings, work_type: type };
 
         // FIX 27.01.2026: Recalculate using base_height_m (not the old target_height_m hack)
@@ -383,6 +386,8 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
               el.is_giebel,        // NEU 27.01.2026: Giebel-Fassade?
               el.giebel_height_m   // NEU 27.01.2026: Giebel-Dreieck-Höhe
             );
+            // DEBUG 02.02.2026: Log calculated values
+            console.log(`[setWorkType] Facade ${el.id}: base=${baseHeight}m -> target=${targetHeight}m, levels=${levels}`);
             return { ...el, fields, levels, target_height_m: targetHeight };
           }
           return el;
@@ -881,16 +886,43 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
           if (!str) return null;
           const parsed = JSON.parse(str);
 
-          // Convert removed_cells arrays back to Sets
+          // FIX 02.02.2026: Migriere alte Konfigurationen ohne base_height_m
+          // Das Feld wurde am 27.01.2026 hinzugefügt - alte Daten haben es nicht
+          const workType = parsed.state?.configuration?.settings?.work_type;
+
+          // Convert removed_cells arrays back to Sets AND migrate base_height_m
           if (parsed.state?.configuration?.elements) {
             parsed.state.configuration.elements = parsed.state.configuration.elements.map((el: any) => {
-              if (el.type === 'facade' && el.modifications?.removed_cells) {
+              if (el.type === 'facade') {
+                // Migrate base_height_m if missing
+                let baseHeight = el.base_height_m;
+                if (baseHeight === undefined || baseHeight === null) {
+                  // Rückrechnung aus target_height_m basierend auf work_type
+                  const targetHeight = el.target_height_m || 0;
+                  switch (workType) {
+                    case 'facade':
+                      baseHeight = targetHeight; // Keine Änderung
+                      break;
+                    case 'roof':
+                      baseHeight = targetHeight - 1.0; // +1m Offset entfernen
+                      break;
+                    case 'roofer':
+                      // Bei roofer ist die Berechnung komplex - Fallback auf target
+                      baseHeight = targetHeight > 2 ? targetHeight - 2.0 : targetHeight;
+                      break;
+                    default:
+                      baseHeight = targetHeight;
+                  }
+                  console.log(`[Storage] Migrated base_height_m for facade ${el.id}: ${baseHeight}m (from target ${targetHeight}m, workType: ${workType})`);
+                }
+
                 return {
                   ...el,
-                  modifications: {
+                  base_height_m: baseHeight,
+                  modifications: el.modifications?.removed_cells ? {
                     ...el.modifications,
                     removed_cells: new Set(el.modifications.removed_cells),
-                  },
+                  } : el.modifications,
                 };
               }
               return el;

@@ -42,6 +42,52 @@ logger = logging.getLogger(__name__)
 from .sse_pipeline_logger import SSEPipelineLogger, log_step_timing
 
 
+def _wkb_to_coords(wkb_data: bytes) -> Optional[List[List[List[float]]]]:
+    """
+    Konvertiert WKB (Well-Known Binary) zu JSON-Koordinaten für das Frontend.
+
+    NEU 31.01.2026: Dach-Geometrie im SSE Heights-Event übertragen.
+
+    Args:
+        wkb_data: WKB-kodierte Geometrie aus building_roofs.geometry_wkb
+
+    Returns:
+        Liste von Polygon-Koordinaten: [[[e, n, z], [e, n, z], ...], ...]
+        None bei Fehler oder leeren Daten
+    """
+    if not wkb_data:
+        return None
+    try:
+        from shapely import wkb
+
+        geom = wkb.loads(wkb_data)
+
+        def extract_coords(geometry):
+            if geometry.is_empty:
+                return []
+            geom_type = geometry.geom_type
+            if geom_type == 'Polygon':
+                coords = list(geometry.exterior.coords)
+                return [[[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords]]
+            elif geom_type == 'MultiPolygon':
+                result = []
+                for poly in geometry.geoms:
+                    coords = list(poly.exterior.coords)
+                    result.append([[c[0], c[1], c[2] if len(c) > 2 else 0] for c in coords])
+                return result
+            elif geom_type in ('GeometryCollection', 'MultiSurface'):
+                result = []
+                for g in geometry.geoms:
+                    result.extend(extract_coords(g))
+                return result
+            return []
+
+        return extract_coords(geom)
+    except Exception as e:
+        logger.warning(f"[SSE] _wkb_to_coords Fehler: {e}")
+        return None
+
+
 def _calculate_object_data(bundles: List[Any]) -> Optional[Dict[str, Any]]:
     """
     Berechnet das Objekt-Polygon für Gerüstplanung.
@@ -669,6 +715,8 @@ class BuildingDataStreamService:
             heights_results = []
             for bundle in bundles:
                 height_source = "swissBUILDINGS3D" if bundle.roof_dach_min_m or bundle.roof_dach_max_m else "default"
+                # NEU 31.01.2026: roof_geometry_coords für Frontend 3D-Rendering
+                roof_coords = _wkb_to_coords(bundle.roof_geometry_wkb) if bundle.roof_geometry_wkb else None
                 heights_results.append({
                     "egid": bundle.egid,
                     "matched_address": bundle.address_matched,
@@ -677,6 +725,7 @@ class BuildingDataStreamService:
                     "source": height_source,
                     "has_3d_layers": bundle.has_3d_layers,
                     "has_roof_geometry": bundle.has_roof_geometry,
+                    "roof_geometry_coords": roof_coords,  # NEU 31.01.2026
                     "roof_dach_min_m": bundle.roof_dach_min_m,
                     "roof_dach_max_m": bundle.roof_dach_max_m,
                     "roof_gebaeudeeinheit": bundle.roof_gebaeudeeinheit,
@@ -701,6 +750,7 @@ class BuildingDataStreamService:
                         "duration_ms": 0,
                         "has_3d_layers": h["has_3d_layers"],
                         "has_roof_geometry": h["has_roof_geometry"],
+                        "roof_geometry_coords": h["roof_geometry_coords"],  # NEU 31.01.2026
                         "roof_dach_min_m": h["roof_dach_min_m"],
                         "roof_dach_max_m": h["roof_dach_max_m"],
                         "roof_gebaeudeeinheit": h["roof_gebaeudeeinheit"],

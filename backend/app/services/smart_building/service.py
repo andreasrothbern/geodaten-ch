@@ -477,6 +477,106 @@ class SmartBuildingService:
                 self._address_locks[cache_key] = asyncio.Lock()
             return self._address_locks[cache_key]
 
+    async def collect_all_data_by_coordinates(
+        self,
+        e: float,
+        n: float,
+        include_research: bool = False,
+        include_zones_analysis: bool = False,
+        include_terrain: bool = True,
+    ) -> Optional[BuildingDataBundle]:
+        """
+        Sammelt Gebäudedaten basierend auf LV95-Koordinaten (schnell).
+
+        NEU 01.02.2026: Für Foto-Analyse mit GPS-Koordinaten.
+
+        Diese Methode ist schneller als collect_all_data(address), da sie:
+        - Kein Geocoding braucht (Koordinaten sind schon bekannt)
+        - Direkt aus building_3d.db lädt
+        - Optional Research/Zonen-Analyse überspringen kann
+
+        Args:
+            e: LV95 Ost-Koordinate
+            n: LV95 Nord-Koordinate
+            include_research: Claude-Recherche für Gebäudename
+            include_zones_analysis: Claude-Analyse für Zonen
+            include_terrain: Terrain-Daten laden
+
+        Returns:
+            BuildingDataBundle oder None wenn kein Gebäude gefunden
+        """
+        try:
+            from app.services.building_3d_service import get_building_3d_service
+            from app.services.roof_3d_service import get_roof_3d_service
+
+            building_3d_service = get_building_3d_service()
+            roof_3d_service = get_roof_3d_service()
+
+            # 1. Gebäude per Koordinaten finden
+            building_data = building_3d_service.get_by_coordinates(e, n)
+
+            if not building_data:
+                logger.warning(f"Kein Gebäude bei Koordinaten ({e}, {n}) gefunden")
+                return None
+
+            egid = building_data.get('egid')
+
+            # 2. Bundle erstellen
+            bundle = BuildingDataBundle()
+            bundle.egid = str(egid) if egid else None
+            bundle.lv95_e = e
+            bundle.lv95_n = n
+            bundle.polygon = building_data.get('polygon')
+            bundle.traufhoehe_m = building_data.get('traufhoehe_m')
+            bundle.firsthoehe_m = building_data.get('firsthoehe_m')
+            bundle.gebaeudehoehe_m = building_data.get('gebaeudehoehe_m')
+            bundle.area_m2 = building_data.get('area_m2')
+            bundle.perimeter_m = building_data.get('perimeter_m')
+            bundle.has_3d_layers = building_data.get('has_3d_layers', 0) == 1
+
+            # 3. Dach-Daten laden
+            if egid:
+                roof = roof_3d_service.get_by_egid(str(egid))
+                if roof:
+                    bundle.roof_dach_min_m = roof.get('dach_min')
+                    bundle.roof_dach_max_m = roof.get('dach_max')
+
+                    # Dachtyp berechnen
+                    if bundle.roof_dach_min_m and bundle.roof_dach_max_m:
+                        diff = bundle.roof_dach_max_m - bundle.roof_dach_min_m
+                        if diff < 1.0:
+                            bundle.roof_type = "flachdach"
+                        elif diff < 3.0:
+                            bundle.roof_type = "pultdach"
+                        else:
+                            bundle.roof_type = "satteldach"
+
+            # 4. Reverse Geocoding für Adresse (optional, schnell)
+            try:
+                from app.services.swisstopo import get_swisstopo_service
+                swisstopo = get_swisstopo_service()
+                # Identify gibt uns die Adresse
+                buildings = await swisstopo.identify_buildings(e, n, radius=20)
+                if buildings:
+                    b = buildings[0]
+                    bundle.address_matched = f"{b.strname} {b.deinr}, {b.dplz4} {b.ggdename}"
+            except Exception as addr_err:
+                logger.debug(f"Reverse Geocoding fehlgeschlagen: {addr_err}")
+
+            logger.info(
+                f"[SMART_BUILDING] Koordinaten-Lookup: ({e}, {n})\n"
+                f"  ├─ EGID: {bundle.egid}\n"
+                f"  ├─ Adresse: {bundle.address_matched}\n"
+                f"  ├─ Traufhöhe: {bundle.traufhoehe_m}m\n"
+                f"  └─ Dachtyp: {bundle.roof_type}"
+            )
+
+            return bundle
+
+        except Exception as e:
+            logger.exception(f"collect_all_data_by_coordinates fehlgeschlagen: {e}")
+            return None
+
     async def collect_all_data(
         self,
         address: Union[str, List[str]],

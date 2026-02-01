@@ -145,6 +145,11 @@ class SwissBuildings3DService:
                 building.height_source = "swissBUILDINGS3D_STAC"
                 building.confidence = 0.95
 
+                # FIX 02.02.2026: roof_form aus 3D-Daten übernehmen (hat Priorität!)
+                if result.get("roof_form"):
+                    building.roof_type = result.get("roof_form")
+                    logger.info(f"Roof type from 3D data: {building.roof_type}")
+
                 logger.info(
                     f"Building found at E={e}, N={n}: "
                     f"{len(building.polygon)} points, "
@@ -189,11 +194,14 @@ class SwissBuildings3DService:
                 logger.info(f"Heights from DB via {height_source}: trauf={building.trauf_height_m}m")
 
         # 3. Dachanalyse von sonnendach.ch (optional)
+        # FIX 02.02.2026: Nur verwenden wenn keine 3D-basierte roof_form vorhanden
         if include_roof_analysis:
             try:
                 roof_analysis = await self._sonnendach.analyze_roof(e, n, tolerance)
                 if roof_analysis.has_data:
-                    building.roof_type = roof_analysis.roof_type
+                    # Sonnendach nur als Fallback wenn keine 3D-Daten
+                    if not building.roof_type:
+                        building.roof_type = roof_analysis.roof_type
                     building.roof_surfaces = [
                         {
                             "area_m2": s.area_m2,

@@ -430,31 +430,53 @@ async def export_project(project_id: str, format: str = "pdf"):
 
 
 @router.post("/extract", response_model=Dict[str, Any])
-async def extract_from_document(file: UploadFile = File(...)):
+async def extract_from_document(
+    file: UploadFile = File(...),
+    fallback_lat: Optional[float] = Query(None, description="Fallback GPS Latitude (WGS84) - für iOS Safari"),
+    fallback_lon: Optional[float] = Query(None, description="Fallback GPS Longitude (WGS84) - für iOS Safari"),
+):
     """
-    Extrahiert Projektdaten aus einer Ausschreibung (PDF oder Foto).
+    Intelligente Foto/Dokument-Analyse für Gerüstbau-Projekte.
 
-    Verwendet Claude Vision API für OCR und Datenextraktion.
+    NEU 01.02.2026: Erkennt automatisch den Bildtyp und extrahiert relevante Daten:
+    - Gebäudefotos: GPS aus EXIF, Dachform, Geschosse, Hindernisse, 3D-Daten Pre-Load
+    - Dokumente: OCR für Ausschreibungen (Adresse, Projektname, Deadline)
+    - Skizzen: Arbeitstyp erkennen, Masse extrahieren
 
-    UnterstÃ¼tzte Formate:
+    NEU: Fallback-GPS für iOS Safari (capture="environment" entfernt EXIF-GPS)
+
+    Unterstützte Formate:
     - PDF-Dokumente
-    - Bilder (JPG, PNG, GIF, WebP)
+    - Bilder (JPG, PNG, GIF, WebP, HEIC)
 
     Returns:
-        OcrExtractionResult mit extrahierten Daten
+        SmartExtractionResult mit:
+        - image_type: "building_photo", "document", "sketch", etc.
+        - gps_data: GPS-Koordinaten aus EXIF oder Fallback
+        - building_analysis: Dachform, Geschosse, Hindernisse (bei Gebäudefotos)
+        - sketch_analysis: Arbeitstyp, Masse (bei Skizzen)
+        - preloaded_*: 3D-Daten aus der DB (bei GPS-Koordinaten)
+        - data: OCR-Extraktion (bei Dokumenten)
     """
     # Read file content
     file_bytes = await file.read()
 
-    if len(file_bytes) > 10 * 1024 * 1024:  # 10 MB limit
-        raise HTTPException(status_code=400, detail="Datei zu gross (max. 10 MB)")
+    if len(file_bytes) > 20 * 1024 * 1024:  # 20 MB limit (HEIC können gross sein)
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 20 MB)")
 
     # Get original filename
     filename = file.filename or "document.pdf"
 
-    # Extract data
-    extractor = get_extractor()
-    result = await extractor.extract_from_file(file_bytes, filename)
+    # Fallback GPS coordinates (for iOS Safari which strips EXIF)
+    fallback_gps = None
+    if fallback_lat is not None and fallback_lon is not None:
+        fallback_gps = (fallback_lat, fallback_lon)
+        logger.info(f"[Extract] Fallback-GPS empfangen: ({fallback_lat}, {fallback_lon})")
+
+    # Use smart photo analyzer
+    from app.services.geruestbau.photo_analyzer import get_photo_analyzer
+    analyzer = get_photo_analyzer()
+    result = await analyzer.analyze(file_bytes, filename, fallback_gps=fallback_gps)
 
     return result.to_dict()
 
@@ -753,6 +775,18 @@ async def get_facade_data_for_configurator(
         building_name = bundle.building_name
         complexity = bundle.complexity
         research_source = bundle.research_source
+
+        # FIX 02.02.2026: roof_type aus 3D-Daten übernehmen (hat Priorität über Heuristik!)
+        if bundle.roof_type and bundle.roof_confidence and bundle.roof_confidence >= 0.8:
+            from app.services.roof import RoofType
+            try:
+                roof_data.roof_type = RoofType(bundle.roof_type)
+                logger.info(
+                    f"[ROOF-FIX] roof_type aus 3D-Daten übernommen: {bundle.roof_type} "
+                    f"(confidence={bundle.roof_confidence:.2f})"
+                )
+            except ValueError:
+                logger.warning(f"[ROOF-FIX] Unbekannter roof_type: {bundle.roof_type}, behalte Heuristik")
 
         # NEU 14.01.2026: 3D-Dachgeometrie aus Bundle übernehmen
         if bundle.has_roof_geometry and bundle.roof_geometry_wkb:
