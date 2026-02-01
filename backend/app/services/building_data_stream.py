@@ -769,12 +769,11 @@ class BuildingDataStreamService:
                 terrain_results = []
 
                 for bundle in bundles:
-                    # DISABLED 31.01.2026: swissALTI3D Call deaktiviert - Daten ungenau
-                    # Frontend berechnet Terrain aus building_walls.geometry Z-Koordinaten
-                    # await smart._collect_terrain_data(bundle)
+                    # FIX 01.02.2026: _collect_terrain_data() wieder aktiviert!
+                    # Der Code verwendet jetzt building_walls.z_min (nicht mehr swissALTI3D).
+                    # Die reference_height_m wird aus min(building_walls.z_min) berechnet.
+                    await smart._collect_terrain_data(bundle)
 
-                    # FIX 29.01.2026: DEPRECATED slope_m/slope_class ENTFERNT
-                    # Frontend berechnet aus building_walls.geometry Z-Koordinaten
                     terrain_data = {"egid": bundle.egid, "matched_address": bundle.address_matched}
                     if bundle.terrain:
                         terrain_data.update({

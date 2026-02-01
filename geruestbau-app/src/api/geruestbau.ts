@@ -313,18 +313,25 @@ export const geruestbauApi = {
     api.post(`/api/v1/geruestbau/projects/${projectId}/export?format=${format}`, {}),
 
   // OCR-Extraktion aus Dokument (PDF/Foto)
-  extractFromDocument: async (file: File): Promise<OcrExtractionResult> => {
+  // NEU 01.02.2026: Optional GPS-Koordinaten (Fallback für iOS Safari)
+  extractFromDocument: async (
+    file: File,
+    gpsCoords?: { lat: number; lon: number }
+  ): Promise<OcrExtractionResult> => {
     const formData = new FormData()
     formData.append('file', file)
 
-    const response = await fetch(
-      `${API_BASE}/api/v1/geruestbau/extract`,
-      {
-        method: 'POST',
-        body: formData,
-        // Note: Don't set Content-Type header for FormData
-      }
-    )
+    // GPS als Query-Parameter falls vorhanden (Fallback für iOS Safari capture)
+    let url = `${API_BASE}/api/v1/geruestbau/extract`
+    if (gpsCoords) {
+      url += `?fallback_lat=${gpsCoords.lat}&fallback_lon=${gpsCoords.lon}`
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      // Note: Don't set Content-Type header for FormData
+    })
 
     if (!response.ok) {
       const errorText = await response.text()

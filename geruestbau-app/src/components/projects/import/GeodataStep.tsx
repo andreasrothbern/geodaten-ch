@@ -177,9 +177,11 @@ export default function GeodataStep({
               height_m: bundle.terrain?.reference_height_m ?? 0,
               min_m: bundle.terrain?.min_height_m ?? bundle.terrain?.reference_height_m ?? 0,
               max_m: bundle.terrain?.max_height_m ?? bundle.terrain?.reference_height_m ?? 0,
-              slope_m: bundle.terrain?.slope_m ?? 0,
-              slope_class: (bundle.terrain?.slope_class as 'eben' | 'leicht' | 'mittel' | 'stark') ?? 'eben',
-              requires_level_compensation: (bundle.terrain?.slope_m ?? 0) > 0.5,
+              // FIX 31.01.2026: slope_m/slope_class DEPRECATED - Frontend berechnet aus building_walls.geometry
+              // Hier Default-Werte setzen, die echte Berechnung passiert im ConfiguratorPage
+              slope_m: 0,
+              slope_class: 'eben' as const,
+              requires_level_compensation: false,
             },
             heights: {
               // FIX 18.01.2026: Berechne relative Höhen aus absoluten Werten
@@ -312,9 +314,10 @@ export default function GeodataStep({
           height_m: bundle.terrain?.reference_height_m ?? 0,
           min_m: bundle.terrain?.min_height_m ?? bundle.terrain?.reference_height_m ?? 0,
           max_m: bundle.terrain?.max_height_m ?? bundle.terrain?.reference_height_m ?? 0,
-          slope_m: bundle.terrain?.slope_m ?? 0,
-          slope_class: (bundle.terrain?.slope_class as 'eben' | 'leicht' | 'mittel' | 'stark') ?? 'eben',
-          requires_level_compensation: (bundle.terrain?.slope_m ?? 0) > 0.5,
+          // FIX 31.01.2026: slope_m/slope_class DEPRECATED - Frontend berechnet aus building_walls.geometry
+          slope_m: 0,
+          slope_class: 'eben' as const,
+          requires_level_compensation: false,
         },
         zones: bundle.zones?.map(z => ({
           ...z,

@@ -97,6 +97,7 @@ export interface HeightsData {
   // 3D-Layer Daten (swissBUILDINGS3D Roof/Wall)
   has_3d_layers?: boolean;
   has_roof_geometry?: boolean;
+  roof_geometry_coords?: number[][][] | null;  // NEU 31.01.2026: 3D-Dachgeometrie [[[e,n,z],...],...]
   roof_dach_min_m?: number | null;  // Traufhöhe absolut (m ü.M.)
   roof_dach_max_m?: number | null;  // Firsthöhe absolut (m ü.M.)
   terrain_z_min?: number | null;    // Niedrigstes Terrain (m ü.M.) für korrekte Berechnung

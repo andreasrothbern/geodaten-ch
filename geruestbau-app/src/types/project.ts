@@ -185,10 +185,11 @@ export interface BuildingEntry {
     reference_height_m: number
     min_height_m: number
     max_height_m: number
-    slope_m: number
-    slope_class: 'eben' | 'leicht' | 'mittel' | 'stark'
+    slope_m?: number  // FIX 31.01.2026: Optional - wird im Frontend aus building_walls berechnet
+    slope_class?: 'eben' | 'leicht' | 'mittel' | 'stark'  // FIX 31.01.2026: Optional
     facade_z_min?: Record<string, number>
     facade_z_max?: Record<string, number>
+    facade_heights_source?: 'wall_layer' | 'terrain_sampled' | 'global'  // FIX 31.01.2026: 'global' wie SSE
   }
   zones?: Array<{
     id: string
@@ -368,6 +369,42 @@ export interface ExtractedProjectData {
   description?: string  // Optional description from manual entry
 }
 
+// NEU 01.02.2026: Erweiterte Foto-Analyse
+export interface GpsData {
+  lat: number
+  lon: number
+  altitude_m?: number
+  lv95_e?: number
+  lv95_n?: number
+  compass_direction?: number
+  compass_direction_text?: string
+}
+
+export interface BuildingAnalysis {
+  floors_count?: number
+  height_estimate_m?: number
+  roof_type?: string  // flachdach, satteldach, walmdach, pultdach
+  roof_angle_deg?: number
+  facade_material?: string
+  facade_direction?: string
+  visible_address?: string
+  obstacles?: string[]
+  windows_pattern?: string
+  building_condition?: string
+  neighboring_buildings?: string
+  special_features?: string[]
+}
+
+export interface SketchAnalysis {
+  sketch_type?: string  // grundriss, ansicht, schnitt, detail
+  work_type?: string  // fassade, spengler, dach, komplett
+  dimensions_found?: Record<string, number>
+  notes_text?: string
+  address_found?: string
+  address_required?: boolean
+  scale?: string
+}
+
 export interface OcrExtractionResult {
   success: boolean
   data?: ExtractedProjectData
@@ -375,6 +412,22 @@ export interface OcrExtractionResult {
   raw_text?: string
   error?: string
   source_id?: string
+
+  // NEU 01.02.2026: Smart Photo Analyzer
+  image_type?: 'building_photo' | 'document' | 'sketch' | 'technical_plan' | 'mixed' | 'unknown'
+  gps_data?: GpsData
+  photo_timestamp?: string
+  building_analysis?: BuildingAnalysis
+  sketch_analysis?: SketchAnalysis
+
+  // Pre-loaded 3D-Daten (bei GPS-Koordinaten)
+  preloaded_egid?: string
+  preloaded_building_name?: string
+  preloaded_address?: string
+  preloaded_traufhoehe_m?: number
+  preloaded_firsthoehe_m?: number
+  preloaded_roof_type?: string
+  preloaded_polygon?: number[][]
 }
 
 // =============================================================================

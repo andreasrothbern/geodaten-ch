@@ -18,7 +18,7 @@ import type { OcrExtractionResult, ExtractedProjectData } from '../../../types/p
 interface ImportStepProps {
   onDataExtracted: (data: ExtractedProjectData, source: 'pdf' | 'photo' | 'url' | 'manual') => void
   onManualEntry?: () => void  // Optional callback for manual entry mode
-  extractFromDocument: (file: File) => Promise<OcrExtractionResult>
+  extractFromDocument: (file: File, gpsCoords?: { lat: number; lon: number }) => Promise<OcrExtractionResult>
   extractFromUrl: (url: string) => Promise<OcrExtractionResult>
 }
 
@@ -52,17 +52,60 @@ export default function ImportStep({
 
   const isSimapUrl = (url: string) => url.includes('simap.ch')
 
-  const handleFileSelect = async (file: File) => {
+  // NEU 01.02.2026: Optional GPS-Koordinaten (Fallback für iOS Safari capture)
+  const handleFileSelect = async (
+    file: File,
+    gpsCoords?: { lat: number; lon: number }
+  ) => {
     setSelectedFile(file)
     setExtractionResult(null)
     setExtractingDoc(true)
 
     try {
-      const result = await extractFromDocument(file)
+      // GPS-Koordinaten mitgeben falls vorhanden (Fallback für iOS Safari)
+      const result = await extractFromDocument(file, gpsCoords)
+      if (gpsCoords) {
+        console.log('[ImportStep] GPS-Fallback gesendet:', gpsCoords)
+      }
       setExtractionResult(result)
 
-      if (result.success && result.data) {
-        onDataExtracted(result.data, file.type === 'application/pdf' ? 'pdf' : 'photo')
+      if (result.success) {
+        // NEU 01.02.2026: Unterschiedliche Quellen für Daten
+        let extractedData = result.data
+
+        // Bei Gebäudefoto: Pre-loaded Daten verwenden
+        if (result.image_type === 'building_photo' && result.preloaded_address) {
+          extractedData = {
+            ...extractedData,
+            address: result.preloaded_address,
+            // Beschreibung aus Foto-Analyse
+            description: result.building_analysis ?
+              `${result.building_analysis.floors_count || '?'} Geschosse, ${result.building_analysis.roof_type || 'Dach unbekannt'}${result.building_analysis.obstacles?.length ? `, Hindernisse: ${result.building_analysis.obstacles.join(', ')}` : ''}`
+              : undefined,
+          }
+        }
+
+        // Bei Skizze: Adresse aus Analyse oder zum Nachfragen markieren
+        if (result.image_type === 'sketch' && result.sketch_analysis) {
+          if (result.sketch_analysis.address_found) {
+            extractedData = {
+              ...extractedData,
+              address: result.sketch_analysis.address_found,
+            }
+          }
+          if (result.sketch_analysis.work_type) {
+            extractedData = {
+              ...extractedData,
+              description: `Arbeitstyp: ${result.sketch_analysis.work_type}`,
+            }
+          }
+        }
+
+        if (extractedData) {
+          const source = result.image_type === 'building_photo' ? 'photo' :
+                        (file.type === 'application/pdf' ? 'pdf' : 'photo')
+          onDataExtracted(extractedData, source)
+        }
       }
     } catch (error) {
       console.error('Fehler bei OCR-Extraktion:', error)
@@ -82,17 +125,46 @@ export default function ImportStep({
   }
 
   const handleCameraCapture = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.capture = 'environment'
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) {
-        handleFileSelect(file)
+    // NEU 01.02.2026: Erst GPS holen, dann Foto machen
+    // iOS Safari entfernt EXIF-GPS bei capture="environment"
+    // Daher nutzen wir die Geolocation API als Fallback
+
+    const capturePhoto = (gpsCoords?: { lat: number; lon: number }) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.capture = 'environment'
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (file) {
+          // GPS-Koordinaten an handleFileSelect übergeben
+          handleFileSelect(file, gpsCoords)
+        }
       }
+      input.click()
     }
-    input.click()
+
+    // Versuche GPS zu holen bevor Kamera geöffnet wird
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          console.log('[Camera] GPS from Geolocation API:', position.coords.latitude, position.coords.longitude)
+          capturePhoto({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          })
+        },
+        (error) => {
+          console.warn('[Camera] Geolocation failed:', error.message)
+          // Kein GPS verfügbar, trotzdem Foto machen
+          capturePhoto()
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      )
+    } else {
+      // Kein Geolocation API
+      capturePhoto()
+    }
   }
 
   const handleUrlExtract = async () => {
@@ -161,32 +233,118 @@ export default function ImportStep({
         {/* Extraction Result */}
         {extractionResult && (
           <div
-            className={`mt-4 p-3 rounded-lg flex items-start gap-2 ${
+            className={`mt-4 p-3 rounded-lg ${
               extractionResult.success
                 ? 'bg-green-50 text-green-800'
                 : 'bg-red-50 text-red-800'
             }`}
           >
-            {extractionResult.success ? (
-              <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            )}
-            <div>
+            <div className="flex items-start gap-2">
               {extractionResult.success ? (
-                <>
-                  <p className="font-medium">Daten erfolgreich extrahiert</p>
-                  <p className="text-sm opacity-80">
-                    Konfidenz: {Math.round((extractionResult.confidence || 0) * 100)}%
-                  </p>
-                </>
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
               ) : (
-                <>
-                  <p className="font-medium">Extraktion fehlgeschlagen</p>
-                  <p className="text-sm opacity-80">{extractionResult.error}</p>
-                </>
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
               )}
+              <div className="flex-1">
+                {extractionResult.success ? (
+                  <>
+                    <p className="font-medium">
+                      {extractionResult.image_type === 'building_photo' && 'Gebäudefoto erkannt'}
+                      {extractionResult.image_type === 'document' && 'Dokument erkannt'}
+                      {extractionResult.image_type === 'sketch' && 'Skizze erkannt'}
+                      {extractionResult.image_type === 'technical_plan' && 'Technische Zeichnung erkannt'}
+                      {extractionResult.image_type === 'mixed' && 'Gemischtes Bild erkannt'}
+                      {(!extractionResult.image_type || extractionResult.image_type === 'unknown') && 'Daten erfolgreich extrahiert'}
+                    </p>
+                    <p className="text-sm opacity-80">
+                      Konfidenz: {Math.round((extractionResult.confidence || 0) * 100)}%
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Extraktion fehlgeschlagen</p>
+                    <p className="text-sm opacity-80">{extractionResult.error}</p>
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* NEU 01.02.2026: Erweiterte Ergebnisse */}
+            {extractionResult.success && (
+              <div className="mt-3 pt-3 border-t border-green-200 space-y-2 text-sm">
+                {/* GPS-Daten */}
+                {extractionResult.gps_data && (
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">📍 GPS:</span>
+                    <span>
+                      {extractionResult.gps_data.lat?.toFixed(4)}, {extractionResult.gps_data.lon?.toFixed(4)}
+                      {extractionResult.gps_data.compass_direction_text && (
+                        <span className="ml-2 text-green-600">
+                          (Blickrichtung: {extractionResult.gps_data.compass_direction_text})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                {/* Pre-loaded Gebäudedaten */}
+                {extractionResult.preloaded_egid && (
+                  <div className="bg-green-100 p-2 rounded">
+                    <p className="font-medium">🏠 3D-Daten geladen:</p>
+                    <ul className="ml-4 mt-1 space-y-0.5">
+                      {extractionResult.preloaded_address && (
+                        <li>Adresse: {extractionResult.preloaded_address}</li>
+                      )}
+                      <li>EGID: {extractionResult.preloaded_egid}</li>
+                      {extractionResult.preloaded_traufhoehe_m && (
+                        <li>Traufhöhe: {extractionResult.preloaded_traufhoehe_m.toFixed(1)}m</li>
+                      )}
+                      {extractionResult.preloaded_roof_type && (
+                        <li>Dachtyp: {extractionResult.preloaded_roof_type}</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Gebäudefoto-Analyse */}
+                {extractionResult.building_analysis && (
+                  <div className="space-y-1">
+                    {extractionResult.building_analysis.floors_count && (
+                      <p>🏗️ Geschosse: {extractionResult.building_analysis.floors_count}</p>
+                    )}
+                    {extractionResult.building_analysis.roof_type && (
+                      <p>🏠 Dachform: {extractionResult.building_analysis.roof_type}</p>
+                    )}
+                    {extractionResult.building_analysis.facade_material && (
+                      <p>🧱 Fassade: {extractionResult.building_analysis.facade_material}</p>
+                    )}
+                    {extractionResult.building_analysis.obstacles && extractionResult.building_analysis.obstacles.length > 0 && (
+                      <p>⚠️ Hindernisse: {extractionResult.building_analysis.obstacles.join(', ')}</p>
+                    )}
+                    {extractionResult.building_analysis.visible_address && (
+                      <p>📮 Sichtbare Adresse: {extractionResult.building_analysis.visible_address}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Skizze-Analyse */}
+                {extractionResult.sketch_analysis && (
+                  <div className="space-y-1">
+                    {extractionResult.sketch_analysis.sketch_type && (
+                      <p>📐 Skizzentyp: {extractionResult.sketch_analysis.sketch_type}</p>
+                    )}
+                    {extractionResult.sketch_analysis.work_type && (
+                      <p>🔧 Arbeitstyp: {extractionResult.sketch_analysis.work_type}</p>
+                    )}
+                    {extractionResult.sketch_analysis.address_required && (
+                      <p className="text-orange-600 font-medium">
+                        ⚠️ Keine Adresse erkannt - bitte manuell eingeben
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

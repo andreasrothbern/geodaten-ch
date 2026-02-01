@@ -1084,21 +1084,35 @@ class SmartBuildingService:
                 return
 
         try:
-            # NEU 28.01.2026: reference_height_m aus building_walls.z_min berechnen
-            # statt swissALTI3D API-Call. 3D-Daten sind immer verfügbar.
+            # FIX 01.02.2026: reference_height_m mit Fallback-Kette berechnen
+            # STUFE 1: building_walls.z_min (präziseste Daten, wenn 3D-Layer geladen)
+            # STUFE 2: buildings_3d.terrain_z_min (aus vorherigem Terrain-Sampling)
+            # STUFE 3: Polygon Z-Koordinaten (wenn verfügbar)
             ref_height = None
+            ref_source = None
 
             if bundle.egid:
+                # STUFE 1: building_walls.z_min (präziseste Daten)
                 from app.services.layer_fetcher import get_layer_fetcher_service
                 layer_fetcher = get_layer_fetcher_service()
                 walls = layer_fetcher.get_walls_for_building(bundle.egid)
 
                 if walls:
-                    # reference_height_m = minimale Terrain-Höhe (z_min) aller Wände
                     z_mins = [w['z_min'] for w in walls if w.get('z_min') is not None]
                     if z_mins:
                         ref_height = min(z_mins)
-                        logger.info(f"[TERRAIN] reference_height_m={ref_height:.2f}m aus building_walls.z_min (EGID {bundle.egid})")
+                        ref_source = "building_walls.z_min"
+                        logger.info(f"[TERRAIN] reference_height_m={ref_height:.2f}m aus {ref_source} (EGID {bundle.egid})")
+
+                # STUFE 2: buildings_3d.terrain_z_min (Fallback)
+                if ref_height is None:
+                    from app.services.building_3d_service import get_building_3d_service
+                    building_3d = get_building_3d_service()
+                    building_data = building_3d.get_by_egid(int(bundle.egid))
+                    if building_data and building_data.get('terrain_z_min'):
+                        ref_height = building_data['terrain_z_min']
+                        ref_source = "buildings_3d.terrain_z_min"
+                        logger.info(f"[TERRAIN] reference_height_m={ref_height:.2f}m aus {ref_source} (EGID {bundle.egid})")
 
             if ref_height is not None:
                 bundle.terrain = TerrainProfile(reference_height_m=ref_height)

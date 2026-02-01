@@ -580,12 +580,16 @@ function createRoofFromPolygon(
 
 // NEU 14.01.2026: Echte 3D-Dachgeometrie aus swissBUILDINGS3D
 // Rendert die tatsächliche Dachform basierend auf den importierten 3D-Koordinaten
+//
+// Y-Berechnung: y = yOffset + (z - zReference)
+// - Bei 3D-Wänden: zReference=terrainZ, yOffset=0 → y = z - terrainZ (konsistent mit Wänden)
+// - Bei 2D-Extrusion: zReference=roofDachMin, yOffset=buildingHeight → Dach ab Traufe
 function createRoofFrom3DGeometry(
   roofCoords: number[][][],  // Array von Polygonen: [[[E, N, Z], ...], ...]
   centerE: number,           // Gebäude-Zentrum E (LV95)
   centerN: number,           // Gebäude-Zentrum N (LV95)
-  roofDachMinM: number,      // Niedrigste Z-Höhe (Traufe) in m ü.M.
-  buildingHeight: number     // Traufhöhe im lokalen Koordinatensystem (Y-Offset)
+  zReference: number,        // Z-Referenz: terrainZ (3D-Wände) oder roofDachMin (2D-Extrusion)
+  yOffset: number            // Y-Offset: 0 (3D-Wände) oder buildingHeight (2D-Extrusion)
 ): THREE.Group {
   const group = new THREE.Group();
 
@@ -606,12 +610,14 @@ function createRoofFrom3DGeometry(
     // Transformiere Koordinaten von LV95 zu lokalen Three.js Koordinaten
     // X = E - centerE
     // Z = -(N - centerN)  [negiert für Three.js Koordinatensystem]
-    // Y = buildingHeight + (Z_abs - roofDachMinM)  [relative Höhe über Traufe]
+    // Y = yOffset + (Z_abs - zReference)
+    //   - Bei 3D-Wänden: yOffset=0, zReference=terrainZ → y = z - terrainZ
+    //   - Bei 2D-Extrusion: yOffset=buildingHeight, zReference=roofDachMin → y = buildingHeight + (z - roofDachMin)
     const transformedPoints = polygon.map(point => {
       const [e, n, z] = point;
       return {
         x: e - centerE,
-        y: buildingHeight + (z - roofDachMinM),  // Relative Höhe
+        y: yOffset + (z - zReference),  // FIX 01.02.2026: Parametrisiert für beide Fälle
         z: -(n - centerN),  // Negiert für Three.js
       };
     });
@@ -1373,6 +1379,7 @@ export default function ScaffoldScene({
         let wallMinE = Infinity, wallMaxE = -Infinity;
         let wallMinN = Infinity, wallMaxN = -Infinity;
         let wallMinZ = Infinity;  // FIX 21.01.2026: Auch Z-Min für Terrain berechnen
+        let wallMaxZ = -Infinity; // FIX 31.01.2026: Z-Max für echte Gebäudehöhe (nicht roof_dach_min_m!)
         buildingWalls.forEach(wall => {
           if (!wall.geometry) return;
           // Iteriere durch alle Koordinaten um Bbox zu finden
@@ -1385,6 +1392,7 @@ export default function ScaffoldScene({
             }
             if (coord.length >= 3) {
               wallMinZ = Math.min(wallMinZ, coord[2]);
+              wallMaxZ = Math.max(wallMaxZ, coord[2]); // FIX 31.01.2026
             }
           };
           // Rekursiv durch alle Verschachtelungsebenen
@@ -1410,18 +1418,25 @@ export default function ScaffoldScene({
         // → Dach würde sonst nicht auf den Wänden sitzen
         const effectiveTerrainZ = wallMinZ !== Infinity ? wallMinZ : (config.roof?.terrain_z_min || 0);
 
-        // FIX 21.01.2026: buildingHeight neu berechnen mit effectiveTerrainZ
-        // Damit Dach korrekt auf den Wänden sitzt
-        const effectiveBuildingHeight = hasReal3DGeometry && config.roof?.roof_dach_min_m
-          ? config.roof.roof_dach_min_m - effectiveTerrainZ
-          : buildingHeight;
+        // FIX 31.01.2026: buildingHeight aus Walls berechnen, NICHT aus roof_dach_min_m!
+        // Bei Flachdächern ist roof_dach_min_m nur das Attika-Niveau (z.B. 2.98m),
+        // während die echte Gebäudehöhe viel grösser ist (z.B. 11.52m).
+        // wallMaxZ - wallMinZ = echte Gebäudehöhe aus 3D-Daten
+        const effectiveBuildingHeight = wallMaxZ !== -Infinity
+          ? wallMaxZ - effectiveTerrainZ  // Echte Höhe aus 3D-Walls
+          : (hasReal3DGeometry && config.roof?.roof_dach_min_m
+              ? config.roof.roof_dach_min_m - effectiveTerrainZ
+              : buildingHeight);
 
         console.log('[3D-WALLS] Verwende echte 3D-Wandgeometrie', {
           wallCount: buildingWalls.length,
           wallMinZ: wallMinZ !== Infinity ? wallMinZ.toFixed(1) : 'undefined',
+          wallMaxZ: wallMaxZ !== -Infinity ? wallMaxZ.toFixed(1) : 'undefined', // FIX 31.01.2026
           apiTerrainZ: config.roof?.terrain_z_min?.toFixed(1) ?? 'undefined',
+          apiRoofDachMin: config.roof?.roof_dach_min_m?.toFixed(1) ?? 'undefined', // Für Vergleich
           effectiveTerrainZ: effectiveTerrainZ.toFixed(1),
           effectiveBuildingHeight: effectiveBuildingHeight.toFixed(2),
+          heightSource: wallMaxZ !== -Infinity ? 'walls (z_max - z_min)' : 'roof_dach_min_m fallback',
           complexity: buildingComplexity,
           wallCenter: `${wallCenter[0].toFixed(0)}, ${wallCenter[1].toFixed(0)}`,
         });
@@ -1441,19 +1456,22 @@ export default function ScaffoldScene({
             console.log('[3D-ROOF] roof_dach_min_m aus Geometrie berechnet:', roofDachMinM.toFixed(2));
           }
 
+          // FIX 01.02.2026: Dach verwendet dieselbe Terrain-Referenz wie Wände
+          // VORHER: y = buildingHeight + (z - roofDachMinM) → Dach schwebt wenn roofDachMinM != wallMaxZ
+          // NACHHER: y = 0 + (z - effectiveTerrainZ) = z - effectiveTerrainZ → konsistent mit Wänden!
           console.log('[3D-ROOF] Verwende echte 3D-Dachgeometrie (mit wallCenter)', {
             polygons: config.roof!.roof_geometry_coords!.length,
             dachMin: roofDachMinM,
             dachMax: config.roof!.roof_dach_max_m,
-            effectiveBuildingHeight: effectiveBuildingHeight.toFixed(2),
+            effectiveTerrainZ: effectiveTerrainZ.toFixed(2),
             center: `${wallCenter[0].toFixed(0)}, ${wallCenter[1].toFixed(0)}`,
           });
           parent.add(createRoofFrom3DGeometry(
             config.roof!.roof_geometry_coords!,
             wallCenter[0],  // FIX: wallCenter statt bboxCenter
             wallCenter[1],
-            roofDachMinM,
-            effectiveBuildingHeight  // FIX: effectiveBuildingHeight statt buildingHeight
+            effectiveTerrainZ,  // FIX 01.02.2026: Terrain statt roofDachMinM - konsistent mit Wänden
+            0  // FIX 01.02.2026: Kein Offset mehr - die Formel wird y = z - terrainZ
           ));
         } else {
           // FIX 21.01.2026: Fallback auf heuristisches Dach wenn 3D-Walls aber keine 3D-Roof-Daten

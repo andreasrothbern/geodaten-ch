@@ -47,9 +47,10 @@ export default function NewProjectPage() {
   }, [])
 
   // Extract from document (PDF/photo)
+  // NEU 01.02.2026: GPS-Fallback für iOS Safari (EXIF wird dort entfernt)
   const extractFromDocument = useCallback(
-    async (file: File): Promise<OcrExtractionResult> => {
-      const result = await geruestbauApi.extractFromDocument(file)
+    async (file: File, gpsCoords?: { lat: number; lon: number }): Promise<OcrExtractionResult> => {
+      const result = await geruestbauApi.extractFromDocument(file, gpsCoords)
       if (result.confidence) {
         setConfidence(result.confidence)
       }

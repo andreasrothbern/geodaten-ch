@@ -1037,20 +1037,34 @@ async def get_facade_data_for_configurator(
         except Exception as roof_err:
             logger.warning(f"Building roofs konnten nicht geladen werden: {roof_err}")
 
-    # FIX 16.01.2026 15:30: Korrekte Traufhöhen-Berechnung bei Hanglagen
-    # Das alte traufhoehe_m aus swissBUILDINGS3D verwendet GELAENDEPUNKT (ein einzelner Punkt),
-    # der bei Hanglagen NICHT das niedrigste Terrain ist.
+    # FIX 01.02.2026: Korrekte Traufhöhen-Berechnung aus building_walls.z_min
+    # swissALTI3D Terrain-Daten wurden entfernt (ungenau bei Hanglagen).
+    # Stattdessen: building_walls.z_min = niedrigster Punkt der Wand-Geometrie (LiDAR-präzise)
     #
-    # Korrekte Berechnung: dach_min (m ü.M.) - min(facade_z_min) (niedrigstes Terrain)
+    # Korrekte Berechnung: roof_dach_min_m (m ü.M.) - min(building_walls.z_min) (niedrigstes Terrain)
     #
     # Beispiel Knospenweg 9:
-    #   ALT:  traufhoehe_m = 562.94 - 557.45 = 5.49m (GELAENDEPUNKT)
-    #   NEU:  traufhoehe_m = 562.94 - 555.80 = 7.14m (min(facade_z_min))
+    #   roof_dach_min_m = 562.94 m ü.M. (Traufhöhe absolut)
+    #   min(building_walls.z_min) = 555.80 m ü.M. (Terrain-Level)
+    #   → traufhoehe_m = 562.94 - 555.80 = 7.14m (relative Höhe)
     #
-    # Die korrigierten Werte werden im roof-Objekt als 'traufhoehe_m' und 'firsthoehe_m' geliefert.
-    # Das Frontend verwendet diese für die konsistente 3D-Darstellung.
-    if bundle and bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.facade_z_min:
+    # Priorität: building_walls.z_min > bundle.terrain.facade_z_min (Legacy-Fallback)
+    min_terrain = None
+
+    # STUFE 1: building_walls.z_min (präferiert - LiDAR-Daten)
+    if building_walls:
+        z_min_values = [w.get('z_min') for w in building_walls if w.get('z_min') is not None]
+        if z_min_values:
+            min_terrain = min(z_min_values)
+            logger.info(f"[HEIGHT-FIX] Terrain aus building_walls.z_min: {min_terrain:.2f}m ü.M. (aus {len(z_min_values)} Wänden)")
+
+    # STUFE 2: bundle.terrain.facade_z_min (Legacy-Fallback, falls noch vorhanden)
+    if min_terrain is None and bundle and bundle.terrain and bundle.terrain.facade_z_min:
         min_terrain = min(bundle.terrain.facade_z_min.values())
+        logger.info(f"[HEIGHT-FIX] Terrain aus bundle.terrain (Fallback): {min_terrain:.2f}m ü.M.")
+
+    # Höhenkorrektur durchführen wenn Terrain gefunden
+    if min_terrain is not None and bundle and bundle.roof_dach_min_m:
         corrected_trauf = round(bundle.roof_dach_min_m - min_terrain, 2)
 
         # Auch firsthoehe korrigieren wenn verfügbar
@@ -1102,7 +1116,8 @@ async def get_facade_data_for_configurator(
             # Rohdaten für Höhenberechnung (Frontend: trauf = dach_min - terrain_z_min)
             "roof_dach_min_m": bundle.roof_dach_min_m if bundle else None,
             "roof_dach_max_m": bundle.roof_dach_max_m if bundle else None,
-            "terrain_z_min": min(bundle.terrain.facade_z_min.values()) if bundle and bundle.terrain and bundle.terrain.facade_z_min else None,
+            # FIX 01.02.2026: min_terrain aus building_walls.z_min (berechnet oben)
+            "terrain_z_min": min_terrain,
         },
         # Zonen-Daten für komplexe GebÃ¤ude (NEU 05.01.2026)
         "zones": zones_data,
@@ -1119,6 +1134,8 @@ async def get_facade_data_for_configurator(
         # Siehe docs/architecture/3D_LAYER_USAGE_SCAFFOLDING.md
         "facade_z_min": bundle.terrain.facade_z_min if bundle and bundle.terrain else None,
         "facade_z_max": bundle.terrain.facade_z_max if bundle and bundle.terrain else None,
+        # FIX 01.02.2026: terrain_height_m für Frontend (Geländehöhe m ü.M.)
+        "terrain_height_m": min_terrain,
         # FIX 16.01.2026 17:00: traufhoehe_m/firsthoehe_m ENTFERNT vom Top-Level!
         # Korrekte Höhen aus Rohdaten berechnen: roof_dach_min_m - terrain_z_min
         # Die Rohdaten sind: roof.roof_dach_min_m, roof.roof_dach_max_m, roof.terrain_z_min
