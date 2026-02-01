@@ -32,13 +32,12 @@ from app.models.schemas import (
     HealthResponse,
     ErrorResponse
 )
-from app.routers import geruestbau, batch_import
-
 # =============================================================================
 # DATABASE RESET (für PROD Deployment)
 # =============================================================================
 # NEU 01.02.2026: Einmaliger DB-Reset via Umgebungsvariable
 # Verwendung: Variable auf "true" setzen, deployen, dann Variable entfernen
+# FIX 02.02.2026: Reset MUSS vor Router-Import passieren!
 
 def reset_databases_if_requested():
     """
@@ -85,8 +84,11 @@ def reset_databases_if_requested():
 
         print("[RESET] Projekt-Reset abgeschlossen.")
 
-# Reset VOR Service-Initialisierung ausführen!
+# Reset VOR Router-Import ausführen (Router initialisieren Services!)
 reset_databases_if_requested()
+
+# Router importieren NACH dem Reset (damit DBs neu erstellt werden)
+from app.routers import geruestbau, batch_import
 
 # Erinnerung falls Reset-Variablen noch aktiv sind
 if os.getenv("RESET_GEODATEN_DB", "").lower() == "true" or os.getenv("RESET_PROJECTS_DB", "").lower() == "true":
