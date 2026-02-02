@@ -9,6 +9,8 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  MapPin,
+  X,
 } from 'lucide-react'
 import FileUpload from '../../ui/FileUpload'
 // AddressAutocomplete deaktiviert - einfaches Textfeld stattdessen
@@ -44,6 +46,14 @@ export default function ImportStep({
   const [extractionResult, setExtractionResult] = useState<OcrExtractionResult | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isManualOpen, setIsManualOpen] = useState(false)
+
+  // NEU 02.02.2026: Gebäude-Auswahl bei mehreren Kandidaten (GPS-Ungenauigkeit)
+  const [showBuildingSelector, setShowBuildingSelector] = useState(false)
+  const [pendingExtractionData, setPendingExtractionData] = useState<{
+    result: OcrExtractionResult
+    file: File
+    extractedData: Record<string, unknown>
+  } | null>(null)
 
   // Manual entry form state
   const [manualForm, setManualForm] = useState({
@@ -92,7 +102,7 @@ export default function ImportStep({
 
       if (result.success) {
         // NEU 01.02.2026: Unterschiedliche Quellen für Daten
-        let extractedData = result.data || {}
+        let extractedData: Record<string, unknown> = { ...(result.data || {}) }
 
         // Bei Gebäudefoto: suggested_address oder preloaded_address verwenden
         // FIX 01.02.2026: suggested_address hat IMMER Priorität über visible_address (result.data.address)
@@ -101,7 +111,7 @@ export default function ImportStep({
 
         if (result.image_type === 'building_photo') {
           // Prüfe ob result.data.address nur eine Hausnummer ist (keine vollständige Adresse)
-          const dataAddress = extractedData.address || ''
+          const dataAddress = (extractedData.address as string) || ''
           const isIncompleteAddress = dataAddress.length < 10 || !dataAddress.includes(' ')
 
           extractedData = {
@@ -132,10 +142,18 @@ export default function ImportStep({
         }
 
         if (extractedData) {
-          const source = result.image_type === 'building_photo' ? 'photo' :
-                        (file.type === 'application/pdf' ? 'pdf' : 'photo')
-          // NEU 01.02.2026: Datei mitsenden für späteres Speichern
-          onDataExtracted(extractedData, source, file)
+          // NEU 02.02.2026: Bei mehreren Gebäude-Kandidaten → Auswahl zeigen
+          if (result.nearby_buildings && result.nearby_buildings.length > 1) {
+            console.log('[ImportStep] Mehrere Gebäude-Kandidaten gefunden:', result.nearby_buildings.length)
+            setPendingExtractionData({ result, file, extractedData })
+            setShowBuildingSelector(true)
+            // NICHT onDataExtracted aufrufen - warten auf User-Auswahl
+          } else {
+            const source = result.image_type === 'building_photo' ? 'photo' :
+                          (file.type === 'application/pdf' ? 'pdf' : 'photo')
+            // NEU 01.02.2026: Datei mitsenden für späteres Speichern
+            onDataExtracted(extractedData, source, file)
+          }
         }
       }
     } catch (error) {
@@ -203,6 +221,38 @@ export default function ImportStep({
       },
       'manual'
     )
+  }
+
+  // NEU 02.02.2026: Handler für Gebäude-Auswahl
+  const handleBuildingSelection = (selectedBuilding: NonNullable<OcrExtractionResult['nearby_buildings']>[number]) => {
+    if (!pendingExtractionData) return
+
+    const { result, file, extractedData } = pendingExtractionData
+
+    // Adresse mit der gewählten Adresse überschreiben
+    const updatedData = {
+      ...extractedData,
+      address: selectedBuilding.address,
+      // EGID für spätere Verwendung
+      egid: selectedBuilding.egid,
+    }
+
+    console.log('[ImportStep] Gebäude ausgewählt:', selectedBuilding.address)
+
+    const source = result.image_type === 'building_photo' ? 'photo' :
+                  (file.type === 'application/pdf' ? 'pdf' : 'photo')
+    onDataExtracted(updatedData, source, file)
+
+    // Auswahl-Dialog schliessen
+    setShowBuildingSelector(false)
+    setPendingExtractionData(null)
+  }
+
+  const handleCancelBuildingSelection = () => {
+    setShowBuildingSelector(false)
+    setPendingExtractionData(null)
+    // Datei und Ergebnis zurücksetzen
+    handleClearFile()
   }
 
   return (
@@ -546,6 +596,79 @@ export default function ImportStep({
           </div>
         )}
       </div>
+
+      {/* NEU 02.02.2026: Gebäude-Auswahl Dialog bei GPS-Ungenauigkeit */}
+      {showBuildingSelector && pendingExtractionData?.result.nearby_buildings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <MapPin className="w-5 h-5 text-gray-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium">Gebäude auswählen</h3>
+                  <p className="text-sm text-gray-500">Mehrere Gebäude in der Nähe gefunden</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCancelBuildingSelection}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Building List */}
+            <div className="p-4 overflow-y-auto max-h-[50vh]">
+              <p className="text-sm text-gray-600 mb-3">
+                Welches Gebäude ist korrekt?
+              </p>
+              <div className="space-y-2">
+                {pendingExtractionData.result.nearby_buildings.map((building, index) => (
+                  <button
+                    key={building.egid || index}
+                    onClick={() => handleBuildingSelection(building)}
+                    className="w-full text-left p-3 border rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">
+                          {building.address}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+                          {building.floors && (
+                            <span>{building.floors} Geschosse</span>
+                          )}
+                          {building.distance_m !== undefined && building.distance_m !== null && (
+                            <span className="text-gray-400">
+                              • {building.distance_m.toFixed(1)}m entfernt
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ChevronDown className="w-5 h-5 text-gray-400 -rotate-90" />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50">
+              <button
+                onClick={handleCancelBuildingSelection}
+                className="w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

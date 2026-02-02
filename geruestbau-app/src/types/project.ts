@@ -470,6 +470,18 @@ export interface OcrExtractionResult {
 
   // NEU 01.02.2026: Terrain-/Umgebungs-Analyse
   terrain_analysis?: TerrainAnalysis
+
+  // NEU 02.02.2026: Alle Gebäude-Kandidaten im GPS-Radius für User-Auswahl
+  nearby_buildings?: Array<{
+    egid: string | null
+    address: string
+    street?: string
+    house_number?: string
+    postal_code?: number
+    city?: string
+    floors?: number
+    distance_m?: number
+  }>
 }
 
 // =============================================================================

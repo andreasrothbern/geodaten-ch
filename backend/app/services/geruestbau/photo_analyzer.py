@@ -215,6 +215,10 @@ class SmartExtractionResult:
     suggested_construction_year: Optional[int] = None
     suggested_building_category: Optional[str] = None
 
+    # NEU 02.02.2026: Alle Gebäude-Kandidaten im GPS-Radius für User-Auswahl
+    nearby_buildings: list = field(default_factory=list)
+    # Format: [{"egid": "123", "address": "...", "distance_m": 5.2, "floors": 3}, ...]
+
     # Dokument-Extraktion (bestehend)
     address: Optional[str] = None
     project_name: Optional[str] = None
@@ -258,6 +262,8 @@ class SmartExtractionResult:
             "suggested_floors": self.suggested_floors,
             "suggested_construction_year": self.suggested_construction_year,
             "suggested_building_category": self.suggested_building_category,
+            # NEU 02.02.2026: Alle Kandidaten für User-Auswahl
+            "nearby_buildings": self.nearby_buildings,
             # Legacy preloaded fields (deprecated, use suggested_* instead)
             "preloaded_egid": self.preloaded_egid,
             "preloaded_building_name": self.preloaded_building_name,
@@ -779,17 +785,15 @@ Hinweise:
         """
         Holt GWR-Daten via identify_buildings() für Reverse Geocoding.
 
-        NEU 01.02.2026: Ersetzt _preload_building_data() - nur leichtgewichtiger
-        GWR-Lookup, keine vollständigen Geodaten.
+        NEU 02.02.2026: Gibt ALLE Kandidaten im Radius zurück für User-Auswahl.
 
         Returns:
-            Dict mit suggested_* Feldern (egid, address, street, etc.)
+            Dict mit suggested_* Feldern (nächstes Gebäude) + nearby_buildings Liste
         """
         if not gps_data or not gps_data.lv95_e or not gps_data.lv95_n:
             return {}
 
         try:
-            # FIX 01.02.2026: SwisstopoService direkt verwenden (keine Factory-Funktion)
             from app.services.swisstopo import SwisstopoService
 
             service = SwisstopoService()
@@ -798,17 +802,37 @@ Hinweise:
             buildings = await service.identify_buildings(
                 x=gps_data.lv95_e,
                 y=gps_data.lv95_n,
-                tolerance=50  # 50m Toleranz für GPS-Ungenauigkeit
+                tolerance=30  # 30m Toleranz (GPS-Ungenauigkeit)
             )
 
             if not buildings:
                 logger.warning(f"Kein Gebäude bei ({gps_data.lv95_e}, {gps_data.lv95_n}) gefunden")
                 return {}
 
-            # Erstes Gebäude nehmen (nächstes zur Koordinate)
-            building = buildings[0]
+            # NEU 02.02.2026: Alle Kandidaten mit Distanz sammeln
+            nearby_buildings = []
+            for b in buildings[:5]:  # Max 5 Kandidaten
+                # Distanz berechnen (falls Koordinaten verfügbar)
+                distance_m = None
+                if hasattr(b, 'x') and hasattr(b, 'y') and b.x and b.y:
+                    dx = b.x - gps_data.lv95_e
+                    dy = b.y - gps_data.lv95_n
+                    distance_m = round(math.sqrt(dx*dx + dy*dy), 1)
 
-            logger.info(f"GWR-Lookup: EGID {building.egid}, Adresse: {building.address}")
+                nearby_buildings.append({
+                    "egid": str(b.egid) if b.egid else None,
+                    "address": b.address,
+                    "street": b.street,
+                    "house_number": b.house_number,
+                    "postal_code": b.postal_code,
+                    "city": b.city,
+                    "floors": b.floors,
+                    "distance_m": distance_m,
+                })
+
+            # Erstes Gebäude als Suggestion (nächstes zur Koordinate)
+            building = buildings[0]
+            logger.info(f"GWR-Lookup: {len(nearby_buildings)} Kandidaten, nächstes: {building.address}")
 
             return {
                 "suggested_egid": str(building.egid) if building.egid else None,
@@ -820,6 +844,7 @@ Hinweise:
                 "suggested_floors": building.floors,
                 "suggested_construction_year": building.construction_year,
                 "suggested_building_category": building.building_category,
+                "nearby_buildings": nearby_buildings,  # NEU!
             }
 
         except Exception as e:
@@ -1128,6 +1153,9 @@ Hinweise:
                     result.suggested_floors = gwr_data.get('suggested_floors')
                     result.suggested_construction_year = gwr_data.get('suggested_construction_year')
                     result.suggested_building_category = gwr_data.get('suggested_building_category')
+
+                    # NEU 02.02.2026: Alle Kandidaten für User-Auswahl
+                    result.nearby_buildings = gwr_data.get('nearby_buildings', [])
 
                     # Legacy preloaded_* Felder für Kompatibilität
                     result.preloaded_egid = gwr_data.get('suggested_egid')
