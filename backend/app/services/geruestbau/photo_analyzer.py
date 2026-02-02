@@ -951,6 +951,81 @@ Hinweise:
             logger.error(f"HEIC-Konvertierung fehlgeschlagen: {e}")
             return file_bytes, False
 
+    # Claude Vision API Limit
+    MAX_IMAGE_SIZE_BYTES = 4.5 * 1024 * 1024  # 4.5 MB (Puffer für 5 MB Limit)
+    MAX_IMAGE_DIMENSION = 2000  # Max Pixel für längste Seite
+
+    def _compress_if_needed(self, file_bytes: bytes, filename: str) -> Tuple[bytes, bool]:
+        """
+        Komprimiert Bild falls > 4.5 MB für Claude Vision API.
+
+        NEU 02.02.2026: Automatische Komprimierung für grosse Bilder.
+        EXIF/GPS-Daten werden VOR diesem Schritt extrahiert, daher kein Datenverlust.
+
+        Args:
+            file_bytes: Bilddaten (bereits JPEG)
+            filename: Dateiname für Logging
+
+        Returns:
+            Tuple[bytes, bool]: (compressed_bytes, was_compressed)
+        """
+        original_size = len(file_bytes)
+
+        # Unter Limit? Nichts tun.
+        if original_size <= self.MAX_IMAGE_SIZE_BYTES:
+            return file_bytes, False
+
+        logger.info(f"Bild zu gross ({original_size / 1024 / 1024:.1f} MB), komprimiere...")
+
+        try:
+            image = Image.open(BytesIO(file_bytes))
+
+            # Convert to RGB if necessary
+            if image.mode in ('RGBA', 'P'):
+                image = image.convert('RGB')
+
+            # Resize if larger than MAX_IMAGE_DIMENSION
+            width, height = image.size
+            if max(width, height) > self.MAX_IMAGE_DIMENSION:
+                ratio = self.MAX_IMAGE_DIMENSION / max(width, height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                logger.info(f"Bild verkleinert: {width}x{height} → {new_width}x{new_height}")
+
+            # Try different quality levels until under limit
+            for quality in [85, 75, 65, 50]:
+                output = BytesIO()
+                image.save(output, format='JPEG', quality=quality, optimize=True)
+                compressed_size = output.tell()
+
+                if compressed_size <= self.MAX_IMAGE_SIZE_BYTES:
+                    logger.info(
+                        f"Komprimierung erfolgreich: {original_size / 1024 / 1024:.1f} MB → "
+                        f"{compressed_size / 1024 / 1024:.1f} MB (quality={quality})"
+                    )
+                    return output.getvalue(), True
+
+                logger.debug(f"Quality {quality}: {compressed_size / 1024 / 1024:.1f} MB (noch zu gross)")
+
+            # Last resort: Further resize
+            logger.warning("Bild immer noch zu gross, verkleinere weiter...")
+            width, height = image.size
+            image = image.resize((width // 2, height // 2), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format='JPEG', quality=70, optimize=True)
+            final_size = output.tell()
+
+            logger.info(
+                f"Finale Komprimierung: {original_size / 1024 / 1024:.1f} MB → "
+                f"{final_size / 1024 / 1024:.1f} MB"
+            )
+            return output.getvalue(), True
+
+        except Exception as e:
+            logger.error(f"Komprimierung fehlgeschlagen: {e}")
+            return file_bytes, False
+
     # ============ MAIN ANALYSIS ============
 
     async def analyze(
@@ -1016,6 +1091,11 @@ Hinweise:
                     )
                 file_bytes = converted_bytes
                 filename = filename.rsplit('.', 1)[0] + '.jpg'
+
+            # NEU 02.02.2026: Automatische Komprimierung für Claude Vision API (5 MB Limit)
+            # EXIF/GPS wurden bereits oben extrahiert, daher kein Datenverlust!
+            file_bytes, was_compressed = self._compress_if_needed(file_bytes, filename)
+
             result.gps_data = gps_data
             result.photo_timestamp = timestamp
 
