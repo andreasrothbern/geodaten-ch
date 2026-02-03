@@ -976,8 +976,9 @@ Hinweise:
             logger.error(f"HEIC-Konvertierung fehlgeschlagen: {e}")
             return file_bytes, False
 
-    # Claude Vision API Limit
-    MAX_IMAGE_SIZE_BYTES = 4.5 * 1024 * 1024  # 4.5 MB (Puffer für 5 MB Limit)
+    # Claude Vision API Limit: 5 MB bezieht sich auf Base64-kodierte Daten
+    # Base64 vergrössert um ~33%, daher: 3.5 MB raw × 1.33 ≈ 4.65 MB Base64
+    MAX_IMAGE_SIZE_BYTES = 3.5 * 1024 * 1024  # 3.5 MB raw (≈ 4.65 MB Base64)
     MAX_IMAGE_DIMENSION = 2000  # Max Pixel für längste Seite
 
     def _compress_if_needed(self, file_bytes: bytes, filename: str) -> Tuple[bytes, bool]:
@@ -1048,7 +1049,8 @@ Hinweise:
             return output.getvalue(), True
 
         except Exception as e:
-            logger.error(f"Komprimierung fehlgeschlagen: {e}")
+            logger.error(f"Komprimierung fehlgeschlagen: {e}", exc_info=True)
+            # WARNUNG: Original-Datei wird zurückgegeben - kann zu Claude API 5MB Fehler führen!
             return file_bytes, False
 
     # ============ MAIN ANALYSIS ============
