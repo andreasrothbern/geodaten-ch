@@ -282,25 +282,16 @@ function ZonesList({ zones }: { zones: ZoneInfo[] }) {
 export default function BuildingDataCard({ data }: BuildingDataCardProps) {
   const { building, facades, terrain, zones, complexity, research_source, heights } = data
 
-  // FIX 04.02.2026: Vereinfachte Höhen-Anzeige (Backend = Single Source of Truth)
-  // Keine eigene Berechnung mehr - Backend liefert korrekte relative Höhen
+  // FIX 04.02.2026: Höhen werden im GeodataStep aus Rohdaten berechnet.
+  // Hier nur Anzeige, kein Fallback auf 8m oder andere Schätzwerte.
   const calcTraufhoehe = (): string => {
-    // 1. Direkt aus heights (vom Backend vorberechnet)
     if (heights?.traufhoehe_m && heights.traufhoehe_m > 0 && heights.traufhoehe_m < 200) {
       return heights.traufhoehe_m.toFixed(1)
-    }
-    // 2. Fallback: Min der Fassaden-Höhen (ebenfalls vom Backend berechnet)
-    if (facades && facades.length > 0) {
-      const minHeight = Math.min(...facades.map(f => f.height_m))
-      if (minHeight > 0 && minHeight < 200) {
-        return minHeight.toFixed(1)
-      }
     }
     return '–'
   }
 
   const calcFirsthoehe = (): string => {
-    // 1. Direkt aus heights (vom Backend vorberechnet)
     if (heights?.firsthoehe_m && heights.firsthoehe_m > 0 && heights.firsthoehe_m < 200) {
       return heights.firsthoehe_m.toFixed(1)
     }

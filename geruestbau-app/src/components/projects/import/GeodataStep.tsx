@@ -134,12 +134,13 @@ export default function GeodataStep({
         // NEU 18.01.2026: GeruestbauData für JEDES Gebäude erstellen
         const allBuildingData: GeruestbauData[] = completeData.buildings.map(b => {
           const bundle = b.bundle
-          // FIX 04.02.2026: Backend-Facades direkt verwenden (Single Source of Truth)
+          // FIX 04.02.2026: Frontend berechnet Höhen aus Rohdaten (roof_dach_min - terrain)
+          const referenceHeight = bundle.terrain?.reference_height_m
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const buildingFacades: GeruestbauFassade[] = (bundle.facades ?? bundle.sides ?? []).map((item: any, index: number) => {
             const direction = item.direction ?? 'N'
-            const terrainZMin = item.terrain_z_min ?? bundle.terrain?.facade_z_min?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
-            const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+            const terrainZMin = item.terrain_z_min ?? bundle.terrain?.facade_z_min?.[direction] ?? referenceHeight ?? 0
+            const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? referenceHeight ?? 0
             return {
               index: item.index ?? index,
               direction,
@@ -150,7 +151,10 @@ export default function GeodataStep({
               terrain_z_min: terrainZMin,
               terrain_z_max: terrainZMax,
               wall_z_max: bundle.roof_dach_min_m ?? terrainZMin + 8,
-              height_m: item.height_m ?? bundle.traufhoehe_m ?? 8,  // Vom Backend berechnet!
+              // Höhe = roof_dach_min - fassaden-spezifisches Terrain
+              height_m: (bundle.roof_dach_min_m && referenceHeight)
+                ? bundle.roof_dach_min_m - terrainZMin
+                : 0,
               slope_m: item.slope_m ?? Math.abs(terrainZMax - terrainZMin),
               height_source: (bundle.terrain?.facade_heights_source as GeruestbauFassade['height_source']) ?? 'building_global',
               is_blocked: false,
@@ -184,9 +188,13 @@ export default function GeodataStep({
               requires_level_compensation: false,
             },
             heights: {
-              // FIX 04.02.2026: Höhen direkt vom Backend (Single Source of Truth)
-              traufhoehe_m: bundle.traufhoehe_m ?? undefined,
-              firsthoehe_m: bundle.firsthoehe_m ?? undefined,
+              // FIX 04.02.2026: Frontend berechnet relative Höhen aus Rohdaten
+              traufhoehe_m: (bundle.roof_dach_min_m && referenceHeight)
+                ? bundle.roof_dach_min_m - referenceHeight
+                : undefined,
+              firsthoehe_m: (bundle.roof_dach_max_m && referenceHeight)
+                ? bundle.roof_dach_max_m - referenceHeight
+                : undefined,
               gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
               source: bundle.has_3d_layers ? 'swissBUILDINGS3D' : 'gwr_estimated',
             },
@@ -263,14 +271,13 @@ export default function GeodataStep({
       // NEU 18.01.2026: Saubere GeruestbauData Struktur
       const bundle = completeData.bundle
 
-      // FIX 04.02.2026: Backend-Facades direkt verwenden (Single Source of Truth)
-      // Backend berechnet height_m = roof_dach_min_m - reference_height_m (korrekt!)
-      // Fallback auf sides[] nur wenn bundle.facades nicht vorhanden
+      // FIX 04.02.2026: Frontend berechnet Höhen aus Rohdaten (roof_dach_min - terrain)
+      const referenceHeight = bundle.terrain?.reference_height_m
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const facades: GeruestbauFassade[] = (bundle.facades ?? bundle.sides ?? []).map((item: any, index: number) => {
         const direction = item.direction ?? 'N'
-        const terrainZMin = item.terrain_z_min ?? bundle.terrain?.facade_z_min?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
-        const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? bundle.terrain?.reference_height_m ?? 0
+        const terrainZMin = item.terrain_z_min ?? bundle.terrain?.facade_z_min?.[direction] ?? referenceHeight ?? 0
+        const terrainZMax = bundle.terrain?.facade_z_max?.[direction] ?? referenceHeight ?? 0
 
         return {
           index: item.index ?? index,
@@ -282,7 +289,10 @@ export default function GeodataStep({
           terrain_z_min: terrainZMin,
           terrain_z_max: terrainZMax,
           wall_z_max: bundle.roof_dach_min_m ?? terrainZMin + 8,
-          height_m: item.height_m ?? bundle.traufhoehe_m ?? 8,  // Vom Backend berechnet!
+          // Höhe = roof_dach_min - fassaden-spezifisches Terrain
+          height_m: (bundle.roof_dach_min_m && referenceHeight)
+            ? bundle.roof_dach_min_m - terrainZMin
+            : 0,
           slope_m: item.slope_m ?? Math.abs(terrainZMax - terrainZMin),
           height_source: (bundle.terrain?.facade_heights_source as GeruestbauFassade['height_source']) ?? 'building_global',
           is_blocked: false,
@@ -315,10 +325,14 @@ export default function GeodataStep({
           slope_class: 'eben' as const,
           requires_level_compensation: false,
         },
-        // FIX 04.02.2026: Höhen direkt vom Backend (Single Source of Truth)
+        // FIX 04.02.2026: Frontend berechnet relative Höhen aus Rohdaten
         heights: {
-          traufhoehe_m: bundle.traufhoehe_m ?? undefined,
-          firsthoehe_m: bundle.firsthoehe_m ?? undefined,
+          traufhoehe_m: (bundle.roof_dach_min_m && referenceHeight)
+            ? bundle.roof_dach_min_m - referenceHeight
+            : undefined,
+          firsthoehe_m: (bundle.roof_dach_max_m && referenceHeight)
+            ? bundle.roof_dach_max_m - referenceHeight
+            : undefined,
           gebaeudehoehe_m: bundle.gebaeudehoehe_m ?? undefined,
           source: bundle.has_3d_layers ? 'swissBUILDINGS3D' : 'gwr_estimated',
         },

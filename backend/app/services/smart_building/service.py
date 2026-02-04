@@ -1058,19 +1058,10 @@ class SmartBuildingService:
         if bundle.egid:
             cached_terrain = self._load_terrain_from_environment(str(bundle.egid))
             if cached_terrain:
-                # FIX 04.02.2026: Cache nur verwenden wenn reference_height_m vorhanden!
-                # Stale Cache-Einträge (vor Height-Fix oder Race Condition mit Prefetch)
-                # haben reference_height_m=None → Fassaden-Höhen fallen auf 8m zurück.
-                if not cached_terrain.reference_height_m:
-                    logger.warning(
-                        f"[TERRAIN] Cache für EGID {bundle.egid} hat reference_height_m=None, "
-                        f"invalidiere und berechne neu"
-                    )
-                    # Cache ignorieren, weiter zur Neuberechnung unten
-                else:
-                    bundle.terrain = cached_terrain
-                    bundle.add_source(DataSource.CACHE)
-                    logger.info(f"Terrain loaded from cache for EGID {bundle.egid} (ref={cached_terrain.reference_height_m:.1f}m)")
+                bundle.terrain = cached_terrain
+                bundle.add_source(DataSource.CACHE)
+                ref = cached_terrain.reference_height_m
+                logger.info(f"Terrain loaded from cache for EGID {bundle.egid} (ref={f'{ref:.1f}m' if ref else 'None'})")
 
                     # FIX 14.01.2026 17:10: Fassaden-Höhen auch bei gecachtem Terrain sammeln
                     # FIX 13.01.2026 23:50: Auch terrain_sampled→wall_layer Upgrade versuchen
@@ -1319,12 +1310,8 @@ class SmartBuildingService:
                 if terrain_z_min is None:
                     terrain_z_min = bundle.terrain.reference_height_m
 
-            # FIX 04.02.2026: height_m = relative Traufhöhe (roof_dach_min - terrain)
-            # Berechnet wie in /configurator/facades (Single Source of Truth)
-            # bundle.traufhoehe_m ist None seit BUG-025, daher eigene Berechnung
-            height_m = None
-            if bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.reference_height_m:
-                height_m = round(bundle.roof_dach_min_m - bundle.terrain.reference_height_m, 2)
+            # FIX 04.02.2026: height_m wird NICHT mehr vom Backend berechnet.
+            # Frontend berechnet relative Höhen aus Rohdaten (roof_dach_min_m - terrain).
 
             # is_gable: True wenn diese Fassade ein Giebel ist
             # Giebel-Fassaden haben über der Traufe noch das Giebel-Dreieck
@@ -1341,7 +1328,6 @@ class SmartBuildingService:
                 "start_point": side.get("start_point"),
                 "end_point": side.get("end_point"),
                 "length_m": side.get("length_m"),
-                "height_m": height_m,           # KONSTANT (Traufhöhe)
                 "is_gable": is_gable,           # NEU: Giebel-Seite?
                 "terrain_z_min": terrain_z_min, # Für Stellspindeln
                 "slope_m": slope_m,             # Für Nivelierung
