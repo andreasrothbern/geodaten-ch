@@ -75,11 +75,6 @@ LOAD_3D_LAYERS = os.getenv("LOAD_3D_LAYERS", "false").lower() == "true"
 # Dachwinkel aus 3D-Geometrie berechnen (statt Heuristik)
 CALC_ROOF_FROM_3D = os.getenv("CALC_ROOF_FROM_3D", "false").lower() == "true"
 
-# NEU 13.01.2026 18:15: All-Layer-Import beim Prefetch
-# Bei true: Importiert Building_solid + Roof_solid + Wall zusammen
-# Bei false: Nur Building_solid + Roof_solid
-IMPORT_ALL_LAYERS = os.getenv("IMPORT_ALL_LAYERS", "true").lower() != "false"
-
 # NEU 13.01.2026 18:15: Tiles nach Import löschen
 # Default: true - Spart Speicher (~70-80%)
 # Bei false: GDB-Dateien bleiben in tiles/ erhalten
@@ -195,11 +190,6 @@ if LOAD_3D_LAYERS:
 
 if CALC_ROOF_FROM_3D:
     logger.info("[CONFIG] Dachwinkel-Berechnung aus 3D aktiviert")
-
-if IMPORT_ALL_LAYERS:
-    logger.info("[CONFIG] All-Layer-Import aktiviert (Building+Roof+Wall)")
-else:
-    logger.info("[CONFIG] Standard-Import (Building+Roof, Wall on-demand)")
 
 if CLEANUP_TILES_AFTER_IMPORT:
     logger.info("[CONFIG] Tile-Cleanup nach Import aktiviert")

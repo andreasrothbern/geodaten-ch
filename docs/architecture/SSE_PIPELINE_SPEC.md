@@ -237,7 +237,6 @@ async def prefetch_and_cleanup(
 | `pending` | Pfad | Tile heruntergeladen, noch nicht importiert |
 | `imported` | Pfad | Daten in DB, GDB noch vorhanden |
 | `cleaned` | NULL | Daten in DB, GDB gelöscht |
-| `reloaded` | Pfad | Tile wurde neu geladen (war 'cleaned') |
 
 ---
 

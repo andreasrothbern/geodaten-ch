@@ -802,15 +802,17 @@ def _cleanup_gdb(tile_id: str, gdb_path: Path) -> None:
 async def _get_gdb_path_for_coordinates(e: float, n: float) -> Optional[Path]:
     """
     Ermittelt GDB-Pfad fuer Koordinaten.
+    FIX 04.02.2026: Kein Reload mehr - Daten sind in DB via Prefetch.
     """
-    from app.services.tile_cache import lv95_to_tile_id, get_or_redownload_gdb_path_for_tile
+    from app.services.tile_cache import lv95_to_tile_id, get_tile_cache
 
     try:
         tile_id = lv95_to_tile_id(e, n)
-        gdb_path = await asyncio.to_thread(get_or_redownload_gdb_path_for_tile, tile_id)
-        return Path(gdb_path) if gdb_path else None
-    except Exception as e:
-        logger.error(f"GDB-Pfad-Ermittlung fehlgeschlagen: {e}")
+        tile_cache = get_tile_cache()
+        gdb_path = tile_cache.get_tile_path(tile_id)
+        return Path(gdb_path) if gdb_path and gdb_path.exists() else None
+    except Exception as ex:
+        logger.error(f"GDB-Pfad-Ermittlung fehlgeschlagen: {ex}")
         return None
 
 

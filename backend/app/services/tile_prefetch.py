@@ -181,14 +181,13 @@ def prefetch_tile_buildings(
             # Dachform in buildings_to_save eintragen BEVOR bulk_save
             _update_buildings_with_roof_data(buildings_to_save, roofs, building_3d_service)
 
-        # NEU 13.01.2026: Wall-Layer parsen wenn IMPORT_ALL_LAYERS aktiv
-        from app.config import IMPORT_ALL_LAYERS, CLEANUP_TILES_AFTER_IMPORT
+        # FIX 04.02.2026: Walls werden IMMER importiert (IMPORT_ALL_LAYERS entfernt)
+        from app.config import CLEANUP_TILES_AFTER_IMPORT
         wall_count = 0
-        if IMPORT_ALL_LAYERS:
-            walls = _parse_wall_layer_from_gdb(gdb_path)
-            if walls:
-                wall_count = _save_walls_bulk(walls)
-                logger.info(f"[WALL] {wall_count} Wände für Tile {tile_id} gespeichert")
+        walls = _parse_wall_layer_from_gdb(gdb_path)
+        if walls:
+            wall_count = _save_walls_bulk(walls)
+            logger.info(f"[WALL] {wall_count} Wände für Tile {tile_id} gespeichert")
 
         # Bulk-Save in building_3d.db (jetzt MIT roof_form!)
         saved_count = building_3d_service.bulk_save(buildings_to_save, tile_id)
@@ -256,7 +255,7 @@ async def prefetch_tile_buildings_async(
 
     # FIX 21.01.2026: Prüfe ob Tile bereits importiert wurde
     # Wenn ja, überspringen um unnötige Re-Imports zu vermeiden
-    # Status-Werte: 'pending', 'imported', 'cleaned', 'reloaded'
+    # FIX 04.02.2026: Status-Werte vereinfacht: 'pending', 'imported', 'cleaned'
     import_status = tile_cache.get_tile_import_status(tile_id)
     if import_status and import_status != 'pending':
         print(f"[PREFETCH-SKIP] {tile_id} bereits importiert (status={import_status}), überspringe", flush=True)
@@ -271,15 +270,11 @@ async def prefetch_tile_buildings_async(
     print(f"[PREFETCH-LOCK] {tile_id} in _prefetch_in_progress hinzugefügt", flush=True)
 
     try:
-        # ÄNDERUNG 20.01.2026: Wenn GDB nicht existiert, neu herunterladen
+        # FIX 04.02.2026: Kein Reload mehr - GDB muss vorhanden sein
         print(f"[PREFETCH-CHECK] gdb_path={gdb_path}, exists={gdb_path.exists() if gdb_path else 'N/A'}", flush=True)
         if not gdb_path or not gdb_path.exists():
-            logger.info(f"[PREFETCH-ASYNC] GDB nicht vorhanden, lade Tile {tile_id} neu...")
-            from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
-            gdb_path = await asyncio.to_thread(get_or_redownload_gdb_path_for_tile, tile_id)
-            if not gdb_path or not gdb_path.exists():
-                logger.warning(f"[PREFETCH-ASYNC] Konnte GDB für Tile {tile_id} nicht laden")
-                return 0
+            logger.warning(f"[PREFETCH-ASYNC] GDB nicht vorhanden für Tile {tile_id}, überspringe")
+            return 0
 
         print(f"[PREFETCH-PIPELINE] Starte Parquet-Pipeline für {tile_id}", flush=True)
         start_time = time.time()
@@ -2200,19 +2195,14 @@ async def prefetch_and_cleanup(
     )
 
     try:
-        # GDB-Pfad holen (lädt ggf. neu herunter wenn 'cleaned')
+        # FIX 04.02.2026: GDB-Pfad holen (kein Reload mehr - Daten sind in DB)
         from app.services.tile_cache import get_tile_cache
 
         tile_cache = get_tile_cache()
         gdb_path = tile_cache.get_tile_path(tile_id)
 
         if not gdb_path or not gdb_path.exists():
-            # Tile wurde gelöscht (cleaned) oder nie heruntergeladen
-            from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
-            gdb_path = await asyncio.to_thread(get_or_redownload_gdb_path_for_tile, tile_id)
-
-        if not gdb_path or not gdb_path.exists():
-            logger.warning(f"[PREFETCH] Konnte GDB für Tile {tile_id} nicht laden")
+            logger.warning(f"[PREFETCH] GDB für Tile {tile_id} nicht vorhanden (cleaned), überspringe")
             return 0
 
         # ════════════════════════════════════════════════════════════════

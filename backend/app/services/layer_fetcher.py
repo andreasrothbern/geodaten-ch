@@ -122,21 +122,18 @@ class LayerFetcherService:
                 "floors_count": 0
             }
 
-        # 3. Tile downloaden (NEU 14.01.2026: Mit Auto-Reload für 'cleaned' Tiles)
-        from app.services.tile_cache import get_tile_cache
+        # 3. Tile-Pfad holen (FIX 04.02.2026: Kein Reload - Daten sind in DB via Prefetch)
+        from app.services.tile_cache import get_tile_cache, lv95_to_tile_id
         tile_cache = get_tile_cache()
+        tile_id = lv95_to_tile_id(center_e, center_n)
 
         try:
-            # NEU 14.01.2026: Nutzt get_or_redownload_tile_for_coordinates
-            # Diese Funktion lädt 'cleaned' Tiles automatisch neu!
-            tile_path, tile_id = await tile_cache.get_or_redownload_tile_for_coordinates(
-                center_e, center_n
-            )
+            tile_path = tile_cache.get_tile_path(tile_id)
 
-            if not tile_path:
+            if not tile_path or not tile_path.exists():
                 return {
                     "success": False,
-                    "error": "Tile konnte nicht geladen werden (download_url nicht vorhanden)",
+                    "error": f"GDB für Tile {tile_id} nicht vorhanden (bereits cleaned). Daten sollten in DB sein.",
                     "walls_count": 0,
                     "floors_count": 0
                 }

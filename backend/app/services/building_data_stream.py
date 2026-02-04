@@ -563,7 +563,7 @@ class BuildingDataStreamService:
                 )
             else:
                 # FIX 21.01.2026: Prüfe Import-Status statt GDB-Pfad
-                # Wenn Tile bereits importiert (status='imported'/'cleaned'/'reloaded'),
+                # Wenn Tile bereits importiert (status='imported'/'cleaned'),
                 # sind die Daten in der DB - kein Download nötig!
                 from .tile_cache import get_tile_cache, lv95_to_tile_id
                 tile_cache = get_tile_cache()

@@ -517,12 +517,13 @@ class Roof3DService:
             logger.warning(f"[ALL_LAYERS] Keine tile_id für EGID {egid}")
             return result
 
-        # 2. GDB-Pfad holen (NEU 14.01.2026: Mit Auto-Reload für 'cleaned' Tiles)
-        from app.services.tile_cache import get_or_redownload_gdb_path_for_tile
-        gdb_path = get_or_redownload_gdb_path_for_tile(tile_id)
+        # 2. GDB-Pfad holen (FIX 04.02.2026: Kein Reload - Daten sind in DB via Prefetch)
+        from app.services.tile_cache import get_tile_cache
+        tile_cache = get_tile_cache()
+        gdb_path = tile_cache.get_tile_path(tile_id)
 
         if not gdb_path or not gdb_path.exists():
-            logger.warning(f"[ALL_LAYERS] GDB für Tile {tile_id} nicht gefunden (auch nach Reload-Versuch)")
+            logger.warning(f"[ALL_LAYERS] GDB für Tile {tile_id} nicht vorhanden (cleaned). Daten sollten in DB sein.")
             return result
 
         # 3. Alle Layer laden
