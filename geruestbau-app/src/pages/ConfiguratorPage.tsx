@@ -1407,10 +1407,12 @@ export default function ConfiguratorPage() {
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;
-          // FIX 04.02.2026: wall_height VERWENDEN für per-Fassade-Höhe!
-          // Jede Fassade hat ihre eigene Höhe basierend auf der Wall-Geometrie.
-          // Die WorkType-Logik (facade/roof/roofer) kümmert sich um die Target-Höhe.
-          heightM = matchResult.wall_height;
+          // FIX 04.02.2026: Per-Fassade Höhe = dachMin - polygon_z_min
+          // Das ist die Traufhöhe relativ zum Terrain UNTER DIESER FASSADE.
+          // Jede Fassade hat ihr eigenes Terrain (polygon_z_min).
+          if (dachMin && matchResult.polygon_z_min) {
+            heightM = dachMin - matchResult.polygon_z_min;
+          }
           heightSource = 'building_walls';
           // NEU 24.01.2026 P3: Giebel-Info übernehmen
           isGiebel = matchResult.is_giebel;
