@@ -1407,10 +1407,10 @@ export default function ConfiguratorPage() {
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;
-          // FIX 18.01.2026: NICHT wall_height verwenden!
-          // Die Gerüsthöhe basiert auf facade.height_m (= Traufhöhe aus API)
-          // wall_height enthält Giebel-Dreiecke und wäre zu hoch.
-          // ENTFERNT: heightM = matchResult.wall_height;
+          // FIX 04.02.2026: wall_height VERWENDEN für per-Fassade-Höhe!
+          // Jede Fassade hat ihre eigene Höhe basierend auf der Wall-Geometrie.
+          // Die WorkType-Logik (facade/roof/roofer) kümmert sich um die Target-Höhe.
+          heightM = matchResult.wall_height;
           heightSource = 'building_walls';
           // NEU 24.01.2026 P3: Giebel-Info übernehmen
           isGiebel = matchResult.is_giebel;
