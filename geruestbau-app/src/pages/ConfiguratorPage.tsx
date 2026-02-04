@@ -336,49 +336,30 @@ function convertGeodataResponseToConfiguratorFormat(
     }
   });
 
-  // PRIORITÄT 1: API-Werte verwenden (korrekt berechnet im Backend)
-  // traufhoehe_m = Gerüsthöhe (konstant für alle Fassaden)
-  // Terrain-Differenzen werden durch Stellspindeln ausgeglichen!
-  if (projectBuildings.length > 0) {
-    const traufValues = projectBuildings
-      .map((b: GeodataBuilding) => b.traufhoehe_m)
-      .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
-    const firstValues = projectBuildings
-      .map((b: GeodataBuilding) => b.firsthoehe_m)
-      .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
+  // FIX 04.02.2026: Höhen aus 3D-Rohdaten berechnen (Frontend = Berechnung)
+  // buildings_3d.traufhoehe_m ist seit BUG-025 falsch (DACH_MIN - GELAENDEPUNKT statt
+  // DACH_MIN - min(walls.z_min)). Deshalb: Immer aus roof/wall Rohdaten berechnen.
 
-    if (traufValues.length > 0) {
-      traufHeight = Math.max(...traufValues);
-      console.log(`[convertGeodataResponse] Traufhöhe (Gerüsthöhe) aus API: ${traufHeight.toFixed(2)}m`);
-    }
-    if (firstValues.length > 0) {
-      firstHeight = Math.max(...firstValues);
-      console.log(`[convertGeodataResponse] Firsthöhe aus API: ${firstHeight.toFixed(2)}m`);
-    } else if (traufValues.length > 0) {
-      firstHeight = traufHeight + 2;  // Schätzung wenn keine First-Daten
-    }
-  }
-
-  // PRIORITÄT 2: Fallback auf Roof dach_min/dach_max (wenn keine API-Werte)
-  if (traufHeight === 8 && allRoofs.length > 0) {
+  // PRIORITÄT 1: Berechnung aus Roof dach_min/dach_max und Wall z_min (3D-Rohdaten)
+  if (allRoofs.length > 0 && allWalls.length > 0) {
     const roofMins = allRoofs.filter(r => r.dach_min != null).map(r => r.dach_min!);
     const roofMaxs = allRoofs.filter(r => r.dach_max != null).map(r => r.dach_max!);
-    // Für Fallback: Verwende wall.z_min als Terrain-Referenz
     const wallZMins = allWalls.filter(w => w.z_min != null).map(w => w.z_min!);
     const terrainRef = wallZMins.length > 0 ? Math.min(...wallZMins) : 0;
 
     if (roofMins.length > 0 && terrainRef > 0) {
       const dachMin = Math.min(...roofMins);
       traufHeight = dachMin - terrainRef;
-      console.log(`[convertGeodataResponse] Traufhöhe aus Roof-Daten (Fallback): ${traufHeight.toFixed(2)}m`);
+      console.log(`[convertGeodataResponse] Traufhöhe aus 3D-Rohdaten: dach_min(${dachMin.toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${traufHeight.toFixed(2)}m`);
     }
     if (roofMaxs.length > 0 && terrainRef > 0) {
       const dachMax = Math.max(...roofMaxs);
       firstHeight = dachMax - terrainRef;
+      console.log(`[convertGeodataResponse] Firsthöhe aus 3D-Rohdaten: dach_max(${dachMax.toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${firstHeight.toFixed(2)}m`);
     }
   }
 
-  // PRIORITÄT 3: Fallback auf gebaeudehoehe_m (GWR-Schätzung)
+  // PRIORITÄT 2: Fallback auf gebaeudehoehe_m (GWR-Schätzung)
   if (traufHeight === 8 && projectBuildings.length > 0) {
     const gebHoehen = projectBuildings
       .map((b: GeodataBuilding) => b.gebaeudehoehe_m)
