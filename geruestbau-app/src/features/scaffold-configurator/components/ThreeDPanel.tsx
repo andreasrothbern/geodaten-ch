@@ -11,6 +11,7 @@ import type { View3D, BuildingZone, ScaffoldFacade } from '../types/scaffold.typ
 import type { NeighborBuilding, ObjectData } from '../../../api/geruestbau';
 import type { BuildingWall } from '../../../types/project';
 import { ScaffoldScene } from './threeDView';
+import { API_BASE } from '../../../api/client';
 
 // NEU 15.01.2026: Types für Materialliste
 interface MaterialEstimate {
@@ -98,7 +99,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], objectD
         field_count: totalFields.toString(),
       });
 
-      const response = await fetch(`/api/v1/catalog/estimate?${params}`);
+      const response = await fetch(`${API_BASE}/api/v1/catalog/estimate?${params}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
