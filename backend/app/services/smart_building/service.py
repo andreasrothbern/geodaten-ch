@@ -1058,30 +1058,38 @@ class SmartBuildingService:
         if bundle.egid:
             cached_terrain = self._load_terrain_from_environment(str(bundle.egid))
             if cached_terrain:
-                bundle.terrain = cached_terrain
-                bundle.add_source(DataSource.CACHE)
-                logger.info(f"Terrain loaded from cache for EGID {bundle.egid}")
+                # FIX 04.02.2026: Cache nur verwenden wenn reference_height_m vorhanden!
+                # Stale Cache-Einträge (vor Height-Fix oder Race Condition mit Prefetch)
+                # haben reference_height_m=None → Fassaden-Höhen fallen auf 8m zurück.
+                if not cached_terrain.reference_height_m:
+                    logger.warning(
+                        f"[TERRAIN] Cache für EGID {bundle.egid} hat reference_height_m=None, "
+                        f"invalidiere und berechne neu"
+                    )
+                    # Cache ignorieren, weiter zur Neuberechnung unten
+                else:
+                    bundle.terrain = cached_terrain
+                    bundle.add_source(DataSource.CACHE)
+                    logger.info(f"Terrain loaded from cache for EGID {bundle.egid} (ref={cached_terrain.reference_height_m:.1f}m)")
 
-                # FIX 14.01.2026 17:10: Fassaden-Höhen auch bei gecachtem Terrain sammeln
-                # Cache wurde vor T2-T4 erstellt → keine Fassaden-Höhen vorhanden
-                # FIX 13.01.2026 23:50: Auch terrain_sampled→wall_layer Upgrade versuchen
-                # wall_layer ist präziser als terrain_sampled, daher Upgrade-Versuch
-                should_collect = (
-                    not cached_terrain.facade_z_min or  # Keine Daten
-                    cached_terrain.facade_heights_source == "global" or  # Nur Fallback
-                    (cached_terrain.facade_heights_source == "terrain_sampled" and bundle.has_3d_layers)  # Upgrade möglich
-                )
-                if should_collect:
-                    logger.info(f"[FACADE_HEIGHTS] Collecting for cached terrain, EGID {bundle.egid}, source={cached_terrain.facade_heights_source}, has_3d={bundle.has_3d_layers}")
-                    await self._collect_facade_heights(bundle)
-                    # Cache aktualisieren mit neuen Fassaden-Höhen (nur wenn besser)
-                    if bundle.terrain.facade_heights_source == "wall_layer":
-                        self._save_terrain_to_environment(bundle)
-                        logger.info(f"[FACADE_HEIGHTS] Cache upgraded to wall_layer for EGID {bundle.egid}")
+                    # FIX 14.01.2026 17:10: Fassaden-Höhen auch bei gecachtem Terrain sammeln
+                    # FIX 13.01.2026 23:50: Auch terrain_sampled→wall_layer Upgrade versuchen
+                    should_collect = (
+                        not cached_terrain.facade_z_min or  # Keine Daten
+                        cached_terrain.facade_heights_source == "global" or  # Nur Fallback
+                        (cached_terrain.facade_heights_source == "terrain_sampled" and bundle.has_3d_layers)  # Upgrade möglich
+                    )
+                    if should_collect:
+                        logger.info(f"[FACADE_HEIGHTS] Collecting for cached terrain, EGID {bundle.egid}, source={cached_terrain.facade_heights_source}, has_3d={bundle.has_3d_layers}")
+                        await self._collect_facade_heights(bundle)
+                        # Cache aktualisieren mit neuen Fassaden-Höhen (nur wenn besser)
+                        if bundle.terrain.facade_heights_source == "wall_layer":
+                            self._save_terrain_to_environment(bundle)
+                            logger.info(f"[FACADE_HEIGHTS] Cache upgraded to wall_layer for EGID {bundle.egid}")
 
-                # NEU 18.01.2026: facades[] Array auch bei Cache-Hit aufbauen
-                self._build_facades_array(bundle)
-                return
+                    # NEU 18.01.2026: facades[] Array auch bei Cache-Hit aufbauen
+                    self._build_facades_array(bundle)
+                    return
 
         try:
             # FIX 01.02.2026: reference_height_m mit Fallback-Kette berechnen
@@ -1116,33 +1124,34 @@ class SmartBuildingService:
 
             if ref_height is not None:
                 bundle.terrain = TerrainProfile(reference_height_m=ref_height)
-                bundle.add_source(DataSource.SWISSBUILDINGS3D)  # 3D-Daten statt swissALTI3D
+                bundle.add_source(DataSource.SWISSBUILDINGS3D)
 
-                # ENTFERNT 28.01.2026: swissALTI3D Polygon-Sampling für slope_m/slope_class
-                # Die Berechnung war redundant und weniger präzise als die Frontend-Berechnung
-                # aus building_walls.geometry Z-Koordinaten (LiDAR).
-                #
-                # Das Frontend berechnet slope_m direkt aus:
-                # - building_walls.geometry: 3D-Koordinaten [x, y, z]
-                # - matchFacadeToWall(): polygon_z_min/polygon_z_max pro Fassade
-                #
-                # slope_m, slope_class bleiben auf Default (None, "eben") -
-                # das Frontend überschreibt diese mit den präziseren Werten.
+                # slope_m, slope_class: Defaults - Frontend berechnet aus building_walls.geometry
                 bundle.terrain.slope_m = None
                 bundle.terrain.slope_class = "eben"
                 bundle.terrain.is_sloped = False
                 bundle.terrain.requires_level_compensation = False
 
-                # Fassaden-Höhen aus Wall-Layer (T2) - diese sind die präzisen Daten!
-                # Fallback-Kette: 1. Wall-Layer → 2. Global
+                # Fassaden-Höhen aus Wall-Layer
                 await self._collect_facade_heights(bundle)
 
-                # NEU 18.01.2026: facades[] Array aufbauen (kombiniert sides + terrain)
+                # facades[] Array aufbauen (kombiniert sides + terrain)
                 self._build_facades_array(bundle)
 
                 # Terrain in building_environment speichern (persistenter Cache pro EGID)
                 if bundle.egid:
                     self._save_terrain_to_environment(bundle)
+            else:
+                # FIX 04.02.2026: Warnung wenn keine Terrain-Referenz gefunden
+                # Passiert bei Race Condition: Prefetch noch nicht fertig, Walls nicht in DB
+                logger.warning(
+                    f"[TERRAIN] Keine reference_height_m für EGID {bundle.egid}! "
+                    f"building_walls.z_min und buildings_3d.terrain_z_min sind beide NULL. "
+                    f"Fassaden-Höhen werden auf Fallback (8m) gesetzt."
+                )
+                bundle.add_warning("Terrain-Referenzhöhe nicht verfügbar - Fassaden-Höhen geschätzt")
+                # Trotzdem facades[] aufbauen (mit Fallback-Höhen)
+                self._build_facades_array(bundle)
 
         except Exception as e:
             logger.error(f"Terrain error: {e}")
