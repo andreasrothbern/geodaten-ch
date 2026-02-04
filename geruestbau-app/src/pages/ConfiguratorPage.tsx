@@ -17,8 +17,8 @@ import BuildingDataCard from '../components/ui/BuildingDataCard';
 import ScaffoldConfigurator from '../features/scaffold-configurator/components/ScaffoldConfigurator';
 import { geruestbauApi, type NeighborBuilding, type AddressRangeResponse, type AddressRangeBuilding, type GeodataBuilding, type ObjectData, type ProjectGeodataResponse } from '../api/geruestbau';
 import { API_BASE } from '../api/client';
-import type { ProjectWithGeruestbaudata, Geodata, BuildingWall, BuildingRoof } from '../types/project';
-import { convertGeruestbaudataToGeodata, convertGeodataToGeruestbaudata, getBuildingEgids } from '../types/project';
+import type { ProjectWithGeruestbaudata, Geodata, BuildingWall, BuildingRoof, GeruestbauData } from '../types/project';
+import { convertGeruestbaudataToGeodata, getBuildingEgids } from '../types/project';
 // NEU 10.01.2026 19:15 - SSE-Hook für Multi-Building blocked facades
 import { useProjectContextStream, type BlockedFacadesData } from '../hooks/useProjectContextStream';
 import type { SelectedFacade, RoofData, BuildingZone } from '../features/scaffold-configurator/types/scaffold.types';
@@ -290,12 +290,12 @@ function convertGeodataResponseToConfiguratorFormat(
     }))
   );
 
-  // FIX 24.01.2026: API-Werte für Gerüsthöhe verwenden (NPK 114 konform)
+  // FIX 04.02.2026: Keine Magic Numbers! Höhen kommen aus 3D-Rohdaten oder bleiben undefined.
   // Die Gerüsthöhe ist KONSTANT (= Traufhöhe). Terrain-Differenzen werden
   // durch Stellspindeln/Ausgleichsrahmen am Boden ausgeglichen, NICHT durch
   // Variation der Gerüsthöhe! Siehe: NPK 114, 3D_LAYER_USAGE_SCAFFOLDING.md
-  let traufHeight = 8;  // Default
-  let firstHeight = 10; // Default
+  let traufHeight: number | undefined = undefined;
+  let firstHeight: number | undefined = undefined;
 
   // Hilfsfunktion: Extrahiere min/max Z aus verschachtelter Geometrie
   // Wird NUR für Terrain-Z-Werte verwendet (Stellspindel-Berechnung), NICHT für Gerüsthöhe!
@@ -337,37 +337,55 @@ function convertGeodataResponseToConfiguratorFormat(
   });
 
   // FIX 04.02.2026: Höhen aus 3D-Rohdaten berechnen (Frontend = Berechnung)
-  // buildings_3d.traufhoehe_m ist seit BUG-025 falsch (DACH_MIN - GELAENDEPUNKT statt
-  // DACH_MIN - min(walls.z_min)). Deshalb: Immer aus roof/wall Rohdaten berechnen.
+  // Traufhöhe = roof.dach_min - wall.z_min (Dach-Unterkante minus Terrain)
+  // Firsthöhe = max(wall.z_max, roof.dach_max) - wall.z_min (Gebäude-Oberkante minus Terrain)
+  // WICHTIG: wall.z_max kann HÖHER sein als roof.dach_max (Attika, Aufbauten)!
+  // Das Gerüst muss die ganze Fassade abdecken, nicht nur bis zum Dach.
 
-  // PRIORITÄT 1: Berechnung aus Roof dach_min/dach_max und Wall z_min (3D-Rohdaten)
-  if (allRoofs.length > 0 && allWalls.length > 0) {
+  if (allWalls.length > 0) {
+    const wallZMins = allWalls.filter(w => w.z_min != null).map(w => w.z_min!);
+    const wallZMaxs = allWalls.filter(w => w.z_max != null).map(w => w.z_max!);
     const roofMins = allRoofs.filter(r => r.dach_min != null).map(r => r.dach_min!);
     const roofMaxs = allRoofs.filter(r => r.dach_max != null).map(r => r.dach_max!);
-    const wallZMins = allWalls.filter(w => w.z_min != null).map(w => w.z_min!);
     const terrainRef = wallZMins.length > 0 ? Math.min(...wallZMins) : 0;
 
-    if (roofMins.length > 0 && terrainRef > 0) {
-      const dachMin = Math.min(...roofMins);
-      traufHeight = dachMin - terrainRef;
-      console.log(`[convertGeodataResponse] Traufhöhe aus 3D-Rohdaten: dach_min(${dachMin.toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${traufHeight.toFixed(2)}m`);
-    }
-    if (roofMaxs.length > 0 && terrainRef > 0) {
-      const dachMax = Math.max(...roofMaxs);
-      firstHeight = dachMax - terrainRef;
-      console.log(`[convertGeodataResponse] Firsthöhe aus 3D-Rohdaten: dach_max(${dachMax.toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${firstHeight.toFixed(2)}m`);
+    if (terrainRef > 0) {
+      // Traufhöhe = Dach-Unterkante - Terrain
+      if (roofMins.length > 0) {
+        traufHeight = Math.min(...roofMins) - terrainRef;
+        console.log(`[convertGeodataResponse] Traufhöhe: dach_min(${Math.min(...roofMins).toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${traufHeight.toFixed(2)}m`);
+      }
+
+      // Firsthöhe = Höchster Punkt der Fassade - Terrain
+      // wall.z_max ist massgebend (nicht dach_max), weil Attika/Aufbauten über dem Dach liegen können
+      const wallTop = wallZMaxs.length > 0 ? Math.max(...wallZMaxs) : 0;
+      const roofTop = roofMaxs.length > 0 ? Math.max(...roofMaxs) : 0;
+      const buildingTop = Math.max(wallTop, roofTop);
+      if (buildingTop > terrainRef) {
+        firstHeight = buildingTop - terrainRef;
+        console.log(`[convertGeodataResponse] Firsthöhe: buildingTop(${buildingTop.toFixed(1)}) - terrain(${terrainRef.toFixed(1)}) = ${firstHeight.toFixed(2)}m`);
+      }
+
+      // Flachdach: dach_min ≈ dach_max → Traufhöhe = Gebäudehöhe (kein Dachansatz)
+      if (roofMins.length > 0 && roofMaxs.length > 0) {
+        const dachDiff = Math.max(...roofMaxs) - Math.min(...roofMins);
+        if (dachDiff < 0.5 && firstHeight !== undefined) {
+          traufHeight = firstHeight;
+          console.log(`[convertGeodataResponse] Flachdach erkannt (dach_diff=${dachDiff.toFixed(2)}m) → Traufhöhe = Firsthöhe = ${traufHeight.toFixed(2)}m`);
+        }
+      }
     }
   }
 
-  // PRIORITÄT 2: Fallback auf gebaeudehoehe_m (GWR-Schätzung)
-  if (traufHeight === 8 && projectBuildings.length > 0) {
+  // Fallback auf gebaeudehoehe_m — nur wenn keine 3D-Daten vorhanden
+  if (traufHeight === undefined && projectBuildings.length > 0) {
     const gebHoehen = projectBuildings
       .map((b: GeodataBuilding) => b.gebaeudehoehe_m)
       .filter((v: number | undefined): v is number => v !== null && v !== undefined && v > 0);
     if (gebHoehen.length > 0) {
       traufHeight = Math.max(...gebHoehen);
-      firstHeight = traufHeight + 2;
-      console.log(`[convertGeodataResponse] Traufhöhe aus gebaeudehoehe_m (Fallback): ${traufHeight.toFixed(2)}m`);
+      firstHeight = traufHeight;
+      console.log(`[convertGeodataResponse] Höhe aus gebaeudehoehe_m (Fallback): ${traufHeight.toFixed(2)}m`);
     }
   }
 
@@ -384,7 +402,7 @@ function convertGeodataResponseToConfiguratorFormat(
   const simplifyResult = simplifyPolygon(polygon, { epsilon: 0 });
   const facades = sidesToFacades(
     simplifyResult.sides,
-    traufHeight,
+    traufHeight ?? 0,
     undefined,  // facadeZMin
     undefined,  // facadeZMax
     polygon     // originalPolygon - für 3D-Platzierung
@@ -399,7 +417,7 @@ function convertGeodataResponseToConfiguratorFormat(
   const area = calculateArea(polygon);
 
   // Dach-Daten berechnen
-  const roofHeight = firstHeight - traufHeight;
+  const roofHeight = (firstHeight ?? 0) - (traufHeight ?? 0);
   const roofOrientation = calculateRoofOrientation(polygon);
   const roofAngle = roofHeight > 0.5 ? Math.atan(roofHeight / 5) * (180 / Math.PI) : 0;
   const roofType = roofAngle < 5 ? 'flachdach' : roofAngle < 45 ? 'satteldach' : 'steil';
@@ -407,7 +425,7 @@ function convertGeodataResponseToConfiguratorFormat(
   // EGID: Bei Multi-Building alle EGIDs kombinieren
   const combinedEgid = geodataResponse.project_egids.join('+');
 
-  console.log(`[convertGeodataResponse] Union-Polygon mit ${polygon.length} Punkten, ${projectBuildings.length} Gebäude(n), Höhe=${traufHeight}m`);
+  console.log(`[convertGeodataResponse] Union-Polygon mit ${polygon.length} Punkten, ${projectBuildings.length} Gebäude(n), Höhe=${traufHeight ?? 'undefined'}m`);
   console.log(`[convertGeodataResponse] Walls: ${allWalls.length}, erster geometry_type: ${allWalls[0]?.geometry_type}, hat geometry: ${!!allWalls[0]?.geometry}`);
   console.log(`[convertGeodataResponse] Roofs: ${allRoofs.length}, erster geometry_type: ${allRoofs[0]?.geometry_type}, hat geometry: ${!!allRoofs[0]?.geometry}`);
 
@@ -454,8 +472,8 @@ function convertGeodataResponseToConfiguratorFormat(
       address: address,
       name: address,
       polygon: polygon,
-      trauf_height_m: traufHeight,
-      first_height_m: firstHeight,
+      trauf_height_m: traufHeight ?? 0,
+      first_height_m: firstHeight ?? 0,
       center_e: centerE,
       center_n: centerN,
     },
@@ -475,9 +493,9 @@ function convertGeodataResponseToConfiguratorFormat(
       roof_angle_deg: roofAngle,
       roof_orientation: roofOrientation,
       trauf_to_first_m: roofHeight,
-      scaffolding_height_m: firstHeight + 1,
+      scaffolding_height_m: (firstHeight ?? 0) + 1,
       confidence: hasRoofGeometry ? 0.95 : 0.7,
-      traufhoehe_m: traufHeight,
+      traufhoehe_m: traufHeight ?? 0,
       // FIX 21.01.2026: 3D-Roof-Daten für ScaffoldScene
       roof_geometry_coords: roofGeometryCoords,
       has_roof_geometry: hasRoofGeometry,
@@ -535,32 +553,59 @@ function extractPolygon(geodata: Geodata): [number, number][] | null {
 }
 
 // Helper: Get height values from geodata
-// FIX 16.01.2026 17:00: Korrekte Berechnung aus Rohdaten
+// FIX 04.02.2026: wall.z_max für Firsthöhe (Attika/Aufbauten können über Dach liegen)
 function extractHeights(geodata: Geodata): { trauf: number; first: number } {
-  // NEU: Korrekte Berechnung aus 3D-Rohdaten
   let trauf: number | null = null;
   let first: number | null = null;
 
-  // Wenn Rohdaten vorhanden: Korrekte Berechnung
-  if (geodata.roof_dach_min_m != null) {
-    // Finde niedrigstes Terrain aus facade_z_min oder building_walls
-    let terrainMin = geodata.terrain_height_m ?? 0;
-    if (geodata.facade_z_min) {
-      terrainMin = Math.min(...Object.values(geodata.facade_z_min));
-    }
-    trauf = geodata.roof_dach_min_m - terrainMin;
+  // Terrain-Referenz: niedrigster Punkt
+  let terrainMin = geodata.terrain_height_m ?? 0;
+  if (geodata.facade_z_min) {
+    terrainMin = Math.min(...Object.values(geodata.facade_z_min));
   }
-  if (geodata.roof_dach_max_m != null) {
-    let terrainMin = geodata.terrain_height_m ?? 0;
-    if (geodata.facade_z_min) {
-      terrainMin = Math.min(...Object.values(geodata.facade_z_min));
+  // wall.z_min als Terrain wenn building_walls verfügbar
+  if (geodata.building_walls && geodata.building_walls.length > 0) {
+    const wallZMins = geodata.building_walls
+      .map(w => w.z_min)
+      .filter((z): z is number => z != null);
+    if (wallZMins.length > 0) {
+      terrainMin = Math.min(...wallZMins);
     }
-    first = geodata.roof_dach_max_m - terrainMin;
   }
 
-  // Fallback auf gebaeudehoehe wenn keine Rohdaten
-  const finalTrauf = trauf ?? geodata.gebaeudehoehe_m ?? 10;
-  const finalFirst = first ?? finalTrauf + 2;
+  if (terrainMin > 0) {
+    // Traufhöhe = Dach-Unterkante - Terrain
+    if (geodata.roof_dach_min_m != null) {
+      trauf = geodata.roof_dach_min_m - terrainMin;
+    }
+
+    // Firsthöhe = Höchster Punkt (wall.z_max ODER dach_max) - Terrain
+    let buildingTop = 0;
+    if (geodata.building_walls && geodata.building_walls.length > 0) {
+      const wallZMaxs = geodata.building_walls
+        .map(w => w.z_max)
+        .filter((z): z is number => z != null);
+      if (wallZMaxs.length > 0) buildingTop = Math.max(...wallZMaxs);
+    }
+    if (geodata.roof_dach_max_m != null) {
+      buildingTop = Math.max(buildingTop, geodata.roof_dach_max_m);
+    }
+    if (buildingTop > terrainMin) {
+      first = buildingTop - terrainMin;
+    }
+
+    // Flachdach: dach_min ≈ dach_max → Traufhöhe = Gebäudehöhe
+    if (geodata.roof_dach_min_m != null && geodata.roof_dach_max_m != null) {
+      const dachDiff = geodata.roof_dach_max_m - geodata.roof_dach_min_m;
+      if (dachDiff < 0.5 && first != null) {
+        trauf = first;
+      }
+    }
+  }
+
+  // Fallback auf gebaeudehoehe_m, sonst 0
+  const finalTrauf = trauf ?? geodata.gebaeudehoehe_m ?? 0;
+  const finalFirst = first ?? finalTrauf;
   return { trauf: finalTrauf, first: finalFirst };
 }
 
@@ -1412,16 +1457,61 @@ export default function ConfiguratorPage() {
         </header>
 
         <div className="max-w-lg mx-auto p-4 space-y-6">
-          {/* Project info if loaded - NEU 18.01.2026: BuildingDataCard mit GeruestbauData */}
-          {project && (() => {
-            // Priorität: geruestbaudata → geodata konvertiert → null
-            const geruestbauData = project.geruestbaudata
-              || (project.geodata ? convertGeodataToGeruestbaudata(project.geodata) : null)
-            return geruestbauData ? (
-              <BuildingDataCard data={geruestbauData} />
-            ) : null
-          })()}
-          {project && !project.geruestbaudata && !project.geodata && (
+          {/* FIX 04.02.2026: BuildingDataCard aus live Geodata-API, NICHT aus gespeicherter geruestbaudata */}
+          {buildingData ? (() => {
+            const bd = buildingData;
+            const terrainRef = bd.roof?.terrain_z_min ?? 0;
+            // Direkt die berechneten Werte verwenden — keine Magic Number Vergleiche
+            const traufM = bd.building.trauf_height_m > 0 ? bd.building.trauf_height_m : undefined;
+            const firstM = bd.building.first_height_m > 0 ? bd.building.first_height_m : undefined;
+            const geruestbauData: GeruestbauData = {
+              building: {
+                egid: bd.building.egid,
+                address: bd.building.address,
+                polygon: bd.building.polygon as number[][],
+                center_e: bd.building.center_e,
+                center_n: bd.building.center_n,
+                perimeter_m: bd.metadata?.perimeter_m ?? 0,
+                area_m2: bd.metadata?.area_m2 ?? 0,
+                has_3d_layers: (bd.building_walls?.length ?? 0) > 0,
+                roof_dach_min_m: bd.roof?.roof_dach_min_m,
+                roof_dach_max_m: bd.roof?.roof_dach_max_m,
+              },
+              facades: bd.selected_facades.map((f, idx) => ({
+                index: idx,
+                direction: f.direction,
+                start_point: f.start_point,
+                end_point: f.end_point,
+                length_m: f.length_m,
+                azimuth_deg: 0,
+                terrain_z_min: terrainRef,
+                terrain_z_max: terrainRef,
+                wall_z_max: (bd.roof?.roof_dach_min_m ?? 0),
+                height_m: f.height_m,
+                slope_m: 0,
+                height_source: (bd.building_walls?.length ?? 0) > 0 ? 'wall_layer' as const : 'global' as const,
+              })),
+              walls: bd.building_walls ?? [],
+              roofs: bd.building_roofs ?? [],
+              terrain: {
+                height_m: terrainRef,
+                min_m: terrainRef,
+                max_m: terrainRef,
+                slope_m: 0,
+                slope_class: 'eben',
+                requires_level_compensation: false,
+              },
+              zones: [],
+              fetched_at: new Date().toISOString(),
+              data_quality: (bd.building_walls?.length ?? 0) > 0 ? 'complete' : 'partial',
+              heights: {
+                traufhoehe_m: traufM,
+                firsthoehe_m: firstM,
+                source: (bd.building_walls?.length ?? 0) > 0 ? 'swissBUILDINGS3D' : 'gwr_estimated',
+              },
+            };
+            return <BuildingDataCard data={geruestbauData} />;
+          })() : project && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <h3 className="font-medium text-green-800">Projekt: {project.name}</h3>
               <p className="text-sm text-green-600">{project.address}</p>
