@@ -1310,10 +1310,12 @@ class SmartBuildingService:
                 if terrain_z_min is None:
                     terrain_z_min = bundle.terrain.reference_height_m
 
-            # FIX 18.01.2026: height_m = KONSTANTE Traufhöhe
-            # Die Gerüsthöhe ist für alle Fassaden gleich (bis Traufe)
-            # Giebel-Fassaden brauchen zusätzliches Gerüst bis zum First
-            height_m = bundle.traufhoehe_m
+            # FIX 04.02.2026: height_m = relative Traufhöhe (roof_dach_min - terrain)
+            # Berechnet wie in /configurator/facades (Single Source of Truth)
+            # bundle.traufhoehe_m ist None seit BUG-025, daher eigene Berechnung
+            height_m = None
+            if bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.reference_height_m:
+                height_m = round(bundle.roof_dach_min_m - bundle.terrain.reference_height_m, 2)
 
             # is_gable: True wenn diese Fassade ein Giebel ist
             # Giebel-Fassaden haben über der Traufe noch das Giebel-Dreieck

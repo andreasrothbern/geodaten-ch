@@ -282,44 +282,27 @@ function ZonesList({ zones }: { zones: ZoneInfo[] }) {
 export default function BuildingDataCard({ data }: BuildingDataCardProps) {
   const { building, facades, terrain, zones, complexity, research_source, heights } = data
 
-  // Berechne Traufhöhe: Prioritäts-Reihenfolge
-  // 1. facades[] → minHeight (beste Quelle)
-  // 2. heights.traufhoehe_m (bereits berechnet - Legacy/Multi-Building)
-  // 3. building.roof_dach_min_m - terrain.min_m (Rohdaten)
+  // FIX 04.02.2026: Vereinfachte Höhen-Anzeige (Backend = Single Source of Truth)
+  // Keine eigene Berechnung mehr - Backend liefert korrekte relative Höhen
   const calcTraufhoehe = (): string => {
-    // 1. Aus facades[] (NEU 18.01.2026)
-    if (facades && facades.length > 0) {
-      const minHeight = Math.min(...facades.map(f => f.height_m))
-      return minHeight.toFixed(1)
-    }
-    // 2. Aus heights (Legacy/Multi-Building Projekte) - FIX 18.01.2026
-    if (heights?.traufhoehe_m && heights.traufhoehe_m > 0) {
+    // 1. Direkt aus heights (vom Backend vorberechnet)
+    if (heights?.traufhoehe_m && heights.traufhoehe_m > 0 && heights.traufhoehe_m < 200) {
       return heights.traufhoehe_m.toFixed(1)
     }
-    // 3. Aus Rohdaten berechnen
-    if (building.roof_dach_min_m && terrain?.min_m) {
-      return (building.roof_dach_min_m - terrain.min_m).toFixed(1)
+    // 2. Fallback: Min der Fassaden-Höhen (ebenfalls vom Backend berechnet)
+    if (facades && facades.length > 0) {
+      const minHeight = Math.min(...facades.map(f => f.height_m))
+      if (minHeight > 0 && minHeight < 200) {
+        return minHeight.toFixed(1)
+      }
     }
     return '–'
   }
 
-  // Berechne Firsthöhe: Prioritäts-Reihenfolge
-  // 1. heights.firsthoehe_m (bereits berechnet - Legacy/Multi-Building)
-  // 2. building.roof_dach_max_m - terrain.min_m (Rohdaten)
-  // 3. facades[] maxHeight * 1.2 (Schätzung)
   const calcFirsthoehe = (): string => {
-    // 1. Aus heights (Legacy/Multi-Building Projekte) - FIX 18.01.2026
-    if (heights?.firsthoehe_m && heights.firsthoehe_m > 0) {
+    // 1. Direkt aus heights (vom Backend vorberechnet)
+    if (heights?.firsthoehe_m && heights.firsthoehe_m > 0 && heights.firsthoehe_m < 200) {
       return heights.firsthoehe_m.toFixed(1)
-    }
-    // 2. Aus Rohdaten berechnen
-    if (building.roof_dach_max_m && terrain?.min_m) {
-      return (building.roof_dach_max_m - terrain.min_m).toFixed(1)
-    }
-    // 3. Aus facades[] schätzen
-    if (facades && facades.length > 0) {
-      const maxHeight = Math.max(...facades.map(f => f.height_m))
-      return (maxHeight * 1.2).toFixed(1) // Schätzung +20% für Dach
     }
     return '–'
   }

@@ -1009,7 +1009,15 @@ class BuildingDataStreamService:
                 "facade_heights_source": bundle.terrain.facade_heights_source,
             }
 
-        # FIX 29.01.2026: DEPRECATED traufhoehe_m/firsthoehe_m ENTFERNT
+        # FIX 04.02.2026: Vorberechnete relative Höhen (Single Source of Truth)
+        # Gleiche Logik wie /configurator/facades in geruestbau.py
+        traufhoehe_m = None
+        firsthoehe_m = None
+        if bundle.roof_dach_min_m and bundle.terrain and bundle.terrain.reference_height_m:
+            traufhoehe_m = round(bundle.roof_dach_min_m - bundle.terrain.reference_height_m, 2)
+        if bundle.roof_dach_max_m and bundle.terrain and bundle.terrain.reference_height_m:
+            firsthoehe_m = round(bundle.roof_dach_max_m - bundle.terrain.reference_height_m, 2)
+
         return {
             "address_input": bundle.address_input,
             "address_matched": bundle.address_matched,
@@ -1022,7 +1030,9 @@ class BuildingDataStreamService:
             "facades": bundle.facades,
             "perimeter_m": bundle.perimeter_m,
             "footprint_area_m2": bundle.footprint_area_m2,
-            # DEPRECATED ENTFERNT: traufhoehe_m, firsthoehe_m
+            # NEU 04.02.2026: Vorberechnete relative Höhen (Single Source of Truth)
+            "traufhoehe_m": traufhoehe_m,
+            "firsthoehe_m": firsthoehe_m,
             "gebaeudehoehe_m": bundle.gebaeudehoehe_m,
             "gwr_floors": bundle.gwr_floors,
             "gwr_area_m2": bundle.gwr_area_m2,

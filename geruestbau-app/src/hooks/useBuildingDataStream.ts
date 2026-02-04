@@ -232,7 +232,21 @@ export interface BuildingDataBundle {
   }> | null;
   perimeter_m: number | null;
   footprint_area_m2: number | null;
-  // Höhen - FIX 16.01.2026: traufhoehe_m/firsthoehe_m ENTFERNT!
+  // NEU 04.02.2026: Fassaden vom Backend (mit korrekter height_m)
+  facades: Array<{
+    index: number;
+    direction: string;
+    start_point: number[];
+    end_point: number[];
+    length_m: number;
+    height_m: number | null;
+    is_gable?: boolean;
+    terrain_z_min?: number | null;
+    slope_m?: number;
+  }> | null;
+  // NEU 04.02.2026: Vorberechnete relative Höhen (Single Source of Truth)
+  traufhoehe_m: number | null;
+  firsthoehe_m: number | null;
   gebaeudehoehe_m: number | null;
   // GWR-Daten
   gwr_floors: number | null;
