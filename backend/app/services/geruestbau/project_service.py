@@ -214,38 +214,14 @@ class ProjectService:
         conn.commit()
         conn.close()
 
-        # NEU 18.01.2026: Wenn geruestbaudata vom Frontend mitgesendet wurde, direkt speichern
-        # Das ist der Fall bei:
-        # - Multi-Building: Frontend berechnet Union-Polygon und kombinierte Fassaden
-        # - Single-Building: Frontend hat bereits die Daten aus SSE-Streaming
+        # FIX 04.02.2026: buildings_data wird NICHT mehr im Projekt gespeichert!
+        # 3D-Daten (walls, roofs, terrain) werden beim Öffnen per SSE geladen.
+        # Das spart massiv Speicher in geruestbau.db (vorher: 50KB-2MB pro Projekt)
+        # Siehe: data-flow.md "Geodaten werden beim Projekt-Öffnen per API geladen"
         if hasattr(data, 'geruestbaudata') and data.geruestbaudata:
-            try:
-                # EGID aus den Daten extrahieren (bei Multi-Building: "123+456+789")
-                egid_key = data.geruestbaudata.get('building', {}).get('egid', egid) or egid or 'combined'
-                buildings_data = {egid_key: data.geruestbaudata}
-
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    UPDATE projects SET buildings_data = ?, updated_at = ? WHERE id = ?
-                ''', (
-                    json.dumps(buildings_data),
-                    datetime.utcnow().isoformat(),
-                    project_id
-                ))
-                conn.commit()
-                conn.close()
-                logger.info(f"[PROJECT] Frontend geruestbaudata direkt gespeichert für {project_id} (EGID: {egid_key})")
-            except Exception as e:
-                logger.warning(f"[PROJECT] Fehler beim Speichern von Frontend geruestbaudata: {e}")
-        # Fallback: Daten vom SmartBuildingService laden (nur wenn kein geruestbaudata vorhanden)
+            logger.info(f"[PROJECT] geruestbaudata NICHT gespeichert (DEPRECATED) für {project_id}")
         elif egid and data.address:
-            try:
-                await self.save_geruestbaudata_to_project(project_id, egid, data.address)
-                logger.info(f"[PROJECT] GeruestbauData automatisch gespeichert für {project_id}")
-            except Exception as e:
-                # Fehler beim Speichern ist nicht kritisch - Fallback auf Legacy-Pfad
-                logger.warning(f"[PROJECT] GeruestbauData konnte nicht gespeichert werden: {e}")
+            logger.info(f"[PROJECT] buildings_data NICHT gespeichert (DEPRECATED) für {project_id}")
 
         return await self.get_project(project_id)
 

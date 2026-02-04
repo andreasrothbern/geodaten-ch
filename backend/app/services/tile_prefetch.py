@@ -1674,15 +1674,24 @@ def _cleanup_tile_after_import(gdb_path: Path, tile_id: str):
         tile_id: Tile-ID für Logging
     """
     import shutil
+    from app.config import TILES_DIR
 
     try:
-        # gdb_path ist z.B. tiles/2600-1199/swissBUILDINGS3D.gdb
-        # Wir wollen das Parent-Verzeichnis löschen: tiles/2600-1199/
-        tile_dir = gdb_path.parent if gdb_path.is_dir() else gdb_path.parent
+        # FIX 04.02.2026: gdb_path ist z.B. tiles/1332-22.gdb (ein Verzeichnis!)
+        # store_tile() speichert als TILES_DIR / f"{tile_id}.gdb"
+        # gdb_path.parent wäre tiles/ = das GESAMTE Tile-Verzeichnis → FALSCH!
+        # Wir löschen gdb_path selbst (das .gdb-Verzeichnis)
+        tile_dir = gdb_path if gdb_path.is_dir() and str(gdb_path).endswith('.gdb') else gdb_path.parent
 
-        # Sicherheitscheck: Nur tiles/ Unterverzeichnisse löschen
-        if 'tiles' not in str(tile_dir):
-            logger.warning(f"[CLEANUP] Skipped: {tile_dir} ist kein tiles-Verzeichnis")
+        # Sicherheitscheck: Nur .gdb Verzeichnisse oder tiles/ Unterverzeichnisse löschen
+        tiles_dir_str = str(TILES_DIR)
+        if not str(tile_dir).startswith(tiles_dir_str):
+            logger.warning(f"[CLEANUP] Skipped: {tile_dir} ist nicht unter {TILES_DIR}")
+            return
+
+        # Sicherheitscheck: Nie das TILES_DIR selbst löschen!
+        if str(tile_dir.resolve()) == str(TILES_DIR.resolve()):
+            logger.warning(f"[CLEANUP] Skipped: Würde gesamtes tiles-Verzeichnis löschen!")
             return
 
         if tile_dir.exists():
