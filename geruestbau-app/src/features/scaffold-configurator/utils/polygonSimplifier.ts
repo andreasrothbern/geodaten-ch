@@ -902,6 +902,7 @@ export function sidesToFacadesWithWalls(
   buildingWalls: BuildingWall[] = [],
   dachMin?: number  // FIX 05.02.2026: Für Giebel-Erkennung
 ): Array<{
+
   id: string;
   direction: FacadeDirection;
   length_m: number;
@@ -919,6 +920,14 @@ export function sidesToFacadesWithWalls(
     geometry_type: string | null;
   };
 }> {
+  // DEBUG 05.02.2026: Log input parameters
+  console.log('[sidesToFacadesWithWalls] Called with:', {
+    sidesCount: sides.length,
+    defaultHeight: defaultHeight.toFixed(2),
+    buildingWallsCount: buildingWalls.length,
+    dachMin: dachMin?.toFixed(2) ?? 'undefined',
+  });
+
   return sides.map((side, idx) => {
     let height = defaultHeight;
     let zMin: number | undefined;
@@ -955,6 +964,9 @@ export function sidesToFacadesWithWalls(
         };
       }
     }
+
+    // DEBUG 05.02.2026: Log final height for each facade
+    console.log(`[sidesToFacadesWithWalls] Facade ${idx + 1} ${side.direction}: height=${height.toFixed(2)}m (source=${heightSource})`);
 
     return {
       id: `facade-${idx + 1}`,
