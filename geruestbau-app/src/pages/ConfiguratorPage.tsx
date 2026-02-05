@@ -1400,19 +1400,17 @@ export default function ConfiguratorPage() {
           facade.start_point,
           facade.end_point,
           buildingWalls,
-          3.0,  // tolerance
+          10.0,  // FIX 05.02.2026: Toleranz erhöht für besseres Matching
           dachMin  // NEU 24.01.2026 P3: Für Giebel-Erkennung
         );
 
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;
-          // FIX 04.02.2026: Per-Fassade Höhe = dachMin - polygon_z_min
-          // Das ist die Traufhöhe relativ zum Terrain UNTER DIESER FASSADE.
-          // Jede Fassade hat ihr eigenes Terrain (polygon_z_min).
-          if (dachMin && matchResult.polygon_z_min) {
-            heightM = dachMin - matchResult.polygon_z_min;
-          }
+          // FIX 05.02.2026: Maximum-Höhe vom höchsten Polygon entlang dieser Fassade.
+          // wall_height = polygon_z_max - polygon_z_min für das Polygon mit der grössten Höhe.
+          // Sicher: Lieber zu viel Gerüst als zu wenig (kann im Editor reduziert werden).
+          heightM = matchResult.wall_height;
           heightSource = 'building_walls';
           // NEU 24.01.2026 P3: Giebel-Info übernehmen
           isGiebel = matchResult.is_giebel;

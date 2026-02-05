@@ -509,13 +509,27 @@ function segmentsOverlap(
   s2Start: [number, number], s2End: [number, number],
   tolerance: number = 2.0
 ): boolean {
-  // Prüfe ob Endpunkte von s1 nahe an s2 liegen
-  const d1 = pointToSegmentDistance(s1Start[0], s1Start[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
-  const d2 = pointToSegmentDistance(s1End[0], s1End[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
+  // FIX 05.02.2026: Verbesserte Logik für lange Fassaden mit kurzen Wand-Segmenten
+  //
+  // Problem: Bei einer 105m Fassade und 5m Wand-Segmenten sind die Fassaden-Endpunkte
+  // weit weg vom Wand-Segment. Aber das Wand-Segment liegt trotzdem AUF der Fassade.
+  //
+  // Lösung: Prüfe ob das Wand-Segment (s2) entlang der Fassade (s1) liegt:
+  // 1. Beide Endpunkte von s2 müssen nahe der Fassaden-LINIE sein (perpendicular distance)
+  // 2. Mindestens ein Endpunkt von s2 muss INNERHALB der Fassade projizieren
 
-  // Prüfe auch umgekehrt: Endpunkte von s2 nahe an s1
+  // Distanz von s2-Punkten zur Fassaden-Linie (s1)
   const d3 = pointToSegmentDistance(s2Start[0], s2Start[1], s1Start[0], s1Start[1], s1End[0], s1End[1]);
   const d4 = pointToSegmentDistance(s2End[0], s2End[1], s1Start[0], s1Start[1], s1End[0], s1End[1]);
+
+  // Beide Wand-Endpunkte müssen nahe der Fassaden-Linie sein
+  if (d3 < tolerance && d4 < tolerance) {
+    return true;
+  }
+
+  // Fallback: Original-Logik für kürzere Fassaden
+  const d1 = pointToSegmentDistance(s1Start[0], s1Start[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
+  const d2 = pointToSegmentDistance(s1End[0], s1End[1], s2Start[0], s2Start[1], s2End[0], s2End[1]);
 
   // Mindestens 2 Punkte müssen nahe sein für Überlappung
   const closeCount = [d1, d2, d3, d4].filter(d => d < tolerance).length;
