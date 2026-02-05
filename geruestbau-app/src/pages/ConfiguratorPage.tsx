@@ -1404,6 +1404,16 @@ export default function ConfiguratorPage() {
           dachMin  // NEU 24.01.2026 P3: Für Giebel-Erkennung
         );
 
+        // DEBUG 05.02.2026: Log wall matching results
+        console.log(`[FACADE-HEIGHT] ${facade.direction} (${facade.length_m.toFixed(1)}m):`, {
+          apiHeight: facade.height_m,
+          matchFound: !!matchResult,
+          wallHeight: matchResult?.wall_height?.toFixed(2),
+          zMin: matchResult?.polygon_z_min?.toFixed(2),
+          zMax: matchResult?.polygon_z_max?.toFixed(2),
+          isGiebel: matchResult?.is_giebel,
+        });
+
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;

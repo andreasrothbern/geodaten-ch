@@ -806,7 +806,19 @@ export function matchFacadeToWall(
     }
   }
 
-  if (allMatches.length === 0) return undefined;
+  if (allMatches.length === 0) {
+    // DEBUG 05.02.2026: Log when no matches found
+    console.log('[WALL-MATCH] No matches found for facade');
+    return undefined;
+  }
+
+  // DEBUG 05.02.2026: Log all matches before sorting
+  console.log(`[WALL-MATCH] Found ${allMatches.length} matches:`,
+    allMatches.slice(0, 5).map(m => ({
+      height: m.height.toFixed(2),
+      avgDist: m.avgDist.toFixed(2),
+    }))
+  );
 
   // FIX: Wähle das Match mit der GRÖSSTEN HÖHE (Hauptwand statt Fenster)
   // Bei gleicher Höhe: kürzeste Distanz
@@ -818,6 +830,9 @@ export function matchFacadeToWall(
   });
 
   const bestMatch = allMatches[0];
+
+  // DEBUG 05.02.2026: Log best match
+  console.log(`[WALL-MATCH] Best match: height=${bestMatch.height.toFixed(2)}m, dist=${bestMatch.avgDist.toFixed(2)}m`);
 
   // Extrahiere z-Werte aus dem gematchten Polygon
   const { z_min, z_max } = extractZFromRing(bestMatch.coords3d);
@@ -873,14 +888,19 @@ export function matchFacadeToWall(
  * NEU 15.01.2026 BUG-024: Ersetzt alte facadeZMin/facadeZMax Logik durch
  * geometrisches Matching mit building_walls aus der DB.
  *
+ * FIX 05.02.2026: wall_height verwenden für per-Fassade Höhen (wie ConfiguratorPage.tsx)
+ * Das war der Root-Cause für das Multi-Fassaden-Höhen-Problem.
+ *
  * @param sides - Vereinfachte Polygon-Seiten
  * @param defaultHeight - Globale Traufhöhe (Fallback)
  * @param buildingWalls - BuildingWall[] direkt aus building_walls DB-Tabelle
+ * @param dachMin - Dach-Minimum für Giebel-Erkennung (optional)
  */
 export function sidesToFacadesWithWalls(
   sides: Side[],
   defaultHeight: number,
-  buildingWalls: BuildingWall[] = []
+  buildingWalls: BuildingWall[] = [],
+  dachMin?: number  // FIX 05.02.2026: Für Giebel-Erkennung
 ): Array<{
   id: string;
   direction: FacadeDirection;
@@ -892,6 +912,8 @@ export function sidesToFacadesWithWalls(
   facade_z_min?: number;
   facade_z_max?: number;
   height_source: 'building_walls' | 'global';
+  is_giebel?: boolean;
+  giebel_height_m?: number;
   matched_wall?: {
     gebaeudeeinheit: string;
     geometry_type: string | null;
@@ -902,6 +924,8 @@ export function sidesToFacadesWithWalls(
     let zMin: number | undefined;
     let zMax: number | undefined;
     let heightSource: 'building_walls' | 'global' = 'global';
+    let isGiebel = false;
+    let giebelHeightM: number | undefined;
     let matchedWall: { gebaeudeeinheit: string; geometry_type: string | null } | undefined;
 
     // Versuche Wall-Matching wenn buildingWalls vorhanden
@@ -909,18 +933,22 @@ export function sidesToFacadesWithWalls(
       const facadeStart: [number, number] = [side.start.x, side.start.y];
       const facadeEnd: [number, number] = [side.end.x, side.end.y];
 
-      const matchResult = matchFacadeToWall(facadeStart, facadeEnd, buildingWalls);
+      // FIX 05.02.2026: Mit Toleranz 10.0 und dachMin (wie ConfiguratorPage.tsx)
+      const matchResult = matchFacadeToWall(facadeStart, facadeEnd, buildingWalls, 10.0, dachMin);
 
       if (matchResult) {
         // Wall gefunden mit per-Polygon z-Werten (für Terrain-Höhen)
         zMin = matchResult.polygon_z_min;
         zMax = matchResult.polygon_z_max;
-        // FIX 18.01.2026 BUG-026: NICHT wall_height als Fassaden-Höhe verwenden!
-        // Giebel-Fassaden haben höhere Wände (bis First), aber das Gerüst soll
-        // bei "Fassadenarbeit" nur bis zur TRAUFE gehen.
-        // Die Gerüsthöhe bleibt defaultHeight (= Traufhöhe aus API).
-        // ENTFERNT: height = matchResult.wall_height;
+        // FIX 05.02.2026: wall_height VERWENDEN für per-Fassade Höhen!
+        // Das war der Root-Cause für das Multi-Fassaden-Höhen-Problem:
+        // Alle Fassaden bekamen defaultHeight statt ihrer individuellen Höhe.
+        // Note: Bei "Fassadenarbeit" work_type begrenzt createFacadeElement auf Traufhöhe.
+        height = matchResult.wall_height;
         heightSource = 'building_walls';
+        // Giebel-Info übernehmen
+        isGiebel = matchResult.is_giebel;
+        giebelHeightM = matchResult.giebel_height_m;
         matchedWall = {
           gebaeudeeinheit: matchResult.wall.gebaeudeeinheit,
           geometry_type: matchResult.wall.geometry_type,
@@ -939,6 +967,8 @@ export function sidesToFacadesWithWalls(
       facade_z_min: zMin,
       facade_z_max: zMax,
       height_source: heightSource,
+      is_giebel: isGiebel,
+      giebel_height_m: giebelHeightM,
       matched_wall: matchedWall,
     };
   });

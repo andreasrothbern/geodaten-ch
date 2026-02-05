@@ -224,6 +224,9 @@ export default function FacadePanel({
     return 10;
   }, [facades]);
 
+  // FIX 05.02.2026: dachMin aus configuration.roof für Giebel-Erkennung
+  const dachMin = configuration?.roof?.roof_dach_min_m;
+
   // Handle polygon simplification
   // NEU 15.01.2026 BUG-024: Bevorzuge buildingWalls (koordinatenbasiertes Matching)
   const handleSimplifyChange = useCallback((newEpsilon: number | null) => {
@@ -239,7 +242,8 @@ export default function FacadePanel({
     let newFacades: SelectedFacade[];
     if (buildingWalls.length > 0) {
       // Koordinatenbasiertes Matching mit exakter 3D-Geometrie aus DB
-      newFacades = sidesToFacadesWithWalls(result.sides, defaultHeight, buildingWalls);
+      // FIX 05.02.2026: dachMin übergeben für Giebel-Erkennung und per-Fassade Höhen
+      newFacades = sidesToFacadesWithWalls(result.sides, defaultHeight, buildingWalls, dachMin);
     } else {
       // Legacy: Richtungsbasiertes Matching (deprecated)
       newFacades = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax);
@@ -247,7 +251,7 @@ export default function FacadePanel({
 
     // Apply to store
     applySimplification(newFacades);
-  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification, facadeZMin, facadeZMax, buildingWalls]);
+  }, [polygon, defaultHeight, setSimplifyEpsilon, applySimplification, facadeZMin, facadeZMax, buildingWalls, dachMin]);
 
   // Generate SVG for building polygon
   const polygonSvg = useMemo(() => {
