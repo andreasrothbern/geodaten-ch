@@ -244,7 +244,7 @@ export default function ThreeDPanel({ neighbors = [], blockedSides = [], objectD
           {/* Info Badge */}
           <div className="absolute bottom-4 right-4 bg-white/95 rounded-lg shadow-lg px-3 py-2 text-sm">
             <p className="font-medium text-gray-800">
-              {settings?.work_type === 'facade' ? 'Fassadengerüst' : settings?.work_type === 'roof' ? 'Dachschutz' : 'Volleinrüstung'}
+              {settings?.work_type === 'facade' ? 'Fassadengerüst' : settings?.work_type === 'roof' ? 'Dachschutz' : 'Spengler'}
             </p>
             <p className="text-gray-500 text-xs">{formatNumber(totals.scaffold_area_m2)} m² • {totals.facade_count} Fassaden</p>
           </div>
