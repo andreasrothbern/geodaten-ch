@@ -1563,13 +1563,44 @@ export default function ScaffoldScene({
 
       // Add scaffolds along actual facade edges (ONLY ENABLED facades)
       // Use bboxCenter instead of centroid for consistent alignment
+      // FIX 06.02.2026: Dynamischer scaffoldGap basierend auf work_type und roof_overhang_m
+      // Die Offset-Berechnung ist: offset = scaffoldGap + cellDepth/2
+      // → Gerüst-Innenkante = scaffoldGap, Gerüst-Aussenkante = scaffoldGap + cellDepth
+      // Für Dacharbeiten: Gerüst-Innenkante muss AUSSERHALB des Dachvorstands sein!
+      const workType = config.settings.work_type;
+      const roofOverhang = config.roof?.roof_overhang_m ?? 0.4;
+      const cellDepth = 0.73; // Gerüst-Tiefe (Layher Blitz 70)
+      const workingMargin = 0.1; // 10cm Arbeitsraum zwischen Dach und Gerüst
+
+      let scaffoldGap: number;
+      if (workType === 'roof' || workType === 'roofer') {
+        // Dacharbeiten: Gerüst-Innenkante = Dachvorstand + Arbeitsraum
+        // scaffoldGap = Abstand Fassade bis Gerüst-Mitte
+        // → scaffoldGap = roofOverhang + workingMargin + cellDepth/2
+        scaffoldGap = roofOverhang + workingMargin + cellDepth / 2;
+      } else {
+        // Fassadenarbeit: Standard-Abstand (nah am Gebäude)
+        scaffoldGap = 0.4;
+      }
+
+      console.log('[3D-SCAFFOLD] Scaffold gap calculated:', {
+        workType,
+        roofOverhang: roofOverhang.toFixed(2),
+        cellDepth,
+        workingMargin,
+        scaffoldGap: scaffoldGap.toFixed(2),
+        innerEdge: (scaffoldGap - cellDepth / 2).toFixed(2),
+        outerEdge: (scaffoldGap + cellDepth / 2).toFixed(2),
+      });
+
       enabledFacades.forEach((facade) => {
-        parent.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter));
+        parent.add(createScaffoldFacadeAlongEdge(facade, fieldWidth, levelHeight, bboxCenter, scaffoldGap));
       });
 
       // Add corners (only if enabled)
+      // FIX 05.02.2026: scaffoldGap auch für Ecken übergeben
       corners.forEach((corner) => {
-        const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, bboxCenter);
+        const cornerGroup = createScaffoldCorner(corner, enabledFacades, levelHeight, bboxCenter, scaffoldGap);
         if (cornerGroup) {
           parent.add(cornerGroup);
         }

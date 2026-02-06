@@ -107,40 +107,43 @@ const createDefaultSettings = (): ScaffoldSettings => ({
 });
 
 // FIX 27.01.2026: 'full' ersetzt durch 'roofer' mit Giebel-Logik
+// FIX 05.02.2026: baseHeightM ist jetzt wall_height (inkl. Giebel bei Giebel-Fassaden!)
+//                 → Für facade/roof bei Giebel: giebel_height abziehen um Traufhöhe zu bekommen
 const calculateFieldsAndLevels = (
   lengthM: number,
-  baseHeightM: number,  // Traufhöhe
+  baseHeightM: number,  // wall_height (bei Giebel: inkl. Giebel-Dreieck!)
   fieldWidthM: number,
   levelHeightM: number,
   workType: WorkType,
-  firstHeightM?: number,  // NEU: Firsthöhe für Spengler
-  isGiebel?: boolean,     // NEU: Giebel-Fassade?
-  giebelHeightM?: number  // NEU: Giebel-Dreieck-Höhe
+  _firstHeightM?: number,  // UNUSED seit 05.02.2026 - behalten für API-Kompatibilität
+  isGiebel?: boolean,     // Giebel-Fassade?
+  giebelHeightM?: number  // Giebel-Dreieck-Höhe
 ): { fields: number; levels: number; targetHeight: number } => {
+  // FIX 05.02.2026: Bei Giebel-Fassaden ist baseHeightM die VOLLE Höhe (wall_height)
+  // Für facade/roof brauchen wir die Traufhöhe = baseHeightM - giebelHeightM
+  const effectiveGiebelHeight = (isGiebel && giebelHeightM && giebelHeightM > 0) ? giebelHeightM : 0;
+  const traufHeightM = baseHeightM - effectiveGiebelHeight;
+
   // Target height based on work type
   let targetHeight: number;
   switch (workType) {
     case 'facade':
-      targetHeight = baseHeightM; // Bis Traufe
+      // FIX 05.02.2026: Traufhöhe verwenden, NICHT wall_height
+      targetHeight = traufHeightM; // Bis Traufe
       break;
     case 'roof':
-      targetHeight = baseHeightM + 1.0; // +1m Absturzsicherung
+      // FIX 05.02.2026: Traufhöhe + 1m, NICHT wall_height + 1m
+      targetHeight = traufHeightM + 1.0; // +1m Absturzsicherung
       break;
     case 'roofer':
-      // Spengler: Gerüst bis First - 1m
-      if (isGiebel && giebelHeightM && giebelHeightM > 0) {
-        // Giebel-Fassade: Trapez-Form (Traufe + Giebel - 1m)
-        targetHeight = baseHeightM + giebelHeightM - 1.0;
-      } else if (firstHeightM && firstHeightM > baseHeightM) {
-        // Trauf-Fassade: Rechteck bis First - 1m
-        targetHeight = firstHeightM - 1.0;
-      } else {
-        // Fallback: Traufe + 2m (geschätzte Giebelhöhe)
-        targetHeight = baseHeightM + 2.0;
-      }
+      // FIX 05.02.2026: Spengler arbeitet am Dachkänel (Regenrinne) auf Traufhöhe
+      // Das Gerüst wird so aufgestellt, dass der Spengler 1m UNTER der Traufe steht
+      // und bequem nach oben an den Känel greifen kann.
+      // → Gerüsthöhe = Traufhöhe - 1m (Arbeitsplattform 1m unter Traufe)
+      targetHeight = traufHeightM - 1.0;
       break;
     default:
-      targetHeight = baseHeightM;
+      targetHeight = traufHeightM;
   }
 
   const fields = Math.ceil(lengthM / fieldWidthM);
