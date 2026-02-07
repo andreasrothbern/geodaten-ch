@@ -210,8 +210,17 @@ def stream_buildings_to_parquet(
                     except Exception:
                         continue
 
+                    # FIX 07.02.2026: Prüfe auf leere/ungültige Geometrie
+                    if geom_shape.is_empty or not geom_shape.is_valid:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: empty or invalid geometry")
+                        continue
+
                     # NEU 31.01.2026: Koordinaten extrahieren und WKB erstellen
                     coords = list(geom_shape.exterior.coords)
+                    if len(coords) < 3:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: polygon has < 3 coords")
+                        continue
+
                     coords_2d = [(round(c[0], 2), round(c[1], 2)) for c in coords]
                     polygon_2d = Polygon(coords_2d)
                     geom_wkb = wkb.dumps(polygon_2d) if polygon_2d.is_valid else None
@@ -225,8 +234,11 @@ def stream_buildings_to_parquet(
                     traufhoehe = (dach_min - gelaendepunkt) if dach_min and gelaendepunkt else None
                     firsthoehe = (dach_max - gelaendepunkt) if dach_max and gelaendepunkt else None
 
-                    # Centroid
+                    # Centroid - FIX 07.02.2026: Prüfe auf leeren Zentroid
                     centroid = geom_shape.centroid
+                    if centroid.is_empty:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: empty centroid")
+                        continue
 
                     writer.write({
                         'egid': egid,
@@ -842,8 +854,17 @@ def _stream_single_building_to_parquet(
                     except Exception:
                         continue
 
+                    # FIX 07.02.2026: Prüfe auf leere/ungültige Geometrie
+                    if geom_shape.is_empty or not geom_shape.is_valid:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: empty or invalid geometry")
+                        continue
+
                     # WKB erstellen
                     coords = list(geom_shape.exterior.coords)
+                    if len(coords) < 3:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: polygon has < 3 coords")
+                        continue
+
                     coords_2d = [(round(c[0], 2), round(c[1], 2)) for c in coords]
                     polygon_2d = Polygon(coords_2d)
                     geom_wkb = wkb.dumps(polygon_2d) if polygon_2d.is_valid else None
@@ -857,7 +878,11 @@ def _stream_single_building_to_parquet(
                     traufhoehe = (dach_min - gelaendepunkt) if dach_min and gelaendepunkt else None
                     firsthoehe = (dach_max - gelaendepunkt) if dach_max and gelaendepunkt else None
 
+                    # FIX 07.02.2026: Prüfe auf leeren Zentroid
                     centroid = geom_shape.centroid
+                    if centroid.is_empty:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: empty centroid")
+                        continue
 
                     writer.write({
                         'egid': egid,
@@ -1330,6 +1355,11 @@ def _stream_buildings_in_radius_to_parquet(
                         if not isinstance(geom_shape, Polygon):
                             continue
                     except Exception:
+                        continue
+
+                    # FIX 07.02.2026: Prüfe auf leere/ungültige Geometrie
+                    if geom_shape.is_empty or not geom_shape.is_valid:
+                        logger.warning(f"[PARQUET] Skip EGID {egid}: empty or invalid geometry (radius search)")
                         continue
 
                     # Distanz zum Zentrum prüfen
