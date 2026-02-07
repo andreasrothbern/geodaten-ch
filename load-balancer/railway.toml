@@ -1,0 +1,15 @@
+# =============================================================================
+# Railway Configuration - Load Balancer
+# =============================================================================
+# Nginx Load Balancer für Read-Replica Architektur
+# Stand: 07.02.2026
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

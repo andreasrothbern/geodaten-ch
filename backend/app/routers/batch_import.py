@@ -30,6 +30,20 @@ from app.services.tile_cache import get_tile_cache
 from app.services.tile_prefetch import reset_import_metrics
 from app.services.building_3d_service import get_building_3d_service
 from app.services.parquet_writer import import_tile_with_parquet_pipeline
+from app.config import IS_READER
+
+
+def require_writer():
+    """
+    Prüft ob dieser Service Schreibzugriff hat.
+    Wirft HTTPException 503 wenn auf einem Reader-Service aufgerufen.
+    """
+    if IS_READER:
+        raise HTTPException(
+            status_code=503,
+            detail="Batch import requires write access. Please use the writer service.",
+            headers={"X-Worker-Mode": "reader"}
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +538,7 @@ async def import_region(region_name: str):
     The import runs in the background. Use GET /import/status to monitor progress.
     FIX 13.01.2026: Uses asyncio.create_task() instead of BackgroundTasks for proper async execution.
     """
+    require_writer()
     if _import_status.running:
         raise HTTPException(
             status_code=409,
@@ -563,6 +578,7 @@ async def import_tile(tile_id: str, download_url: str):
     Requires the download_url parameter with the full URL to the tile ZIP.
     FIX 13.01.2026: Uses asyncio.create_task() for proper async execution.
     """
+    require_writer()
     if _import_status.running:
         raise HTTPException(
             status_code=409,

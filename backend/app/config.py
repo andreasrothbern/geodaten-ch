@@ -86,6 +86,26 @@ CLEANUP_TILES_AFTER_IMPORT = os.getenv("CLEANUP_TILES_AFTER_IMPORT", "true").low
 NEIGHBOR_SEARCH_RADIUS_M = float(os.getenv("NEIGHBOR_SEARCH_RADIUS_M", "100"))
 
 # =============================================================================
+# WORKER MODE (NEU 07.02.2026 - Read-Replica Architektur)
+# =============================================================================
+# Ermöglicht horizontale Skalierung mit 1 Writer + N Reader Services.
+#
+# WORKER_MODE=writer (Default):
+#   - Voller Schreibzugriff auf alle Datenbanken
+#   - Für Import-Operationen, Projekt-CRUD, etc.
+#   - Nur 1 Writer-Service erlaubt (DuckDB Single-Writer Lock)
+#
+# WORKER_MODE=reader:
+#   - Nur Lesezugriff (read_only) auf alle Datenbanken
+#   - Für GET-Requests, SSE-Streams, Nachbar-Queries
+#   - Beliebig viele Reader-Services möglich (DuckDB Multiple-Reader)
+#   - Kann mit --workers=4 laufen (kein Lock-Konflikt bei read_only)
+#
+WORKER_MODE = os.getenv("WORKER_MODE", "writer")
+IS_READER = WORKER_MODE == "reader"
+IS_WRITER = WORKER_MODE == "writer"
+
+# =============================================================================
 # DATENBANK-PFADE
 # =============================================================================
 
@@ -111,10 +131,14 @@ CACHE_DB_PATH = Path(os.getenv("CACHE_DB_PATH", "cache.db"))
 DUCKDB_TEMP_DIR = EPHEMERAL_DIR / "duckdb_temp"
 DUCKDB_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+# NEU 07.02.2026: Optimiert für Railway Pro Plan
+# - threads: 16 (nutzt Multi-Core für parallele Queries)
+# - memory_limit: 4GB (für grössere Batch-Imports)
+# Lokal: Kann mit DUCKDB_THREADS=4 und DUCKDB_MEMORY_LIMIT=512MB überschrieben werden
 DUCKDB_CONFIG = {
-    "threads": int(os.getenv("DUCKDB_THREADS", "4")),
-    "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "512MB"),
-    "temp_directory": str(DUCKDB_TEMP_DIR),  # NEU: Temp auf Ephemeral statt Volume!
+    "threads": int(os.getenv("DUCKDB_THREADS", "16")),
+    "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "4GB"),
+    "temp_directory": str(DUCKDB_TEMP_DIR),  # Temp auf Ephemeral statt Volume!
 }
 
 # =============================================================================
@@ -127,10 +151,14 @@ def get_building_3d_connection(read_only: bool = False):
 
     Gibt je nach USE_DUCKDB SQLite oder DuckDB Connection zurück.
 
+    NEU 07.02.2026: Read-Replica Architektur
+    =========================================
+    - WORKER_MODE=reader → Immer read_only=True (kein Schreibzugriff)
+    - WORKER_MODE=writer → Normaler Schreibzugriff
+
     Args:
-        read_only: IGNORIERT für DuckDB! Akzeptiert für API-Kompatibilität.
-                   DuckDB erlaubt keine gemischten read_only/write Connections
-                   zur gleichen Datei.
+        read_only: Für Writer-Modus: Explizit read_only anfordern (optional).
+                   Für Reader-Modus: Wird IGNORIERT, immer read_only=True.
 
     Returns:
         Connection-Objekt (sqlite3.Connection oder duckdb.Connection)
@@ -139,27 +167,35 @@ def get_building_3d_connection(read_only: bool = False):
         with get_building_3d_connection() as conn:
             result = conn.execute("SELECT * FROM buildings_3d LIMIT 1")
 
-    WICHTIG (DuckDB): Alle Connections zur gleichen DB müssen die gleiche
-    Konfiguration verwenden! read_only wird IGNORIERT um Konflikte zu vermeiden.
-
     NEU 31.01.2026: Spatial Extension wird automatisch geladen für ST_Contains, ST_DWithin.
     """
     if USE_DUCKDB:
         import duckdb
-        # FIX 14.01.2026: read_only Parameter IGNORIEREN!
-        # DuckDB erlaubt keine gemischten read_only/write Connections.
-        # Wenn eine write-Connection existiert und jemand read_only=True anfordert,
-        # gibt es einen "different configuration" Fehler.
-        # Lösung: Immer write-Modus verwenden (DuckDB kann trotzdem lesen).
-        # FIX 14.01.2026: DUCKDB_CONFIG übergeben für Multi-Threading!
-        conn = duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), config=DUCKDB_CONFIG)
-        # NEU 31.01.2026: Spatial Extension für GEOMETRY-Typ und R-Tree Index
+
+        # NEU 07.02.2026: Read-Replica Architektur
+        # Reader-Services: Immer read_only (kein Write-Lock, mehrere parallel möglich)
+        # Writer-Services: Normaler Schreibzugriff (nur 1 Writer erlaubt)
+        if IS_READER:
+            # Reader: read_only=True, keine Config nötig (kein Write-Lock)
+            conn = duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), read_only=True)
+        else:
+            # Writer: Voller Schreibzugriff mit DUCKDB_CONFIG
+            conn = duckdb.connect(str(BUILDING_3D_DUCKDB_PATH), config=DUCKDB_CONFIG)
+
+        # Spatial Extension für GEOMETRY-Typ und R-Tree Index
         conn.execute("INSTALL spatial")
         conn.execute("LOAD spatial")
         return conn
     else:
         import sqlite3
-        conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))
+        # SQLite: read_only via URI-Parameter
+        if IS_READER:
+            conn = sqlite3.connect(
+                f"file:{BUILDING_3D_SQLITE_PATH}?mode=ro",
+                uri=True
+            )
+        else:
+            conn = sqlite3.connect(str(BUILDING_3D_SQLITE_PATH))
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -167,6 +203,44 @@ def get_building_3d_connection(read_only: bool = False):
 def get_db_engine_name() -> str:
     """Gibt den Namen der aktiven DB-Engine zurück."""
     return "DuckDB" if USE_DUCKDB else "SQLite"
+
+
+def get_sqlite_connection(db_path: Union[str, Path], read_only: bool = False):
+    """
+    Factory für SQLite-Verbindungen mit Read-Replica Support.
+
+    NEU 07.02.2026: Read-Replica Architektur
+    =========================================
+    - WORKER_MODE=reader → Immer read_only=True (kein Schreibzugriff)
+    - WORKER_MODE=writer → Normaler Schreibzugriff
+
+    Args:
+        db_path: Pfad zur SQLite-Datenbank
+        read_only: Für Writer-Modus: Explizit read_only anfordern (optional).
+                   Für Reader-Modus: Wird IGNORIERT, immer read_only=True.
+
+    Returns:
+        sqlite3.Connection mit row_factory=sqlite3.Row
+
+    Beispiel:
+        from app.config import get_sqlite_connection, GERUESTBAU_DB_PATH
+        conn = get_sqlite_connection(GERUESTBAU_DB_PATH)
+    """
+    import sqlite3
+
+    db_path_str = str(db_path)
+
+    # Reader-Service: Immer read_only (kein Write-Lock, mehrere parallel möglich)
+    if IS_READER or read_only:
+        conn = sqlite3.connect(
+            f"file:{db_path_str}?mode=ro",
+            uri=True
+        )
+    else:
+        conn = sqlite3.connect(db_path_str)
+
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 # =============================================================================
@@ -193,3 +267,10 @@ if CALC_ROOF_FROM_3D:
 
 if CLEANUP_TILES_AFTER_IMPORT:
     logger.info("[CONFIG] Tile-Cleanup nach Import aktiviert")
+
+# Worker Mode
+logger.info(f"[CONFIG] WORKER_MODE: {WORKER_MODE}")
+if IS_READER:
+    logger.info("[CONFIG] Reader-Modus: Nur Lesezugriff, keine Schreiboperationen")
+else:
+    logger.info("[CONFIG] Writer-Modus: Voller Schreibzugriff")

@@ -23,7 +23,7 @@ from ..services.address_parser import get_address_parser
 from ..services.parzellen_service import get_parzellen_service
 # FIX 19.01.2026: get_neighbors_service Import entfernt - nutze GeodatenClient stattdessen
 # Siehe: docs/architecture/ARCHITECTURE.md → "Architektur-Bruch: Aktueller Zustand"
-from ..config import NEIGHBOR_SEARCH_RADIUS_M
+from ..config import NEIGHBOR_SEARCH_RADIUS_M, IS_READER
 
 router = APIRouter(prefix="/api/v1/geruestbau", tags=["GerÃ¼stbau"])
 
@@ -48,6 +48,32 @@ def get_url_importer():
     return _url_importer
 
 
+# =============================================================================
+# READ-REPLICA ARCHITEKTUR (NEU 07.02.2026)
+# =============================================================================
+
+def require_writer():
+    """
+    Prüft ob dieser Service Schreibzugriff hat.
+
+    Wirft HTTPException 503 wenn auf einem Reader-Service aufgerufen.
+    Writer-Requests werden vom Load Balancer zum Writer geroutet,
+    aber diese Prüfung dient als Fallback-Sicherheit.
+
+    Verwendung:
+        @router.post("/projects")
+        async def create_project(project: ProjectCreate):
+            require_writer()  # Blockiert auf Reader-Service
+            return await project_service.create(project)
+    """
+    if IS_READER:
+        raise HTTPException(
+            status_code=503,
+            detail="This endpoint requires write access. Please use the writer service.",
+            headers={"X-Worker-Mode": "reader"}
+        )
+
+
 @router.get("/projects", response_model=List[Project])
 async def list_projects(status: ProjectStatus = None):
     """Liste aller Projekte, optional gefiltert nach Status."""
@@ -57,6 +83,7 @@ async def list_projects(status: ProjectStatus = None):
 @router.post("/projects", response_model=Project)
 async def create_project(project: ProjectCreate):
     """Neues Projekt erstellen."""
+    require_writer()
     return await project_service.create_project(project)
 
 
@@ -72,6 +99,7 @@ async def get_project(project_id: str):
 @router.put("/projects/{project_id}", response_model=Project)
 async def update_project(project_id: str, update: ProjectUpdate):
     """Projekt aktualisieren."""
+    require_writer()
     project = await project_service.update_project(project_id, update)
     if not project:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
@@ -80,7 +108,8 @@ async def update_project(project_id: str, update: ProjectUpdate):
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
-    """Projekt lÃ¶schen."""
+    """Projekt löschen."""
+    require_writer()
     success = await project_service.delete_project(project_id)
     if not success:
         raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
@@ -90,12 +119,14 @@ async def delete_project(project_id: str):
 @router.post("/projects/{project_id}/photos")
 async def upload_photo(project_id: str, file: UploadFile = File(...)):
     """Foto hochladen."""
+    require_writer()
     return await project_service.upload_photo(project_id, file)
 
 
 @router.post("/projects/{project_id}/photos/{photo_id}/analyze", response_model=PhotoAnalysis)
 async def analyze_photo(project_id: str, photo_id: str):
     """Foto mit Claude Vision analysieren (Blickrichtung erkennen)."""
+    require_writer()
     result = await project_service.analyze_photo(project_id, photo_id)
     if not result:
         raise HTTPException(status_code=404, detail="Foto nicht gefunden")
@@ -113,7 +144,8 @@ async def get_scaffold_config(project_id: str):
 
 @router.put("/projects/{project_id}/scaffold", response_model=ScaffoldConfig)
 async def update_scaffold_config(project_id: str, config: ScaffoldConfig):
-    """GerÃ¼st-Konfiguration aktualisieren."""
+    """Gerüst-Konfiguration aktualisieren."""
+    require_writer()
     return await project_service.update_scaffold_config(project_id, config)
 
 
@@ -138,6 +170,7 @@ async def save_geruestbaudata(
     Returns:
         {"success": true/false, "message": "..."}
     """
+    require_writer()
     success = await project_service.save_geruestbaudata_to_project(project_id, egid, address)
 
     if success:
@@ -425,6 +458,7 @@ async def get_project_geodata(
 @router.post("/projects/{project_id}/export")
 async def export_project(project_id: str, format: str = "pdf"):
     """Projekt exportieren (pdf, ifc, dxf, xlsx)."""
+    require_writer()
     if format not in ["pdf", "xlsx", "ifc", "dxf"]:
         raise HTTPException(status_code=400, detail="Ungültiges Format")
     return await project_service.export_project(project_id, format)
@@ -584,6 +618,7 @@ async def upload_file_to_project(
     Returns:
         Upload-ID und Metadaten
     """
+    require_writer()
     # Projekt prüfen
     project = await project_service.get_project(project_id)
     if not project:
@@ -654,6 +689,7 @@ async def get_upload_file(upload_id: str):
 @router.delete("/uploads/{upload_id}")
 async def delete_upload(upload_id: str):
     """Löscht einen Upload."""
+    require_writer()
     deleted = await project_service.delete_upload(upload_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Upload nicht gefunden")

@@ -1,4 +1,11 @@
 # Railway Configuration for Backend Service
+# ==========================================
+# Optimiert für Railway Pro Plan (07.02.2026)
+#
+# Pro Plan Limits:
+#   - bis 1,000 vCPU / 1 TB RAM pro Service
+#   - bis 50 Replicas × 32 vCPU / 32 GB RAM
+#   - bis 1 TB Storage (Volume)
 
 [build]
 builder = "NIXPACKS"
@@ -9,16 +16,41 @@ healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
+# =============================================================================
+# ENVIRONMENT VARIABLES (Railway Pro optimiert)
+# =============================================================================
+# Diese Werte können im Railway Dashboard unter Variables überschrieben werden.
+
+[variables]
+# DuckDB Multi-Threading (Pro: nutze mehr Cores!)
+# Default: 16 Threads für parallele Query-Ausführung
+DUCKDB_THREADS = "16"
+
+# DuckDB Memory Limit (Pro: nutze mehr RAM!)
+# Default: 4GB für grössere Batch-Imports und komplexe Queries
+DUCKDB_MEMORY_LIMIT = "4GB"
+
+# Tile-Cleanup nach Import (Speicher sparen)
+CLEANUP_TILES_AFTER_IMPORT = "true"
+
+# Nachbar-Suchradius für 3D-View
+NEIGHBOR_SEARCH_RADIUS_M = "100"
+
+# =============================================================================
+# VOLUME CONFIGURATION
+# =============================================================================
 # Volume for persistent data (DuckDB, SQLite databases)
 # WICHTIG: Volume muss im Railway Dashboard erstellt werden!
 #
 # Railway Dashboard -> Service -> Settings -> Volumes:
 #   Mount Path: /app/data
+#   Size: Empfohlen 10-50 GB (Pro erlaubt bis 1 TB)
 #
 # Dateien die persistent gespeichert werden:
-#   - building_3d.duckdb (Gebäude-Grunddaten)
-#   - tiles.db (Tile-Cache Metadaten)
-#   - building_contexts.db (Zonen, Terrain-Cache)
-#   - geruestbau.db (Projekte)
+#   - building_3d.duckdb (Gebäude-Grunddaten, ~50-500 MB)
+#   - tiles.db (Tile-Cache Metadaten, ~1-5 MB)
+#   - building_contexts.db (Zonen, Terrain-Cache, ~10-50 MB)
+#   - geruestbau.db (Projekte, ~1-10 MB)
+#   - terrain.duckdb (GEPLANT: Terrain-Daten für 100m Radius)
 #
 # ACHTUNG: Ohne Volume gehen alle importierten Gebäude bei Redeploy verloren!

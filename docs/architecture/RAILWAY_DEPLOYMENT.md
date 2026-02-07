@@ -1,7 +1,7 @@
 # Railway Deployment Guide
 
-> **Stand:** 14.01.2026 14:45
-> **Status:** Production ✅
+> **Stand:** 07.02.2026 14:00
+> **Status:** Production ✅ (Railway Pro Plan)
 > **URLs:**
 > - Frontend: https://cooperative-commitment-production.up.railway.app/
 > - Backend: https://acceptable-trust-production.up.railway.app/
@@ -359,14 +359,170 @@ Aktuelle Nutzung prüfen:
 curl https://acceptable-trust-production.up.railway.app/debug/paths | jq '.volume_usage_mb'
 ```
 
-### Worker-Konfiguration
+### Worker-Konfiguration (Stand 07.02.2026)
 
-`uvicorn` läuft mit `--workers 4` für parallele Request-Verarbeitung.
+> **WICHTIG:** `uvicorn` läuft mit `--workers 1` wegen DuckDB Single-Writer Lock!
 
-Bei Memory-Problemen reduzieren:
-```dockerfile
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+**Warum `--workers 1`?**
+DuckDB erlaubt nur EINEN Schreibzugriff (Single-Writer). Mit `--workers N` startet uvicorn
+N separate Prozesse, die alle versuchen eine DB-Connection zu öffnen → Lock-Konflikte!
+
 ```
+--workers=4 (uvicorn) startet 4 separate PROZESSE:
+     │
+     ├─ Prozess 1: duckdb.connect("building_3d.duckdb") → Bekommt WRITE-Lock ✅
+     ├─ Prozess 2: duckdb.connect("building_3d.duckdb") → ❌ "database is locked"
+     ├─ Prozess 3: duckdb.connect("building_3d.duckdb") → ❌ "database is locked"
+     └─ Prozess 4: duckdb.connect("building_3d.duckdb") → ❌ "database is locked"
+```
+
+**Lösung:** `--workers 1` + `DUCKDB_THREADS=16` = Parallele Queries OHNE Lock-Konflikte
+
+| Parameter | Was es macht | Lock-Konflikt? |
+|-----------|--------------|----------------|
+| `--workers 4` | 4 separate PROZESSE | **JA!** Jeder Prozess = separater DB-Lock |
+| `DUCKDB_THREADS=16` | 16 Threads IN EINEM Prozess | **NEIN** - DuckDB-interne Parallelisierung |
+
+```dockerfile
+# Aktueller Dockerfile CMD (KORREKT):
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+```
+
+---
+
+### DuckDB Concurrency (Stand 07.02.2026)
+
+**DuckDB Konfiguration** (`config.py`):
+```python
+DUCKDB_CONFIG = {
+    "threads": int(os.getenv("DUCKDB_THREADS", "16")),      # Parallele Queries
+    "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "4GB"), # RAM-Limit
+    "temp_directory": str(DUCKDB_TEMP_DIR),                  # Ephemeral Storage
+}
+```
+
+**Read vs. Write:**
+- **Write:** NUR EINE Connection kann gleichzeitig schreiben
+- **Read:** UNBEGRENZT viele read_only Connections parallel möglich
+
+---
+
+### SSE-Pipeline Concurrency (Stand 07.02.2026)
+
+Die SSE-Pipeline für Gebäudedaten (`/building/data/stream`) nutzt ein **3-Stufen-System**:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                  3-STUFEN IMPORT                                       │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  STUFE 1: Angefragtes Gebäude SOFORT speichern (~50ms)                │
+│  ═══════════════════════════════════════════════════                   │
+│  → import_single_building() für das Bundle                            │
+│  → has_3d_layers=1 wird gesetzt                                       │
+│  → SSE "polygon" Event wird SOFORT gesendet                           │
+│                                                                        │
+│  STUFE 2+3: Background prefetch (fire-and-forget)                     │
+│  ═════════════════════════════════════════════════                     │
+│  → asyncio.create_task(prefetch_and_cleanup(...))                     │
+│  → SSE wartet NICHT auf diesen Task                                   │
+│  → Heights, Terrain, Zones Events werden sofort gesendet              │
+│                                                                        │
+│  RESULTAT: User bekommt Daten in ~50ms + SSE Events                   │
+│            Tile-Prefetch läuft im Background                          │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**Bei 2 gleichzeitigen Imports:**
+
+| Phase | Parallelität | Wie? |
+|-------|--------------|------|
+| **Download** | ✅ Parallel | Separate HTTP-Streams |
+| **GDB → Parquet** | ✅ Parallel | Separate Dateien pro Tile |
+| **Parquet → DuckDB** | ⚠️ Serialisiert | DuckDB Single-Writer queued |
+
+**Wichtig:** Die SSE-Pipeline bricht NICHT ab. DuckDB serialisiert die Writes intern.
+
+**Code-Referenzen:**
+- `building_data_stream.py:696-756` - 3-Stufen Import
+- `tile_prefetch.py:264-269` - Tile-Deduplication
+- `parquet_writer.py:561-652` - DuckDB Bulk-Load
+
+---
+
+### Railway Pro Konfiguration (Stand 07.02.2026)
+
+> **Upgrade 07.02.2026:** Railway Pro Plan ($20/Monat)
+> - bis 1,000 vCPU / 1 TB RAM pro Service
+> - bis 50 Replicas × 32 vCPU / 32 GB RAM
+> - bis 1 TB Storage (Volume)
+
+**Optimierte Settings** (`railway.toml`):
+```toml
+[variables]
+DUCKDB_THREADS = "16"           # Nutze Multi-Core!
+DUCKDB_MEMORY_LIMIT = "4GB"     # Für grössere Batch-Imports
+CLEANUP_TILES_AFTER_IMPORT = "true"
+NEIGHBOR_SEARCH_RADIUS_M = "100"
+```
+
+**Lokal (Entwicklung)** (`.env`):
+```env
+DUCKDB_THREADS=4
+DUCKDB_MEMORY_LIMIT=512MB
+```
+
+---
+
+### Read-Replica Architektur (GEPLANT)
+
+> **Status:** Geplant für horizontale Skalierung
+> **Aufwand:** 5-8 Stunden
+
+**Ziel:** 1 Writer + 3 Reader + Load Balancer
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LOAD BALANCER (Nginx)                    │
+│                    Port 8080 (PUBLIC)                       │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+         ▼                 ▼                 ▼
+   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+   │  READER 1   │   │  READER 2   │   │  READER 3   │
+   │  read_only  │   │  read_only  │   │  read_only  │
+   │  workers=4  │   │  workers=4  │   │  workers=4  │
+   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+          │                 │                 │
+          └─────────────────┼─────────────────┘
+                            │ READ
+                            ▼
+   ┌───────────────────────────────────────────────────────┐
+   │                    SHARED VOLUME                      │
+   │                    /app/data                          │
+   └───────────────────────────────────────────────────────┘
+                            ▲
+                            │ WRITE
+                            │
+   ┌───────────────────────────────────────────────────────┐
+   │                    WRITER SERVICE                     │
+   │                    Port 8000 (INTERNAL)               │
+   │                    workers=1 (DuckDB Lock!)           │
+   └───────────────────────────────────────────────────────┘
+```
+
+**Routing:**
+- GET Requests → Reader (Round-Robin)
+- POST/PUT/DELETE → Writer
+
+**Kapazität:**
+- 12 parallele Lese-Requests (3 Reader × 4 Workers)
+- 112 DuckDB Query-Threads (Writer 16 + Reader 3×4×8)
+
+Siehe Plan-Datei für vollständige Details.
 
 ---
 
