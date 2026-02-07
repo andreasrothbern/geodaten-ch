@@ -48,9 +48,11 @@ export type StreamStep =
   | 'heights'
   | 'terrain'
   | 'zones'
+  | 'zones_analysis'  // NEU 07.02.2026: Claude API für Zonen-Analyse
   | 'research'
   | 'complete'
-  | 'error';
+  | 'error'
+  | 'heartbeat';  // NEU 07.02.2026: Keep-alive während langer Operationen
 
 export interface GeocodingData {
   matched_address: string;
@@ -138,6 +140,24 @@ export interface ZonesData {
   building_name?: string;
   duration_ms: number;
   error?: string;
+}
+
+// NEU 07.02.2026: Claude API Zonen-Analyse Event
+export interface ZonesAnalysisData {
+  status: 'starting' | 'complete';
+  egid: string;
+  matched_address: string;
+  message?: string;
+  complexity?: string;
+  duration_ms?: number;
+  zones_count?: number;
+}
+
+// NEU 07.02.2026: Heartbeat Event (Keep-alive)
+export interface HeartbeatData {
+  step: string;
+  elapsed_seconds: number;
+  message: string;
 }
 
 export interface ResearchData {
@@ -297,10 +317,12 @@ export interface StreamState {
   heights: HeightsData | null;
   terrain: TerrainData | null;
   zones: ZonesData | null;
+  zonesAnalysis: ZonesAnalysisData | null;  // NEU 07.02.2026
   research: ResearchData | null;
   complete: CompleteData | null;
   error: ErrorData | null;
   isDownloading: boolean; // True wenn Tile-Download läuft
+  isClaudeAnalyzing: boolean;  // NEU 07.02.2026: True wenn Claude API läuft
 }
 
 export interface StreamOptions {
@@ -344,9 +366,11 @@ const STEP_LABELS: Record<StreamStep, string> = {
   heights: 'Höhendaten laden...',
   terrain: 'Terrain analysieren...',
   zones: 'Zonen analysieren...',
+  zones_analysis: 'Claude API: Zonen-Analyse...',  // NEU 07.02.2026
   research: 'Gebäude recherchieren...',
   complete: 'Fertig',
   error: 'Fehler',
+  heartbeat: 'Verarbeitung läuft...',  // NEU 07.02.2026
 };
 
 // =============================================================================
@@ -380,10 +404,12 @@ export function useBuildingDataStream(options: StreamOptions = {}) {
     heights: null,
     terrain: null,
     zones: null,
+    zonesAnalysis: null,  // NEU 07.02.2026
     research: null,
     complete: null,
     error: null,
     isDownloading: false,
+    isClaudeAnalyzing: false,  // NEU 07.02.2026
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -427,10 +453,12 @@ export function useBuildingDataStream(options: StreamOptions = {}) {
         heights: null,
         terrain: null,
         zones: null,
+        zonesAnalysis: null,  // NEU 07.02.2026
         research: null,
         complete: null,
         error: null,
         isDownloading: false,
+        isClaudeAnalyzing: false,  // NEU 07.02.2026
       });
 
       // SSE URL bauen
@@ -496,9 +524,30 @@ export function useBuildingDataStream(options: StreamOptions = {}) {
         onTerrain?.(eventData);
       });
 
+      // NEU 07.02.2026: Claude API Zonen-Analyse Event
+      es.addEventListener('zones_analysis', (e) => {
+        const eventData: ZonesAnalysisData = JSON.parse(e.data);
+        setData((prev) => ({
+          ...prev,
+          zonesAnalysis: eventData,
+          isClaudeAnalyzing: eventData.status === 'starting',
+        }));
+        setCurrentStep('zones_analysis');
+        // Kein Progress-Update, da dies ein Zwischen-Schritt ist
+      });
+
+      // NEU 07.02.2026: Heartbeat Event (Keep-alive während langer Operationen)
+      es.addEventListener('heartbeat', (e) => {
+        const eventData: HeartbeatData = JSON.parse(e.data);
+        // Heartbeat nur loggen, kein State-Update nötig
+        console.log(`[SSE Heartbeat] ${eventData.step}: ${eventData.elapsed_seconds}s - ${eventData.message}`);
+        // Optional: Step-Label aktualisieren für UI-Feedback
+        setCurrentStep('heartbeat');
+      });
+
       es.addEventListener('zones', (e) => {
         const eventData: ZonesData = JSON.parse(e.data);
-        setData((prev) => ({ ...prev, zones: eventData }));
+        setData((prev) => ({ ...prev, zones: eventData, isClaudeAnalyzing: false }));
         setCurrentStep('zones');
         onProgress?.('zones', getProgress('zones'));
         onZones?.(eventData);
@@ -592,6 +641,7 @@ export function useBuildingDataStream(options: StreamOptions = {}) {
     progress: getProgress(currentStep),
     error: data.error,
     isDownloading: data.isDownloading,
+    isClaudeAnalyzing: data.isClaudeAnalyzing,  // NEU 07.02.2026
 
     // Actions
     start,
@@ -605,6 +655,7 @@ export function useBuildingDataStream(options: StreamOptions = {}) {
     heights: data.heights,
     terrain: data.terrain,
     zones: data.zones,
+    zonesAnalysis: data.zonesAnalysis,  // NEU 07.02.2026
     research: data.research,
     bundle: data.complete?.bundle ?? null,
     isComplete: data.complete !== null,
