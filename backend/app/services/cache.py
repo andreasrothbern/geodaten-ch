@@ -9,15 +9,19 @@ import sqlite3
 import json
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, Any
 import threading
+
+# FIX 07.02.2026: Absoluter Pfad statt relativ (war: "cache.db" im CWD)
+DEFAULT_CACHE_PATH = Path(__file__).parent.parent / "data" / "cache.db"
 
 
 class CacheService:
     """SQLite-basierter Cache"""
 
     def __init__(self, db_path: str = None):
-        self.db_path = db_path or os.getenv("CACHE_DB_PATH", "cache.db")
+        self.db_path = db_path or os.getenv("CACHE_DB_PATH", str(DEFAULT_CACHE_PATH))
         self._local = threading.local()
 
     @property
@@ -30,6 +34,8 @@ class CacheService:
 
     def initialize(self):
         """Cache-Tabelle erstellen"""
+        # FIX 07.02.2026: Verzeichnis erstellen falls nicht vorhanden
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         cursor = self._conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS cache (
