@@ -900,7 +900,8 @@ export function sidesToFacadesWithWalls(
   sides: Side[],
   defaultHeight: number,
   buildingWalls: BuildingWall[] = [],
-  dachMin?: number  // FIX 05.02.2026: Für Giebel-Erkennung
+  dachMin?: number,  // FIX 05.02.2026: Für Giebel-Erkennung
+  originalPolygon?: [number, number][]  // FIX 07.02.2026: Für 3D-Gerüst-Platzierung (fehlte!)
 ): Array<{
 
   id: string;
@@ -910,6 +911,8 @@ export function sidesToFacadesWithWalls(
   slope_percent: number;
   start_point: [number, number];
   end_point: [number, number];
+  // FIX 07.02.2026: originalSegments fehlte hier - führte zu kürzerem Gerüst
+  originalSegments?: Array<{ start: [number, number]; end: [number, number] }>;
   facade_z_min?: number;
   facade_z_max?: number;
   height_source: 'building_walls' | 'global';
@@ -936,6 +939,23 @@ export function sidesToFacadesWithWalls(
     let isGiebel = false;
     let giebelHeightM: number | undefined;
     let matchedWall: { gebaeudeeinheit: string; geometry_type: string | null } | undefined;
+
+    // FIX 07.02.2026: Original-Segmente aus originalIndices berechnen (fehlte!)
+    // Dies führte dazu, dass das Gerüst kürzer erschien als die Fassade.
+    let originalSegments: Array<{ start: [number, number]; end: [number, number] }> | undefined;
+    if (originalPolygon && side.originalIndices && side.originalIndices.length >= 2) {
+      originalSegments = [];
+      for (let i = 0; i < side.originalIndices.length - 1; i++) {
+        const startIdx = side.originalIndices[i];
+        const endIdx = side.originalIndices[i + 1];
+        if (startIdx < originalPolygon.length && endIdx < originalPolygon.length) {
+          originalSegments.push({
+            start: originalPolygon[startIdx],
+            end: originalPolygon[endIdx],
+          });
+        }
+      }
+    }
 
     // Versuche Wall-Matching wenn buildingWalls vorhanden
     if (buildingWalls.length > 0) {
@@ -976,6 +996,7 @@ export function sidesToFacadesWithWalls(
       slope_percent: 0,
       start_point: [side.start.x, side.start.y],
       end_point: [side.end.x, side.end.y],
+      originalSegments,  // FIX 07.02.2026: Für 3D-Gerüst-Platzierung
       facade_z_min: zMin,
       facade_z_max: zMax,
       height_source: heightSource,

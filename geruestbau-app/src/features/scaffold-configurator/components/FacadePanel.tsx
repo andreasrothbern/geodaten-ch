@@ -239,14 +239,17 @@ export default function FacadePanel({
 
     // NEU 15.01.2026 BUG-024: Bevorzuge buildingWalls für exaktes Koordinaten-Matching
     // Fallback auf deprecated facadeZMin/facadeZMax wenn keine buildingWalls vorhanden
+    // FIX 07.02.2026: polygon als originalPolygon übergeben für 3D-Gerüst-Platzierung
     let newFacades: SelectedFacade[];
     if (buildingWalls.length > 0) {
       // Koordinatenbasiertes Matching mit exakter 3D-Geometrie aus DB
       // FIX 05.02.2026: dachMin übergeben für Giebel-Erkennung und per-Fassade Höhen
-      newFacades = sidesToFacadesWithWalls(result.sides, defaultHeight, buildingWalls, dachMin);
+      // FIX 07.02.2026: polygon für originalSegments (exakte 3D-Gerüst-Platzierung)
+      newFacades = sidesToFacadesWithWalls(result.sides, defaultHeight, buildingWalls, dachMin, polygon);
     } else {
       // Legacy: Richtungsbasiertes Matching (deprecated)
-      newFacades = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax);
+      // FIX 07.02.2026: polygon für originalSegments (exakte 3D-Gerüst-Platzierung)
+      newFacades = sidesToFacades(result.sides, defaultHeight, facadeZMin, facadeZMax, polygon);
     }
 
     // Apply to store
