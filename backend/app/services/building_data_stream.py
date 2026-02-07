@@ -325,9 +325,15 @@ class StreamStep(str, Enum):
     HEIGHTS = "heights"
     TERRAIN = "terrain"
     ZONES = "zones"
+    ZONES_ANALYSIS = "zones_analysis"  # NEU 07.02.2026: Separater Claude API Schritt
     RESEARCH = "research"
     COMPLETE = "complete"
     ERROR = "error"
+    HEARTBEAT = "heartbeat"  # FIX 07.02.2026: Keep-alive für Railway Timeout
+
+
+# FIX 07.02.2026: Heartbeat-Intervall für Railway (Default-Timeout ~30s)
+HEARTBEAT_INTERVAL_SECONDS = 10
 
 
 @dataclass
@@ -339,6 +345,49 @@ class SSEEvent:
     def to_sse(self) -> str:
         """Formatiert als SSE-String."""
         return f"event: {self.event}\ndata: {json.dumps(self.data, ensure_ascii=False)}\n\n"
+
+
+async def _run_with_heartbeats(
+    coro,
+    step_name: str,
+    heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS
+) -> AsyncGenerator[SSEEvent, None]:
+    """
+    FIX 07.02.2026: Führt eine Coroutine aus und yielded Heartbeats während sie läuft.
+
+    Löst das Railway Timeout-Problem (~30s Default) bei langen Claude API Calls.
+
+    Args:
+        coro: Die auszuführende Coroutine (z.B. Claude API Call)
+        step_name: Name des Schritts für Heartbeat-Message
+        heartbeat_interval: Sekunden zwischen Heartbeats (Default: 10s)
+
+    Yields:
+        SSEEvent Heartbeats während die Coroutine läuft
+    """
+    task = asyncio.create_task(coro)
+    heartbeat_count = 0
+
+    while not task.done():
+        try:
+            # Warte auf Task-Fertigstellung oder Timeout
+            await asyncio.wait_for(asyncio.shield(task), timeout=heartbeat_interval)
+            break  # Task ist fertig
+        except asyncio.TimeoutError:
+            # Task läuft noch → Heartbeat senden
+            heartbeat_count += 1
+            yield SSEEvent(
+                event=StreamStep.HEARTBEAT,
+                data={
+                    "step": step_name,
+                    "elapsed_seconds": heartbeat_count * heartbeat_interval,
+                    "message": f"Processing {step_name}..."
+                }
+            )
+
+    # Exception vom Task weiterwerfen falls vorhanden
+    if task.exception():
+        raise task.exception()
 
 
 class BuildingDataStreamService:
@@ -813,6 +862,8 @@ class BuildingDataStreamService:
 
             # ═══════════════════════════════════════════════════════════════
             # 6. ZONES (immer, aber Claude nur bei komplexen Gebäuden)
+            # NEU 07.02.2026: Separates "zones_analysis" Event für Claude API
+            # FIX 07.02.2026: Heartbeats während Claude API Call senden
             # ═══════════════════════════════════════════════════════════════
             if include_zones:
                 pipeline_logger.start_step("zones")
@@ -821,7 +872,37 @@ class BuildingDataStreamService:
 
                 for bundle in bundles:
                     if smart._needs_zones_analysis(bundle):
-                        await smart._collect_zones_analysis(bundle)
+                        # NEU 07.02.2026: Explizites Event für Claude-Analyse
+                        yield SSEEvent(
+                            event=StreamStep.ZONES_ANALYSIS,
+                            data={
+                                "status": "starting",
+                                "egid": bundle.egid,
+                                "matched_address": bundle.address_matched,
+                                "message": "Claude API wird für Zonen-Analyse aufgerufen...",
+                                "complexity": bundle.complexity,
+                            }
+                        )
+
+                        # FIX 07.02.2026: Heartbeats während Claude-Call
+                        claude_start = time.time()
+                        async for heartbeat in _run_with_heartbeats(
+                            smart._collect_zones_analysis(bundle),
+                            step_name="zones_analysis"
+                        ):
+                            yield heartbeat
+
+                        claude_duration = round((time.time() - claude_start) * 1000, 1)
+                        yield SSEEvent(
+                            event=StreamStep.ZONES_ANALYSIS,
+                            data={
+                                "status": "complete",
+                                "egid": bundle.egid,
+                                "matched_address": bundle.address_matched,
+                                "duration_ms": claude_duration,
+                                "zones_count": len(bundle.zones),
+                            }
+                        )
                         zones_source = "claude"
                     else:
                         smart._create_default_zone(bundle)
