@@ -886,8 +886,10 @@ function createScaffoldFacadeAlongEdge(
 
           cellGroup.add(mesh);
           cellGroup.position.set(cellX, cellY, cellZ);
-          const angle = Math.atan2(dx, dz);
-          cellGroup.rotation.y = angle;
+          // FIX 08.02.2026: Korrekte Rotation - muss mit Fallback-Pfad übereinstimmen
+          // atan2(dz, dx) gibt Winkel von X-Achse zur Richtung, -angle weil Y-Rotation clockwise
+          const angle = Math.atan2(dz, dx);
+          cellGroup.rotation.y = -angle;
           group.add(cellGroup);
         }
       }
