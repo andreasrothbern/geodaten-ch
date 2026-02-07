@@ -779,6 +779,7 @@ function createScaffoldCell(
 
 // Helper to create scaffold facade along actual edge coordinates
 // NEU 19.01.2026: Unterstützt originalSegments für exakte 3D-Platzierung entlang Original-Polygon
+// FIX 07.02.2026: Unterstützt gemischte Rahmenhöhen (frameHeights) und Feldbreiten (fieldWidths)
 function createScaffoldFacadeAlongEdge(
   facade: ScaffoldFacade,
   fieldWidth: number,
@@ -789,6 +790,21 @@ function createScaffoldFacadeAlongEdge(
   const group = new THREE.Group();
   const cellDepth = 0.73;
   const colorHex = parseInt((facade.color || '#6B7280').replace('#', ''), 16);
+
+  // FIX 07.02.2026: Berechne kumulative Höhen für gemischte Rahmenhöhen
+  // Wenn frameHeights verfügbar, benutze diese; sonst Fallback auf gleichmäßige Höhe
+  const frameHeights = facade.frameHeights || Array(facade.levels).fill(levelHeight);
+  const cumulativeHeights: number[] = [0];
+  for (let i = 0; i < frameHeights.length; i++) {
+    cumulativeHeights.push(cumulativeHeights[i] + frameHeights[i]);
+  }
+
+  // FIX 07.02.2026: Berechne kumulative Breiten für gemischte Feldbreiten
+  const fieldWidths = facade.fieldWidths || Array(facade.fields).fill(fieldWidth);
+  const cumulativeWidths: number[] = [0];
+  for (let i = 0; i < fieldWidths.length; i++) {
+    cumulativeWidths.push(cumulativeWidths[i] + fieldWidths[i]);
+  }
 
   // NEU 19.01.2026: Verwende originalSegments wenn vorhanden (für exakte 3D-Platzierung)
   // Das Gerüst folgt dann den echten Polygon-Konturen statt einer vereinfachten geraden Linie
@@ -832,7 +848,12 @@ function createScaffoldFacadeAlongEdge(
       const offsetZ = perpZ * (scaffoldGap + cellDepth / 2);
 
       // Erstelle Gerüst-Zellen für dieses Segment
+      // FIX 07.02.2026: Verwende gemischte Rahmenhöhen
       for (let level = 0; level < facade.levels; level++) {
+        // Berechne tatsächliche Höhe und Position für diesen Rahmen
+        const frameH = frameHeights[level] || levelHeight;
+        const cellY = cumulativeHeights[level] + frameH / 2;
+
         for (let f = 0; f < segFields && (fieldOffset + f) < facade.fields; f++) {
           const key = `${fieldOffset + f}-${level}`;
           if (facade.modifications.removed_cells.has(key)) continue;
@@ -840,10 +861,11 @@ function createScaffoldFacadeAlongEdge(
           const t = (f + 0.5) / segFields;
           const cellX = segStartX + dx * t + offsetX;
           const cellZ = segStartZ + dz * t + offsetZ;
-          const cellY = level * levelHeight + levelHeight / 2;
 
-          const cellWidth = fieldWidth * 0.95;
-          const cellHeight = levelHeight * 0.95;
+          // FIX 07.02.2026: Verwende gemischte Feldbreite
+          const fieldW = fieldWidths[fieldOffset + f] || fieldWidth;
+          const cellWidth = fieldW * 0.95;
+          const cellHeight = frameH * 0.95;
 
           let cellColor = colorHex;
           if (facade.modifications.lift_position === (fieldOffset + f)) {
@@ -910,7 +932,12 @@ function createScaffoldFacadeAlongEdge(
   // Inset scaffolds slightly at corners to avoid overlap (half cell width on each end)
   const cornerInset = 0.5 / facade.fields; // ~half a cell at each end
 
+  // FIX 07.02.2026: Verwende gemischte Rahmenhöhen und Feldbreiten (Fallback-Pfad)
   for (let level = 0; level < facade.levels; level++) {
+    // Berechne tatsächliche Höhe und Position für diesen Rahmen
+    const frameH = frameHeights[level] || levelHeight;
+    const cellY = cumulativeHeights[level] + frameH / 2;
+
     for (let field = 0; field < facade.fields; field++) {
       const key = `${field}-${level}`;
       if (facade.modifications.removed_cells.has(key)) continue;
@@ -920,10 +947,11 @@ function createScaffoldFacadeAlongEdge(
       const t = cornerInset + tRaw * (1 - 2 * cornerInset); // Shrink range to avoid corners
       const cellX = startX + dx * t + offsetX;
       const cellZ = startZ + dz * t + offsetZ;
-      const cellY = level * levelHeight + levelHeight / 2;
 
-      const cellWidth = fieldWidth * 0.95;
-      const cellHeight = levelHeight * 0.95;
+      // FIX 07.02.2026: Verwende gemischte Feldbreite
+      const fieldW = fieldWidths[field] || fieldWidth;
+      const cellWidth = fieldW * 0.95;
+      const cellHeight = frameH * 0.95;
 
       // Check if this is a lift or stairs column
       let cellColor = colorHex;
@@ -1086,9 +1114,23 @@ function createScaffoldCorner(
   // Get number of levels from connected facades
   const levels = Math.max(facade1.levels, facade2.levels);
 
+  // FIX 07.02.2026: Berechne tatsächliche Höhe aus gemischten Rahmenhöhen
+  // Verwende die höhere Fassade für die Eckhöhe
+  const facade1Height = facade1.actualHeight ?? (facade1.levels * levelHeight);
+  const facade2Height = facade2.actualHeight ?? (facade2.levels * levelHeight);
+  const actualCornerHeight = Math.max(facade1Height, facade2Height);
+
+  // Wähle die Fassade mit der größeren Höhe für die Ebenen-Positionen
+  const mainFacade = facade1Height >= facade2Height ? facade1 : facade2;
+  const frameHeights = mainFacade.frameHeights || Array(levels).fill(levelHeight);
+  const cumulativeHeights: number[] = [0];
+  for (let i = 0; i < frameHeights.length; i++) {
+    cumulativeHeights.push(cumulativeHeights[i] + frameHeights[i]);
+  }
+
   // Create corner posts (vertical cylinders at corner)
   const postRadius = 0.05;
-  const postHeight = levels * levelHeight;
+  const postHeight = actualCornerHeight;
   const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 8);
   const postMaterial = new THREE.MeshStandardMaterial({ color: cornerColor });
 
@@ -1108,10 +1150,12 @@ function createScaffoldCorner(
   });
 
   // Add diagonal bracing between posts
+  // FIX 07.02.2026: Verwende tatsächliche Höhen für Diagonal-Positionen
   if (corner.diagonals > 0) {
     const diagMaterial = new THREE.LineBasicMaterial({ color: cornerColor });
     for (let level = 0; level < levels; level++) {
-      const y = level * levelHeight + levelHeight / 2;
+      const frameH = frameHeights[level] || levelHeight;
+      const y = cumulativeHeights[level] + frameH / 2;
       const points = [
         new THREE.Vector3(offsetCornerX + postSpread, y, offsetCornerZ + postSpread),
         new THREE.Vector3(offsetCornerX - postSpread, y, offsetCornerZ - postSpread),

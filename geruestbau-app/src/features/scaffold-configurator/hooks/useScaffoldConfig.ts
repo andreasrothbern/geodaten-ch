@@ -96,6 +96,77 @@ interface ScaffoldConfigState {
 // Siehe extractTerrainProfile() in polygonSimplifier.ts
 // Die alte calculateHeightsFromRawData() wurde entfernt (verwendete aggregierte Werte statt 3D-Geometrie)
 
+// ============ LAYHER BLITZ 70 ELEMENT SIZES ============
+// NEU 07.02.2026: Mixed element sizes for optimal scaffolding
+
+// Available frame heights (m) - sorted descending for greedy algorithm
+const LAYHER_FRAME_HEIGHTS = [2.0, 1.5, 1.0, 0.5] as const;
+
+// Available field widths (m) - sorted descending for greedy algorithm
+const LAYHER_FIELD_WIDTHS = [3.07, 2.57, 2.07, 1.57, 1.09, 0.73] as const;
+
+/**
+ * FIX 07.02.2026: Optimierte Elementberechnung mit gemischten Größen
+ *
+ * Greedy-Algorithmus: Wählt größtes passendes Element, wiederholt bis Ziel erreicht.
+ * Ziel: Möglichst nah am Zielwert, leicht darüber (Sicherheit) aber nicht zu viel.
+ *
+ * @param targetLength Ziel-Länge/Höhe in Metern
+ * @param availableSizes Verfügbare Element-Größen (absteigend sortiert)
+ * @param tolerance Wie viel unter dem Ziel ist akzeptabel (z.B. 0.1m)
+ * @returns Array der gewählten Element-Größen
+ */
+const calculateOptimalElements = (
+  targetLength: number,
+  availableSizes: readonly number[],
+  tolerance: number = 0.1
+): number[] => {
+  const elements: number[] = [];
+  let remaining = targetLength;
+
+  // Greedy: Wähle größtes Element das passt, wiederhole
+  while (remaining > tolerance) {
+    // Find largest element that doesn't exceed remaining + tolerance significantly
+    let bestSize = availableSizes[availableSizes.length - 1]; // Smallest as fallback
+
+    for (const size of availableSizes) {
+      if (size <= remaining + tolerance) {
+        bestSize = size;
+        break; // First (largest) that fits
+      }
+    }
+
+    // If even smallest exceeds target but we need at least one element
+    if (elements.length === 0 && remaining < bestSize) {
+      // Use smallest element that exceeds target minimally
+      for (let i = availableSizes.length - 1; i >= 0; i--) {
+        if (availableSizes[i] >= remaining) {
+          bestSize = availableSizes[i];
+          // Keep looking for smaller one that still covers
+        }
+      }
+    }
+
+    elements.push(bestSize);
+    remaining -= bestSize;
+
+    // Safety: Prevent infinite loop
+    if (elements.length > 50) {
+      console.warn('[calculateOptimalElements] Max iterations reached');
+      break;
+    }
+  }
+
+  return elements;
+};
+
+/**
+ * Berechnet die Summe der Element-Größen
+ */
+const sumElements = (elements: number[]): number => {
+  return elements.reduce((sum, el) => sum + el, 0);
+};
+
 const createDefaultSettings = (): ScaffoldSettings => ({
   work_type: 'roof',
   system: 'layher_blitz',
@@ -109,16 +180,26 @@ const createDefaultSettings = (): ScaffoldSettings => ({
 // FIX 27.01.2026: 'full' ersetzt durch 'roofer' mit Giebel-Logik
 // FIX 05.02.2026: baseHeightM ist jetzt wall_height (inkl. Giebel bei Giebel-Fassaden!)
 //                 → Für facade/roof bei Giebel: giebel_height abziehen um Traufhöhe zu bekommen
+// FIX 07.02.2026: Mixed element sizes - greedy algorithm statt Math.ceil
 const calculateFieldsAndLevels = (
   lengthM: number,
   baseHeightM: number,  // wall_height (bei Giebel: inkl. Giebel-Dreieck!)
-  fieldWidthM: number,
-  levelHeightM: number,
+  _fieldWidthM: number,  // UNUSED seit 07.02.2026 - gemischte Feldbreiten statt fixer Wert
+  _levelHeightM: number, // UNUSED seit 07.02.2026 - gemischte Rahmenhöhen statt fixer Wert
   workType: WorkType,
   _firstHeightM?: number,  // UNUSED seit 05.02.2026 - behalten für API-Kompatibilität
   isGiebel?: boolean,     // Giebel-Fassade?
   giebelHeightM?: number  // Giebel-Dreieck-Höhe
-): { fields: number; levels: number; targetHeight: number } => {
+): {
+  fields: number;
+  levels: number;
+  targetHeight: number;
+  // NEU 07.02.2026: Detaillierte Element-Listen
+  frameHeights?: number[];  // Z.B. [2.0, 2.0, 2.0, 1.0] = 7m
+  fieldWidths?: number[];   // Z.B. [3.07, 3.07, 2.57] = 8.71m
+  actualHeight?: number;    // Summe frameHeights
+  actualLength?: number;    // Summe fieldWidths
+} => {
   // FIX 05.02.2026: Bei Giebel-Fassaden ist baseHeightM die VOLLE Höhe (wall_height)
   // Für facade/roof brauchen wir die Traufhöhe = baseHeightM - giebelHeightM
   const effectiveGiebelHeight = (isGiebel && giebelHeightM && giebelHeightM > 0) ? giebelHeightM : 0;
@@ -146,20 +227,51 @@ const calculateFieldsAndLevels = (
       targetHeight = traufHeightM;
   }
 
-  const fields = Math.ceil(lengthM / fieldWidthM);
-  const levels = Math.ceil(targetHeight / levelHeightM);
+  // FIX 07.02.2026: Use mixed element sizes instead of Math.ceil
+  // Height: Use optimal combination of 2.0m, 1.5m, 1.0m, 0.5m frames
+  const frameHeights = calculateOptimalElements(targetHeight, LAYHER_FRAME_HEIGHTS, 0.1);
+  const actualHeight = sumElements(frameHeights);
+  const levels = frameHeights.length;
 
-  return { fields, levels, targetHeight };
+  // Length: Use optimal combination of field widths
+  const fieldWidths = calculateOptimalElements(lengthM, LAYHER_FIELD_WIDTHS, 0.1);
+  const actualLength = sumElements(fieldWidths);
+  const fields = fieldWidths.length;
+
+  // Debug logging
+  console.log(`[calculateFieldsAndLevels] Target: ${targetHeight.toFixed(2)}m height, ${lengthM.toFixed(2)}m length`);
+  console.log(`  → Height: ${frameHeights.join(' + ')} = ${actualHeight.toFixed(2)}m (${levels} frames)`);
+  console.log(`  → Length: ${fieldWidths.join(' + ')} = ${actualLength.toFixed(2)}m (${fields} fields)`);
+
+  return {
+    fields,
+    levels,
+    targetHeight,
+    frameHeights,
+    fieldWidths,
+    actualHeight,
+    actualLength,
+  };
 };
 
 // FIX 27.01.2026: firstHeight für Spengler-Modus hinzugefügt
+// FIX 07.02.2026: Gemischte Elementgrößen für optimale Gerüstkonfiguration
 const createFacadeElement = (
   facade: SelectedFacade,
   settings: ScaffoldSettings,
   globalTerrainDiff?: number,  // NEU 14.01.2026: Globale Terrain-Differenz für Hanglage
   firstHeight?: number         // NEU 27.01.2026: Firsthöhe für Spengler-Modus
 ): ScaffoldFacade => {
-  const { fields, levels, targetHeight } = calculateFieldsAndLevels(
+  // FIX 07.02.2026: Neue Felder für gemischte Elementgrößen
+  const {
+    fields,
+    levels,
+    targetHeight,
+    frameHeights,
+    fieldWidths,
+    actualHeight,
+    actualLength,
+  } = calculateFieldsAndLevels(
     facade.length_m,
     facade.height_m,  // Traufhöhe (base)
     settings.field_width_m,
@@ -190,6 +302,11 @@ const createFacadeElement = (
     slope_percent: facade.slope_percent,
     fields,
     levels,
+    // NEU 07.02.2026: Gemischte Elementgrößen für optimale Gerüstkonfiguration
+    frameHeights,
+    fieldWidths,
+    actualHeight,
+    actualLength,
     // Fallback color for unknown direction codes (supports both German NO/O/SO and English NE/E/SE)
     color: FACADE_COLORS[facade.direction] || '#6B7280',  // gray-500 as fallback
     enabled: false, // No facades enabled by default - user must select
@@ -375,11 +492,20 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
 
         // FIX 27.01.2026: Recalculate using base_height_m (not the old target_height_m hack)
         // NEU 27.01.2026: Giebel-Parameter für Spengler-Modus (roofer)
+        // FIX 07.02.2026: Recalculate with mixed element sizes
         const newElements = configuration.elements.map((el) => {
           if (el.type === 'facade') {
             // Use base_height_m (original eaves height) as the basis for calculation
             const baseHeight = el.base_height_m || el.target_height_m;  // Fallback for old data
-            const { fields, levels, targetHeight } = calculateFieldsAndLevels(
+            const {
+              fields,
+              levels,
+              targetHeight,
+              frameHeights,
+              fieldWidths,
+              actualHeight,
+              actualLength,
+            } = calculateFieldsAndLevels(
               el.length_m,
               baseHeight,
               newSettings.field_width_m,
@@ -391,7 +517,17 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
             );
             // DEBUG 02.02.2026: Log calculated values
             console.log(`[setWorkType] Facade ${el.id}: base=${baseHeight}m -> target=${targetHeight}m, levels=${levels}`);
-            return { ...el, fields, levels, target_height_m: targetHeight };
+            return {
+              ...el,
+              fields,
+              levels,
+              target_height_m: targetHeight,
+              // NEU 07.02.2026: Gemischte Elementgrößen
+              frameHeights,
+              fieldWidths,
+              actualHeight,
+              actualLength,
+            };
           }
           return el;
         });
@@ -414,11 +550,38 @@ export const useScaffoldConfig = create<ScaffoldConfigState>()(
         const fieldWidth = system === 'layher_blitz' ? 2.57 : 3.07;
         const newSettings = { ...configuration.settings, system, field_width_m: fieldWidth as 2.57 | 3.07 };
 
-        // Recalculate fields for all facades
+        // FIX 07.02.2026: Recalculate with mixed element sizes (not just Math.ceil)
         const newElements = configuration.elements.map((el) => {
           if (el.type === 'facade') {
-            const fields = Math.ceil(el.length_m / fieldWidth);
-            return { ...el, fields };
+            const baseHeight = el.base_height_m || el.target_height_m;
+            const {
+              fields,
+              levels,
+              targetHeight,
+              frameHeights,
+              fieldWidths,
+              actualHeight,
+              actualLength,
+            } = calculateFieldsAndLevels(
+              el.length_m,
+              baseHeight,
+              newSettings.field_width_m,
+              newSettings.level_height_m,
+              configuration.settings.work_type,
+              el.first_height_m,
+              el.is_giebel,
+              el.giebel_height_m
+            );
+            return {
+              ...el,
+              fields,
+              levels,
+              target_height_m: targetHeight,
+              frameHeights,
+              fieldWidths,
+              actualHeight,
+              actualLength,
+            };
           }
           return el;
         });

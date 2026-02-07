@@ -165,6 +165,11 @@ export interface ScaffoldFacade {
   slope_percent: number;
   fields: number;
   levels: number;
+  // NEU 07.02.2026: Gemischte Elementgrößen (Layher Blitz 70)
+  frameHeights?: number[];  // Z.B. [2.0, 2.0, 2.0, 1.0] = 7m total
+  fieldWidths?: number[];   // Z.B. [3.07, 3.07, 2.57] = 8.71m total
+  actualHeight?: number;    // Summe frameHeights (tatsächliche Gerüsthöhe)
+  actualLength?: number;    // Summe fieldWidths (tatsächliche Gerüstlänge)
   color: string;
   enabled: boolean; // Whether this facade is included in scaffold
   modifications: FacadeModifications;
