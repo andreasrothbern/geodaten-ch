@@ -539,19 +539,83 @@ function segmentsOverlap(
 /**
  * Ergebnis des Wall-Matchings mit per-Polygon z-Werten
  * NEU 15.01.2026: Per-Polygon z-Werte statt globale Wall z_min/z_max
+ * FIX 08.02.2026: trauf_height_m hinzugefügt für korrekte Gerüsthöhe
  */
 export interface WallMatchResult {
   wall: BuildingWall;
-  polygon_z_min: number;  // Min z aus dem gematchten Polygon
-  polygon_z_max: number;  // Max z aus dem gematchten Polygon
-  wall_height: number;    // polygon_z_max - polygon_z_min
+  polygon_z_min: number;  // Min z aus dem gematchten Polygon (Terrain)
+  polygon_z_max: number;  // Max z aus dem gematchten Polygon (First bei Giebel, Traufe sonst)
+  wall_height: number;    // polygon_z_max - polygon_z_min (VOLLE Wandhöhe)
+  // FIX 08.02.2026: Traufhöhe separat für korrekte Gerüstberechnung
+  trauf_height_m: number; // Höhe bis zur Traufe (= Fassadenhöhe für Gerüst)
   // NEU 24.01.2026 P3: Giebel-Erkennung
-  is_giebel: boolean;     // True wenn Wand-Höhe > Traufhöhe (dachMin)
-  giebel_height_m?: number;  // Giebel-Höhe über Traufe (wall_z_max - dachMin)
+  is_giebel: boolean;     // True wenn obere Polygon-Kante nicht horizontal ist
+  giebel_height_m?: number;  // Giebel-Höhe über Traufe
   // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
   terrain_profile?: TerrainProfilePoint[];
   // NEU 27.01.2026: Strukturierte Warnungen für Terrain-Validierung
   terrain_warnings?: TerrainWarning[];
+}
+
+/**
+ * FIX 08.02.2026: Analysiert ein Wall-Polygon um Giebel zu erkennen
+ *
+ * Ein Giebel-Polygon hat eine NICHT-horizontale obere Kante (große z-Varianz).
+ * Ein Trauf-Polygon hat eine horizontale obere Kante (kleine z-Varianz).
+ *
+ * Beispiel Giebel-Wand:
+ *        /\     z_max = 565m (First)
+ *       /  \
+ *      /    \   z_trauf = 562m (Traufe - niedrigster Punkt der oberen Kante)
+ *     ┌──────┐
+ *     │      │  z_min = 555m (Terrain)
+ *     └──────┘
+ *
+ * @returns { isGiebel, traufHeight, giebelHeight }
+ */
+function analyzeWallPolygonForGiebel(
+  coords3d: number[][],
+  z_min: number,
+  z_max: number
+): { isGiebel: boolean; traufHeight: number; giebelHeight: number } {
+  const wallHeight = z_max - z_min;
+  if (wallHeight < 1) {
+    // Sehr flache Wand - kein Giebel
+    return { isGiebel: false, traufHeight: wallHeight, giebelHeight: 0 };
+  }
+
+  // Sammle alle Vertices im oberen Bereich (obere 40% der Wand)
+  const upperThreshold = z_min + wallHeight * 0.6;
+  const upperVertices: number[] = [];
+
+  for (const coord of coords3d) {
+    if (coord.length >= 3 && coord[2] >= upperThreshold) {
+      upperVertices.push(coord[2]);
+    }
+  }
+
+  if (upperVertices.length < 2) {
+    // Nicht genug obere Vertices - Fallback
+    return { isGiebel: false, traufHeight: wallHeight, giebelHeight: 0 };
+  }
+
+  // Berechne z-Varianz im oberen Bereich
+  const zMin_upper = Math.min(...upperVertices);
+  const zMax_upper = Math.max(...upperVertices);
+  const zVariance = zMax_upper - zMin_upper;
+
+  // Giebel wenn obere Kante > 0.5m z-Varianz hat
+  const isGiebel = zVariance > 0.5;
+
+  if (isGiebel) {
+    // Traufhöhe = niedrigster Punkt der oberen Kante - Terrain
+    const traufHeight = zMin_upper - z_min;
+    const giebelHeight = z_max - zMin_upper;
+    return { isGiebel: true, traufHeight, giebelHeight };
+  } else {
+    // Keine Giebel - volle Wandhöhe ist Traufhöhe
+    return { isGiebel: false, traufHeight: wallHeight, giebelHeight: 0 };
+  }
 }
 
 /**
@@ -770,7 +834,7 @@ export function matchFacadeToWall(
   facadeEnd: [number, number],
   buildingWalls: BuildingWall[],
   tolerance: number = 3.0,  // FIX: Erhöht von 2.0m wegen Koordinaten-Offset
-  dachMin?: number  // NEU 24.01.2026 P3: Für Giebel-Erkennung
+  _dachMin?: number  // DEPRECATED 08.02.2026: Nicht mehr verwendet - Giebel wird aus Polygon erkannt
 ): WallMatchResult | undefined {
   // Sammle ALLE Matches
   const allMatches: Array<{
@@ -812,7 +876,7 @@ export function matchFacadeToWall(
     return undefined;
   }
 
-  // DEBUG 05.02.2026: Log all matches before sorting
+  // DEBUG 08.02.2026: Log all matches before sorting
   console.log(`[WALL-MATCH] Found ${allMatches.length} matches:`,
     allMatches.slice(0, 5).map(m => ({
       height: m.height.toFixed(2),
@@ -820,19 +884,16 @@ export function matchFacadeToWall(
     }))
   );
 
-  // FIX: Wähle das Match mit der GRÖSSTEN HÖHE (Hauptwand statt Fenster)
-  // Bei gleicher Höhe: kürzeste Distanz
-  allMatches.sort((a, b) => {
-    if (Math.abs(a.height - b.height) > 0.5) {
-      return b.height - a.height; // Grösste Höhe zuerst
-    }
-    return a.avgDist - b.avgDist; // Bei ähnlicher Höhe: kürzeste Distanz
-  });
+  // FIX 08.02.2026: Sortiere nach KÜRZESTER DISTANZ (beste Überlappung)
+  // NICHT mehr nach höchster Wand! Jede Fassade soll ihre EIGENE Wandhöhe bekommen.
+  // Beispiel: Eishalle Düdingen hat 8m West-Fassade und 15m Ost-Fassade.
+  // Mit alter Logik bekamen BEIDE 15m (höchste). Jetzt bekommt jede ihre eigene Höhe.
+  allMatches.sort((a, b) => a.avgDist - b.avgDist);
 
   const bestMatch = allMatches[0];
 
-  // DEBUG 05.02.2026: Log best match
-  console.log(`[WALL-MATCH] Best match: height=${bestMatch.height.toFixed(2)}m, dist=${bestMatch.avgDist.toFixed(2)}m`);
+  // DEBUG 08.02.2026: Log best match
+  console.log(`[WALL-MATCH] Best match: height=${bestMatch.height.toFixed(2)}m, dist=${bestMatch.avgDist.toFixed(2)}m (closest overlap)`);
 
   // Extrahiere z-Werte aus dem gematchten Polygon
   const { z_min, z_max } = extractZFromRing(bestMatch.coords3d);
@@ -840,24 +901,33 @@ export function matchFacadeToWall(
   if (!isFinite(z_min) || !isFinite(z_max)) {
     // Fallback auf globale Wall-Werte wenn keine z-Koordinaten im Ring
     if (bestMatch.wall.z_min !== null && bestMatch.wall.z_max !== null) {
-      // NEU 24.01.2026 P3: Giebel-Erkennung
-      const isGiebel = dachMin !== undefined && bestMatch.wall.z_max > dachMin + 0.5;
-      const giebelHeightM = isGiebel && dachMin !== undefined ? bestMatch.wall.z_max - dachMin : undefined;
+      const wallHeight = bestMatch.wall.z_max - bestMatch.wall.z_min;
+      // FIX 08.02.2026: Ohne 3D-Koordinaten können wir keine Giebel-Analyse machen
+      // Verwende volle Wandhöhe als Traufhöhe (konservativ)
       return {
         wall: bestMatch.wall,
         polygon_z_min: bestMatch.wall.z_min,
         polygon_z_max: bestMatch.wall.z_max,
-        wall_height: bestMatch.wall.z_max - bestMatch.wall.z_min,
-        is_giebel: isGiebel,
-        giebel_height_m: giebelHeightM,
+        wall_height: wallHeight,
+        trauf_height_m: wallHeight,  // FIX 08.02.2026: Fallback = volle Höhe
+        is_giebel: false,
+        giebel_height_m: undefined,
       };
     }
     return undefined;
   }
 
-  // NEU 24.01.2026 P3: Giebel-Erkennung
-  const isGiebel = dachMin !== undefined && z_max > dachMin + 0.5;
-  const giebelHeightM = isGiebel && dachMin !== undefined ? z_max - dachMin : undefined;
+  // FIX 08.02.2026: Giebel-Erkennung aus dem Polygon selbst (nicht mehr globaler dachMin!)
+  // Dies ist der Kern-Fix: Jede Fassade bekommt ihre eigene korrekte Höhe.
+  const giebelAnalysis = analyzeWallPolygonForGiebel(bestMatch.coords3d, z_min, z_max);
+
+  // DEBUG 08.02.2026: Log Giebel-Analyse
+  console.log(`[WALL-MATCH] Giebel analysis:`, {
+    isGiebel: giebelAnalysis.isGiebel,
+    traufHeight: giebelAnalysis.traufHeight.toFixed(2),
+    giebelHeight: giebelAnalysis.giebelHeight.toFixed(2),
+    wallHeight: (z_max - z_min).toFixed(2),
+  });
 
   // NEU 27.01.2026: Terrain-Profil für Stellspindel-Berechnung
   const terrainProfile = extractTerrainProfile(bestMatch.coords3d, facadeStart, facadeEnd);
@@ -875,8 +945,10 @@ export function matchFacadeToWall(
     polygon_z_min: z_min,
     polygon_z_max: z_max,
     wall_height: z_max - z_min,
-    is_giebel: isGiebel,
-    giebel_height_m: giebelHeightM,
+    // FIX 08.02.2026: trauf_height_m ist die KORREKTE Höhe für das Gerüst
+    trauf_height_m: giebelAnalysis.traufHeight,
+    is_giebel: giebelAnalysis.isGiebel,
+    giebel_height_m: giebelAnalysis.isGiebel ? giebelAnalysis.giebelHeight : undefined,
     terrain_profile: terrainProfile.length > 0 ? terrainProfile : undefined,
     terrain_warnings: terrainWarnings,
   };
@@ -969,11 +1041,11 @@ export function sidesToFacadesWithWalls(
         // Wall gefunden mit per-Polygon z-Werten (für Terrain-Höhen)
         zMin = matchResult.polygon_z_min;
         zMax = matchResult.polygon_z_max;
-        // FIX 05.02.2026: wall_height VERWENDEN für per-Fassade Höhen!
-        // Das war der Root-Cause für das Multi-Fassaden-Höhen-Problem:
-        // Alle Fassaden bekamen defaultHeight statt ihrer individuellen Höhe.
-        // Note: Bei "Fassadenarbeit" work_type begrenzt createFacadeElement auf Traufhöhe.
-        height = matchResult.wall_height;
+        // FIX 08.02.2026: trauf_height_m statt wall_height verwenden!
+        // trauf_height_m ist die KORREKTE Fassadenhöhe (ohne Giebel-Dreieck).
+        // wall_height ist die VOLLE Wandhöhe (inkl. Giebel bei Giebel-Fassaden).
+        // Das war der Root-Cause: Bei Giebel-Fassaden war die Höhe zu hoch.
+        height = matchResult.trauf_height_m;
         heightSource = 'building_walls';
         // Giebel-Info übernehmen
         isGiebel = matchResult.is_giebel;

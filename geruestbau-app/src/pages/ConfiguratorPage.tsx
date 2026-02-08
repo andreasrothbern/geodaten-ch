@@ -1417,10 +1417,11 @@ export default function ConfiguratorPage() {
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;
-          // FIX 05.02.2026: Maximum-Höhe vom höchsten Polygon entlang dieser Fassade.
-          // wall_height = polygon_z_max - polygon_z_min für das Polygon mit der grössten Höhe.
-          // Sicher: Lieber zu viel Gerüst als zu wenig (kann im Editor reduziert werden).
-          heightM = matchResult.wall_height;
+          // FIX 08.02.2026: trauf_height_m statt wall_height verwenden!
+          // trauf_height_m ist die KORREKTE Fassadenhöhe (ohne Giebel-Dreieck).
+          // wall_height ist die VOLLE Wandhöhe (inkl. Giebel bei Giebel-Fassaden).
+          // Die Giebel-Höhe wird separat in giebel_height_m gespeichert für Spengler-Modus.
+          heightM = matchResult.trauf_height_m;
           heightSource = 'building_walls';
           // NEU 24.01.2026 P3: Giebel-Info übernehmen
           isGiebel = matchResult.is_giebel;
