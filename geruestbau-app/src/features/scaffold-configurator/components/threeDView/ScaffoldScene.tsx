@@ -807,96 +807,122 @@ function createScaffoldFacadeAlongEdge(
   }
 
   // NEU 19.01.2026: Verwende originalSegments wenn vorhanden (für exakte 3D-Platzierung)
-  // Das Gerüst folgt dann den echten Polygon-Konturen statt einer vereinfachten geraden Linie
+  // FIX 08.02.2026: Komplett neu geschrieben - kontinuierliche Positionierung statt segment-basiert
   if (facade.originalSegments && facade.originalSegments.length > 0) {
-    // Berechne Gesamtlänge aller Segmente
+    // Berechne Gesamtlänge und kumulative Längen aller Segmente
     let totalLength = 0;
     const segmentLengths: number[] = [];
+    const cumulativeSegmentLengths: number[] = [0];
+
     facade.originalSegments.forEach(seg => {
       const dx = seg.end[0] - seg.start[0];
       const dy = seg.end[1] - seg.start[1];
       const len = Math.sqrt(dx * dx + dy * dy);
       segmentLengths.push(len);
       totalLength += len;
+      cumulativeSegmentLengths.push(totalLength);
     });
 
-    // Verteile Felder proportional auf Segmente
-    let fieldOffset = 0;
-    facade.originalSegments.forEach((seg, segIdx) => {
-      const segLength = segmentLengths[segIdx];
-      const segFieldRatio = segLength / totalLength;
-      const segFields = Math.max(1, Math.round(facade.fields * segFieldRatio));
+    // Berechne kumulative Feldpositionen (Mitte jedes Feldes)
+    const fieldCenters: number[] = [];
+    let pos = 0;
+    for (let f = 0; f < facade.fields; f++) {
+      const fieldW = fieldWidths[f] || fieldWidth;
+      fieldCenters.push(pos + fieldW / 2);
+      pos += fieldW;
+    }
 
-      // Normalisiere Segment-Koordinaten relativ zum Center
-      // Swap start/end to match polygon winding order
-      const segStartX = seg.end[0] - center[0];
-      const segStartZ = -(seg.end[1] - center[1]);
-      const segEndX = seg.start[0] - center[0];
-      const segEndZ = -(seg.start[1] - center[1]);
+    // Für jedes Feld: finde das passende Segment und platziere dort
+    for (let field = 0; field < facade.fields; field++) {
+      const fieldCenter = fieldCenters[field];
+
+      // Finde welches Segment diese Position enthält
+      let segIdx = 0;
+      for (let i = 0; i < segmentLengths.length; i++) {
+        if (fieldCenter >= cumulativeSegmentLengths[i] && fieldCenter < cumulativeSegmentLengths[i + 1]) {
+          segIdx = i;
+          break;
+        }
+        // Letztes Segment für Positionen am Ende
+        if (i === segmentLengths.length - 1) {
+          segIdx = i;
+        }
+      }
+
+      const seg = facade.originalSegments[segIdx];
+      const segLength = segmentLengths[segIdx];
+      const segStart = cumulativeSegmentLengths[segIdx];
+
+      // Position relativ zum Segment (0 bis 1)
+      const t = segLength > 0 ? Math.min(1, Math.max(0, (fieldCenter - segStart) / segLength)) : 0.5;
+
+      // FIX 08.02.2026: KEIN swap mehr - verwende Koordinaten direkt
+      // Polygon läuft gegen Uhrzeigersinn, Gerüst soll nach außen (rechts der Laufrichtung)
+      const segStartX = seg.start[0] - center[0];
+      const segStartZ = -(seg.start[1] - center[1]);
+      const segEndX = seg.end[0] - center[0];
+      const segEndZ = -(seg.end[1] - center[1]);
 
       // Berechne Richtung für dieses Segment
       const dx = segEndX - segStartX;
       const dz = segEndZ - segStartZ;
       const length = Math.sqrt(dx * dx + dz * dz);
-      if (length < 0.01) return; // Skip sehr kurze Segmente
+      if (length < 0.01) continue; // Skip sehr kurze Segmente
 
       const dirX = dx / length;
       const dirZ = dz / length;
-      const perpX = -dirZ;
-      const perpZ = dirX;
+
+      // FIX 08.02.2026: Perpendicular nach RECHTS der Laufrichtung (= nach außen bei CCW Polygon)
+      // Rechts von (dirX, dirZ) ist (dirZ, -dirX)
+      const perpX = dirZ;
+      const perpZ = -dirX;
       const offsetX = perpX * (scaffoldGap + cellDepth / 2);
       const offsetZ = perpZ * (scaffoldGap + cellDepth / 2);
 
-      // Erstelle Gerüst-Zellen für dieses Segment
-      // FIX 07.02.2026: Verwende gemischte Rahmenhöhen
+      // Position auf dem Segment
+      const baseX = segStartX + dx * t;
+      const baseZ = segStartZ + dz * t;
+
+      // Erstelle Gerüst-Zellen für alle Level dieses Feldes
       for (let level = 0; level < facade.levels; level++) {
-        // Berechne tatsächliche Höhe und Position für diesen Rahmen
+        const key = `${field}-${level}`;
+        if (facade.modifications.removed_cells.has(key)) continue;
+
         const frameH = frameHeights[level] || levelHeight;
         const cellY = cumulativeHeights[level] + frameH / 2;
 
-        for (let f = 0; f < segFields && (fieldOffset + f) < facade.fields; f++) {
-          const key = `${fieldOffset + f}-${level}`;
-          if (facade.modifications.removed_cells.has(key)) continue;
+        const fieldW = fieldWidths[field] || fieldWidth;
+        const cellWidth = fieldW * 0.95;
+        const cellHeight = frameH * 0.95;
 
-          const t = (f + 0.5) / segFields;
-          const cellX = segStartX + dx * t + offsetX;
-          const cellZ = segStartZ + dz * t + offsetZ;
-
-          // FIX 07.02.2026: Verwende gemischte Feldbreite
-          const fieldW = fieldWidths[fieldOffset + f] || fieldWidth;
-          const cellWidth = fieldW * 0.95;
-          const cellHeight = frameH * 0.95;
-
-          let cellColor = colorHex;
-          if (facade.modifications.lift_position === (fieldOffset + f)) {
-            cellColor = 0xfef3c7;
-          } else if (facade.modifications.stairs_position === (fieldOffset + f)) {
-            cellColor = 0xdcfce7;
-          }
-
-          const cellGroup = new THREE.Group();
-          const geometry = new THREE.BoxGeometry(cellWidth, cellHeight, cellDepth);
-          const material = new THREE.MeshStandardMaterial({
-            color: cellColor,
-            transparent: true,
-            opacity: 0.8,
-          });
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.castShadow = true;
-
-          cellGroup.add(mesh);
-          cellGroup.position.set(cellX, cellY, cellZ);
-          // FIX 08.02.2026: Korrekte Rotation - muss mit Fallback-Pfad übereinstimmen
-          // atan2(dz, dx) gibt Winkel von X-Achse zur Richtung, -angle weil Y-Rotation clockwise
-          const angle = Math.atan2(dz, dx);
-          cellGroup.rotation.y = -angle;
-          group.add(cellGroup);
+        let cellColor = colorHex;
+        if (facade.modifications.lift_position === field) {
+          cellColor = 0xfef3c7;
+        } else if (facade.modifications.stairs_position === field) {
+          cellColor = 0xdcfce7;
         }
-      }
-      fieldOffset += segFields;
-    });
 
-    console.log(`[3D-SCAFFOLD] Fassade ${facade.direction}: ${facade.originalSegments.length} Original-Segmente, ${facade.fields} Felder`);
+        const cellGroup = new THREE.Group();
+        const geometry = new THREE.BoxGeometry(cellWidth, cellHeight, cellDepth);
+        const material = new THREE.MeshStandardMaterial({
+          color: cellColor,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+
+        cellGroup.add(mesh);
+        cellGroup.position.set(baseX + offsetX, cellY, baseZ + offsetZ);
+
+        // Rotation: Zelle soll parallel zur Fassade stehen
+        const angle = Math.atan2(dz, dx);
+        cellGroup.rotation.y = -angle;
+        group.add(cellGroup);
+      }
+    }
+
+    console.log(`[3D-SCAFFOLD] Fassade ${facade.direction}: ${facade.originalSegments.length} Segmente, ${facade.fields} Felder (kontinuierlich)`);
     return group;
   }
 
@@ -907,12 +933,11 @@ function createScaffoldFacadeAlongEdge(
     return group;
   }
 
-  // Normalize coordinates relative to center
-  // Swap start/end to match polygon winding order
-  const startX = facade.end_point[0] - center[0];
-  const startZ = -(facade.end_point[1] - center[1]);
-  const endX = facade.start_point[0] - center[0];
-  const endZ = -(facade.start_point[1] - center[1]);
+  // FIX 08.02.2026: Kein swap mehr - verwende Koordinaten direkt (konsistent mit originalSegments Pfad)
+  const startX = facade.start_point[0] - center[0];
+  const startZ = -(facade.start_point[1] - center[1]);
+  const endX = facade.end_point[0] - center[0];
+  const endZ = -(facade.end_point[1] - center[1]);
 
   // Calculate facade direction vector
   const dx = endX - startX;
@@ -923,9 +948,10 @@ function createScaffoldFacadeAlongEdge(
   const dirX = dx / length;
   const dirZ = dz / length;
 
-  // Perpendicular direction (outward from building)
-  const perpX = -dirZ;
-  const perpZ = dirX;
+  // FIX 08.02.2026: Perpendicular nach RECHTS der Laufrichtung (= nach außen bei CCW Polygon)
+  // Rechts von (dirX, dirZ) ist (dirZ, -dirX)
+  const perpX = dirZ;
+  const perpZ = -dirX;
 
   // Offset scaffolds outward from building edge
   const offsetX = perpX * (scaffoldGap + cellDepth / 2);
