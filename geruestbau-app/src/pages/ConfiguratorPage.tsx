@@ -1417,11 +1417,11 @@ export default function ConfiguratorPage() {
         if (matchResult) {
           facadeZMin = matchResult.polygon_z_min;
           facadeZMax = matchResult.polygon_z_max;
-          // FIX 08.02.2026: trauf_height_m statt wall_height verwenden!
-          // trauf_height_m ist die KORREKTE Fassadenhöhe (ohne Giebel-Dreieck).
-          // wall_height ist die VOLLE Wandhöhe (inkl. Giebel bei Giebel-Fassaden).
-          // Die Giebel-Höhe wird separat in giebel_height_m gespeichert für Spengler-Modus.
-          heightM = matchResult.trauf_height_m;
+          // FIX 09.02.2026: NICHT heightM überschreiben!
+          // Die API berechnet die Traufhöhe korrekt: dach_min - terrain_z_min
+          // Das Wall-Matching liefert nur facade_z_min/z_max für Terrain-Visualisierung,
+          // aber NICHT die Gerüsthöhe - die 3D-Mesh-Geometrie entspricht nicht 1:1 den Fassaden.
+          // ENTFERNT: heightM = matchResult.trauf_height_m;
           heightSource = 'building_walls';
           // NEU 24.01.2026 P3: Giebel-Info übernehmen
           isGiebel = matchResult.is_giebel;
